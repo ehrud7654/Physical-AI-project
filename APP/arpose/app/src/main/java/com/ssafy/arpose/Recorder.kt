@@ -32,10 +32,17 @@ class Recorder(private val baseDir: File) {
         private const val QUEUE = 8
         private const val JPEG_QUALITY = 90
         private const val MIN_SEGMENT_SEC = 2.0
+
+        // 점프·추적상실 지점 앞뒤로 잘라낼 여유. 경계 프레임의 pose 는 믿을 수 없다.
+        private const val MARGIN_BEFORE = 0.1
+        private const val MARGIN_AFTER = 0.2
     }
 
     private class Job(val index: Int, val w: Int, val h: Int, val buf: ByteArray)
     private class Jump(val index: Int, val tSec: Double, val mm: Double, val deg: Double)
+
+    /** 추적을 놓친 구간. tracking != TRACKING 인 프레임이 이어진 범위다. */
+    private class Paused(val fromSec: Double, var toSec: Double, var frames: Int)
 
     @Volatile var isRecording = false
         private set
@@ -45,11 +52,14 @@ class Recorder(private val baseDir: File) {
     var frameIndex = 0; private set
 
     var jumpCount = 0; private set
+    var pausedFrames = 0; private set
     var maxJumpMm = 0.0; private set
 
     var currentDir: File? = null; private set
 
     private val jumps = ArrayList<Jump>()
+    private val pausedSpans = ArrayList<Paused>()
+    private var openPaused: Paused? = null
     private var startMs = 0L
     private var firstTsNs = 0L
     private var lastTsNs = 0L
@@ -77,7 +87,8 @@ class Recorder(private val baseDir: File) {
 
         savedFrames = 0; droppedFrames = 0; frameIndex = 0
         jumpCount = 0; maxJumpMm = 0.0
-        jumps.clear()
+        pausedFrames = 0
+        jumps.clear(); pausedSpans.clear(); openPaused = null
         startMs = System.currentTimeMillis(); firstTsNs = 0L; lastTsNs = 0L
         queue.clear()
         isRecording = true
@@ -119,6 +130,19 @@ class Recorder(private val baseDir: File) {
         if (!isRecording) return
         if (firstTsNs == 0L) firstTsNs = timestampNs
         lastTsNs = timestampNs
+
+        val tSec = (timestampNs - firstTsNs) / 1e9
+        if (tracking != "TRACKING") {
+            pausedFrames++
+            val open = openPaused
+            if (open == null) {
+                Paused(tSec, tSec, 1).also { pausedSpans.add(it); openPaused = it }
+            } else {
+                open.toSec = tSec; open.frames++
+            }
+        } else {
+            openPaused = null
+        }
         val idx = frameIndex++
         val w = image.width
         val h = image.height
@@ -173,40 +197,71 @@ class Recorder(private val baseDir: File) {
         sb.append("tracking_jumps=$jumpCount\n")
         sb.append("max_jump_mm=${String.format(Locale.US, "%.1f", maxJumpMm)}\n")
 
-        if (jumps.isEmpty()) {
+        sb.append("paused_frames=$pausedFrames\n")
+
+        // 점프(순간)와 추적 상실(구간)을 모두 "쓸 수 없는 구간"으로 환산해 합친다.
+        // 경계 프레임의 pose 는 믿을 수 없으므로 앞뒤로 여유를 둔다.
+        val bad = ArrayList<DoubleArray>()
+        for (j in jumps) bad.add(doubleArrayOf(j.tSec - MARGIN_BEFORE, j.tSec + MARGIN_AFTER))
+        for (sp in pausedSpans) {
+            bad.add(doubleArrayOf(sp.fromSec - MARGIN_BEFORE, sp.toSec + MARGIN_AFTER))
+        }
+        bad.sortBy { it[0] }
+        val blocked = ArrayList<DoubleArray>()
+        for (b in bad) {
+            val last = blocked.lastOrNull()
+            if (last != null && b[0] <= last[1]) {
+                if (b[1] > last[1]) last[1] = b[1]
+            } else blocked.add(b)
+        }
+
+        if (blocked.isEmpty()) {
             sb.append("verdict=OK - 전체 구간 사용 가능\n")
             sb.append("usable_segments=0.00~${String.format(Locale.US, "%.2f", durSec)}\n")
         } else {
-            sb.append("verdict=점프 ${jumpCount}회 - 아래 구간으로 분할해서 사용\n")
-            sb.append("jumps(index,t_sec,mm,deg):\n")
-            for (j in jumps) {
-                sb.append(
-                    "  ${j.index},${String.format(Locale.US, "%.2f", j.tSec)}," +
-                        "${String.format(Locale.US, "%.1f", j.mm)}," +
-                        "${String.format(Locale.US, "%.1f", j.deg)}\n"
-                )
+            val reason = when {
+                jumps.isNotEmpty() && pausedSpans.isNotEmpty() ->
+                    "점프 ${jumpCount}회 + 추적상실 ${pausedSpans.size}구간"
+                jumps.isNotEmpty() -> "점프 ${jumpCount}회"
+                else -> "추적상실 ${pausedSpans.size}구간"
             }
-            // 점프 시각을 경계로 구간을 나눈다. 0.5초 안에 몰린 점프는 하나로 묶는다.
-            val cuts = ArrayList<Double>()
-            for (j in jumps) {
-                if (cuts.isEmpty() || j.tSec - cuts.last() > 0.5) cuts.add(j.tSec)
-                else cuts[cuts.size - 1] = j.tSec
+            sb.append("verdict=$reason - 아래 구간으로 분할해서 사용\n")
+
+            if (jumps.isNotEmpty()) {
+                sb.append("jumps(index,t_sec,mm,deg):\n")
+                for (j in jumps) {
+                    sb.append(
+                        "  ${j.index},${String.format(Locale.US, "%.2f", j.tSec)}," +
+                            "${String.format(Locale.US, "%.1f", j.mm)}," +
+                            "${String.format(Locale.US, "%.1f", j.deg)}\n"
+                    )
+                }
             }
+            if (pausedSpans.isNotEmpty()) {
+                sb.append("paused_spans(from_sec,to_sec,frames):\n")
+                for (sp in pausedSpans) {
+                    sb.append(
+                        "  ${String.format(Locale.US, "%.2f", sp.fromSec)}," +
+                            "${String.format(Locale.US, "%.2f", sp.toSec)},${sp.frames}\n"
+                    )
+                }
+            }
+
             sb.append("usable_segments:\n")
             var from = 0.0
             var n = 0
-            for (c in cuts) {
-                val to = c - 0.1
-                if (to - from >= MIN_SEGMENT_SEC) {
-                    sb.append("  ${String.format(Locale.US, "%.2f~%.2f", from, to)}\n"); n++
+            for (b in blocked) {
+                if (b[0] - from >= MIN_SEGMENT_SEC) {
+                    sb.append("  ${String.format(Locale.US, "%.2f~%.2f", from, b[0])}\n"); n++
                 }
-                from = c + 0.2
+                if (b[1] > from) from = b[1]
             }
             if (durSec - from >= MIN_SEGMENT_SEC) {
                 sb.append("  ${String.format(Locale.US, "%.2f~%.2f", from, durSec)}\n"); n++
             }
             if (n == 0) sb.append("  (없음 - 전체 폐기 권장)\n")
         }
+
         if (extra.isNotEmpty()) sb.append(extra)
         sb.append("recorded_at_ms=$startMs\n")
 
