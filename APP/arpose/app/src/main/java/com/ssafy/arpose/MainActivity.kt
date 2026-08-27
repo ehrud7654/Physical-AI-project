@@ -68,6 +68,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private val bg = BackgroundRenderer()
     private var session: Session? = null
     private var recorder: Recorder? = null
+    private lateinit var imu: ImuLogger
     private var installRequested = false
 
     private var lastUiNs = 0L
@@ -105,6 +106,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         glView = findViewById(R.id.glView)
 
         recorder = Recorder(getExternalFilesDir(null)!!)
+        imu = ImuLogger(this)
 
         recBtn.setOnClickListener { pendingToggle = true }
         focusBtn.setOnClickListener {
@@ -177,11 +179,13 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             session = null; return
         }
         glView.onResume()
+        imu.register()
     }
 
     override fun onPause() {
         super.onPause()
         if (recorder?.isRecording == true) stopRecording()
+        imu.unregister()
         if (session != null) {
             glView.onPause()
             session?.pause()
@@ -230,9 +234,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             append("start_wallclock_ms=${System.currentTimeMillis()}\n")
             append("start_elapsed_realtime_ns=${android.os.SystemClock.elapsedRealtimeNanos()}\n")
             append("note=timestamp_ns is ARCore frame.timestamp (elapsedRealtimeNanos base)\n")
+            append(imu.describe())
         }
         lastJumpMm = 0.0; lastJumpDeg = 0.0
         recorder?.start(meta)
+        recorder?.currentDir?.let { imu.start(it) }
         runOnUiThread {
             recBtn.text = "■ STOP"
             recBtn.setBackgroundColor(0xFFCC2222.toInt())
@@ -240,10 +246,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     }
 
     private fun stopRecording() {
+        val imuText = imu.stop()
         val r = recorder
         val jumps = r?.jumpCount ?: 0
         val maxJump = r?.maxJumpMm ?: 0.0
-        val dir = r?.stop()
+        val dir = r?.stop(imuText)
         val saved = r?.savedFrames ?: 0
         val dropped = r?.droppedFrames ?: 0
         val verdict = when {
