@@ -86,6 +86,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     /** 공간 부족으로 자동 정지된 적이 있으면 화면에 계속 띄운다. 토스트는 놓치기 쉽다. */
     @Volatile private var lowSpaceNotice = false
 
+    /** 전송 대기 중인 녹화 수. 화면에 띄워 사용자가 남은 작업을 알 수 있게 한다. */
+    @Volatile private var pendingUploads = 0
+
     // 직전 N프레임의 이동량/회전량 (점프 연속성 판정용 링버퍼)
     private val recentMm = DoubleArray(JUMP_CONT_N)
     private val recentDeg = DoubleArray(JUMP_CONT_N)
@@ -110,6 +113,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
 
         recorder = Recorder(getExternalFilesDir(null)!!)
         imu = ImuLogger(this)
+        pendingUploads = UploadQueue.pendingCount(this)
+        UploadQueue.enqueue(this)   // 지난번에 못 보낸 것이 있으면 이어서 보낸다
 
         recBtn.setOnClickListener { pendingToggle = true }
         focusBtn.setOnClickListener {
@@ -281,6 +286,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             ).show()
         }
         Log.i(TAG, "저장 완료: ${dir?.absolutePath} 프레임=$saved 드롭=$dropped 점프=$jumps AF=${focusName()}")
+
+        // 업로드 예약. 실패하든 말든 촬영 흐름은 여기서 끝난다.
+        UploadQueue.enqueue(this)
+        pendingUploads = UploadQueue.pendingCount(this)
     }
 
     // ---------------- GL ----------------
@@ -454,7 +463,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                         append("!! 저장 공간 부족 - 녹화 불가 (남은 ${recorder?.freeMb()}MB)\n")
                         append("!! 이전 녹화를 PC 로 옮기고 지울 것\n\n")
                     }
-                    append("$state$reason   ${"%.1f".format(fps)} fps   AF:${focusName()}$recLine\n\n")
+                    append("$state$reason   ${"%.1f".format(fps)} fps   AF:${focusName()}$recLine\n")
+                    if (pendingUploads > 0) append("전송 대기 ${pendingUploads}건\n")
+                    append("\n")
                     append("x ${"%+.4f".format(t[0])}   y ${"%+.4f".format(t[1])}   z ${"%+.4f".format(t[2])}  (m)\n")
                     append("r ${"%+.1f".format(roll)}°  p ${"%+.1f".format(pitch)}°  y ${"%+.1f".format(yaw)}°\n")
                 }
