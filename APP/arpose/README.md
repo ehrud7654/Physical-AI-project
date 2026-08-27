@@ -19,6 +19,7 @@
 /sdcard/Android/data/com.ssafy.arpose/files/rec_YYYYMMDD_HHmmss/
 ├─ frames/000000.jpg, 000001.jpg, ...    640x480 JPEG (q90)
 ├─ poses.csv
+├─ imu.csv
 ├─ meta.txt
 └─ summary.txt
 ```
@@ -36,6 +37,18 @@
 | `jump_deg` | 같은 프레임의 회전량(°). 아니면 0 |
 | `image` | 대응하는 JPEG 파일명. **비어 있으면 그 프레임은 이미지가 드롭됨** (pose는 유효) |
 
+**imu.csv** — 자이로·가속도 200Hz. `timestamp_ns,sensor,x,y,z`
+
+영상과 pose 는 ARCore 카메라 프레임에 묶여 30Hz 가 상한이라, 고주파 신호는 Android 센서
+API 로 따로 받는다. 두 스트림은 서로 독립이지만 **타임스탬프 기준이 같아서**(둘 다
+`elapsedRealtimeNanos`) 그대로 정렬된다.
+
+`sensor` 는 `accel` 또는 `gyro`. 두 센서는 샘플이 도착하는 시점이 달라서 한 행에 묶지
+않는다. 단위는 가속도 m/s², 자이로 rad/s (Android 표준).
+
+S23 실측 206.3Hz. 200 을 요청해도 정확히 200 이 나오지는 않는다 — 센서 칩의 출력 단계가
+정해져 있어 가장 가까운 단계로 올라간다. **매 녹화마다 `summary.txt` 의 실측치를 확인할 것.**
+
 **meta.txt** — 기기명, 카메라 설정, **카메라 내부 파라미터(fx, fy, cx, cy)**, `focus_mode`, 시작 시각(wall clock).
 내부 파라미터는 나중에 좌표 변환/캘리브레이션에 필요하니 버리지 말 것.
 
@@ -50,7 +63,16 @@ jumps(index,t_sec,mm,deg):
 usable_segments:
   0.00~7.53
   7.83~20.20
+imu_accel_samples=2513
+imu_accel_hz=206.3
+imu_gyro_samples=2513
+imu_gyro_hz=206.3
+imu_clock_skew_ms=9.57
 ```
+
+`imu_clock_skew_ms` 는 센서 샘플이 앱에 도달하기까지의 지연이다. 10ms 안쪽이면 정상이고,
+초 단위로 벌어지면 센서 타임스탬프가 ARCore 와 다른 시계를 쓴다는 뜻이니 그때는 데이터를
+쓰면 안 된다.
 
 점프가 나도 녹화 전체를 버리지 않는다. `usable_segments` 의 구간을 각각 잘라서 쓰면 된다.
 
@@ -167,6 +189,8 @@ ARCore 가 `tracking=TRACKING` 을 유지한 채로 좌표계를 재보정(재�
 - **좌표계**: 세션 시작 시점 카메라 위치가 원점. Y가 위(중력 반대), -Z가 카메라가 보던 방향.
   녹화마다 원점이 다르므로, 학습 시엔 t₀ 기준 상대 궤적으로 변환해서 쓴다.
 - **앱을 백그라운드로 보내면 녹화가 자동 정지**된다 (파일은 정상적으로 닫힘).
+- **IMU 는 녹화 중에만 파일에 쓰지만, 센서는 앱이 떠 있는 동안 계속 듣는다.** REC 를 누른
+  순간부터 샘플 스트림이 이미 안정돼 있어야 하기 때문이다.
 
 ## 자주 나는 에러
 

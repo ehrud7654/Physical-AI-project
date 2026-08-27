@@ -151,7 +151,8 @@ class Recorder(private val baseDir: File) {
         )
     }
 
-    fun stop(): File? {
+    /** [extra] 는 summary.txt 에 그대로 덧붙는다 (IMU 실측치 등). */
+    fun stop(extra: String = ""): File? {
         if (!isRecording) return null
         isRecording = false
         try { worker?.join(5000) } catch (_: InterruptedException) {}
@@ -206,6 +207,7 @@ class Recorder(private val baseDir: File) {
             }
             if (n == 0) sb.append("  (없음 - 전체 폐기 권장)\n")
         }
+        if (extra.isNotEmpty()) sb.append(extra)
         sb.append("recorded_at_ms=$startMs\n")
 
         val summary = sb.toString()
