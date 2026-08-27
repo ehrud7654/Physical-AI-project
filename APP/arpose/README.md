@@ -55,14 +55,15 @@ S23 실측 206.3Hz. 200 을 요청해도 정확히 200 이 나오지는 않는�
 **summary.txt** — 프레임 수, 실제 Hz, 드롭 수, **점프 목록과 사용 가능 구간**. 녹화 끝나고 이것부터 본다.
 
 ```
-tracking_jumps=1
-max_jump_mm=142.9
-verdict=점프 1회 - 아래 구간으로 분할해서 사용
-jumps(index,t_sec,mm,deg):
-  229,7.63,142.9,2.4
+tracking_jumps=0
+max_jump_mm=0.0
+paused_frames=132
+verdict=추적상실 1구간 - 아래 구간으로 분할해서 사용
+paused_spans(from_sec,to_sec,frames):
+  8.43,12.80,132
 usable_segments:
-  0.00~7.53
-  7.83~20.20
+  0.00~8.33
+  13.00~16.84
 imu_accel_samples=2513
 imu_accel_hz=206.3
 imu_gyro_samples=2513
@@ -75,6 +76,13 @@ imu_clock_skew_ms=9.57
 쓰면 안 된다.
 
 점프가 나도 녹화 전체를 버리지 않는다. `usable_segments` 의 구간을 각각 잘라서 쓰면 된다.
+
+구간을 깎아먹는 원인은 두 가지다. **추적 점프**(순간)와 **추적 상실**(`tracking=PAUSED` 구간).
+둘 다 앞뒤로 여유를 두고 잘라낸다 — 경계 프레임의 pose 는 믿을 수 없기 때문이다.
+남은 조각이 2초 미만이면 버린다.
+
+`paused_frames` 가 0 이 아니면 그 녹화는 중간에 추적을 놓쳤다는 뜻이다. 녹화 시작 직후에
+몰려 있다면 REC 를 너무 빨리 누른 것이니, 다음부터는 `TRACKING` 이 뜬 뒤에 시작할 것.
 
 ---
 
