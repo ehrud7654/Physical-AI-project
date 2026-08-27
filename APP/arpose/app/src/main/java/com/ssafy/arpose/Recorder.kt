@@ -36,6 +36,18 @@ class Recorder(private val baseDir: File) {
         // 점프·추적상실 지점 앞뒤로 잘라낼 여유. 경계 프레임의 pose 는 믿을 수 없다.
         private const val MARGIN_BEFORE = 0.1
         private const val MARGIN_AFTER = 0.2
+
+        // 실측 소요 용량: 프레임 JPEG 69~83MB/분 + IMU 1.4MB/분. 보수적으로 85 로 본다.
+        private const val MB_PER_MIN = 85L
+
+        /** 이만큼 여유가 없으면 녹화를 시작하지 않는다 (약 6분치 = 30초 시연 12회). */
+        const val START_MIN_FREE_MB = 500L
+
+        /** 녹화 중 이 아래로 떨어지면 자동 정지한다 (약 2분치 여유를 남기고 멈춘다). */
+        const val STOP_MIN_FREE_MB = 200L
+
+        /** 공간 확인 주기(처리한 프레임 수). 30fps 기준 약 5초. */
+        private const val SPACE_CHECK_FRAMES = 150
     }
 
     private class Job(val index: Int, val w: Int, val h: Int, val buf: ByteArray)
@@ -53,6 +65,15 @@ class Recorder(private val baseDir: File) {
 
     var jumpCount = 0; private set
     var pausedFrames = 0; private set
+
+    /** JPEG 저장이 실패한 프레임 수. 워커 스레드만 증가시킨다. */
+    var writeFailedFrames = 0; private set
+
+    /** poses.csv 행 쓰기가 실패한 수. GL 스레드만 증가시킨다. */
+    var csvFailedRows = 0; private set
+
+    /** 공간 부족으로 정지가 필요한 상태. MainActivity 가 매 프레임 확인한다. */
+    @Volatile var lowSpace = false; private set
     var maxJumpMm = 0.0; private set
 
     var currentDir: File? = null; private set
@@ -63,6 +84,17 @@ class Recorder(private val baseDir: File) {
     private var startMs = 0L
     private var firstTsNs = 0L
     private var lastTsNs = 0L
+
+    private var freeMbStart = 0L
+
+    /** 지금 쓸 수 있는 여유 공간(MB). */
+    fun freeMb(): Long = baseDir.usableSpace / (1024L * 1024L)
+
+    /** 녹화를 시작해도 될 만큼 공간이 남았는지. */
+    fun hasStartSpace(): Boolean = freeMb() >= START_MIN_FREE_MB
+
+    /** 남은 공간으로 몇 분이나 찍을 수 있는지. */
+    fun remainingMinutes(): Int = (freeMb() / MB_PER_MIN).toInt()
 
     private var framesDir: File? = null
     private var csv: BufferedWriter? = null
@@ -88,12 +120,15 @@ class Recorder(private val baseDir: File) {
         savedFrames = 0; droppedFrames = 0; frameIndex = 0
         jumpCount = 0; maxJumpMm = 0.0
         pausedFrames = 0
+        writeFailedFrames = 0; csvFailedRows = 0; lowSpace = false
+        freeMbStart = freeMb()
         jumps.clear(); pausedSpans.clear(); openPaused = null
         startMs = System.currentTimeMillis(); firstTsNs = 0L; lastTsNs = 0L
         queue.clear()
         isRecording = true
 
         worker = Thread {
+            var processed = 0
             while (isRecording || queue.isNotEmpty()) {
                 val job = queue.poll(200, TimeUnit.MILLISECONDS) ?: continue
                 try {
@@ -103,9 +138,16 @@ class Recorder(private val baseDir: File) {
                     }
                     savedFrames++
                 } catch (e: Exception) {
+                    writeFailedFrames++
                     Log.e(TAG, "JPEG 저장 실패 idx=${job.index}", e)
                 } finally {
                     pool.offer(job.buf)
+                }
+                // 프레임 번호가 아니라 실제로 처리한 개수로 센다.
+                // 번호로 세면 그 번호가 드롭됐을 때 확인 주기를 통째로 건너뛴다.
+                if (++processed % SPACE_CHECK_FRAMES == 0 && freeMb() < STOP_MIN_FREE_MB) {
+                    lowSpace = true
+                    Log.w(TAG, "저장 공간 부족 (${freeMb()}MB) - 정지 요청")
                 }
             }
         }.also { it.name = "rec-encoder"; it.priority = Thread.NORM_PRIORITY - 1; it.start() }
@@ -167,12 +209,19 @@ class Recorder(private val baseDir: File) {
             droppedFrames++
         }
 
-        csv?.write(
-            "$idx,$timestampNs,$tracking," +
-                "${fmt(t[0])},${fmt(t[1])},${fmt(t[2])}," +
-                "${fmt(q[0])},${fmt(q[1])},${fmt(q[2])},${fmt(q[3])}," +
-                String.format(Locale.US, "%.1f,%.2f", jumpMm, jumpDeg) + ",$imageName\n"
-        )
+        // 디스크가 차면 여기서도 실패한다. pose 가 없으면 그 프레임은 학습에 못 쓰므로
+        // JPEG 와 마찬가지로 집계한다.
+        try {
+            csv?.write(
+                "$idx,$timestampNs,$tracking," +
+                    "${fmt(t[0])},${fmt(t[1])},${fmt(t[2])}," +
+                    "${fmt(q[0])},${fmt(q[1])},${fmt(q[2])},${fmt(q[3])}," +
+                    String.format(Locale.US, "%.1f,%.2f", jumpMm, jumpDeg) + ",$imageName\n"
+            )
+        } catch (e: Exception) {
+            csvFailedRows++
+            Log.e(TAG, "poses.csv 쓰기 실패 idx=$idx", e)
+        }
     }
 
     /** [extra] 는 summary.txt 에 그대로 덧붙는다 (IMU 실측치 등). */
@@ -192,6 +241,25 @@ class Recorder(private val baseDir: File) {
         sb.append("frames_total=$frameIndex\n")
         sb.append("frames_saved=$savedFrames\n")
         sb.append("frames_dropped=$droppedFrames\n")
+        sb.append("frames_write_failed=$writeFailedFrames\n")
+        sb.append("pose_rows_failed=$csvFailedRows\n")
+
+        // 쓴 것과 센 것이 안 맞으면 어딘가에서 조용히 유실된 것이다.
+        val accounted = savedFrames + droppedFrames + writeFailedFrames
+        if (accounted != frameIndex) {
+            sb.append("WARNING=프레임 수 불일치 total=$frameIndex accounted=$accounted\n")
+        }
+        if (writeFailedFrames > 0) {
+            sb.append("WARNING=JPEG 저장 실패 ${writeFailedFrames}장 - 저장 공간을 확인할 것\n")
+        }
+        if (csvFailedRows > 0) {
+            sb.append("WARNING=pose 기록 실패 ${csvFailedRows}행 - 해당 프레임은 학습에 쓸 수 없음\n")
+        }
+        if (lowSpace) {
+            sb.append("WARNING=저장 공간 부족으로 자동 정지됨\n")
+        }
+        sb.append("free_mb_start=$freeMbStart\n")
+        sb.append("free_mb_end=${freeMb()}\n")
         sb.append("duration_sec=${String.format(Locale.US, "%.2f", durSec)}\n")
         sb.append("rate_hz=${String.format(Locale.US, "%.2f", hz)}\n")
         sb.append("tracking_jumps=$jumpCount\n")

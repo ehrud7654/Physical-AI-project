@@ -61,6 +61,9 @@ class ImuLogger(ctx: Context) : SensorEventListener {
      */
     private var clockSkewMs = Double.NaN
 
+    /** imu.csv 쓰기가 실패한 횟수. 0 이 아니면 데이터에 구멍이 있다. */
+    private var writeFailed = 0
+
     val available: Boolean get() = accel != null && gyro != null
 
     fun describe(): String {
@@ -94,7 +97,7 @@ class ImuLogger(ctx: Context) : SensorEventListener {
     fun start(dir: File) {
         if (!available) return
         synchronized(lock) {
-            accelCount = 0; gyroCount = 0
+            accelCount = 0; gyroCount = 0; writeFailed = 0
             accelFirstNs = 0L; gyroFirstNs = 0L
             clockSkewMs = Double.NaN
             try {
@@ -125,6 +128,7 @@ class ImuLogger(ctx: Context) : SensorEventListener {
             append("imu_gyro_samples=$gyroCount\n")
             append("imu_gyro_hz=${String.format(Locale.US, "%.1f", gHz)}\n")
             append("imu_clock_skew_ms=${String.format(Locale.US, "%.2f", clockSkewMs)}\n")
+            if (writeFailed > 0) append("WARNING=IMU 쓰기 실패 ${writeFailed}건\n")
         }
     }
 
@@ -155,7 +159,7 @@ class ImuLogger(ctx: Context) : SensorEventListener {
             e.timestamp, kind, e.values[0], e.values[1], e.values[2]
         )
         synchronized(lock) {
-            try { csv?.write(line) } catch (_: Exception) {}
+            try { csv?.write(line) } catch (_: Exception) { writeFailed++ }
         }
     }
 
