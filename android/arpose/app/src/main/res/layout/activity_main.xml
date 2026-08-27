@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <android.opengl.GLSurfaceView
+        android:id="@+id/glView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/poseText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#99000000"
+        android:padding="14dp"
+        android:textColor="#00FF66"
+        android:textSize="14sp"
+        android:fontFamily="monospace"
+        android:text="@string/waiting" />
+
+    <Button
+        android:id="@+id/focusBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="20dp"
+        android:layout_marginBottom="52dp"
+        android:background="#FF225533"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:text="@string/af" />
+
+    <Button
+        android:id="@+id/recBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="48dp"
+        android:paddingLeft="44dp"
+        android:paddingRight="44dp"
+        android:background="#FF333333"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:text="@string/rec" />
+</FrameLayout>
