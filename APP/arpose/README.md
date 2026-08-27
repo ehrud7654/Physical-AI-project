@@ -200,7 +200,7 @@ release 는 실제 서버라 테스트 빌드가 실서버로 나가지 않는�
 실제 서버 없이 업로드 전 경로를 확인할 수 있다. **Wi-Fi 도 필요 없고 USB 만 있으면 된다.**
 
 ```powershell
-python tools\mock_server.py --out .\dataeceived
+python tools\mock_server.py --out .\data\received
 adb reverse tcp:8000 tcp:8000
 ```
 
