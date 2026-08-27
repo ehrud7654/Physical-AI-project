@@ -225,6 +225,16 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     // ---------------- 녹화 ----------------
 
     private fun startRecording() {
+        val rec = recorder
+        if (rec != null && !rec.hasStartSpace()) {
+            val msg = "저장 공간 부족 - 녹화를 시작할 수 없음\n" +
+                "남은 공간 ${rec.freeMb()}MB (최소 ${Recorder.START_MIN_FREE_MB}MB 필요)\n" +
+                "이전 녹화를 PC 로 옮기고 지울 것"
+            runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+            Log.w(TAG, "녹화 시작 거부: 여유 ${rec.freeMb()}MB")
+            return
+        }
+
         val meta = buildString {
             append("device=${Build.MANUFACTURER} ${Build.MODEL}\n")
             append("android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
@@ -389,6 +399,16 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             }
 
             val rec = recorder
+            if (rec != null && rec.isRecording && rec.lowSpace) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "저장 공간 부족으로 녹화를 정지함\n여기까지의 데이터는 정상 저장됨",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                stopRecording()
+            }
             if (rec != null && rec.isRecording) {
                 try {
                     frame.acquireCameraImage().use { img ->

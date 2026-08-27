@@ -55,6 +55,9 @@ S23 실측 206.3Hz. 200 을 요청해도 정확히 200 이 나오지는 않는�
 **summary.txt** — 프레임 수, 실제 Hz, 드롭 수, **점프 목록과 사용 가능 구간**. 녹화 끝나고 이것부터 본다.
 
 ```
+frames_write_failed=0
+free_mb_start=122941
+free_mb_end=122925
 tracking_jumps=0
 max_jump_mm=0.0
 paused_frames=132
@@ -157,7 +160,13 @@ adb shell rm -rf /sdcard/Android/data/com.ssafy.arpose/files/rec_20260825_143000
 adb shell rm -rf /sdcard/Android/data/com.ssafy.arpose/files/rec_*
 ```
 
-용량 감: 640x480 q90 JPEG ≈ 40~70KB/장 → **30fps 기준 분당 약 70~120MB**.
+용량 감: 640x480 q90 JPEG ≈ 39~47KB/장 → **분당 약 85MB** (IMU 포함, 실측).
+
+앱이 저장 공간을 지킨다. 여유가 **1GB 미만이면 녹화가 시작되지 않고**, 녹화 중 **300MB 아래로
+떨어지면 자동 정지**한다. 정지 시점까지의 데이터는 정상이며 `summary.txt` 에 경고가 남는다.
+
+쓰기가 실패한 프레임은 `frames_write_failed` 로 집계된다. 이 값이 0 이 아니거나
+`WARNING=` 줄이 있으면 그 녹화는 구멍이 있다는 뜻이다.
 
 ---
 
