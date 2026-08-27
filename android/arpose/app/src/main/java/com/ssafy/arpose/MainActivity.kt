@@ -52,6 +52,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         private const val JUMP_SPEED_MPS = 2.0      // m/s
         private const val JUMP_MIN_MM = 40.0        // 한 프레임 최소 이동량
         private const val JUMP_ROT_DEG = 12.0       // 한 프레임 회전량
+
+        // 위 기준만으로는 빠른 손동작도 점프로 잡힌다. 진짜 재로컬라이제이션은
+        // 앞뒤 프레임과 단절되지만(직전 대비 68~204배) 빠른 손동작은 연속적이므로
+        // (1.2배 수준), 직전 N프레임 대비 배율을 함께 요구해 갈라낸다.
+        private const val JUMP_CONT_K = 5.0         // 직전 최대값 대비 배율
+        private const val JUMP_CONT_N = 3           // 비교할 직전 프레임 수
     }
 
     private lateinit var glView: GLSurfaceView
@@ -75,6 +81,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private var lastQuat: FloatArray? = null
     private var lastJumpMm = 0.0
     private var lastJumpDeg = 0.0
+
+    // 직전 N프레임의 이동량/회전량 (점프 연속성 판정용 링버퍼)
+    private val recentMm = DoubleArray(JUMP_CONT_N)
+    private val recentDeg = DoubleArray(JUMP_CONT_N)
+    private var recentIdx = 0
+    private var recentCount = 0
 
     @Volatile private var intrinsicsLine: String = "unknown"
     @Volatile private var cameraConfigLine: String = "unknown"
@@ -286,6 +298,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     applyConfig(s)
                     intrinsicsLine = "unknown"   // 포커스 바뀌면 내부 파라미터도 다시 읽는다
                     lastPos = null; lastQuat = null
+                    recentCount = 0; recentIdx = 0
                     updateFocusBtn()
                 } catch (e: Exception) {
                     Log.e(TAG, "focus 변경 실패", e)
@@ -318,8 +331,20 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     val distMm = sqrt(dx * dx + dy * dy + dz * dz) * 1000.0
                     val degs = quatAngleDeg(qPrev, q)
 
-                    val posJump = distMm > JUMP_MIN_MM && (distMm / 1000.0) / dtSec > JUMP_SPEED_MPS
-                    val rotJump = degs > JUMP_ROT_DEG
+                    // 직전 N프레임 최대값. 버퍼가 덜 찼으면 연속성 조건은 적용하지 않는다.
+                    var baseMm = 0.0
+                    var baseDeg = 0.0
+                    for (k in 0 until recentCount) {
+                        if (recentMm[k] > baseMm) baseMm = recentMm[k]
+                        if (recentDeg[k] > baseDeg) baseDeg = recentDeg[k]
+                    }
+                    val hasBase = recentCount >= JUMP_CONT_N
+
+                    val posJump = distMm > JUMP_MIN_MM &&
+                        (distMm / 1000.0) / dtSec > JUMP_SPEED_MPS &&
+                        (!hasBase || distMm > JUMP_CONT_K * baseMm)
+                    val rotJump = degs > JUMP_ROT_DEG &&
+                        (!hasBase || degs > JUMP_CONT_K * baseDeg)
                     if (posJump || rotJump) {
                         jumpMm = distMm
                         jumpDeg = degs
@@ -333,11 +358,17 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                                 "in ${"%.1f".format(dtSec * 1000)}ms"
                         )
                     }
+
+                    recentMm[recentIdx] = distMm
+                    recentDeg[recentIdx] = degs
+                    recentIdx = (recentIdx + 1) % JUMP_CONT_N
+                    if (recentCount < JUMP_CONT_N) recentCount++
                 }
                 lastPos = t.copyOf()
                 lastQuat = q.copyOf()
             } else {
                 lastPos = null; lastQuat = null
+                recentCount = 0; recentIdx = 0
             }
 
             if (intrinsicsLine == "unknown") {
