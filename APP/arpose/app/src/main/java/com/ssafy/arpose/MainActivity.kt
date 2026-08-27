@@ -83,6 +83,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private var lastJumpMm = 0.0
     private var lastJumpDeg = 0.0
 
+    /** 공간 부족으로 자동 정지된 적이 있으면 화면에 계속 띄운다. 토스트는 놓치기 쉽다. */
+    @Volatile private var lowSpaceNotice = false
+
     // 직전 N프레임의 이동량/회전량 (점프 연속성 판정용 링버퍼)
     private val recentMm = DoubleArray(JUMP_CONT_N)
     private val recentDeg = DoubleArray(JUMP_CONT_N)
@@ -230,6 +233,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             val msg = "저장 공간 부족 - 녹화를 시작할 수 없음\n" +
                 "남은 공간 ${rec.freeMb()}MB (최소 ${Recorder.START_MIN_FREE_MB}MB 필요)\n" +
                 "이전 녹화를 PC 로 옮기고 지울 것"
+            lowSpaceNotice = true
             runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
             Log.w(TAG, "녹화 시작 거부: 여유 ${rec.freeMb()}MB")
             return
@@ -407,6 +411,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                         Toast.LENGTH_LONG
                     ).show()
                 }
+                lowSpaceNotice = true
                 stopRecording()
             }
             if (rec != null && rec.isRecording) {
@@ -445,6 +450,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     "\n최근 점프 ${"%.0f".format(lastJumpMm)}mm / ${"%.1f".format(lastJumpDeg)}°"
                 else ""
                 val text = buildString {
+                    if (lowSpaceNotice) {
+                        append("!! 저장 공간 부족 - 녹화 불가 (남은 ${recorder?.freeMb()}MB)\n")
+                        append("!! 이전 녹화를 PC 로 옮기고 지울 것\n\n")
+                    }
                     append("$state$reason   ${"%.1f".format(fps)} fps   AF:${focusName()}$recLine\n\n")
                     append("x ${"%+.4f".format(t[0])}   y ${"%+.4f".format(t[1])}   z ${"%+.4f".format(t[2])}  (m)\n")
                     append("r ${"%+.1f".format(roll)}°  p ${"%+.1f".format(pitch)}°  y ${"%+.1f".format(yaw)}°\n")
