@@ -61,7 +61,7 @@ usable_segments:
 PowerShell (매번 새 창이면 이 줄들 먼저):
 
 ```powershell
-cd <저장소>\android\arpose
+cd <저장소>\APP\arpose
 $env:Path = "$env:LOCALAPPDATA\Android\Sdk\platform-tools;$env:Path"
 ```
 
