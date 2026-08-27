@@ -15,9 +15,19 @@ android {
         versionName = "1.0"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
+        debug {
+            // 목 서버. adb reverse tcp:8000 tcp:8000 으로 USB 터널을 쓴다.
+            buildConfigField("String", "UPLOAD_BASE_URL", "\"http://127.0.0.1:8000\"")
+        }
         release {
             isMinifyEnabled = false
+            // 실제 서버. 정해지면 여기만 바꾼다 (S15P21A103-10).
+            buildConfigField("String", "UPLOAD_BASE_URL", "\"https://TODO.example.com\"")
         }
     }
 

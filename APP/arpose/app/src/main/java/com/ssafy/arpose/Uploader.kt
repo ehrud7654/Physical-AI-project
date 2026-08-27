@@ -33,8 +33,16 @@ object Uploader {
 
     private const val TAG = "UPLOAD"
 
-    /** 목 서버 기준. adb reverse tcp:8000 tcp:8000 으로 USB 만으로 검증한다. */
-    const val BASE_URL = "http://127.0.0.1:8000"
+    /**
+     * 업로드 대상. build.gradle.kts 의 buildConfigField 에서 온다.
+     *
+     *   debug   : 목 서버 (adb reverse tcp:8000 tcp:8000 으로 USB 터널)
+     *   release : 실제 서버
+     *
+     * 여기 한 곳에서만 정하므로 테스트 빌드가 실서버로 나가는 사고가 없다.
+     * 나중에 QR 프로비저닝이 들어오면 이 값을 기본값으로 두고 덮어쓰면 된다.
+     */
+    val BASE_URL: String = BuildConfig.UPLOAD_BASE_URL
 
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 60_000

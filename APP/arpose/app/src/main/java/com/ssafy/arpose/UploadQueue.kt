@@ -24,6 +24,21 @@ object UploadQueue {
 
     private const val WORK_NAME = "arpose-upload"
 
+    /**
+     * 목적지가 로컬이면 네트워크 조건을 걸지 않는다.
+     *
+     * 목 서버는 adb reverse 로 USB 터널을 타므로 폰의 네트워크를 전혀 쓰지 않는다.
+     * 여기에 Wi-Fi 조건을 걸면 셀룰러만 있는 환경에서 워커가 영영 안 돈다.
+     *
+     * 실제 서버(HTTPS)로 바뀌면 자동으로 Wi-Fi 전용이 된다. 에피소드 하나가 30초
+     * 기준 약 43MB(실측 분당 85MB)라 셀룰러로 올리면 데이터 요금이 터진다.
+     */
+    private fun networkType(): NetworkType {
+        val url = Uploader.BASE_URL
+        val local = url.contains("127.0.0.1") || url.contains("localhost") || url.contains("10.0.2.2")
+        return if (local) NetworkType.NOT_REQUIRED else NetworkType.UNMETERED
+    }
+
     /** 전송 대기 중인 녹화 폴더. 녹화가 끝나지 않은 폴더(summary.txt 없음)는 제외한다. */
     fun pending(ctx: Context): List<File> {
         val base = ctx.getExternalFilesDir(null) ?: return emptyList()
@@ -45,8 +60,7 @@ object UploadQueue {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
             .setConstraints(
                 Constraints.Builder()
-                    // 에피소드 하나가 30초 기준 약 43MB. 셀룰러로 올리면 요금이 터진다.
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
+                    .setRequiredNetworkType(networkType())
                     .build()
             )
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
