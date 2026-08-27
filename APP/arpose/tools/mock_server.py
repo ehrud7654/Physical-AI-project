@@ -25,10 +25,13 @@
     400 헤더 누락
 """
 import argparse
+import functools
 import json
 import os
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+print = functools.partial(print, flush=True)   # 리다이렉트 시에도 즉시 출력
 
 OUT = "received"
 SEEN = {}          # idempotency key -> 저장된 파일명
