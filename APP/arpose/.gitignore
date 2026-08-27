@@ -1,0 +1,21 @@
+# Android build
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+
+# 녹화 데이터 (용량 폭탄)
+data/
+*.csv
+pose_log.txt
+pose_plot.png
+*.png
+
+# 스크린샷
+shot.png
