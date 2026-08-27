@@ -15,9 +15,19 @@ android {
         versionName = "1.0"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
+        debug {
+            // 목 서버. adb reverse tcp:8000 tcp:8000 으로 USB 터널을 쓴다.
+            buildConfigField("String", "UPLOAD_BASE_URL", "\"http://127.0.0.1:8000\"")
+        }
         release {
             isMinifyEnabled = false
+            // 실제 서버. 정해지면 여기만 바꾼다 (S15P21A103-10).
+            buildConfigField("String", "UPLOAD_BASE_URL", "\"https://TODO.example.com\"")
         }
     }
 
@@ -35,4 +45,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     // ARCore SDK
     implementation("com.google.ar:core:1.45.0")
+    // 업로드 큐 (앱이 죽어도 재시도, Wi-Fi·충전 조건)
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

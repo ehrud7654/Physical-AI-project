@@ -173,6 +173,46 @@ adb shell rm -rf /sdcard/Android/data/com.ssafy.arpose/files/rec_*
 
 ---
 
+## 서버 업로드
+
+녹화가 끝나면 자동으로 업로드 대기열에 올라간다. **촬영은 네트워크를 기다리지 않는다** —
+전파가 나가도 서버가 죽어도 촬영은 계속되고, 전송은 뒤에서 따로 재시도한다.
+
+대기열은 별도 상태 파일이 아니라 **폴더의 존재 자체**다. `summary.txt` 가 있는 `rec_` 폴더가
+전송 대기이고, 성공하면 폴더를 지우므로 큐에서 자연히 빠진다. 전송이 확인된 뒤에만 지운다.
+
+전송 형식은 zip 원본을 본문에 싣고 정보는 헤더에 담는다.
+
+```
+POST {BASE_URL}/upload
+X-Device-Id / X-Episode / X-Idempotency-Key
+Content-Type: application/zip
+```
+
+`200/201` 성공, `409` 이미 있음(성공과 동일하게 로컬 삭제), `4xx` 영구 실패(데이터 보존),
+`5xx`·네트워크 오류는 재시도.
+
+**주소는 `BuildConfig.UPLOAD_BASE_URL`** 한 곳에서만 정한다. debug 는 목 서버,
+release 는 실제 서버라 테스트 빌드가 실서버로 나가지 않는다.
+
+### 목 서버로 검증하기
+
+실제 서버 없이 업로드 전 경로를 확인할 수 있다. **Wi-Fi 도 필요 없고 USB 만 있으면 된다.**
+
+```powershell
+python tools\mock_server.py --out .\data\received
+adb reverse tcp:8000 tcp:8000
+```
+
+`adb reverse` 는 USB 로 터널을 뚫으므로 폰의 데이터를 한 바이트도 쓰지 않는다. 그래서
+목적지가 로컬일 때는 Wi-Fi 조건을 걸지 않는다. 실제 서버(HTTPS)로 바뀌면 자동으로
+Wi-Fi 전용이 된다 — 에피소드 하나가 30초 기준 약 43MB 라 셀룰러로 올리면 요금이 터진다.
+
+목 서버는 받은 zip 을 열어 프레임 수와 파일 목록을 찍어준다. 멱등성 키는 `_seen.json` 에
+남아 서버를 재시작해도 유지된다.
+
+---
+
 ## 추적 점프
 
 ARCore 가 `tracking=TRACKING` 을 유지한 채로 좌표계를 재보정(재로컬라이제이션)하는 일이 있다.
