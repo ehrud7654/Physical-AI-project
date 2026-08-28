@@ -291,6 +291,29 @@ python tools/update_readme.py                      # §8 수치 절 재생성
 
 `python -m tools.grasp_check` 도 같다.
 
+### ⚠️ 경로에 한글이 있으면 (이 저장소가 그렇다)
+
+**MuJoCo 는 XML 을 C++ 에서 열고, Windows 에서 비ASCII 경로를 처리하지 못한다.**
+저장소가 `.../특화/S15P21A103` 아래 있으므로 실제로 걸리는 문제다.
+
+```
+ValueError: ParseXML: Error opening file '...\특화\...\pick_place.xml'
+```
+
+파이썬으로는 읽히는 파일인데 MuJoCo 만 못 여는 것이라 원인이 안 보인다.
+`paths.resolve_for_mujoco()` 가 세 단계로 처리한다:
+
+1. 경로가 ASCII 면 그대로 (대부분)
+2. **Windows 8.3 단축 경로** — 항상 ASCII 이고 복사가 없다
+3. ASCII 임시 경로로 모델 트리 복사 — 단축 이름이 꺼져 있을 때
+   (`fsutil 8dot3name query` 로 확인 가능). 복사하면 그 사실을 출력한다
+
+**이 저장소·이 환경에서는 3단계로 해소된다** (실측 2026-08-27). 2단계가 통하지 않아
+`%TEMP%\so101_mjcf_<해시>` 로 35개 파일을 복사한다. 첫 실행만 복사하고 이후는 캐시다.
+
+원본은 건드리지 않고, 복사본은 mtime 으로 캐시된다.
+막히면 저장소를 ASCII 경로로 옮기는 것이 가장 확실하다.
+
 ### 눈으로 보기 — MuJoCo 뷰어
 
 ```bash
@@ -565,6 +588,7 @@ feat: 정책 학습 루프 (S15P21A103-42, D-AI-7, MEASURE_sync_0827)
 | `docs/TS_grasp_convex_hull_0827.md` | 파지 0/24 → 볼록껍질 원인 규명. 가설 3개를 어떻게 좁혔나 |
 | `docs/TS_measurement_defects_0827.md` | 내 계측기 결함 5건. **전부 낙관적 방향이었다** |
 | `docs/TS_mjcf_include_0827.md` | 공식 MJCF 를 수정하지 않고 씬을 만들기까지 |
+| `docs/TS_nonascii_path_0827.md` | 한글 경로로 MuJoCo 가 씬을 못 열던 문제. CRLF 노이즈도 함께 |
 
 각 MEASURE 문서에는 **정정 절**이 있다. 계측 자체의 결함으로 이전 수치가 낙관적으로
 편향돼 있던 경우를 그 자리에 남긴다 — 지우고 새 수치만 쓰면 같은 실수를 또 한다.
