@@ -406,7 +406,7 @@ function LearnView({ onToast, onGoWork }: { onToast: (message: string) => void; 
 }
 
 function WorkView({ onToast }: { onToast: (message: string) => void }) {
-  const { robots, savedWorks } = useAppStore();
+  const { robots, savedWorks, saveWorkflow } = useAppStore();
   const [robotId, setRobotId] = useState('RB-07');
   const [blocks, setBlocks] = useState<WorkflowBlock[]>([
     { id: 1, kind: 'umi', title: '빨간 블록 집기' },
@@ -415,9 +415,42 @@ function WorkView({ onToast }: { onToast: (message: string) => void }) {
   ]);
   const [runningIndex, setRunningIndex] = useState(-1);
   const [workName, setWorkName] = useState('빨간 블록 정리 작업');
+  const [selectedWork, setSelectedWork] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const selectedRobot = robots.find((robot) => robot.id === robotId)!;
   const running = runningIndex >= 0;
+
+  const save = async () => {
+    if (!workName.trim()) { setNameError('작업 이름을 입력해 주세요.'); return; }
+    setNameError('');
+    setSaving(true);
+    await saveWorkflow({ name: workName.trim(), robotId, blocks });
+    setSaving(false);
+    onToast(`‘${workName.trim()}’ 작업을 저장했어요.`);
+  };
+
+  const loadWork = (name: string) => {
+    const work = savedWorks.find((item) => item.name === name);
+    if (!work) return;
+    const loaded = structuredClone(work.blocks);
+    /* 불러온 블록 ID와 새 블록 ID가 겹치지 않게 카운터를 끌어올린다. */
+    const walk = (items: WorkflowBlock[]) => items.forEach((block) => { nextBlockId = Math.max(nextBlockId, block.id + 1); if (block.children) walk(block.children); });
+    walk(loaded);
+    setBlocks(loaded);
+    setWorkName(work.name);
+    if (robots.some((robot) => robot.id === work.robotId)) setRobotId(work.robotId);
+    setSelectedWork(name);
+    setNameError('');
+    onToast(`‘${work.name}’ 작업을 불러왔어요.`);
+  };
+
+  const startRun = () => {
+    if (!workName.trim()) { setNameError('작업 이름을 입력해 주세요.'); return; }
+    setNameError('');
+    setRunningIndex(0);
+  };
 
   useEffect(() => {
     if (!running) return;
@@ -452,7 +485,7 @@ function WorkView({ onToast }: { onToast: (message: string) => void }) {
   return (
     <>
       <div className="page-heading work-heading"><div><p className="eyebrow">블록 작업 만들기</p><h1>로봇이 할 일을 순서대로 놓아주세요</h1><p>왼쪽 블록을 끌어다 놓거나 클릭하면 작업에 추가돼요.</p></div><div className="work-tools"><label>실행할 로봇<select value={robotId} disabled={running} onChange={(e) => setRobotId(e.target.value)}>{robots.slice(0, 3).map((robot) => <option key={robot.id} value={robot.id}>{robot.name} · {robot.status}</option>)}</select></label><span className={`robot-status status-${selectedRobot.status.replace(' ', '-')}`}><i />{selectedRobot.status}</span></div></div>
-      <div className="work-namebar"><label>작업 이름<input value={workName} disabled={running} onChange={(e) => setWorkName(e.target.value)} /></label><label>저장된 작업<select disabled={running} defaultValue=""><option value="" disabled>작업 불러오기</option>{savedWorks.map((work) => <option key={work.name}>{work.name}</option>)}</select></label><button className="secondary-button" disabled={running} onClick={() => onToast(`‘${workName}’ 작업을 저장했어요.`)}>저장</button></div>
+      <div className="work-namebar"><label>작업 이름<input value={workName} disabled={running} onChange={(e) => { setWorkName(e.target.value); if (nameError && e.target.value.trim()) setNameError(''); }} />{nameError && <small className="field-error" role="alert">{nameError}</small>}</label><label>저장된 작업<select disabled={running} value={selectedWork} onChange={(e) => loadWork(e.target.value)}><option value="" disabled>작업 불러오기</option>{savedWorks.map((work) => <option key={work.name} value={work.name}>{work.name}</option>)}</select></label><button className="secondary-button" disabled={running || saving} onClick={save}>{saving ? '저장 중...' : '저장'}</button></div>
       <div className="block-workspace">
         <aside className="block-library"><div className="library-heading"><h2>작업 블록</h2><p>필요한 블록을 작업 영역에 추가하세요.</p></div><p className="block-category">학습된 동작</p>{blockCatalog.slice(0, 2).map((item) => <button key={item.kind} className={`library-block ${item.kind}`} draggable={!running} onDragStart={(e) => e.dataTransfer.setData('block-kind', item.kind)} onClick={() => !running && addBlock(item.kind)}><span>{item.mark}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><em>＋</em></button>)}<p className="block-category">직접 제어</p>{blockCatalog.slice(2, 3).map((item) => <button key={item.kind} className={`library-block ${item.kind}`} draggable={!running} onDragStart={(e) => e.dataTransfer.setData('block-kind', item.kind)} onClick={() => !running && addBlock(item.kind)}><span>{item.mark}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><em>＋</em></button>)}<p className="block-category">흐름 제어</p>{blockCatalog.slice(3).map((item) => <button key={item.kind} className={`library-block ${item.kind}`} draggable={!running} onDragStart={(e) => e.dataTransfer.setData('block-kind', item.kind)} onClick={() => !running && addBlock(item.kind)}><span>{item.mark}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><em>＋</em></button>)}</aside>
 
@@ -464,7 +497,7 @@ function WorkView({ onToast }: { onToast: (message: string) => void }) {
           </div>
         </section>
 
-        <aside className="run-panel"><div><p className="eyebrow">실행 준비</p><h2>{workName}</h2></div><div className="run-robot"><span className="robot-illustration">R</span><div><strong>{selectedRobot.name}</strong><small>{selectedRobot.location}</small></div><span className={`status-dot ${selectedRobot.status === '온라인' ? 'online' : 'busy'}`} /></div><dl><div><dt>작업 블록</dt><dd>{blocks.length}개</dd></div><div><dt>예상 시간</dt><dd>약 1분 20초</dd></div></dl>{running ? <><div className="mini-progress"><i style={{ width: `${((runningIndex + 1) / Math.max(1, blocks.length)) * 100}%` }} /></div><p className="running-copy"><span /> {runningIndex + 1}번째 블록을 실행하고 있어요</p><button className="danger-button" onClick={() => setRunningIndex(-1)}>■ 작업 중지</button></> : <><div className="safety-note"><span>!</span><p><strong>실행 전 확인해 주세요</strong>로봇 주변에 사람이나 장애물이 없는지 확인하세요.</p></div><button className="primary-button run-button" disabled={!blocks.length || selectedRobot.status !== '온라인'} onClick={() => setRunningIndex(0)}>▶ 작업 시작</button>{selectedRobot.status !== '온라인' && <small className="disabled-reason">온라인 상태의 로봇에서만 실행할 수 있어요.</small>}</>}</aside>
+        <aside className="run-panel"><div><p className="eyebrow">실행 준비</p><h2>{workName}</h2></div><div className="run-robot"><span className="robot-illustration">R</span><div><strong>{selectedRobot.name}</strong><small>{selectedRobot.location}</small></div><span className={`status-dot ${selectedRobot.status === '온라인' ? 'online' : 'busy'}`} /></div><dl><div><dt>작업 블록</dt><dd>{blocks.length}개</dd></div><div><dt>예상 시간</dt><dd>약 1분 20초</dd></div></dl>{running ? <><div className="mini-progress"><i style={{ width: `${((runningIndex + 1) / Math.max(1, blocks.length)) * 100}%` }} /></div><p className="running-copy"><span /> {runningIndex + 1}번째 블록을 실행하고 있어요</p><button className="danger-button" onClick={() => setRunningIndex(-1)}>■ 작업 중지</button></> : <><div className="safety-note"><span>!</span><p><strong>실행 전 확인해 주세요</strong>로봇 주변에 사람이나 장애물이 없는지 확인하세요.</p></div><button className="primary-button run-button" disabled={!blocks.length || selectedRobot.status !== '온라인'} onClick={startRun}>▶ 작업 시작</button>{selectedRobot.status !== '온라인' && <small className="disabled-reason">온라인 상태의 로봇에서만 실행할 수 있어요.</small>}</>}</aside>
       </div>
     </>
   );
