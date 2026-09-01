@@ -133,6 +133,7 @@ td strong, td small { display: block; }td strong { color: #303949; font-size: 11
 /* .content>* 가 position:relative 로 덮어쓰는 것을 보정 — 모달은 항상 화면에 고정한다. */
 .content > .modal-backdrop { position: fixed; z-index: 90; }
 .form-error { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; color: #dc2626; background: #fef2f2; font-size: 11px; font-weight: 700; }
+.table-empty { margin: 0; padding: 34px 20px; color: var(--muted); font-size: 12px; text-align: center; }
 
 /* Work builder */
 .work-heading { align-items: center; }.work-tools { display: flex; align-items: flex-end; gap: 10px; }.work-tools label { min-width: 220px; }.work-tools select { height: 38px; }.robot-status { display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 11px; border-radius: 9px; color: #15803d; background: #f0fdf4; font-size: 10px; font-weight: 800; }.robot-status i, .status-pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }

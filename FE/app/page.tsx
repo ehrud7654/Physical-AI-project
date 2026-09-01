@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import type { BlockKind, Dataset, DeviceType, View, WorkflowBlock } from '@/types';
+import type { BlockKind, Dataset, DeviceType, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 
@@ -229,7 +229,10 @@ function RobotDetailView({ robotId, onBack, onNavigate }: { robotId: string; onB
 
 function TrainingStatusView({ onNavigate }: { onNavigate: (view: View) => void }) {
   const { trainings } = useAppStore();
-  return <><div className="page-heading"><div><p className="eyebrow">학습 모니터링</p><h1>학습 현황</h1><p>진행 중이거나 완료된 모델 학습을 확인하세요.</p></div><button className="primary-button" onClick={() => onNavigate('learn')}>＋ 새 학습 시작</button></div><div className="training-summary"><span><small>전체</small><strong>3</strong></span><span><small>진행 중</small><strong>1</strong></span><span><small>완료</small><strong>1</strong></span><span><small>확인 필요</small><strong>1</strong></span></div><section className="card training-table"><div className="training-table-head"><div><h2>학습 작업</h2><p>최근 시작된 순서로 표시됩니다.</p></div><select defaultValue="all"><option value="all">전체 상태</option><option>진행 중</option><option>완료</option><option>실패</option></select></div>{trainings.map(item => <article key={item.name}><div className="training-main"><span className="learning-symbol">✦</span><div><strong>{item.name}</strong><small>{item.robot} · {item.started}</small></div></div><div><small>현재 단계</small><strong>{item.stage}</strong></div><div className="training-progress"><div><i style={{width: `${item.progress}%`}} /></div><strong>{item.progress}%</strong></div><span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span><button className="more-button">•••</button></article>)}</section></>;
+  const [statusFilter, setStatusFilter] = useState<'all' | TrainingStatus>('all');
+  const countOf = (status: TrainingStatus) => trainings.filter((item) => item.status === status).length;
+  const filtered = statusFilter === 'all' ? trainings : trainings.filter((item) => item.status === statusFilter);
+  return <><div className="page-heading"><div><p className="eyebrow">학습 모니터링</p><h1>학습 현황</h1><p>진행 중이거나 완료된 모델 학습을 확인하세요.</p></div><button className="primary-button" onClick={() => onNavigate('learn')}>＋ 새 학습 시작</button></div><div className="training-summary"><span><small>전체</small><strong>{trainings.length}</strong></span><span><small>진행 중</small><strong>{countOf('진행 중')}</strong></span><span><small>완료</small><strong>{countOf('완료')}</strong></span><span><small>확인 필요</small><strong>{countOf('실패')}</strong></span></div><section className="card training-table"><div className="training-table-head"><div><h2>학습 작업</h2><p>최근 시작된 순서로 표시됩니다.</p></div><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | TrainingStatus)} aria-label="학습 상태 필터"><option value="all">전체 상태</option><option value="진행 중">진행 중</option><option value="완료">완료</option><option value="실패">실패</option></select></div>{filtered.map(item => <article key={item.name}><div className="training-main"><span className="learning-symbol">✦</span><div><strong>{item.name}</strong><small>{item.robot} · {item.started}</small></div></div><div><small>현재 단계</small><strong>{item.stage}</strong></div><div className="training-progress"><div><i style={{width: `${item.progress}%`}} /></div><strong>{item.progress}%</strong></div><span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span><button className="more-button">•••</button></article>)}{!filtered.length && <p className="table-empty">‘{statusFilter}’ 상태의 학습이 없어요. 다른 상태를 선택해 보세요.</p>}</section></>;
 }
 
 function LearnView({ onToast, onGoWork }: { onToast: (message: string) => void; onGoWork: () => void }) {
