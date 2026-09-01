@@ -134,6 +134,16 @@ td strong, td small { display: block; }td strong { color: #303949; font-size: 11
 .content > .modal-backdrop { position: fixed; z-index: 90; }
 .form-error { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; color: #dc2626; background: #fef2f2; font-size: 11px; font-weight: 700; }
 .table-empty { margin: 0; padding: 34px 20px; color: var(--muted); font-size: 12px; text-align: center; }
+.menu-wrap { position: relative; }
+.menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+.dropdown-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; display: flex; flex-direction: column; min-width: 132px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: white; box-shadow: 0 12px 30px rgb(15 23 42 / 14%); }
+.dropdown-menu button { padding: 9px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); font-size: 11px; font-weight: 700; text-align: left; }
+.dropdown-menu button:hover { background: #f4f6f9; }
+.dropdown-menu button.danger { color: #dc2626; }
+.confirm-modal { width: min(430px, 100%); padding: 22px; border-radius: 16px; background: white; box-shadow: 0 28px 70px rgb(15 23 42 / 30%); }
+.training-detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 20px 0 16px; }
+.training-detail-grid small { display: block; margin-bottom: 6px; color: #9098a4; font-size: 10px; }
+.training-detail-grid strong { font-size: 12px; }
 
 /* Work builder */
 .work-heading { align-items: center; }.work-tools { display: flex; align-items: flex-end; gap: 10px; }.work-tools label { min-width: 220px; }.work-tools select { height: 38px; }.robot-status { display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 11px; border-radius: 9px; color: #15803d; background: #f0fdf4; font-size: 10px; font-weight: 800; }.robot-status i, .status-pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
