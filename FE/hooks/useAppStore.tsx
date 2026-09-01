@@ -12,6 +12,7 @@ import {
   initialUsers,
 } from '@/mocks';
 import {
+  applyModel,
   cancelTraining,
   fetchRobots,
   fetchSavedWorks,
@@ -21,6 +22,7 @@ import {
   retryTraining,
   savePermissions,
   saveWork,
+  updateRobot,
   type RegisterDeviceInput,
   type SavedWork,
 } from '@/services';
@@ -35,6 +37,8 @@ interface AppStore {
   datasets: typeof initialDatasets;
   /** 장치 등록. 중복 ID면 Error를 던진다. */
   addDevice: (input: RegisterDeviceInput) => Promise<void>;
+  applyModelToRobot: (robotId: string, model: string) => Promise<void>;
+  updateRobotInfo: (robotId: string, patch: { name: string; location: string }) => Promise<void>;
   cancelTrainingByName: (name: string) => Promise<void>;
   retryTrainingByName: (name: string) => Promise<void>;
   saveWorkflow: (work: SavedWork) => Promise<void>;
@@ -74,6 +78,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setUmis(next.umis);
   }, []);
 
+  const applyModelToRobot = useCallback(async (robotId: string, model: string) => {
+    setRobots(await applyModel(robotId, model));
+  }, []);
+
+  const updateRobotInfo = useCallback(async (robotId: string, patch: { name: string; location: string }) => {
+    setRobots(await updateRobot(robotId, patch));
+  }, []);
+
   const cancelTrainingByName = useCallback(async (name: string) => {
     setTrainings(await cancelTraining(name));
   }, []);
@@ -100,12 +112,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       permissions,
       datasets: initialDatasets,
       addDevice,
+      applyModelToRobot,
+      updateRobotInfo,
       cancelTrainingByName,
       retryTrainingByName,
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [robots, umis, trainings, savedWorks, permissions, addDevice, cancelTrainingByName, retryTrainingByName, saveWorkflow, saveRobotPermissions],
+    [robots, umis, trainings, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
