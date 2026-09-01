@@ -2,15 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { AdminUser, Robot, Training, Umi } from '@/types';
-import {
-  initialDatasets,
-  initialPermissions,
-  initialRobots,
-  initialSavedWorks,
-  initialTrainings,
-  initialUmis,
-  initialUsers,
-} from '@/mocks';
+import { initialDatasets, initialPermissions, initialUsers } from '@/mocks';
 import {
   applyModel,
   cancelTraining,
@@ -28,6 +20,12 @@ import {
 } from '@/services';
 
 interface AppStore {
+  /** 초기 데이터를 불러오는 동안 true */
+  loading: boolean;
+  /** 초기 데이터 로드 실패 여부 */
+  loadError: boolean;
+  /** 초기 데이터를 다시 불러온다. */
+  refresh: () => Promise<void>;
   robots: Robot[];
   umis: Umi[];
   trainings: Training[];
@@ -48,29 +46,41 @@ interface AppStore {
 const AppStoreContext = createContext<AppStore | null>(null);
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
-  /* 초기값은 Mock 시드로 즉시 렌더하고, mount 후 서비스 계층과 동기화한다.
-     백엔드 연동 시 초기값을 비우고 공통 로딩 UI(S15P21A103-94)로 대체한다. */
-  const [robots, setRobots] = useState<Robot[]>(initialRobots);
-  const [umis, setUmis] = useState<Umi[]>(initialUmis);
-  const [trainings, setTrainings] = useState<Training[]>(initialTrainings);
-  const [savedWorks, setSavedWorks] = useState<SavedWork[]>(initialSavedWorks);
+  /* 초기값은 비워두고 서비스 계층에서 불러온다 — 로딩·오류 UI는 공통 게이트(S15P21A103-94)가 담당한다. */
+  const [robots, setRobots] = useState<Robot[]>([]);
+  const [umis, setUmis] = useState<Umi[]>([]);
+  const [trainings, setTrainings] = useState<Training[]>([]);
+  const [savedWorks, setSavedWorks] = useState<SavedWork[]>([]);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(initialPermissions);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    Promise.all([fetchRobots(), fetchUmis(), fetchTrainings(), fetchSavedWorks()]).then(
-      ([nextRobots, nextUmis, nextTrainings, nextWorks]) => {
-        if (!alive) return;
-        setRobots(nextRobots);
-        setUmis(nextUmis);
-        setTrainings(nextTrainings);
-        setSavedWorks(nextWorks);
-      },
-    );
-    return () => {
-      alive = false;
-    };
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const [nextRobots, nextUmis, nextTrainings, nextWorks] = await Promise.all([
+        fetchRobots(),
+        fetchUmis(),
+        fetchTrainings(),
+        fetchSavedWorks(),
+      ]);
+      setRobots(nextRobots);
+      setUmis(nextUmis);
+      setTrainings(nextTrainings);
+      setSavedWorks(nextWorks);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- mount 시 초기 로드 1회 */
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const addDevice = useCallback(async (input: RegisterDeviceInput) => {
     const next = await registerDevice(input);
@@ -104,6 +114,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AppStore>(
     () => ({
+      loading,
+      loadError,
+      refresh,
       robots,
       umis,
       trainings,
@@ -119,7 +132,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [robots, umis, trainings, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, trainings, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

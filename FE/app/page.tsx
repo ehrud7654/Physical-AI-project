@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import type { BlockKind, Dataset, DeviceType, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, deployedModels, motorRanges } from '@/mocks';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
@@ -25,11 +25,24 @@ export default function Home() {
 }
 
 function HomeInner() {
+  const { loading, loadError, refresh } = useAppStore();
   const [entered, setEntered] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [view, setView] = useState<View>('dashboard');
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
   const [toast, setToast] = useState('');
+  const [toastTone, setToastTone] = useState<'success' | 'error'>('success');
+
+  const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
+    setToast(message);
+    setToastTone(tone);
+  }, []);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (loadError) showToast('데이터를 불러오지 못했어요.', 'error');
+  }, [loadError, showToast]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /* Figma 캡처 쿼리를 최초 진입 화면 상태에 한 번 반영한다. */
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -58,15 +71,19 @@ function HomeInner() {
       <GlobalHeader authenticated activeView={view} onHome={() => { setEntered(false); setLoggedIn(false); }} onNavigate={setView} onAuth={() => { setLoggedIn(false); setEntered(false); }} onConsole={() => setView('dashboard')} />
 
       <section className="content">
-        {view === 'dashboard' && <DashboardView onNavigate={setView} onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} />}
-        {view === 'devices' && <DevicesView onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} onToast={setToast} />}
-        {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={setView} onToast={setToast} />}
-        {view === 'training' && <TrainingStatusView onNavigate={setView} onToast={setToast} />}
-        {view === 'learn' && <LearnView onToast={setToast} onGoWork={() => setView('work')} />}
-        {view === 'work' && <WorkView onToast={setToast} />}
-        {view === 'admin' && <AdminView onToast={setToast} />}
+        {loading && <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>데이터를 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>}
+        {!loading && loadError && <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>데이터를 불러오지 못했어요</h2><p>네트워크 상태를 확인한 뒤 다시 시도해 주세요.</p><button className="primary-button" onClick={() => void refresh()}>다시 시도</button></section></div>}
+        {!loading && !loadError && <>
+          {view === 'dashboard' && <DashboardView onNavigate={setView} onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} />}
+          {view === 'devices' && <DevicesView onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} onToast={showToast} />}
+          {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={setView} onToast={showToast} />}
+          {view === 'training' && <TrainingStatusView onNavigate={setView} onToast={showToast} />}
+          {view === 'learn' && <LearnView onToast={showToast} onGoWork={() => setView('work')} />}
+          {view === 'work' && <WorkView onToast={showToast} />}
+          {view === 'admin' && <AdminView onToast={showToast} />}
+        </>}
       </section>
-      {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      {toast && <div className={`toast${toastTone === 'error' ? ' error' : ''}`} role="status"><span>{toastTone === 'error' ? '!' : '✓'}</span>{toast}</div>}
     </main>
   );
 }
@@ -175,6 +192,8 @@ function DevicesView({ onSelectRobot, onToast }: { onSelectRobot: (id: string) =
   const [registerOpen, setRegisterOpen] = useState(false);
   const { robots, umis: umi } = useAppStore();
   return <><div className="page-heading"><div><p className="eyebrow">장치 관리</p><h1>UMI와 로봇</h1><p>데이터 수집 장치와 작업 로봇의 연결 상태를 확인하세요.</p></div><button className="primary-button" onClick={() => setRegisterOpen(true)}>＋ 장치 등록</button></div><div className="device-tabs"><button className={tab === 'robot' ? 'active' : ''} onClick={() => setTab('robot')}>로봇 <span>{robots.length}</span></button><button className={tab === 'umi' ? 'active' : ''} onClick={() => setTab('umi')}>UMI <span>{umi.length}</span></button></div>
+    {tab === 'robot' && !robots.length && <p className="table-empty">등록된 로봇이 없어요. ‘장치 등록’ 버튼으로 추가해 보세요.</p>}
+    {tab === 'umi' && !umi.length && <p className="table-empty">등록된 UMI가 없어요. ‘장치 등록’ 버튼으로 추가해 보세요.</p>}
     {tab === 'robot' ? <div className="device-grid">{robots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.id} · {robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.status === '오프라인' ? '확인 불가' : robot.model}</dd></div><div><dt>최근 작업</dt><dd>{robot.status === '작업 중' ? '부품 이동 중' : '오늘 10:24'}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{umi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 수집</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">수집 데이터 보기</button></article>)}</div>}
     {registerOpen && <DeviceRegisterModal onClose={() => setRegisterOpen(false)} onRegistered={(type, label) => { setRegisterOpen(false); setTab(type); onToast(`‘${label}’ 장치를 등록했어요.`); }} />}
   </>;
