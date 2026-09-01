@@ -13,6 +13,14 @@ export interface Robot {
   name: string;
   location: string;
   status: RobotStatus;
+  /** 현재 배포된 Skill 모델 이름 */
+  model: string;
+}
+
+export interface DeployedModel {
+  version: string;
+  name: string;
+  deployedAt: string;
 }
 
 export interface Umi {

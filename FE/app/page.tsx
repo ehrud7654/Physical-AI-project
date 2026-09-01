@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import type { BlockKind, Dataset, DeviceType, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
-import { blockCatalog, motorRanges } from '@/mocks';
+import { blockCatalog, deployedModels, motorRanges } from '@/mocks';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 
 let nextBlockId = 20;
@@ -60,7 +60,7 @@ function HomeInner() {
       <section className="content">
         {view === 'dashboard' && <DashboardView onNavigate={setView} onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} />}
         {view === 'devices' && <DevicesView onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} onToast={setToast} />}
-        {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={setView} />}
+        {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={setView} onToast={setToast} />}
         {view === 'training' && <TrainingStatusView onNavigate={setView} onToast={setToast} />}
         {view === 'learn' && <LearnView onToast={setToast} onGoWork={() => setView('work')} />}
         {view === 'work' && <WorkView onToast={setToast} />}
@@ -175,7 +175,7 @@ function DevicesView({ onSelectRobot, onToast }: { onSelectRobot: (id: string) =
   const [registerOpen, setRegisterOpen] = useState(false);
   const { robots, umis: umi } = useAppStore();
   return <><div className="page-heading"><div><p className="eyebrow">장치 관리</p><h1>UMI와 로봇</h1><p>데이터 수집 장치와 작업 로봇의 연결 상태를 확인하세요.</p></div><button className="primary-button" onClick={() => setRegisterOpen(true)}>＋ 장치 등록</button></div><div className="device-tabs"><button className={tab === 'robot' ? 'active' : ''} onClick={() => setTab('robot')}>로봇 <span>{robots.length}</span></button><button className={tab === 'umi' ? 'active' : ''} onClick={() => setTab('umi')}>UMI <span>{umi.length}</span></button></div>
-    {tab === 'robot' ? <div className="device-grid">{robots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.id} · {robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.status === '오프라인' ? '확인 불가' : 'pick-block-v3'}</dd></div><div><dt>최근 작업</dt><dd>{robot.status === '작업 중' ? '부품 이동 중' : '오늘 10:24'}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{umi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 수집</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">수집 데이터 보기</button></article>)}</div>}
+    {tab === 'robot' ? <div className="device-grid">{robots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.id} · {robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.status === '오프라인' ? '확인 불가' : robot.model}</dd></div><div><dt>최근 작업</dt><dd>{robot.status === '작업 중' ? '부품 이동 중' : '오늘 10:24'}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{umi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 수집</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">수집 데이터 보기</button></article>)}</div>}
     {registerOpen && <DeviceRegisterModal onClose={() => setRegisterOpen(false)} onRegistered={(type, label) => { setRegisterOpen(false); setTab(type); onToast(`‘${label}’ 장치를 등록했어요.`); }} />}
   </>;
 }
@@ -221,10 +221,53 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
   </div>;
 }
 
-function RobotDetailView({ robotId, onBack, onNavigate }: { robotId: string; onBack: () => void; onNavigate: (view: View) => void }) {
-  const { robots } = useAppStore();
+function RobotDetailView({ robotId, onBack, onNavigate, onToast }: { robotId: string; onBack: () => void; onNavigate: (view: View) => void; onToast: (message: string) => void }) {
+  const { robots, applyModelToRobot, updateRobotInfo } = useAppStore();
   const robot = robots.find(item => item.id === robotId) ?? robots[0];
-  return <><button className="back-link" onClick={onBack}>← 로봇 목록</button><div className="robot-detail-hero card"><div className="device-visual large">R</div><div><p className="eyebrow">{robot.id}</p><h1>{robot.name}</h1><p>{robot.location} · 마지막 통신 방금 전</p></div><span className={`status-pill large status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><div className="detail-actions"><button className="secondary-button">설정</button><button className="primary-button" disabled={robot.status !== '온라인'} onClick={() => onNavigate('work')}>작업 만들기</button></div></div><div className="detail-metrics"><article className="card"><small>현재 모델</small><strong>pick-block-v3</strong><p>2026. 08. 28 배포</p></article><article className="card"><small>오늘 작업</small><strong>8건</strong><p>성공 7 · 실패 1</p></article><article className="card"><small>가동 시간</small><strong>6시간 24분</strong><p>최근 24시간 기준</p></article><article className="card"><small>오류 알림</small><strong>{robot.status === '오류' ? '2건' : '0건'}</strong><p>{robot.status === '오류' ? '확인이 필요해요' : '정상 작동 중'}</p></article></div><div className="dashboard-grid"><section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 작업</h2><p>이 로봇에서 실행된 작업 기록입니다.</p></div></div><div className="history-list"><p><strong>빨간 블록 정리</strong><span className="training-badge complete">성공</span><small>오늘 10:24 · 1분 18초</small></p><p><strong>부품 상자 이동</strong><span className="training-badge complete">성공</span><small>오늘 09:47 · 2분 03초</small></p><p><strong>컵 분류하기</strong><span className="training-badge failed">실패</span><small>어제 17:31 · 연결 끊김</small></p></div></section><section className="card dashboard-section"><div className="dashboard-title"><div><h2>배포된 모델</h2><p>현재 로봇에서 사용할 수 있는 Skill입니다.</p></div></div><div className="model-list"><p><span>V3</span><strong>pick-block-v3<small>현재 사용 중</small></strong><em>활성</em></p><p><span>V2</span><strong>move-box-v2<small>2026. 08. 25</small></strong><button className="text-button">적용</button></p></div></section></div></>;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [applying, setApplying] = useState('');
+  const currentModel = deployedModels.find((model) => model.name === robot.model);
+
+  const apply = async (modelName: string) => {
+    setApplying(modelName);
+    await applyModelToRobot(robot.id, modelName);
+    setApplying('');
+    onToast(`‘${modelName}’ 모델을 적용했어요.`);
+  };
+
+  return <><button className="back-link" onClick={onBack}>← 로봇 목록</button><div className="robot-detail-hero card"><div className="device-visual large">R</div><div><p className="eyebrow">{robot.id}</p><h1>{robot.name}</h1><p>{robot.location} · 마지막 통신 방금 전</p></div><span className={`status-pill large status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><div className="detail-actions"><button className="secondary-button" onClick={() => setSettingsOpen(true)}>설정</button><button className="primary-button" disabled={robot.status !== '온라인'} onClick={() => onNavigate('work')}>작업 만들기</button></div></div><div className="detail-metrics"><article className="card"><small>현재 모델</small><strong>{robot.model}</strong><p>{currentModel ? `${currentModel.deployedAt} 배포` : '배포 정보 없음'}</p></article><article className="card"><small>오늘 작업</small><strong>8건</strong><p>성공 7 · 실패 1</p></article><article className="card"><small>가동 시간</small><strong>6시간 24분</strong><p>최근 24시간 기준</p></article><article className="card"><small>오류 알림</small><strong>{robot.status === '오류' ? '2건' : '0건'}</strong><p>{robot.status === '오류' ? '확인이 필요해요' : '정상 작동 중'}</p></article></div><div className="dashboard-grid"><section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 작업</h2><p>이 로봇에서 실행된 작업 기록입니다.</p></div></div><div className="history-list"><p><strong>빨간 블록 정리</strong><span className="training-badge complete">성공</span><small>오늘 10:24 · 1분 18초</small></p><p><strong>부품 상자 이동</strong><span className="training-badge complete">성공</span><small>오늘 09:47 · 2분 03초</small></p><p><strong>컵 분류하기</strong><span className="training-badge failed">실패</span><small>어제 17:31 · 연결 끊김</small></p></div></section><section className="card dashboard-section"><div className="dashboard-title"><div><h2>배포된 모델</h2><p>현재 로봇에서 사용할 수 있는 Skill입니다.</p></div></div><div className="model-list">{deployedModels.map((model) => <p key={model.name}><span>{model.version}</span><strong>{model.name}<small>{model.name === robot.model ? '현재 사용 중' : model.deployedAt}</small></strong>{model.name === robot.model ? <em>활성</em> : <button className="text-button" disabled={!!applying} onClick={() => apply(model.name)}>{applying === model.name ? '적용 중...' : '적용'}</button>}</p>)}</div></section></div>
+    {settingsOpen && <RobotSettingsModal robot={robot} onClose={() => setSettingsOpen(false)} onSave={async (patch) => { await updateRobotInfo(robot.id, patch); setSettingsOpen(false); onToast('로봇 설정을 저장했어요.'); }} />}
+  </>;
+}
+
+function RobotSettingsModal({ robot, onClose, onSave }: { robot: { id: string; name: string; location: string }; onClose: () => void; onSave: (patch: { name: string; location: string }) => Promise<void> }) {
+  const [name, setName] = useState(robot.name);
+  const [location, setLocation] = useState(robot.location);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || !location.trim()) {
+      setError('이름과 설치 위치를 모두 입력해 주세요.');
+      return;
+    }
+    setError('');
+    setSaving(true);
+    await onSave({ name, location });
+  };
+
+  return <div className="modal-backdrop" onMouseDown={onClose}>
+    <form className="register-modal" role="dialog" aria-modal="true" aria-label="로봇 설정" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}>
+      <div className="modal-heading"><div><h2>로봇 설정</h2><p>{robot.id}의 기본 정보를 변경하세요.</p></div><button type="button" className="close-button" onClick={onClose} aria-label="닫기">×</button></div>
+      <div className="form-grid">
+        <label>로봇 이름<input value={name} disabled={saving} onChange={(event) => setName(event.target.value)} placeholder="예: 5번 피킹 로봇" /></label>
+        <label>설치 위치<input value={location} disabled={saving} onChange={(event) => setLocation(event.target.value)} placeholder="예: 물류 창고 2층" /></label>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="card-actions"><button type="button" className="secondary-button" disabled={saving} onClick={onClose}>취소</button><button className="primary-button" disabled={saving}>{saving ? '저장 중...' : '설정 저장'}</button></div>
+    </form>
+  </div>;
 }
 
 function TrainingStatusView({ onNavigate, onToast }: { onNavigate: (view: View) => void; onToast: (message: string) => void }) {
