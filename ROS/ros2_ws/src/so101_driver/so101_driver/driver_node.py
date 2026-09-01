@@ -40,6 +40,9 @@ class DriverNode(Node):
         rate = float(self.get_parameter("control_rate_hz").value)
         n = len(self._joint_names)
 
+        # 마지막 목표(라디안). 부분 명령은 여기에 병합한다.
+        self._target = [0.0] * n
+
         # TODO(팀원): DummyHardware → FeetechHardware(so101.yaml, 포트, 서보ID) 로 교체
         self._hw = DummyHardware(n)
         self._hw.set_torque(True)  # 기동 시 토크 on (estop 오면 off). 실물 안전 게이트는 49와 조율
@@ -57,30 +60,35 @@ class DriverNode(Node):
 
     # --- 받기: 명령 → 모터 --------------------------------------------------
     def _on_command(self, msg: JointState):
-        pos = self._reorder(msg)
-        if pos is None:
+        if not self._merge_into_target(msg):
             return
         try:
-            self._hw.write_positions(pos)
+            self._hw.write_positions(self._target)
         except Exception as e:  # noqa: BLE001
             self.get_logger().error(f"write_positions 실패: {e}")
 
-    def _reorder(self, msg: JointState) -> list[float] | None:
-        """명령 msg 를 joint_names 순서의 라디안 리스트로 정렬.
-        name 이 있으면 매핑, 없으면 위치 순서 가정."""
+    def _merge_into_target(self, msg: JointState) -> bool:
+        """명령을 self._target(라디안, joint_names 순서)에 병합한다.
+        name 이 있으면 **준 관절만** 갱신(부분 명령 허용), 나머지는 유지.
+        name 이 없으면 전체 길이 일치 시 통째로 교체."""
         if msg.name:
             table = dict(zip(msg.name, msg.position))
-            try:
-                return [float(table[j]) for j in self._joint_names]
-            except KeyError as e:
-                self.get_logger().warn(f"명령에 관절 누락: {e}")
-                return None
+            unknown = [j for j in msg.name if j not in self._joint_names]
+            if unknown:
+                self.get_logger().warn(f"알 수 없는 관절 무시: {unknown}")
+            touched = False
+            for i, j in enumerate(self._joint_names):
+                if j in table:
+                    self._target[i] = float(table[j])
+                    touched = True
+            return touched
         if len(msg.position) != len(self._joint_names):
             self.get_logger().warn(
                 f"명령 길이 불일치: {len(msg.position)} != {len(self._joint_names)}"
             )
-            return None
-        return [float(p) for p in msg.position]
+            return False
+        self._target = [float(p) for p in msg.position]
+        return True
 
     # --- 받기: estop --------------------------------------------------------
     def _on_estop(self, msg: Bool):
