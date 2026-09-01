@@ -36,7 +36,7 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 
 - 시연 수집 = **arpose** (`APP/arpose/`). UMI 방식의 폰 버전. 원본이 **6DoF pose**(위치+쿼터니언) @30Hz.
 - 시뮬(`AI/sim`)은 **검증용**이지 학습 소스가 아니다.
-- 계약: `AI/contract/episode.py` (+ EE pose 제안 `AI/contract/PROPOSAL_eepose.py`).
+- 계약: `AI/contract/episode.py` (AI 트랙 소유). EE pose 전환 제안은 `ROS/docs/action_space_decision.md`.
 
 ---
 
@@ -86,7 +86,7 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 
 **근거:** 데이터 소스 arpose가 네이티브로 SE(3) pose를 뱉는다(관절 없음). 관절각으로 가면 매 프레임 IK 변환 → 가지 튐·불연속. EE pose면 원본 그대로.
 
-- **표현:** 위치 델타 + 회전 6D 표현(쿼터니언/오일러 아님) + 그리퍼. (`PROPOSAL_eepose.py`)
+- **표현:** 위치 델타 + 회전 6D 표현(쿼터니언/오일러 아님) + 그리퍼. (`ROS/docs/action_space_decision.md`)
 - **상대(델타):** arpose 세션마다 원점이 달라 절대 pose 불가 → t₀ 상대. 데이터 특성과 일치.
 - **그리퍼 차원은 지금 계약에 넣어둔다** (나중 shape 변경 = 데이터 무효 방지). 신호 들어오기 전엔 상수.
 
