@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import type { BlockKind, Dataset, View, WorkflowBlock } from '@/types';
+import type { BlockKind, Dataset, DeviceType, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 
@@ -59,7 +59,7 @@ function HomeInner() {
 
       <section className="content">
         {view === 'dashboard' && <DashboardView onNavigate={setView} onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} />}
-        {view === 'devices' && <DevicesView onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} />}
+        {view === 'devices' && <DevicesView onSelectRobot={(id) => { setSelectedRobotId(id); setView('robot-detail'); }} onToast={setToast} />}
         {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={setView} />}
         {view === 'training' && <TrainingStatusView onNavigate={setView} />}
         {view === 'learn' && <LearnView onToast={setToast} onGoWork={() => setView('work')} />}
@@ -150,13 +150,17 @@ function Login({ onLogin }: { onLogin: () => void }) {
 }
 
 function DashboardView({ onNavigate, onSelectRobot }: { onNavigate: (view: View) => void; onSelectRobot: (id: string) => void }) {
-  const { robots, trainings } = useAppStore();
+  const { robots, umis, trainings } = useAppStore();
+  const umiOnline = umis.filter((item) => item.status === '온라인').length;
+  const robotAvailable = robots.filter((item) => item.status === '온라인').length;
+  const runningTrainings = trainings.filter((item) => item.status === '진행 중');
+  const averageProgress = runningTrainings.length ? Math.round(runningTrainings.reduce((sum, item) => sum + item.progress, 0) / runningTrainings.length) : 0;
   return <>
     <div className="page-heading"><div><p className="eyebrow">운영 요약</p><h1>안녕하세요, 김관리님</h1><p>연결된 장치와 진행 중인 학습 상태를 한눈에 확인하세요.</p></div><button className="primary-button" onClick={() => onNavigate('learn')}>＋ 새 학습 시작</button></div>
     <div className="overview-cards">
-      <button onClick={() => onNavigate('devices')}><span className="overview-icon blue">U</span><div><small>등록된 UMI</small><strong>3<em>대</em></strong><p><i className="online-dot" /> 2대 연결됨</p></div></button>
-      <button onClick={() => onNavigate('devices')}><span className="overview-icon violet">R</span><div><small>등록된 로봇</small><strong>4<em>대</em></strong><p><i className="online-dot" /> 2대 사용 가능</p></div></button>
-      <button onClick={() => onNavigate('training')}><span className="overview-icon orange">◴</span><div><small>진행 중인 학습</small><strong>1<em>건</em></strong><p>평균 진행률 68%</p></div></button>
+      <button onClick={() => onNavigate('devices')}><span className="overview-icon blue">U</span><div><small>등록된 UMI</small><strong>{umis.length}<em>대</em></strong><p><i className="online-dot" /> {umiOnline}대 연결됨</p></div></button>
+      <button onClick={() => onNavigate('devices')}><span className="overview-icon violet">R</span><div><small>등록된 로봇</small><strong>{robots.length}<em>대</em></strong><p><i className="online-dot" /> {robotAvailable}대 사용 가능</p></div></button>
+      <button onClick={() => onNavigate('training')}><span className="overview-icon orange">◴</span><div><small>진행 중인 학습</small><strong>{runningTrainings.length}<em>건</em></strong><p>평균 진행률 {averageProgress}%</p></div></button>
       <button onClick={() => onNavigate('work')}><span className="overview-icon green">✓</span><div><small>오늘 완료한 작업</small><strong>12<em>건</em></strong><p>성공률 96%</p></div></button>
     </div>
     <div className="dashboard-grid">
@@ -166,12 +170,55 @@ function DashboardView({ onNavigate, onSelectRobot }: { onNavigate: (view: View)
   </>;
 }
 
-function DevicesView({ onSelectRobot }: { onSelectRobot: (id: string) => void }) {
+function DevicesView({ onSelectRobot, onToast }: { onSelectRobot: (id: string) => void; onToast: (message: string) => void }) {
   const [tab, setTab] = useState<'robot' | 'umi'>('robot');
+  const [registerOpen, setRegisterOpen] = useState(false);
   const { robots, umis: umi } = useAppStore();
-  return <><div className="page-heading"><div><p className="eyebrow">장치 관리</p><h1>UMI와 로봇</h1><p>데이터 수집 장치와 작업 로봇의 연결 상태를 확인하세요.</p></div><button className="primary-button">＋ 장치 등록</button></div><div className="device-tabs"><button className={tab === 'robot' ? 'active' : ''} onClick={() => setTab('robot')}>로봇 <span>{robots.length}</span></button><button className={tab === 'umi' ? 'active' : ''} onClick={() => setTab('umi')}>UMI <span>{umi.length}</span></button></div>
+  return <><div className="page-heading"><div><p className="eyebrow">장치 관리</p><h1>UMI와 로봇</h1><p>데이터 수집 장치와 작업 로봇의 연결 상태를 확인하세요.</p></div><button className="primary-button" onClick={() => setRegisterOpen(true)}>＋ 장치 등록</button></div><div className="device-tabs"><button className={tab === 'robot' ? 'active' : ''} onClick={() => setTab('robot')}>로봇 <span>{robots.length}</span></button><button className={tab === 'umi' ? 'active' : ''} onClick={() => setTab('umi')}>UMI <span>{umi.length}</span></button></div>
     {tab === 'robot' ? <div className="device-grid">{robots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.id} · {robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.status === '오프라인' ? '확인 불가' : 'pick-block-v3'}</dd></div><div><dt>최근 작업</dt><dd>{robot.status === '작업 중' ? '부품 이동 중' : '오늘 10:24'}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{umi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 수집</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">수집 데이터 보기</button></article>)}</div>}
+    {registerOpen && <DeviceRegisterModal onClose={() => setRegisterOpen(false)} onRegistered={(type, label) => { setRegisterOpen(false); setTab(type); onToast(`‘${label}’ 장치를 등록했어요.`); }} />}
   </>;
+}
+
+function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; onRegistered: (type: DeviceType, label: string) => void }) {
+  const { addDevice } = useAppStore();
+  const [type, setType] = useState<DeviceType>('robot');
+  const [name, setName] = useState('');
+  const [deviceId, setDeviceId] = useState('');
+  const [location, setLocation] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || !deviceId.trim() || !location.trim()) {
+      setError('이름, ID, 설치 위치를 모두 입력해 주세요.');
+      return;
+    }
+    setError('');
+    setSaving(true);
+    try {
+      await addDevice({ type, id: deviceId, name, location });
+      onRegistered(type, type === 'robot' ? name.trim() : deviceId.trim());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '등록에 실패했어요. 잠시 후 다시 시도해 주세요.');
+      setSaving(false);
+    }
+  };
+
+  return <div className="modal-backdrop" onMouseDown={onClose}>
+    <form className="register-modal" role="dialog" aria-modal="true" aria-label="장치 등록" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}>
+      <div className="modal-heading"><div><h2>새 장치 등록</h2><p>작업 로봇 또는 UMI 핸들을 플랫폼에 연결하세요.</p></div><button type="button" className="close-button" onClick={onClose} aria-label="닫기">×</button></div>
+      <div className="form-grid">
+        <label>장치 종류<select value={type} disabled={saving} onChange={(event) => setType(event.target.value as DeviceType)}><option value="robot">로봇</option><option value="umi">UMI</option></select><small>등록 후 이 탭에서 바로 확인할 수 있어요.</small></label>
+        <label>장치 이름<input value={name} disabled={saving} onChange={(event) => setName(event.target.value)} placeholder={type === 'robot' ? '예: 5번 피킹 로봇' : '예: 실습실 C 핸들'} /></label>
+        <label>장치 ID<input value={deviceId} disabled={saving} onChange={(event) => setDeviceId(event.target.value)} placeholder={type === 'robot' ? '예: RB-30' : '예: UMI-030'} /><small>중복되지 않는 ID를 입력해 주세요.</small></label>
+        <label>설치 위치<input value={location} disabled={saving} onChange={(event) => setLocation(event.target.value)} placeholder="예: 물류 창고 2층" /></label>
+      </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="card-actions"><button type="button" className="secondary-button" disabled={saving} onClick={onClose}>취소</button><button className="primary-button" disabled={saving}>{saving ? '등록 중...' : '장치 등록'}</button></div>
+    </form>
+  </div>;
 }
 
 function RobotDetailView({ robotId, onBack, onNavigate }: { robotId: string; onBack: () => void; onNavigate: (view: View) => void }) {
