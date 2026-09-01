@@ -1,44 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-
-type View = 'dashboard' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
-type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
-type RobotStatus = '온라인' | '오프라인' | '작업 중' | '오류';
-type WorkflowBlock = {
-  id: number;
-  kind: BlockKind;
-  title: string;
-  motor?: string;
-  angle?: number;
-  repeat?: number;
-  children?: WorkflowBlock[];
-};
-
-const datasets = [
-  { id: 1, date: '2026. 08. 27  10:42', duration: '02:14', size: '486 MB', tone: 'orange' },
-  { id: 2, date: '2026. 08. 27  10:18', duration: '01:48', size: '392 MB', tone: 'blue' },
-  { id: 3, date: '2026. 08. 26  16:05', duration: '03:02', size: '651 MB', tone: 'green' },
-  { id: 4, date: '2026. 08. 26  15:44', duration: '01:35', size: '344 MB', tone: 'purple' },
-];
-
-const robots: { id: string; name: string; location: string; status: RobotStatus }[] = [
-  { id: 'RB-07', name: '로봇팔 07', location: '실습실 A', status: '온라인' },
-  { id: 'RB-12', name: '로봇팔 12', location: '실습실 B', status: '작업 중' },
-  { id: 'RB-18', name: '로봇팔 18', location: '테스트실', status: '오프라인' },
-  { id: 'RB-21', name: '로봇팔 21', location: '실습실 C', status: '오류' },
-];
-
-const motorRanges: Record<string, [number, number]> = {
-  J1: [-180, 180], J2: [-90, 90], J3: [-120, 120], J4: [-180, 180], J5: [-110, 110], J6: [-180, 180],
-};
-
-const blockCatalog: { kind: BlockKind; title: string; description: string; mark: string }[] = [
-  { kind: 'umi', title: '빨간 블록 집기', description: 'UMI 체크포인트', mark: 'U' },
-  { kind: 'vlm', title: '물체를 상자로 이동', description: 'VLM 사전 학습 작업', mark: 'V' },
-  { kind: 'motor', title: '모터 움직이기', description: '모터 번호와 각도 설정', mark: 'M' },
-  { kind: 'repeat', title: '반복하기', description: '안쪽 동작을 여러 번 실행', mark: '↻' },
-];
+import type { BlockKind, Dataset, View, WorkflowBlock } from '@/types';
+import { blockCatalog, motorRanges } from '@/mocks';
+import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 
 let nextBlockId = 20;
 
@@ -52,6 +17,14 @@ function makeBlock(kind: BlockKind): WorkflowBlock {
 }
 
 export default function Home() {
+  return (
+    <AppStoreProvider>
+      <HomeInner />
+    </AppStoreProvider>
+  );
+}
+
+function HomeInner() {
   const [entered, setEntered] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [view, setView] = useState<View>('dashboard');
@@ -176,13 +149,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-const trainings = [
-  { name: '빨간 블록 옮기기', robot: 'RB-07', progress: 68, stage: '동작 패턴 학습', status: '진행 중', started: '오늘 10:42' },
-  { name: '부품 상자 적재', robot: 'RB-12', progress: 100, stage: '모델 검증 완료', status: '완료', started: '어제 16:20' },
-  { name: '컵 분류하기', robot: 'RB-21', progress: 34, stage: '연결 오류', status: '실패', started: '오늘 09:18' },
-];
-
 function DashboardView({ onNavigate, onSelectRobot }: { onNavigate: (view: View) => void; onSelectRobot: (id: string) => void }) {
+  const { robots, trainings } = useAppStore();
   return <>
     <div className="page-heading"><div><p className="eyebrow">운영 요약</p><h1>안녕하세요, 김관리님</h1><p>연결된 장치와 진행 중인 학습 상태를 한눈에 확인하세요.</p></div><button className="primary-button" onClick={() => onNavigate('learn')}>＋ 새 학습 시작</button></div>
     <div className="overview-cards">
@@ -200,28 +168,31 @@ function DashboardView({ onNavigate, onSelectRobot }: { onNavigate: (view: View)
 
 function DevicesView({ onSelectRobot }: { onSelectRobot: (id: string) => void }) {
   const [tab, setTab] = useState<'robot' | 'umi'>('robot');
-  const umi = [{ id: 'UMI-024', place: '실습실 A', status: '온라인', collected: '오늘 10:42', data: 18 }, { id: 'UMI-018', place: '실습실 B', status: '온라인', collected: '어제 15:08', data: 11 }, { id: 'UMI-031', place: '테스트실', status: '오프라인', collected: '3일 전', data: 7 }];
+  const { robots, umis: umi } = useAppStore();
   return <><div className="page-heading"><div><p className="eyebrow">장치 관리</p><h1>UMI와 로봇</h1><p>데이터 수집 장치와 작업 로봇의 연결 상태를 확인하세요.</p></div><button className="primary-button">＋ 장치 등록</button></div><div className="device-tabs"><button className={tab === 'robot' ? 'active' : ''} onClick={() => setTab('robot')}>로봇 <span>{robots.length}</span></button><button className={tab === 'umi' ? 'active' : ''} onClick={() => setTab('umi')}>UMI <span>{umi.length}</span></button></div>
     {tab === 'robot' ? <div className="device-grid">{robots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.id} · {robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.status === '오프라인' ? '확인 불가' : 'pick-block-v3'}</dd></div><div><dt>최근 작업</dt><dd>{robot.status === '작업 중' ? '부품 이동 중' : '오늘 10:24'}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{umi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 수집</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">수집 데이터 보기</button></article>)}</div>}
   </>;
 }
 
 function RobotDetailView({ robotId, onBack, onNavigate }: { robotId: string; onBack: () => void; onNavigate: (view: View) => void }) {
+  const { robots } = useAppStore();
   const robot = robots.find(item => item.id === robotId) ?? robots[0];
   return <><button className="back-link" onClick={onBack}>← 로봇 목록</button><div className="robot-detail-hero card"><div className="device-visual large">R</div><div><p className="eyebrow">{robot.id}</p><h1>{robot.name}</h1><p>{robot.location} · 마지막 통신 방금 전</p></div><span className={`status-pill large status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><div className="detail-actions"><button className="secondary-button">설정</button><button className="primary-button" disabled={robot.status !== '온라인'} onClick={() => onNavigate('work')}>작업 만들기</button></div></div><div className="detail-metrics"><article className="card"><small>현재 모델</small><strong>pick-block-v3</strong><p>2026. 08. 28 배포</p></article><article className="card"><small>오늘 작업</small><strong>8건</strong><p>성공 7 · 실패 1</p></article><article className="card"><small>가동 시간</small><strong>6시간 24분</strong><p>최근 24시간 기준</p></article><article className="card"><small>오류 알림</small><strong>{robot.status === '오류' ? '2건' : '0건'}</strong><p>{robot.status === '오류' ? '확인이 필요해요' : '정상 작동 중'}</p></article></div><div className="dashboard-grid"><section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 작업</h2><p>이 로봇에서 실행된 작업 기록입니다.</p></div></div><div className="history-list"><p><strong>빨간 블록 정리</strong><span className="training-badge complete">성공</span><small>오늘 10:24 · 1분 18초</small></p><p><strong>부품 상자 이동</strong><span className="training-badge complete">성공</span><small>오늘 09:47 · 2분 03초</small></p><p><strong>컵 분류하기</strong><span className="training-badge failed">실패</span><small>어제 17:31 · 연결 끊김</small></p></div></section><section className="card dashboard-section"><div className="dashboard-title"><div><h2>배포된 모델</h2><p>현재 로봇에서 사용할 수 있는 Skill입니다.</p></div></div><div className="model-list"><p><span>V3</span><strong>pick-block-v3<small>현재 사용 중</small></strong><em>활성</em></p><p><span>V2</span><strong>move-box-v2<small>2026. 08. 25</small></strong><button className="text-button">적용</button></p></div></section></div></>;
 }
 
 function TrainingStatusView({ onNavigate }: { onNavigate: (view: View) => void }) {
+  const { trainings } = useAppStore();
   return <><div className="page-heading"><div><p className="eyebrow">학습 모니터링</p><h1>학습 현황</h1><p>진행 중이거나 완료된 모델 학습을 확인하세요.</p></div><button className="primary-button" onClick={() => onNavigate('learn')}>＋ 새 학습 시작</button></div><div className="training-summary"><span><small>전체</small><strong>3</strong></span><span><small>진행 중</small><strong>1</strong></span><span><small>완료</small><strong>1</strong></span><span><small>확인 필요</small><strong>1</strong></span></div><section className="card training-table"><div className="training-table-head"><div><h2>학습 작업</h2><p>최근 시작된 순서로 표시됩니다.</p></div><select defaultValue="all"><option value="all">전체 상태</option><option>진행 중</option><option>완료</option><option>실패</option></select></div>{trainings.map(item => <article key={item.name}><div className="training-main"><span className="learning-symbol">✦</span><div><strong>{item.name}</strong><small>{item.robot} · {item.started}</small></div></div><div><small>현재 단계</small><strong>{item.stage}</strong></div><div className="training-progress"><div><i style={{width: `${item.progress}%`}} /></div><strong>{item.progress}%</strong></div><span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span><button className="more-button">•••</button></article>)}</section></>;
 }
 
 function LearnView({ onToast, onGoWork }: { onToast: (message: string) => void; onGoWork: () => void }) {
+  const { robots, datasets } = useAppStore();
   const [selected, setSelected] = useState<number[]>([1, 2]);
   const [step, setStep] = useState(1);
   const [skillName, setSkillName] = useState('빨간 블록 옮기기');
   const [robot, setRobot] = useState('RB-07');
   const [progress, setProgress] = useState(12);
-  const [video, setVideo] = useState<(typeof datasets)[number] | null>(null);
+  const [video, setVideo] = useState<Dataset | null>(null);
 
   useEffect(() => {
     if (step !== 3 || progress >= 100) return;
@@ -319,6 +290,7 @@ function LearnView({ onToast, onGoWork }: { onToast: (message: string) => void; 
 }
 
 function WorkView({ onToast }: { onToast: (message: string) => void }) {
+  const { robots, savedWorks } = useAppStore();
   const [robotId, setRobotId] = useState('RB-07');
   const [blocks, setBlocks] = useState<WorkflowBlock[]>([
     { id: 1, kind: 'umi', title: '빨간 블록 집기' },
@@ -364,7 +336,7 @@ function WorkView({ onToast }: { onToast: (message: string) => void }) {
   return (
     <>
       <div className="page-heading work-heading"><div><p className="eyebrow">블록 작업 만들기</p><h1>로봇이 할 일을 순서대로 놓아주세요</h1><p>왼쪽 블록을 끌어다 놓거나 클릭하면 작업에 추가돼요.</p></div><div className="work-tools"><label>실행할 로봇<select value={robotId} disabled={running} onChange={(e) => setRobotId(e.target.value)}>{robots.slice(0, 3).map((robot) => <option key={robot.id} value={robot.id}>{robot.name} · {robot.status}</option>)}</select></label><span className={`robot-status status-${selectedRobot.status.replace(' ', '-')}`}><i />{selectedRobot.status}</span></div></div>
-      <div className="work-namebar"><label>작업 이름<input value={workName} disabled={running} onChange={(e) => setWorkName(e.target.value)} /></label><label>저장된 작업<select disabled={running} defaultValue=""><option value="" disabled>작업 불러오기</option><option>컵 정리 작업</option><option>부품 상자 이동</option></select></label><button className="secondary-button" disabled={running} onClick={() => onToast(`‘${workName}’ 작업을 저장했어요.`)}>저장</button></div>
+      <div className="work-namebar"><label>작업 이름<input value={workName} disabled={running} onChange={(e) => setWorkName(e.target.value)} /></label><label>저장된 작업<select disabled={running} defaultValue=""><option value="" disabled>작업 불러오기</option>{savedWorks.map((work) => <option key={work.name}>{work.name}</option>)}</select></label><button className="secondary-button" disabled={running} onClick={() => onToast(`‘${workName}’ 작업을 저장했어요.`)}>저장</button></div>
       <div className="block-workspace">
         <aside className="block-library"><div className="library-heading"><h2>작업 블록</h2><p>필요한 블록을 작업 영역에 추가하세요.</p></div><p className="block-category">학습된 동작</p>{blockCatalog.slice(0, 2).map((item) => <button key={item.kind} className={`library-block ${item.kind}`} draggable={!running} onDragStart={(e) => e.dataTransfer.setData('block-kind', item.kind)} onClick={() => !running && addBlock(item.kind)}><span>{item.mark}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><em>＋</em></button>)}<p className="block-category">직접 제어</p>{blockCatalog.slice(2, 3).map((item) => <button key={item.kind} className={`library-block ${item.kind}`} draggable={!running} onDragStart={(e) => e.dataTransfer.setData('block-kind', item.kind)} onClick={() => !running && addBlock(item.kind)}><span>{item.mark}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><em>＋</em></button>)}<p className="block-category">흐름 제어</p>{blockCatalog.slice(3).map((item) => <button key={item.kind} className={`library-block ${item.kind}`} draggable={!running} onDragStart={(e) => e.dataTransfer.setData('block-kind', item.kind)} onClick={() => !running && addBlock(item.kind)}><span>{item.mark}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><em>＋</em></button>)}</aside>
 
@@ -392,9 +364,9 @@ function WorkflowBlockCard({ block, active, disabled, onUpdate, onRemove, onMove
 }
 
 function AdminView({ onToast }: { onToast: (message: string) => void }) {
-  const users = [{ id: 'user01', name: '김작업', team: '시연팀' }, { id: 'user02', name: '이연구', team: '연구개발팀' }, { id: 'user03', name: '박테스트', team: '검증팀' }];
+  const { robots, users, permissions: storedPermissions } = useAppStore();
   const [userId, setUserId] = useState('user01');
-  const [permissions, setPermissions] = useState<Record<string, string[]>>({ user01: ['RB-07', 'RB-12'], user02: ['RB-07'], user03: ['RB-18'] });
+  const [permissions, setPermissions] = useState<Record<string, string[]>>(storedPermissions);
   const allowed = permissions[userId] ?? [];
   const user = users.find((item) => item.id === userId)!;
   const toggleRobot = (robotId: string) => setPermissions((current) => ({ ...current, [userId]: allowed.includes(robotId) ? allowed.filter((id) => id !== robotId) : [...allowed, robotId] }));
