@@ -34,12 +34,28 @@ from typing import Any
 
 import numpy as np
 
-CONTRACT_VERSION = "0.1.0-provisional"
+from contract.ids import SKILL_IDS
+
+# 0.2.0 (2026-09-02): EpisodeMeta.skill_id 추가, SKILL_IDS enum 강제.
+# 0.1.0 데이터는 이 버전에서 거부된다 — 당시 수집분은 시뮬 스크립트 98편뿐이고
+# 재수집에 20분이면 된다. 실시연 데이터가 0편인 지금이 바꿀 수 있는 마지막 구간에
+# 가깝다. 750편을 모은 뒤 바꾸면 그때는 전량 폐기다.
+CONTRACT_VERSION = "0.2.0-provisional"
 
 IMAGE_SHAPE = (3, 224, 224)  # CHW uint8
 STATE_DIM = 6
 ACTION_DIM = 6
 STATE_RANGE = (-1.0, 1.0)
+
+# How far outside STATE_RANGE a value may sit before the episode is rejected.
+# Exposed as a constant because other code has to reason about it: a degree-based
+# control API rounds its joint limits, and whether that rounding can invalidate an
+# episode depends on exactly this number (sim/mujoco/angle_contract.py).
+# STATE_RANGE 를 얼마나 벗어나면 에피소드를 거부하는가. 상수로 노출하는 이유는 다른
+# 코드가 이 값을 근거로 판단해야 하기 때문이다 — degree 기반 제어 API 는 관절 한계를
+# 반올림하는데, 그 반올림이 에피소드를 무효로 만드는지가 정확히 이 값에 달려 있다
+# (sim/mujoco/angle_contract.py).
+RANGE_TOLERANCE = 1e-4
 
 
 @dataclass
@@ -48,6 +64,17 @@ class EpisodeMeta:
     에피소드를 쓸 수 있는지 판단하는 데 필요한 전부."""
 
     episode_id: str
+    # Which of the five skills this demonstration belongs to. Constrained to
+    # `SKILL_IDS` because four parties -- the platform, the user's click, the
+    # VLM's selection and the robot's execution -- have to name the same thing,
+    # and one of them is a language model that will invent a sixth if nothing
+    # stops it.
+    # 이 시연이 다섯 스킬 중 어느 것인가. `SKILL_IDS` 로 제한한다. 플랫폼·사용자
+    # 클릭·VLM 선택·로봇 실행 네 주체가 같은 것을 같은 이름으로 불러야 하는데,
+    # 그중 하나는 막지 않으면 여섯 번째를 지어내는 언어모델이다.
+    skill_id: str
+    # Free text for humans. `skill_id` is what machines compare.
+    # 사람이 읽는 자유 문자열. 기계가 대조하는 것은 `skill_id` 다.
     task: str
     source: str  # "sim" | "real"
     success: bool
@@ -112,7 +139,7 @@ def validate(ep: Episode, *, strict_range: bool = True) -> list[str]:
             problems.append(f"{label} contains NaN or inf")
         elif strict_range:
             lo, hi = float(arr.min()), float(arr.max())
-            if lo < STATE_RANGE[0] - 1e-4 or hi > STATE_RANGE[1] + 1e-4:
+            if lo < STATE_RANGE[0] - RANGE_TOLERANCE or hi > STATE_RANGE[1] + RANGE_TOLERANCE:
                 problems.append(f"{label} out of {STATE_RANGE}: min={lo:.4f} max={hi:.4f}")
 
     for label, ts in (("state_timestamp", ep.state_timestamp), ("action_timestamp", ep.action_timestamp)):
@@ -140,6 +167,12 @@ def validate(ep: Episode, *, strict_range: bool = True) -> list[str]:
                 f"control period drifts by {drift * 1000:.2f}ms from "
                 f"{expected * 1000:.2f}ms (>20%)"
             )
+
+    if ep.meta.skill_id not in SKILL_IDS:
+        problems.append(
+            f"skill_id {ep.meta.skill_id!r} 이 {SKILL_IDS} 에 없다 "
+            "— 어느 스킬의 시연인지 알 수 없는 에피소드는 학습에 쓸 수 없다"
+        )
 
     if ep.meta.contract_version != CONTRACT_VERSION:
         problems.append(
@@ -173,11 +206,50 @@ def write_episode(ep: Episode, out_dir: Path) -> Path:
     return npz_path
 
 
+_LEGACY_WARNED: set[str] = set()
+
+
+def _fill_legacy(raw: dict[str, Any], path: Path) -> dict[str, Any]:
+    """Let an older episode be read, but not silently.
+    옛 에피소드를 읽을 수는 있게 하되, 조용히는 아니게.
+
+    Reading old data and training on it are different acts. Diagnosing why a
+    policy failed means reading the very episodes it was trained on, and those
+    may predate the field that made the contract stricter. Refusing to read them
+    would make the diagnosis impossible without re-collecting first.
+    옛 데이터를 읽는 것과 그것으로 학습하는 것은 다른 행위다. 정책이 왜 실패했는지
+    진단하려면 그 정책이 학습한 바로 그 에피소드를 읽어야 하는데, 그 데이터는 계약을
+    더 엄격하게 만든 필드보다 먼저 만들어졌을 수 있다. 읽기를 거부하면 재수집 없이는
+    진단 자체가 불가능해진다.
+
+    So the guard stays where it belongs: `validate()` still rejects the filled-in
+    value, so nothing trains on it.
+    그래서 가드는 원래 자리에 둔다. `validate()` 는 채워 넣은 값을 여전히 거부하므로
+    이걸로 학습되는 일은 없다.
+    """
+    missing = [k for k in ("skill_id",) if k not in raw]
+    if missing:
+        version = raw.get("contract_version", "?")
+        key = f"{version}:{','.join(missing)}"
+        if key not in _LEGACY_WARNED:
+            _LEGACY_WARNED.add(key)
+            print(
+                f"⚠️ {path.name} 은 계약 {version} 로 기록돼 {missing} 필드가 없다. "
+                f"현행 계약은 {CONTRACT_VERSION} 다.\n"
+                "   읽기는 허용한다 — 진단에는 이 데이터가 필요하다. 다만 validate() 가 "
+                "거부하므로 학습에는 쓰이지 않는다."
+            )
+        for k in missing:
+            raw[k] = ""
+    return raw
+
+
 def read_episode(npz_path: Path) -> Episode:
     """Read back an episode written by :func:`write_episode`.
     write_episode 로 쓴 에피소드를 다시 읽는다."""
     meta_path = npz_path.with_suffix(".json")
-    meta = EpisodeMeta(**json.loads(meta_path.read_text(encoding="utf-8")))
+    raw = _fill_legacy(json.loads(meta_path.read_text(encoding="utf-8")), meta_path)
+    meta = EpisodeMeta(**raw)
     with np.load(npz_path) as z:
         images = {k[len("image__"):]: z[k] for k in z.files if k.startswith("image__")}
         return Episode(
@@ -209,6 +281,7 @@ def write_dataset_index(out_dir: Path, extra: dict[str, Any] | None = None) -> P
             "meaning": "목표 관절각 5개 + 그리퍼, 정규화된 값",
         },
         "action_timestamp": {"shape": [], "dtype": "float64", "unit": "s"},
+        "skill_ids_allowed": list(SKILL_IDS),
         "joint_order": [
             "shoulder_pan", "shoulder_lift", "elbow_flex",
             "wrist_flex", "wrist_roll", "gripper",
