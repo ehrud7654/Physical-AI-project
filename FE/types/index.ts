@@ -1,4 +1,4 @@
-export type View = 'dashboard' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
+export type View = 'dashboard' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
 
 export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
@@ -52,10 +52,32 @@ export interface WorkflowBlock {
   id: number;
   kind: BlockKind;
   title: string;
+  /** 학습된 Skill 블록일 때 참조하는 Skill ID */
+  skillId?: string;
   motor?: string;
   angle?: number;
   repeat?: number;
   children?: WorkflowBlock[];
+}
+
+/** 학습이 완료되어 WORKFLOW에서 사용할 수 있는 단일 동작 */
+export interface LearnedSkill {
+  id: string;
+  name: string;
+  kind: Extract<BlockKind, 'umi' | 'vlm'>;
+  description: string;
+  mark: string;
+}
+
+/** 여러 Skill과 제어 블록을 순서대로 조합한 저장 작업 */
+export interface SavedWork {
+  id: string;
+  name: string;
+  /** 편집기에서 마지막으로 선택한 로봇. 실행 시 다른 로봇으로 변경할 수 있다. */
+  robotId: string;
+  blocks: WorkflowBlock[];
+  estimatedSeconds: number;
+  updatedAt: string;
 }
 
 export interface BlockCatalogItem {

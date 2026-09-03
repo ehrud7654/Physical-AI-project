@@ -1,9 +1,10 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { AdminUser, Robot, Training, Umi } from '@/types';
-import { initialDatasets, initialPermissions, initialUsers } from '@/mocks';
+import type { AdminUser, LearnedSkill, Robot, SavedWork, Training, Umi } from '@/types';
+import { initialDatasets, initialLearnedSkills, initialPermissions, initialUsers } from '@/mocks';
 import {
+  addTraining,
   applyModel,
   cancelTraining,
   fetchRobots,
@@ -16,7 +17,6 @@ import {
   saveWork,
   updateRobot,
   type RegisterDeviceInput,
-  type SavedWork,
 } from '@/services';
 
 interface AppStore {
@@ -29,6 +29,7 @@ interface AppStore {
   robots: Robot[];
   umis: Umi[];
   trainings: Training[];
+  skills: LearnedSkill[];
   savedWorks: SavedWork[];
   users: AdminUser[];
   permissions: Record<string, string[]>;
@@ -39,6 +40,7 @@ interface AppStore {
   updateRobotInfo: (robotId: string, patch: { name: string; location: string }) => Promise<void>;
   cancelTrainingByName: (name: string) => Promise<void>;
   retryTrainingByName: (name: string) => Promise<void>;
+  completeLearning: (input: { name: string; robot: string }) => Promise<void>;
   saveWorkflow: (work: SavedWork) => Promise<void>;
   saveRobotPermissions: (next: Record<string, string[]>) => Promise<void>;
 }
@@ -50,6 +52,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [robots, setRobots] = useState<Robot[]>([]);
   const [umis, setUmis] = useState<Umi[]>([]);
   const [trainings, setTrainings] = useState<Training[]>([]);
+  const [skills, setSkills] = useState<LearnedSkill[]>(initialLearnedSkills);
   const [savedWorks, setSavedWorks] = useState<SavedWork[]>([]);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(initialPermissions);
   const [loading, setLoading] = useState(true);
@@ -104,6 +107,21 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setTrainings(await retryTraining(name));
   }, []);
 
+  const completeLearning = useCallback(async (input: { name: string; robot: string }) => {
+    setTrainings(await addTraining(input));
+    setSkills((current) => {
+      const existing = current.find((skill) => skill.name === input.name);
+      const learned: LearnedSkill = {
+        id: existing?.id ?? `SKILL-${Date.now()}`,
+        name: input.name,
+        kind: 'umi',
+        description: 'UMI 데이터로 새로 학습한 동작',
+        mark: 'S',
+      };
+      return [learned, ...current.filter((skill) => skill.id !== learned.id)];
+    });
+  }, []);
+
   const saveWorkflow = useCallback(async (work: SavedWork) => {
     setSavedWorks(await saveWork(work));
   }, []);
@@ -120,6 +138,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       robots,
       umis,
       trainings,
+      skills,
       savedWorks,
       users: initialUsers,
       permissions,
@@ -129,10 +148,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       updateRobotInfo,
       cancelTrainingByName,
       retryTrainingByName,
+      completeLearning,
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, trainings, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, trainings, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
