@@ -271,13 +271,13 @@ html{overflow-y:scroll!important;scrollbar-gutter:stable!important}.global-heade
    action column used to move the navigation by roughly 10px. */
 @media(min-width:1281px){
   .global-header{grid-template-columns:310px minmax(500px,1fr) 310px}
-  .global-actions{display:grid;width:310px;grid-template-columns:120px 190px}
-  .global-actions button{box-sizing:border-box;width:100%;padding:0}
+  .global-actions{display:flex;justify-content:flex-end;width:310px}
+  .global-actions button{box-sizing:border-box;width:120px;padding:0}
 }
 @media(min-width:901px) and (max-width:1280px){
   .global-header{grid-template-columns:230px minmax(430px,1fr) 270px}
-  .global-actions{display:grid;width:270px;grid-template-columns:100px 170px}
-  .global-actions button{box-sizing:border-box;width:100%;padding:0}
+  .global-actions{display:flex;justify-content:flex-end;width:270px}
+  .global-actions button{box-sizing:border-box;width:100px;padding:0}
 }
 
 /* Figma capture is run inside a narrow browser panel. Force the presentation
@@ -290,9 +290,9 @@ html.figma-desktop-capture .brand-fullname{display:block!important}
 html.figma-desktop-capture .global-nav{display:flex!important;grid-column:auto!important;grid-row:auto!important;align-self:stretch!important;justify-content:flex-end!important;gap:42px!important;min-width:500px!important;width:auto!important;margin-right:38px!important;overflow:visible!important;border:0!important}
 html.figma-desktop-capture .global-nav button{flex:none!important;width:92px!important;height:auto!important;padding:10px 2px!important;font-size:11px!important}
 html.figma-desktop-capture .global-nav button.active::after{right:2px!important;bottom:-26px!important;left:2px!important}
-html.figma-desktop-capture .global-actions{display:grid!important;grid-column:auto!important;width:310px!important;grid-template-columns:120px 190px!important}
+html.figma-desktop-capture .global-actions{display:flex!important;justify-content:flex-end!important;grid-column:auto!important;width:310px!important}
 html.figma-desktop-capture .global-auth{display:block!important}
-html.figma-desktop-capture .global-actions button{height:52px!important;padding:0!important;font-size:10px!important}
+html.figma-desktop-capture .global-actions button{width:120px!important;height:52px!important;padding:0!important;font-size:10px!important}
 html.figma-desktop-capture .landing-page>.global-header{height:84px!important;grid-template:84px / 310px minmax(500px,1fr) 310px!important}
 html.figma-desktop-capture .landing-page>.global-header .global-nav{display:flex!important}
 html.figma-desktop-capture .landing-hero{min-height:100vh!important;align-items:center!important;justify-content:flex-start!important;padding:138px 7vw 72px!important;background-image:linear-gradient(90deg,rgba(255,255,255,.98) 0%,rgba(255,255,255,.88) 31%,rgba(255,255,255,.26) 59%,rgba(255,255,255,.04) 100%),linear-gradient(180deg,rgba(255,255,255,.05) 55%,rgba(245,248,252,.88) 100%),url('/ssafy-fleet-hero-bright.png')!important;background-position:center!important}

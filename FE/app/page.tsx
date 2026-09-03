@@ -27,7 +27,6 @@ export default function Home() {
 function HomeInner() {
   const { loading, loadError, refresh } = useAppStore();
   const [entered, setEntered] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
   const [view, setView] = useState<View>('dashboard');
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
   const [toast, setToast] = useState('');
@@ -51,7 +50,6 @@ function HomeInner() {
     if (captureView && ['dashboard', 'devices', 'robot-detail', 'training', 'learn', 'work', 'admin'].includes(captureView)) {
       setView(captureView);
       setEntered(true);
-      setLoggedIn(true);
     }
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -62,13 +60,12 @@ function HomeInner() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const enterView = (target: View) => { setView(target); setEntered(true); setLoggedIn(true); };
-  if (!entered) return <Landing onLogin={() => enterView('dashboard')} onExplore={() => enterView('dashboard')} onNavigate={enterView} />;
-  if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
+  const enterView = (target: View) => { setView(target); setEntered(true); };
+  if (!entered) return <Landing onLogin={() => enterView('dashboard')} />;
 
   return (
     <main className="app-shell">
-      <GlobalHeader authenticated activeView={view} onHome={() => { setEntered(false); setLoggedIn(false); }} onNavigate={setView} onAuth={() => { setLoggedIn(false); setEntered(false); }} onConsole={() => setView('dashboard')} />
+      <GlobalHeader authenticated activeView={view} onHome={() => setEntered(false)} onNavigate={setView} onAuth={() => setEntered(false)} />
 
       <section className="content">
         {loading && <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>데이터를 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>}
@@ -88,18 +85,18 @@ function HomeInner() {
   );
 }
 
-function Landing({ onLogin, onExplore, onNavigate }: { onLogin: () => void; onExplore: () => void; onNavigate: (view: View) => void }) {
+function Landing({ onLogin }: { onLogin: () => void }) {
   const [loginOpen, setLoginOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('figmaView') === 'login');
   const [id, setId] = useState('admin01');
   const [password, setPassword] = useState('12345678');
   return <main className="landing-page">
-    <GlobalHeader authenticated={false} onHome={() => setLoginOpen(false)} onNavigate={onNavigate} onAuth={() => setLoginOpen(true)} onConsole={onExplore} />
+    <GlobalHeader authenticated={false} onHome={() => setLoginOpen(false)} onNavigate={() => setLoginOpen(true)} onAuth={() => setLoginOpen(true)} />
     <section className="landing-hero">
       <div className="landing-copy">
         <p>SHOW · LEARN · OPERATE</p>
         <h1>당신이 보여주는 순간,<br />로봇의 일이 시작합니다.</h1>
         <h2>UMI 시연 데이터부터 학습, 배포, 다중 로봇 관제까지 하나의 플랫폼에서.</h2>
-        <div className="landing-actions"><button onClick={onExplore}>플랫폼 둘러보기</button><button onClick={() => setLoginOpen(true)}>로그인하기 <span>→</span></button></div>
+        <div className="landing-actions"><button type="button" disabled title="튜토리얼 페이지 준비 중">튜토리얼</button></div>
       </div>
       <div className="landing-proof"><span><strong>ONE</strong>통합 운영 환경</span><span><strong>LIVE</strong>실시간 학습 현황</span><span><strong>SAFE</strong>검증된 작업 실행</span></div>
     </section>
@@ -112,7 +109,7 @@ function Landing({ onLogin, onExplore, onNavigate }: { onLogin: () => void; onEx
   </main>;
 }
 
-function GlobalHeader({ authenticated, activeView, onHome, onNavigate, onAuth, onConsole }: { authenticated: boolean; activeView?: View; onHome: () => void; onNavigate: (view: View) => void; onAuth: () => void; onConsole: () => void }) {
+function GlobalHeader({ authenticated, activeView, onHome, onNavigate, onAuth }: { authenticated: boolean; activeView?: View; onHome: () => void; onNavigate: (view: View) => void; onAuth: () => void }) {
   return <header className="global-header">
     <button className="global-brand" onClick={onHome} aria-label="S.S.A.F.Y 메인으로 이동"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><span className="brand-fullname">Show Simply Arm Follows You</span></button>
     <nav className="global-nav" aria-label="플랫폼 메뉴">
@@ -121,49 +118,8 @@ function GlobalHeader({ authenticated, activeView, onHome, onNavigate, onAuth, o
       <button className={activeView === 'devices' || activeView === 'robot-detail' ? 'active' : ''} onClick={() => onNavigate('devices')}>FLEET</button>
       <button className={activeView === 'work' ? 'active' : ''} onClick={() => onNavigate('work')}>WORKFLOW</button>
     </nav>
-    <div className="global-actions"><button className="global-auth" onClick={onAuth}>{authenticated ? 'SIGN OUT' : 'SIGN IN'}</button><button className="global-console" onClick={onConsole}>OPEN CONSOLE</button></div>
+    <div className="global-actions"><button className="global-auth" onClick={onAuth}>{authenticated ? 'SIGN OUT' : 'SIGN IN'}</button></div>
   </header>;
-}
-
-function Login({ onLogin }: { onLogin: () => void }) {
-  const [id, setId] = useState('admin01');
-  const [password, setPassword] = useState('12345678');
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (id && password) onLogin();
-  };
-
-  return (
-    <main className="login-page">
-      <section className="login-intro">
-        <div className="login-brand"><img className="login-logo" src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><span>Robot Learning Platform</span></div>
-        <div className="intro-copy">
-          <span className="intro-kicker">SHOW · LEARN · WORK</span>
-          <h1>보여주기만 하면,<br />로봇이 배워요.</h1>
-          <p>복잡한 코딩 없이 직접 동작을 보여주고<br />나만의 로봇 작업을 만들어 보세요.</p>
-        </div>
-        <div className="robot-visual" aria-hidden="true">
-          <div className="robot-base" /><div className="robot-arm arm-one" /><div className="robot-joint joint-one" />
-          <div className="robot-arm arm-two" /><div className="robot-joint joint-two" /><div className="robot-grip">⌁</div>
-          <div className="visual-chip chip-one">동작 수집</div><div className="visual-chip chip-two">Skill 학습</div><div className="visual-chip chip-three">작업 실행</div>
-        </div>
-        <small className="copyright">© 2026 S.S.A.F.Y · Show Simply Arm Follows You</small>
-      </section>
-      <section className="login-panel">
-        <form className="login-card" onSubmit={submit}>
-          <img className="login-card-logo" src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" />
-          <span className="welcome-icon">👋</span>
-          <h2>다시 만나서 반가워요!</h2>
-          <p>계정 정보를 입력하고 로봇 학습을 시작하세요.</p>
-          <label>아이디<input value={id} onChange={(e) => setId(e.target.value)} placeholder="아이디를 입력하세요" autoComplete="username" /></label>
-          <label>비밀번호<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="비밀번호를 입력하세요" autoComplete="current-password" /></label>
-          <button className="primary-button login-button" disabled={!id || !password}>로그인</button>
-          <small className="demo-note">와이어프레임 확인용 예시 계정이 입력되어 있어요.</small>
-        </form>
-      </section>
-    </main>
-  );
 }
 
 function DashboardView({ onNavigate, onSelectRobot }: { onNavigate: (view: View) => void; onSelectRobot: (id: string) => void }) {
@@ -380,7 +336,7 @@ function LearnView({ onToast, onGoWork }: { onToast: (message: string) => void; 
                     <tr key={item.id} className={selected.includes(item.id) ? 'selected' : ''} onDoubleClick={() => setVideo(item)}>
                       <td><input type="checkbox" checked={selected.includes(item.id)} onChange={() => toggle(item.id)} aria-label={`${item.date} 데이터 선택`} /></td>
                       <td><button className={`thumbnail ${item.tone}`} onClick={() => setVideo(item)} aria-label="영상 보기"><span>▶</span></button></td>
-                      <td><strong>{item.date}</strong><small>더블클릭하여 영상 보기</small></td><td>{item.duration}</td><td>{item.size}</td><td><button className="more-button" aria-label="데이터 메뉴">•••</button></td>
+                      <td><strong>{item.date}</strong><small>영상 미리보기</small></td><td>{item.duration}</td><td>{item.size}</td><td><button className="more-button" aria-label="데이터 메뉴">•••</button></td>
                     </tr>
                   ))}</tbody>
                 </table>
