@@ -1,0 +1,480 @@
+<title>인터페이스 계약과 VLM 배치 계획</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@500;700;800&family=Noto+Sans+KR:wght@300;400;500&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --ground:#EDF0F3; --surface:#FFFFFF; --surface-2:#E4E9EE;
+    --line:#D2DAE2; --line-soft:#E3E9EF;
+    --ink:#121820; --ink-2:#46525F; --ink-3:#6C7A88;
+    --accent:#1F4E79; --accent-soft:#DCE7F1;
+    --ours:#0E6F62; --ours-bg:#DCEEEA;
+    --theirs:#5B3E8E; --theirs-bg:#E7E1F2;
+    --open:#9A5B12; --open-bg:#F5E9D8;
+    --stop:#8E2F2F; --stop-bg:#F3DEDE;
+    --shadow:0 1px 2px rgba(18,24,32,.06), 0 8px 24px -12px rgba(18,24,32,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0F1318; --surface:#171D25; --surface-2:#1E262F;
+      --line:#2B343F; --line-soft:#232B35;
+      --ink:#E4EAF1; --ink-2:#A5B2BF; --ink-3:#7C8A98;
+      --accent:#7FB0DC; --accent-soft:#1B2C3D;
+      --ours:#48C2AC; --ours-bg:#14302C;
+      --theirs:#B49BE0; --theirs-bg:#241D33;
+      --open:#DBA45C; --open-bg:#302617;
+      --stop:#E08585; --stop-bg:#331C1C;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0F1318; --surface:#171D25; --surface-2:#1E262F;
+    --line:#2B343F; --line-soft:#232B35;
+    --ink:#E4EAF1; --ink-2:#A5B2BF; --ink-3:#7C8A98;
+    --accent:#7FB0DC; --accent-soft:#1B2C3D;
+    --ours:#48C2AC; --ours-bg:#14302C;
+    --theirs:#B49BE0; --theirs-bg:#241D33;
+    --open:#DBA45C; --open-bg:#302617;
+    --stop:#E08585; --stop-bg:#331C1C;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"Noto Sans KR", system-ui, sans-serif;
+    font-size:15.5px; line-height:1.72; font-weight:400;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:960px; margin:0 auto; padding:0 32px 120px; }
+  @media (max-width:700px) { .wrap { padding:0 18px 80px; } }
+
+  header.top { border-bottom:2px solid var(--ink); padding:56px 0 22px; margin-bottom:36px; }
+  .eyebrow {
+    font-family:"JetBrains Mono",monospace; font-size:11.5px; font-weight:500;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); margin-bottom:14px;
+  }
+  h1 {
+    font-family:"Gothic A1",sans-serif; font-weight:800;
+    font-size:clamp(28px,4.6vw,42px); line-height:1.15; letter-spacing:-.02em;
+    margin:0 0 16px; text-wrap:balance;
+  }
+  .standfirst { font-size:17px; color:var(--ink-2); max-width:62ch; margin:0 0 22px; font-weight:300; }
+  .meta { display:flex; flex-wrap:wrap; gap:8px 22px; font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--ink-3); }
+  .meta b { color:var(--ink-2); font-weight:500; }
+
+  section { margin-bottom:64px; scroll-margin-top:20px; }
+  h2 {
+    font-family:"Gothic A1",sans-serif; font-weight:800; font-size:24px;
+    letter-spacing:-.015em; margin:0 0 6px;
+    display:flex; align-items:baseline; gap:12px; text-wrap:balance;
+  }
+  h2 .n { font-family:"JetBrains Mono",monospace; font-size:12px; font-weight:700; color:var(--accent); letter-spacing:0; }
+  .lede { color:var(--ink-2); max-width:66ch; margin:0 0 26px; font-size:15px; }
+  h3 { font-family:"Gothic A1",sans-serif; font-weight:700; font-size:16.5px; margin:34px 0 12px; letter-spacing:-.01em; }
+  p { max-width:68ch; margin:0 0 14px; }
+  ul { max-width:68ch; margin:0 0 14px; padding-left:20px; }
+  li { margin-bottom:6px; }
+  strong { font-weight:500; }
+  code {
+    font-family:"JetBrains Mono",monospace; font-size:.875em;
+    background:var(--surface-2); padding:1px 5px; border-radius:3px;
+  }
+
+  .chip {
+    display:inline-flex; align-items:center;
+    font-family:"JetBrains Mono",monospace; font-size:10.5px; font-weight:500;
+    letter-spacing:.05em; padding:2px 7px; border-radius:2px; white-space:nowrap; vertical-align:1px;
+  }
+  .chip.ours { background:var(--ours-bg); color:var(--ours); }
+  .chip.theirs { background:var(--theirs-bg); color:var(--theirs); }
+  .chip.open { background:var(--open-bg); color:var(--open); }
+  .chip.stop { background:var(--stop-bg); color:var(--stop); }
+  .chip.doc { background:var(--accent-soft); color:var(--accent); }
+
+  .legend { display:flex; flex-wrap:wrap; gap:18px; margin:22px 0 30px; padding:16px 18px; background:var(--surface); border:1px solid var(--line); border-radius:4px; }
+  .legend div { font-size:13.5px; color:var(--ink-2); }
+  .legend b { color:var(--ink); font-weight:500; }
+
+  .tablewrap { overflow-x:auto; margin:18px 0 10px; border:1px solid var(--line); border-radius:4px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  th,td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+  thead th {
+    background:var(--surface-2); font-family:"JetBrains Mono",monospace;
+    font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-2); border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  tbody tr:last-child td { border-bottom:none; }
+  td.num { font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+  .note { border-left:3px solid var(--accent); background:var(--accent-soft); padding:14px 18px; margin:22px 0; font-size:14.5px; }
+  .note.warn { border-left-color:var(--open); background:var(--open-bg); }
+  .note.stop { border-left-color:var(--stop); background:var(--stop-bg); }
+  .note p:last-child { margin-bottom:0; }
+  .note .h { font-family:"Gothic A1",sans-serif; font-weight:700; display:block; margin-bottom:4px; }
+
+  .flow { display:flex; flex-wrap:wrap; gap:8px; align-items:stretch; margin:20px 0 8px; }
+  .step {
+    flex:1 1 150px; background:var(--surface); border:1px solid var(--line);
+    border-top:3px solid var(--accent); border-radius:4px; padding:14px 16px; box-shadow:var(--shadow);
+  }
+  .step .k { font-family:"JetBrains Mono",monospace; font-size:10.5px; letter-spacing:.1em; color:var(--ink-3); text-transform:uppercase; }
+  .step .t { font-family:"Gothic A1",sans-serif; font-weight:700; font-size:14.5px; margin:4px 0 6px; }
+  .step .d { font-size:13px; color:var(--ink-2); line-height:1.6; }
+  .step .g { margin-top:8px; font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--ours); }
+  .step.blocked { border-top-color:var(--stop); }
+  .step.blocked .g { color:var(--stop); }
+
+  footer {
+    border-top:2px solid var(--ink); padding-top:20px; margin-top:20px;
+    font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--ink-3); line-height:1.9;
+  }
+  footer a { color:var(--accent); }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">S15P21A103 · AI 트랙 B · 2026-08-28</div>
+  <h1>인터페이스 계약과 VLM 배치 계획</h1>
+  <p class="standfirst">
+    BE·HW·MW 와 맞추는 접점에서 <strong>우리가 양보할 수 있는 것</strong>과
+    <strong>바뀌면 데이터가 무효가 되는 것</strong>을 가른다. 그리고 Jetson 위에
+    VLM 을 올리는 경로를 실제 제약과 함께 정리한다.
+  </p>
+  <div class="meta">
+    <span><b>작성</b> 김준태 (트랙 B)</span>
+    <span><b>이슈</b> 27 · 36 · 42 · 46</span>
+    <span><b>대상</b> BE · HW · MW/ROS · AI 트랙 A</span>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<section>
+  <h2><span class="n">01</span> 접점을 세 종류로 나눈다</h2>
+  <p class="lede">
+    "협의"라고 뭉뚱그리면 바꿔도 되는 것과 바꾸면 안 되는 것이 섞인다.
+    기준은 하나다 — <strong>바꿨을 때 이미 수집한 데이터가 무효가 되거나,
+    학습 때와 추론 때가 달라지는가.</strong>
+  </p>
+
+  <div class="legend">
+    <div><span class="chip ours">우리가 맞춘다</span> &nbsp;<b>상대 편의대로 정하면 된다.</b> 우리 쪽 변경 비용이 작다</div>
+    <div><span class="chip theirs">우리를 따라야</span> &nbsp;<b>바꾸면 데이터가 무효</b>거나 학습↔추론이 어긋난다</div>
+    <div><span class="chip open">지금 같이 정한다</span> &nbsp;<b>아직 미정.</b> 늦어질수록 되돌리는 비용이 커진다</div>
+  </div>
+
+  <h3>BE — 서버 · 학습 큐 · 배포 API</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>항목</th><th>구분</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td>데이터셋 <b>저장 컨테이너</b> (npz / parquet / LeRobot 포맷)</td><td><span class="chip ours">우리가 맞춘다</span></td><td>내용이 같으면 컨테이너는 변환하면 된다. 서버 편의가 우선</td></tr>
+        <tr><td>업로드 단위 · 디렉터리 레이아웃 · 압축</td><td><span class="chip ours">우리가 맞춘다</span></td><td>수집기 출력 경로만 바꾸면 된다</td></tr>
+        <tr><td>학습 큐 요청/응답 스키마</td><td><span class="chip ours">우리가 맞춘다</span></td><td>큐가 받는 것은 "데이터셋 경로 + 학습 설정"이면 충분하다</td></tr>
+        <tr><td>ckpt 파일 확장자 · 저장 위치 · 버전 문자열 형식</td><td><span class="chip ours">우리가 맞춘다</span></td><td>배포 API 스키마에 맞춘다</td></tr>
+        <tr><td>관제 수집 API 이벤트 필드</td><td><span class="chip ours">우리가 맞춘다</span></td><td>보낼 값은 우리가 알지만 형식은 서버가 정하면 된다</td></tr>
+        <tr><td><b>ckpt 메타에 반드시 남는 필드</b> — 계약 버전 · config 해시 · code 해시 · 파라미터 수 · 학습 데이터셋</td><td><span class="chip theirs">우리를 따라야</span></td><td>이게 없으면 배포된 모델이 어느 데이터·어느 코드에서 나왔는지 되짚을 수 없다</td></tr>
+        <tr><td><b>에피소드 단위 무결성</b> — 계약 검증을 통과한 것만 저장</td><td><span class="chip theirs">우리를 따라야</span></td><td>서버가 검증 실패분을 섞어 보관하면 학습이 조용히 오염된다</td></tr>
+        <tr><td>용량 전제 — <b>9.20 MB/에피소드</b>, 1000건 ≈ 9.2 GB</td><td><span class="chip open">지금 같이</span></td><td>실측값. 대역폭·보관 정책이 이 규모를 전제하는지 확인 필요</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>MW / ROS — 추론 노드 · Safety Controller</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>항목</th><th>구분</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td>ROS 토픽 이름 · 메시지 타입 · QoS</td><td><span class="chip ours">우리가 맞춘다</span></td><td>ROS 관례를 따르는 편이 낫다</td></tr>
+        <tr><td>노드 생명주기 · 파라미터 이름 · 로깅 형식</td><td><span class="chip ours">우리가 맞춘다</span></td><td>MW 규약대로</td></tr>
+        <tr><td>ckpt 로드 시점 · 핫스왑 방식</td><td><span class="chip ours">우리가 맞춘다</span></td><td>정책은 상태가 없어 언제 갈아끼워도 된다</td></tr>
+        <tr><td><b>제어 주기 30 Hz</b></td><td><span class="chip theirs">우리를 따라야</span></td><td>학습 데이터가 30Hz 다. 추론 주기가 다르면 <b>학습 때와 다른 시간 간격</b>으로 행동한다</td></tr>
+        <tr><td><b>행동의 의미</b> — 목표 관절각 5 + 그리퍼, <b>절대값</b>(증분 아님)</td><td><span class="chip theirs">우리를 따라야</span></td><td>증분으로 해석하면 같은 숫자가 전혀 다른 동작이 된다</td></tr>
+        <tr><td><b>정규화 [−1, 1]</b> 과 관절범위 출처 <code>configs/so101.yaml</code></td><td><span class="chip theirs">우리를 따라야</span></td><td>범위가 다르면 정규화가 깨진다. 값을 두 곳에 두지 않는다</td></tr>
+        <tr><td><b>관측 형식</b> — 이미지 (3,224,224) uint8 CHW × 2, state (6,) float32</td><td><span class="chip theirs">우리를 따라야</span></td><td>모델 입력이다. 채널 순서만 틀려도 조용히 망가진다</td></tr>
+        <tr><td><b>관절 순서</b> pan · lift · elbow · wrist_flex · wrist_roll · gripper</td><td><span class="chip theirs">우리를 따라야</span></td><td>바꾸면 수집 데이터 전부 무효</td></tr>
+        <tr><td>Safety Controller 리밋값</td><td><span class="chip open">지금 같이</span></td><td>관절 범위는 <code>configs/so101.yaml</code> 이 단일 출처. 같은 값을 두 곳에 두면 갈라진다</td></tr>
+        <tr><td>추론 지연 예산</td><td><span class="chip open">지금 같이</span></td><td>33ms 안에 관측→행동이 끝나야 30Hz 가 성립한다. <b>미측정</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>HW — 로봇 · 카메라 · 대상물</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>항목</th><th>구분</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td>로봇 형상 변경 · 링크 길이 · 서보 교체</td><td><span class="chip ours">우리가 맞춘다</span></td><td>하드웨어 값은 전부 <code>configs/</code> 로 분리했다. 코드 수정 없이 따라간다</td></tr>
+        <tr><td>카메라 모델 · 마운트 종류</td><td><span class="chip ours">우리가 맞춘다</span></td><td>정해지면 시뮬 카메라를 그 위치로 옮긴다</td></tr>
+        <tr><td>Compliant(TPU) 그리퍼 채택 여부</td><td><span class="chip ours">우리가 맞춘다</span></td><td>외형이 원본과 동일함을 실측했다 (bbox 차 ≤0.006mm) — 파지 기하는 그대로 유효</td></tr>
+        <tr><td><b>캘리브 방식 new(관절중앙=0) vs old(수평신전=0)</b></td><td><span class="chip open">지금 같이</span></td><td>틀리면 시뮬↔실물 관절 부호·오프셋이 통째로 어긋난다</td></tr>
+        <tr><td><b>대상물 규격 1.5~2.5 cm</b></td><td><span class="chip theirs">우리를 따라야</span></td><td>그리퍼 닫힘 간격 1.7cm 에서 나온 제약. 벗어나면 물리적으로 못 잡는다</td></tr>
+        <tr><td><b>물체 배치 영역</b> x[0.10,0.25] y[±0.175]</td><td><span class="chip theirs">우리를 따라야</span></td><td>실측 도달영역. 밖에서 찍은 시연은 로봇이 재현 못 해 폐기된다</td></tr>
+        <tr><td>카메라 대수 · 해상도 (현재 2대 224×224)</td><td><span class="chip open">지금 같이</span></td><td>바꾸면 재수집. <b>바꿀 거면 지금이 마지막 타이밍</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="h">한 줄로 줄이면</span>
+    <p>
+      <strong>담는 방법은 맞춰준다. 담기는 내용의 의미는 못 바꾼다.</strong>
+      파일 형식·API 스키마·토픽 이름은 상대 편의대로. 관절 순서·정규화·제어 주기·
+      행동의 의미·관측 형식은 바꾸면 데이터가 무효이거나 학습과 추론이 어긋난다.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+  <h2><span class="n">02</span> VLM 은 무엇을 하고 무엇을 하지 않는가</h2>
+  <p class="lede">
+    역할을 먼저 좁히지 않으면 8GB 안에 안 들어간다. 그리고 역할을 잘못 잡으면
+    들어가도 안 된다.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>VLM 이 한다</th><th>VLM 이 하지 않는다</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>장면을 보고 <b>어떤 스킬</b>을 쓸지 고른다 (집기 / 놓기 / 밀기)</td>
+          <td><b>관절각을 내지 않는다.</b> 그건 정책의 일이다</td>
+        </tr>
+        <tr>
+          <td>자연어 지시에서 <b>어떤 물체</b>인지 지목한다 (grounding)</td>
+          <td><b>정밀 좌표를 내지 않는다.</b> 아래 경고 참조</td>
+        </tr>
+        <tr>
+          <td>스킬 <b>전환 시점</b>에만 한 번 돈다</td>
+          <td><b>30Hz 제어 루프 안에 들어가지 않는다</b></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note stop">
+    <span class="h">VLM 에게 10mm 정밀도를 요구하면 안 된다</span>
+    <p>
+      우리 실측으로 <strong>이 태스크의 위치 허용오차는 ±10mm</strong> 다.
+      2B급 VLM 의 grounding 은 "저 빨간 큐브"를 <b>지목</b>하는 수준이지
+      10mm 를 보장하지 않는다. 그러면 구조는 이렇게 되어야 한다 —
+      <strong>VLM 이 대상과 스킬을 정하고, 정밀 위치는 정책이 이미지에서 직접 만든다.</strong>
+      VLM 좌표를 정책 입력으로 그대로 넣으면 그 오차가 그대로 실패가 된다.
+    </p>
+    <p style="margin-top:8px">
+      ⚠️ VLM grounding 이 실제로 몇 mm 인지는 <b>측정한 적이 없다.</b>
+      쓰기로 정하면 그것부터 재야 한다.
+    </p>
+  </div>
+
+  <div class="note warn">
+    <span class="h">지연도 같은 문제다</span>
+    <p>
+      정책은 <strong>33ms</strong> 안에 관측→행동을 끝내야 30Hz 가 성립한다.
+      VLM 은 초 단위다. 같은 루프에 두면 제어가 끊긴다.
+      VLM 은 <strong>비동기</strong>로, 스킬이 바뀌는 순간에만 돈다.
+      이슈 42 의 완료 기준에 이미 "정책 10Hz 이상, VLM 결정 2초 이내"가 있다.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+  <h2><span class="n">03</span> Jetson 에 실제로 무엇이 들어가나</h2>
+  <p class="lede">
+    Orin Nano Super 8GB 기준. <span class="chip doc">문서 근거</span> 아래 수치는 NVIDIA 문서와
+    커뮤니티 가이드에서 온 것이고 <strong>우리가 측정한 값이 아니다.</strong>
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>모델</th><th class="num">파라미터</th><th class="num">양자화</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>LFM2-VL</td><td class="num">1.6B</td><td class="num">Q4_K</td><td>여유 있게 들어감</td></tr>
+        <tr><td><b>Qwen3-VL</b></td><td class="num">2B</td><td class="num">Q4_K</td><td>여유 있게 들어감 · LoRA 생태계가 가장 두껍다</td></tr>
+        <tr><td>SmolVLM2</td><td class="num">2.2B</td><td class="num">Q4_K</td><td>여유 있게 들어감</td></tr>
+        <tr><td>Granite Vision 3.2</td><td class="num">2B</td><td class="num">Q4_K</td><td>여유 있게 들어감</td></tr>
+        <tr><td>Gemma 3 VLM</td><td class="num">4B</td><td class="num">Q4_K</td><td>들어가지만 여유가 적다</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    NVIDIA 는 Orin Nano Super 8GB 를 <strong>4B 파라미터급까지</strong>로 안내한다.
+    그보다 큰 VLM(7B~13B)은 AGX Orin 64GB 급을 든다.
+  </p>
+
+  <h3>우리 예산 계산 <span class="chip open">미검증</span></h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>항목</th><th class="num">추정</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td>OS · 시스템</td><td class="num">0.5 GB +</td><td>최적화 후 최소치. 기본 상태는 더 크다</td></tr>
+        <tr><td>VLM 2B Q4_K</td><td class="num">~1.5 GB</td><td>가중치. KV 캐시·이미지 토큰 별도</td></tr>
+        <tr><td><b>정책 (BC 현재)</b></td><td class="num"><b>5.0 MB</b></td><td>1,307,974 파라미터 fp32 <span class="chip ours">실측</span></td></tr>
+        <tr><td>카메라 버퍼 · 전처리 · ROS</td><td class="num">?</td><td><b>미측정</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="h">좋은 소식: 정책이 예산을 거의 안 쓴다</span>
+    <p>
+      BC 정책은 <strong>5MB</strong> 다. 8GB 제약은 사실상 <strong>VLM 예산</strong>이다.
+      ACT/Diffusion 으로 올라가도 수십 MB 수준이라 구도는 바뀌지 않는다.
+      즉 <strong>VLM 을 2B 로 유지하면 제약은 걸리지 않을 가능성이 높다</strong> —
+      다만 이건 계산이지 측정이 아니다. 이슈 42 가 그걸 재는 이슈다.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section>
+  <h2><span class="n">04</span> 파인튜닝 → 어댑터 → 배포 경로</h2>
+  <p class="lede">
+    LoRA 어댑터를 붙여 쓰는 계획에 맞춘 경로다. 각 단계마다 <strong>다음으로 넘어가도 되는지 판정할 기준</strong>을 함께 둔다.
+  </p>
+
+  <div class="flow">
+    <div class="step blocked">
+      <div class="k">step 0</div>
+      <div class="t">라벨을 만든다</div>
+      <div class="d">우리 시연 데이터에는 <b>자연어 라벨이 없다.</b> 이미지·관절각·행동뿐이다. VLM 을 파인튜닝하려면 (장면 → 지시 → 대상/스킬) 쌍이 있어야 한다.</div>
+      <div class="g">막힘: 데이터 없음</div>
+    </div>
+    <div class="step">
+      <div class="k">step 1</div>
+      <div class="t">베이스 선정 · 무튜닝 평가</div>
+      <div class="d">Qwen3-VL 2B 등에 우리 장면을 그대로 물어본다. <b>파인튜닝 없이 얼마나 되는지</b>가 기준선이다.</div>
+      <div class="g">게이트: 무튜닝 정답률 = 기준선</div>
+    </div>
+    <div class="step">
+      <div class="k">step 2</div>
+      <div class="t">LoRA 파인튜닝</div>
+      <div class="d">로컬 RTX 에서 QLoRA. 2B 급이면 소비자 GPU 로 가능하다. H200 할당되면 이관.</div>
+      <div class="g">게이트: 기준선 + 유의미한 차이</div>
+    </div>
+    <div class="step">
+      <div class="k">step 3</div>
+      <div class="t">병합 · 양자화</div>
+      <div class="d">어댑터를 베이스에 병합하고 Q4_K 로 줄인다. Jetson 배포는 이 형태가 가장 단순하다.</div>
+      <div class="g">게이트: 양자화 후 재평가</div>
+    </div>
+    <div class="step">
+      <div class="k">step 4</div>
+      <div class="t">Jetson 실측</div>
+      <div class="d">메모리·지연을 정책과 <b>동시 구동</b> 상태에서 잰다. 따로 재면 의미 없다.</div>
+      <div class="g">게이트: 8GB 미만 · VLM 2초 이내</div>
+    </div>
+  </div>
+
+  <div class="note stop">
+    <span class="h">가장 먼저 막히는 곳은 모델이 아니라 데이터다</span>
+    <p>
+      텔레옵으로 모으는 시연에는 <strong>자연어 지시도 스킬 라벨도 없다.</strong>
+      VLM 파인튜닝을 하려면 그 라벨을 어디서 만들지부터 정해야 한다 — 수집할 때
+      사람이 함께 적을지, 나중에 붙일지, 스킬 종류를 몇 개로 고정할지.
+      <strong>이건 데이터 계약(이슈 27)에 필드가 하나 더 붙는다는 뜻이고, 트랙 A 합의 사안이다.</strong>
+    </p>
+  </div>
+
+  <div class="note warn">
+    <span class="h">양자화 후에 다시 재야 한다</span>
+    <p>
+      LoRA 를 병합하고 Q4 로 줄이면 <strong>동작이 바뀐다.</strong>
+      파인튜닝 직후의 성능으로 판정하면 배포된 것과 다른 것을 판정한 셈이 된다.
+      게이트는 <strong>양자화된 그 파일</strong>에 대해 통과해야 한다.
+      우리 프로젝트에서 이미 같은 실수를 한 번 했다 — 계측기를 확인하지 않고 수치를 믿은 것.
+    </p>
+  </div>
+
+  <h3>배포 형태 선택 <span class="chip open">결정 필요</span></h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>방식</th><th>장점</th><th>대가</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>병합 후 GGUF Q4</b> (llama.cpp / Ollama)</td>
+          <td>Jetson 에서 가장 단순하고 사례가 많다. BE 배포 API 도 파일 하나만 다루면 된다</td>
+          <td>어댑터를 바꿀 때마다 전체 재배포 (~1.5GB)</td>
+        </tr>
+        <tr>
+          <td><b>어댑터 분리 유지</b> (TensorRT-LLM LoRA)</td>
+          <td>어댑터만 교체 가능 (수십 MB). 스킬셋 확장에 유리</td>
+          <td>Jetson 에서 빌드·지원이 까다롭다. 엔진을 타깃에서 빌드해야 하는 경우가 있다</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    W6 기능 동결까지 시간이 없으므로 <strong>1안(병합+GGUF)을 기본으로 두고</strong>,
+    어댑터 교체가 실제로 필요해지면 그때 2안을 검토하는 편이 안전하다. 배포 단위가
+    커지는 대가는 BE 와 확인하면 된다.
+  </p>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+  <h2><span class="n">05</span> Isaac Sim — 지금 시점의 정리</h2>
+  <p class="lede">
+    렌더링 비교는 집 RTX 에서. 다만 착수 전에 확정할 것이 하나 있다.
+  </p>
+  <ul>
+    <li><b>Isaac Sim 은 RT 코어가 필요해 H200 에서 렌더링할 수 없다.</b> 로컬 RTX 전용이고,
+      학습 서버로 이관해도 렌더는 못 따라간다. MuJoCo 가 주력인 이유다</li>
+    <li><b>붙일 자리는 비어 있다</b> — <code>sim/isaac/</code> 에 <code>sim/base.py</code> 의
+      <code>RobotEnv</code> 만 구현하면 정책·baseline·롤아웃·게이트가 그대로 돈다</li>
+    <li><b>두 번째 시뮬레이터를 위해 데이터 계약을 바꾸지 않는다.</b> 바꿔야 한다면 양 트랙 합의 사안</li>
+    <li><b>비교 지표를 먼저 정한다</b> — 도달성 지도 일치 / scripted 파지 성공률 /
+      렌더 시간 per 틱 / <b>교차 평가</b>(MuJoCo 학습 → Isaac 평가, 반대도).
+      마지막 것이 도메인 갭의 대리 지표다</li>
+  </ul>
+  <div class="note">
+    <p>
+      NVIDIA 는 로봇 파운데이션 모델(Isaac GR00T N1 계열, VLA)을 Jetson 배포 대상으로 든다.
+      우리 스코프는 <strong>BC → ACT → Diffusion</strong> 이고 VLM 은 상위 지시층이다.
+      VLA 로 갈아타는 것은 W6 동결 이후 논의 대상이지 지금 할 일이 아니다.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section>
+  <h2><span class="n">06</span> 순서</h2>
+  <p class="lede">지금 막혀 있는 것부터.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th class="num">순</th><th>할 일</th><th>막고 있는 것</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><b>계약 결정 3건 확정</b> (트랙 A)</td><td>이슈 28·29·30·31·34·64</td></tr>
+        <tr><td class="num">2</td><td>텔레옵 시연 20 → 검증 → 100</td><td>1번</td></tr>
+        <tr><td class="num">3</td><td>BC 학습 → <b>롤아웃 게이트 20% 판정</b> (GPU 환경)</td><td>2번</td></tr>
+        <tr><td class="num">4</td><td><b>VLM 라벨 스키마 합의</b> — 계약에 필드가 붙는다</td><td>트랙 A · 스킬 종류 확정</td></tr>
+        <tr><td class="num">5</td><td>VLM 베이스 무튜닝 평가 (기준선)</td><td>4번</td></tr>
+        <tr><td class="num">6</td><td>Jetson 동시 구동 실측 (이슈 42)</td><td>Jetson 실물</td></tr>
+        <tr><td class="num">7</td><td>Isaac Sim 비교</td><td>비교 지표 확정</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <strong>4번을 지금 시작할 수 있다.</strong> 텔레옵으로 시연을 모으기 시작하면
+    그때부터 라벨을 함께 적는 편이 낫다 — 나중에 붙이면 영상을 다시 봐야 한다.
+    스킬 종류를 몇 개로 고정할지만 정하면 된다.
+  </p>
+</section>
+
+<footer>
+  작성 김준태 (AI 트랙 B) · 2026-08-28<br>
+  ⚠️ Jetson·VLM 수치는 <b>문서 근거</b>이며 우리가 측정한 값이 아니다. 정책 5MB 만 실측이다.<br>
+  근거 —
+  <a href="https://developer.nvidia.com/blog/getting-started-with-edge-ai-on-nvidia-jetson-llms-vlms-and-foundation-models-for-robotics/">NVIDIA Technical Blog: Edge AI on Jetson</a> ·
+  <a href="https://forums.developer.nvidia.com/t/ai-models-that-run-on-jetson-orin-nano-super-8gb-a-practical-guide/365412">NVIDIA Forums: Models on Orin Nano Super 8GB</a> ·
+  <a href="https://www.jetson-ai-lab.com/models/">Jetson AI Lab: Models</a><br>
+  우리 실측 — <code>AI/docs/</code> MEASURE 3건 · TS 4건 · <code>AI/EXP_LOG.jsonl</code>
+</footer>
+
+</div>
