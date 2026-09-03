@@ -546,7 +546,10 @@ function WorkView({ editingWorkId, onToast }: { editingWorkId: string | null; on
   const [blocks, setBlocks] = useState<WorkflowBlock[]>(() => structuredClone(editingWork?.blocks ?? [
     { id: 1, kind: 'umi', title: '빨간 블록 집기' },
     { id: 2, kind: 'motor', title: '모터 움직이기', motor: 'J2', angle: 35 },
-    { id: 3, kind: 'repeat', title: '반복하기', repeat: 2, children: [{ id: 4, kind: 'vlm', title: '물체를 상자로 이동' }] },
+    { id: 3, kind: 'repeat', title: '반복하기', repeat: 2, children: [
+      { id: 4, kind: 'vlm', title: '물체를 상자로 이동' },
+      { id: 5, kind: 'motor', title: '모터 움직이기', motor: 'J3', angle: 25 },
+    ] },
   ]));
   const [runningIndex, setRunningIndex] = useState(-1);
   const [workName, setWorkName] = useState(editingWork?.name ?? '빨간 블록 정리 작업');
@@ -619,7 +622,14 @@ function WorkView({ editingWorkId, onToast }: { editingWorkId: string | null; on
     } else setBlocks((items) => [...items, block]);
   };
 
-  const updateBlock = (id: number, patch: Partial<WorkflowBlock>) => setBlocks((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  const updateBlock = (id: number, patch: Partial<WorkflowBlock>) => {
+    const updateItems = (items: WorkflowBlock[]): WorkflowBlock[] => items.map((item) => {
+      if (item.id === id) return { ...item, ...patch };
+      if (item.children?.length) return { ...item, children: updateItems(item.children) };
+      return item;
+    });
+    setBlocks(updateItems);
+  };
   const removeBlock = (id: number) => setBlocks((items) => items.filter((item) => item.id !== id));
   const moveBlock = (index: number, direction: -1 | 1) => {
     const target = index + direction;
@@ -634,6 +644,15 @@ function WorkView({ editingWorkId, onToast }: { editingWorkId: string | null; on
     const kind = event.dataTransfer.getData('block-kind') as BlockKind;
     if (kind) addBlock(kind, repeatId);
   };
+  const removeChildBlock = (repeatId: number, childId: number) => setBlocks((items) => items.map((item) => item.id === repeatId ? { ...item, children: (item.children ?? []).filter((child) => child.id !== childId) } : item));
+  const moveChildBlock = (repeatId: number, childIndex: number, direction: -1 | 1) => setBlocks((items) => items.map((item) => {
+    if (item.id !== repeatId) return item;
+    const children = [...(item.children ?? [])];
+    const target = childIndex + direction;
+    if (target < 0 || target >= children.length) return item;
+    [children[childIndex], children[target]] = [children[target], children[childIndex]];
+    return { ...item, children };
+  }));
 
   return (
     <>
@@ -645,7 +664,7 @@ function WorkView({ editingWorkId, onToast }: { editingWorkId: string | null; on
         <section className="canvas" onDragOver={(e) => e.preventDefault()} onDrop={(e) => dropKind(e)}>
           <div className="canvas-head"><div><h2>작업 흐름</h2><p>위에서 아래 순서로 실행돼요.</p></div><span>{blocks.length}개 블록</span></div>
           <div className="flow"><div className="start-block"><span>▶</span><div><strong>작업 시작</strong><small>{selectedRobot.name}에서 실행</small></div></div><div className="connector" />
-            {blocks.map((block, index) => <div className="flow-unit" key={block.id}><WorkflowBlockCard block={block} active={runningIndex === index} disabled={running} onUpdate={updateBlock} onRemove={removeBlock} onMove={(direction) => moveBlock(index, direction)} onDropChild={(event) => dropKind(event, block.id)} /><div className="connector" /></div>)}
+            {blocks.map((block, index) => <div className="flow-unit" key={block.id}><WorkflowBlockCard block={block} active={runningIndex === index} disabled={running} onUpdate={updateBlock} onRemove={removeBlock} onMove={(direction) => moveBlock(index, direction)} onDropChild={(event) => dropKind(event, block.id)} onRemoveChild={(childId) => removeChildBlock(block.id, childId)} onMoveChild={(childIndex, direction) => moveChildBlock(block.id, childIndex, direction)} /><div className="connector" /></div>)}
             <div className="drop-zone"><span>＋</span>이곳에 작업 블록을 놓아주세요</div>
           </div>
         </section>
@@ -656,12 +675,41 @@ function WorkView({ editingWorkId, onToast }: { editingWorkId: string | null; on
   );
 }
 
-function WorkflowBlockCard({ block, active, disabled, onUpdate, onRemove, onMove, onDropChild }: { block: WorkflowBlock; active: boolean; disabled: boolean; onUpdate: (id: number, patch: Partial<WorkflowBlock>) => void; onRemove: (id: number) => void; onMove: (direction: -1 | 1) => void; onDropChild: (event: React.DragEvent) => void }) {
-  const catalog = blockCatalog.find((item) => item.kind === block.kind)!;
+function MotorSettings({ block, disabled, nested = false, onUpdate }: { block: WorkflowBlock; disabled: boolean; nested?: boolean; onUpdate: (id: number, patch: Partial<WorkflowBlock>) => void }) {
   const range = motorRanges[block.motor ?? 'J1'];
+  return <div className={`motor-config${nested ? ' nested-motor-config' : ''}`}>
+    <label>모터<select value={block.motor} disabled={disabled} onChange={(e) => onUpdate(block.id, { motor: e.target.value, angle: 0 })}>{Object.keys(motorRanges).map((motor) => <option key={motor}>{motor}</option>)}</select></label>
+    <label className="angle-field">회전 각도 <span>{block.angle}°</span><input aria-label={`${block.title} 회전 각도`} type="range" min={range[0]} max={range[1]} value={block.angle} disabled={disabled} onChange={(e) => onUpdate(block.id, { angle: Number(e.target.value) })} /><small>{range[0]}° <b>{range[1]}°</b></small></label>
+  </div>;
+}
+
+function NestedWorkflowBlockCard({ block, index, count, disabled, onUpdate, onRemove, onMove }: { block: WorkflowBlock; index: number; count: number; disabled: boolean; onUpdate: (id: number, patch: Partial<WorkflowBlock>) => void; onRemove: (id: number) => void; onMove: (index: number, direction: -1 | 1) => void }) {
+  const catalog = blockCatalog.find((item) => item.kind === block.kind)!;
+  return <article className={`nested-workflow-block ${block.kind}`}>
+    <div className="nested-block-head">
+      <span className="block-mark">{catalog.mark}</span>
+      <div><strong>{block.title}</strong><small>{block.kind === 'motor' ? `${block.motor} · ${block.angle}° 회전` : catalog.description}</small></div>
+      <div className="block-actions">
+        <button disabled={disabled || index === 0} onClick={() => onMove(index, -1)} aria-label={`${block.title} 위로 이동`}>↑</button>
+        <button disabled={disabled || index === count - 1} onClick={() => onMove(index, 1)} aria-label={`${block.title} 아래로 이동`}>↓</button>
+        <button disabled={disabled} onClick={() => onRemove(block.id)} aria-label={`${block.title} 삭제`}>×</button>
+      </div>
+    </div>
+    {block.kind === 'motor' && <MotorSettings block={block} disabled={disabled} nested onUpdate={onUpdate} />}
+  </article>;
+}
+
+function WorkflowBlockCard({ block, active, disabled, onUpdate, onRemove, onMove, onDropChild, onRemoveChild, onMoveChild }: { block: WorkflowBlock; active: boolean; disabled: boolean; onUpdate: (id: number, patch: Partial<WorkflowBlock>) => void; onRemove: (id: number) => void; onMove: (direction: -1 | 1) => void; onDropChild: (event: React.DragEvent) => void; onRemoveChild: (id: number) => void; onMoveChild: (index: number, direction: -1 | 1) => void }) {
+  const catalog = blockCatalog.find((item) => item.kind === block.kind)!;
   return <div className={`workflow-block ${block.kind} ${active ? 'executing' : ''}`}><div className="block-top"><span className="block-mark">{catalog.mark}</span><div><strong>{block.title}</strong><small>{catalog.description}</small></div>{active && <em className="executing-badge">실행 중</em>}<div className="block-actions"><button disabled={disabled} onClick={() => onMove(-1)} aria-label="위로 이동">↑</button><button disabled={disabled} onClick={() => onMove(1)} aria-label="아래로 이동">↓</button><button disabled={disabled} onClick={() => onRemove(block.id)} aria-label="삭제">×</button></div></div>
-    {block.kind === 'motor' && <div className="motor-config"><label>모터<select value={block.motor} disabled={disabled} onChange={(e) => onUpdate(block.id, { motor: e.target.value, angle: 0 })}>{Object.keys(motorRanges).map((motor) => <option key={motor}>{motor}</option>)}</select></label><label className="angle-field">각도 <span>{block.angle}°</span><input type="range" min={range[0]} max={range[1]} value={block.angle} disabled={disabled} onChange={(e) => onUpdate(block.id, { angle: Number(e.target.value) })} /><small>{range[0]}° <b>{range[1]}°</b></small></label></div>}
-    {block.kind === 'repeat' && <div className="repeat-config"><label>반복 횟수<input type="number" min="1" max="20" value={block.repeat} disabled={disabled} onChange={(e) => onUpdate(block.id, { repeat: Math.max(1, Math.min(20, Number(e.target.value))) })} /></label><div className="repeat-drop" onDragOver={(e) => e.preventDefault()} onDrop={onDropChild}>{block.children?.length ? block.children.map((child) => <div className={`nested-block ${child.kind}`} key={child.id}><span>{blockCatalog.find((item) => item.kind === child.kind)?.mark}</span><strong>{child.title}</strong></div>) : <p>반복할 블록을 이 안에 놓아주세요</p>}</div></div>}
+    {block.kind === 'motor' && <MotorSettings block={block} disabled={disabled} onUpdate={onUpdate} />}
+    {block.kind === 'repeat' && <div className="repeat-config">
+      <div className="repeat-toolbar"><label>반복 횟수<input aria-label="반복 횟수" type="number" min="1" max="20" value={block.repeat} disabled={disabled} onChange={(e) => onUpdate(block.id, { repeat: Math.max(1, Math.min(20, Number(e.target.value))) })} /></label><div><strong>반복 동작</strong><small>아래 순서 전체를 {block.repeat ?? 1}회 실행해요</small></div><span>{block.children?.length ?? 0}개</span></div>
+      <div className="repeat-drop" onDragOver={(e) => e.preventDefault()} onDrop={onDropChild}>
+        {block.children?.length ? block.children.map((child, index) => <NestedWorkflowBlockCard key={child.id} block={child} index={index} count={block.children?.length ?? 0} disabled={disabled} onUpdate={onUpdate} onRemove={onRemoveChild} onMove={onMoveChild} />) : <p>반복할 블록을 이 안에 놓아주세요</p>}
+        <div className="nested-drop-hint"><span>＋</span>이곳에 모터 또는 Skill 블록 놓기</div>
+      </div>
+    </div>}
   </div>;
 }
 
