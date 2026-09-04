@@ -29,10 +29,10 @@
 | 컬럼 | 뜻 |
 |---|---|
 | `index` | 프레임 번호 |
-| `timestamp_ns` | ARCore frame.timestamp (나노초, `elapsedRealtimeNanos` 기준) |
+| `timestamp_ns` | ARCore frame.timestamp (나노초). ARCore 가 기준 시계를 **보장하진 않지만**, 실측상 `elapsedRealtimeNanos` 와 일치 (첫 프레임 차 −47~−68ms) |
 | `tracking` | TRACKING / PAUSED |
 | `x,y,z` | 카메라 위치 (미터) |
-| `qx,qy,qz,qw` | 카메라 회전 (쿼터니언) |
+| `qx,qy,qz,qw` | 카메라 회전 쿼터니언. **순서는 (qx, qy, qz, qw) — 스칼라 w 가 마지막.** 학습/변환 측이 (qw,qx,qy,qz) 로 읽으면 회전이 깨진다. 계약에 못박을 것 |
 | `jump_mm` | 이 프레임에서 추적 점프가 감지됐으면 그 이동량(mm). 아니면 0 |
 | `jump_deg` | 같은 프레임의 회전량(°). 아니면 0 |
 | `image` | 대응하는 JPEG 파일명. **비어 있으면 그 프레임은 이미지가 드롭됨** (pose는 유효) |
@@ -40,14 +40,23 @@
 **imu.csv** — 자이로·가속도 200Hz. `timestamp_ns,sensor,x,y,z`
 
 영상과 pose 는 ARCore 카메라 프레임에 묶여 30Hz 가 상한이라, 고주파 신호는 Android 센서
-API 로 따로 받는다. 두 스트림은 서로 독립이지만 **타임스탬프 기준이 같아서**(둘 다
-`elapsedRealtimeNanos`) 그대로 정렬된다.
+API 로 따로 받는다. 두 스트림은 서로 독립이지만 **같은 시계를 쓰는 것으로 실측 확인돼**
+(pose·IMU·녹화시작 타임스탬프가 모두 `elapsedRealtimeNanos`, 서로 수십 ms 이내) 그대로 정렬된다.
+ARCore 는 이를 문서상 보장하지 않으니, **기기를 바꾸면 이 한 줄만 재확인**한다 — 첫 pose 의
+`timestamp_ns` 와 meta 의 `start_elapsed_realtime_ns` 차가 수십 ms 이내인지. (이 저장소 확인 기기: −47~−68ms)
 
 `sensor` 는 `accel` 또는 `gyro`. 두 센서는 샘플이 도착하는 시점이 달라서 한 행에 묶지
 않는다. 단위는 가속도 m/s², 자이로 rad/s (Android 표준).
 
 S23 실측 206.3Hz. 200 을 요청해도 정확히 200 이 나오지는 않는다 — 센서 칩의 출력 단계가
 정해져 있어 가장 가까운 단계로 올라간다. **매 녹화마다 `summary.txt` 의 실측치를 확인할 것.**
+
+**gripper.csv** — 그리퍼 개폐폭 30Hz. **앱이 아니라 후처리(마커 검출) 스크립트가 만든다.**
+`frame_index,gap_px,status` 로 `frame_index` 로 poses·frames 와 조인한다. `status` 는 검출
+품질 `D`(양쪽 직접) / `M`(중심선 대칭 추정) / `T`(템플릿 보강) / `X`(실패) — 학습 측이 M/T 를
+낮게 가중하거나 버릴 수 있게 붙인다. 물리 단위 `gap_mm` 은 px→mm 캘리브레이션 방식 확정 후
+추가한다. 검출 근거: 레일식 마커라 두 마커 중점 x 가 화면 중앙(≈319px, std 3px)에 고정된다.
+검은 정사각형 16mm 마커로 rec_20260903_192233 기준 양쪽 직접검출 97%, 평탄구간 잔차 95% 1px.
 
 **meta.txt** — 기기명, 카메라 설정, **카메라 내부 파라미터(fx, fy, cx, cy)**, `focus_mode`, 시작 시각(wall clock).
 내부 파라미터는 나중에 좌표 변환/캘리브레이션에 필요하니 버리지 말 것.

@@ -252,7 +252,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             append("intrinsics=$intrinsicsLine\n")
             append("start_wallclock_ms=${System.currentTimeMillis()}\n")
             append("start_elapsed_realtime_ns=${android.os.SystemClock.elapsedRealtimeNanos()}\n")
-            append("note=timestamp_ns is ARCore frame.timestamp (elapsedRealtimeNanos base)\n")
+            append("note=timestamp_ns is ARCore frame.timestamp; base not guaranteed by ARCore but measured == elapsedRealtimeNanos on tested devices (compare first pose ts to start_elapsed_realtime_ns)\n")
             append(imu.describe())
         }
         lastJumpMm = 0.0; lastJumpDeg = 0.0
