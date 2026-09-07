@@ -1,13 +1,14 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { AdminUser, LearnedSkill, Robot, SavedWork, Training, Umi, LearningDraft } from '@/types';
-import { initialDatasets, initialLearnedSkills, initialPermissions, initialUsers } from '@/mocks';
+import type { AdminUser, Dataset, LearnedSkill, Robot, SavedWork, Training, Umi, LearningDraft } from '@/types';
+import { initialLearnedSkills, initialPermissions, initialUsers } from '@/mocks';
 import {
   addTraining,
   applyModel,
   cancelTraining,
   fetchRobots,
+  fetchDatasets,
   fetchSavedWorks,
   fetchTrainings,
   fetchUmis,
@@ -37,7 +38,7 @@ interface AppStore {
   savedWorks: SavedWork[];
   users: AdminUser[];
   permissions: Record<string, string[]>;
-  datasets: typeof initialDatasets;
+  datasets: Dataset[];
   /** 장치 등록. 중복 ID면 Error를 던진다. */
   addDevice: (input: RegisterDeviceInput) => Promise<void>;
   applyModelToRobot: (robotId: string, model: string) => Promise<void>;
@@ -78,6 +79,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   /* eslint-enable react-hooks/set-state-in-effect */
   const [robots, setRobots] = useState<Robot[]>([]);
   const [umis, setUmis] = useState<Umi[]>([]);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [savedWorks, setSavedWorks] = useState<SavedWork[]>([]);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(initialPermissions);
@@ -88,14 +90,16 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setLoadError(false);
     try {
-      const [nextRobots, nextUmis, nextTrainings, nextWorks] = await Promise.all([
+      const [nextRobots, nextUmis, nextDatasets, nextTrainings, nextWorks] = await Promise.all([
         fetchRobots(),
         fetchUmis(),
+        fetchDatasets(),
         fetchTrainings(),
         fetchSavedWorks(),
       ]);
       setRobots(nextRobots);
       setUmis(nextUmis);
+      setDatasets(nextDatasets);
       setTrainings(nextTrainings);
       setSavedWorks(nextWorks);
     } catch {
@@ -196,7 +200,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       savedWorks,
       users: initialUsers,
       permissions,
-      datasets: initialDatasets,
+      datasets,
       addDevice,
       applyModelToRobot,
       updateRobotInfo,
@@ -206,7 +210,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, visibleTrainings, learningDraft, updateLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, visibleTrainings, learningDraft, updateLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
