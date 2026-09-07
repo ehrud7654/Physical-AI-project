@@ -184,9 +184,10 @@ def main():
     out_csv = os.path.join(rec, "gripper.csv")
     with open(out_csv, "w", encoding="utf-8") as fh:
         fh.write("frame_index,gap_px,status\n")
-        for i in range(n):
+        for i, path in enumerate(files):
+            fid = int(os.path.splitext(os.path.basename(path))[0])  # poses.csv 와 join 되도록 실제 프레임번호
             g = "" if np.isnan(gap[i]) else f"{gap[i]:.1f}"
-            fh.write(f"{i},{g},{status[i]}\n")
+            fh.write(f"{fid},{g},{status[i]}\n")
 
     cnt = {s: int((status == s).sum()) for s in "DMTX"}
     valid = n - cnt["X"]
