@@ -1,4 +1,4 @@
-export type View = 'dashboard' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
+export type View = 'dashboard' | 'data' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
 
 export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
@@ -37,6 +37,10 @@ export interface Dataset {
   duration: string;
   size: string;
   tone: string;
+  skillKey: string;
+  umiId: string;
+  ready: boolean;
+  retentionDays: number;
 }
 
 export interface Training {
@@ -91,4 +95,17 @@ export interface AdminUser {
   id: string;
   name: string;
   team: string;
+}
+
+export interface LearningDraft {
+  step: number;
+  skillKey: string;
+  method: 'new' | 'existing' | null;
+  umiId: string;
+  expectedEpisodes: number;
+  selected: number[];
+  progress: number;
+  startedAt: number | null;
+  name: string;
+  error?: string;
 }
