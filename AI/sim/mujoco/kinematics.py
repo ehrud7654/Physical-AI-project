@@ -19,6 +19,7 @@ and cannot be chosen independently of the other five.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import mujoco
 import numpy as np
@@ -51,6 +52,81 @@ class IKResult:
             and self.axis_error_deg < self.AXIS_TOL_DEG
             and self.within_limits
         )
+
+
+@dataclass(frozen=True)
+class PickSegment:
+    """One leg of the scripted pick: where to go, how to hold the jaws, how long.
+    스크립트 파지의 한 구간. 어디로 갈지, 턱을 어떻게 둘지, 얼마나 걸릴지.
+
+    `target is None` means hold the arm's current commanded pose -- used for the
+    dwell and for closing in place.
+    `target is None` 이면 팔의 현재 명령 자세를 유지한다. dwell 과 제자리 닫기에 쓴다.
+    """
+
+    target: np.ndarray | None
+    grip: float
+    seconds: float
+    # Whether unreachability disqualifies the episode. Approach and descend do:
+    # if the arm cannot get to the object, there is nothing to demonstrate. The
+    # lift does not, and this is not a style choice -- isolated 🟢 2026-09-03,
+    # over the same 100 placements:
+    #
+    #     lift not gated, seed chained      2 rejected
+    #     lift not gated, seed not chained  2      (chaining is irrelevant here)
+    #     lift GATED,     seed chained     24      <- the cause
+    #     lift gated,     seed not chained 25
+    #
+    # `lift_height_m` is 0.08 m and configs/so101.yaml records the measurement
+    # that IK converges only up to 8 cm above the grasp point with the fingers
+    # held vertical. The lift target sits exactly on that boundary, so gating on
+    # it discards a quarter of otherwise fine placements.
+    # 도달 불가가 에피소드를 탈락시키는가. 접근·하강은 그렇다 — 팔이 물체에 못 가면
+    # 시연할 것이 없다. 들어올리기는 아니고, 이건 취향이 아니라 원인 분리 결과다.
+    # `lift_height_m` 이 0.08m 이고, so101.yaml 에 "손가락을 수직으로 유지한 채로는
+    # 파지점 위 8cm 까지만 IK 가 수렴한다"는 실측이 적혀 있다. 들어올리기 목표가
+    # 정확히 그 경계에 있으므로, 여기에 게이트를 걸면 멀쩡한 배치의 1/4 이 버려진다.
+    required: bool = True
+
+
+def pick_waypoints(cfg: dict[str, Any], obj_xyz: np.ndarray) -> list[PickSegment]:
+    """The one definition of the scripted demonstration.
+    스크립트 시연의 **유일한** 정의.
+
+    It lived in two places -- `data/collect.py` (collection) and
+    `policy/baselines.py` (evaluation) -- and they had already drifted: collection
+    produced 141 ticks, the evaluation baseline 165. That means the `scripted`
+    ceiling was not the demonstrator that made the data, and neither number alone
+    would have shown it. 🟢 2026-09-03
+    이 계획이 두 곳에 있었다 — `data/collect.py`(수집)와 `policy/baselines.py`(평가) —
+    그리고 **이미 갈라져 있었다**: 수집은 141틱, 평가 baseline 은 165틱을 냈다.
+    즉 `scripted` 상한선이 데이터를 만든 시연자와 같은 것이 아니었고, 어느 한쪽
+    수치만 봐서는 아무도 몰랐다.
+
+    Timing and the dwell come from `configs/so101.yaml` so the demonstrator can be
+    changed without touching code, and so a change shows up in `config_sha`.
+    타이밍과 dwell 은 `configs/so101.yaml` 에서 온다. 코드를 건드리지 않고 시연자를
+    바꿀 수 있고, 변경이 `config_sha` 에 남는다.
+    """
+    g = cfg["grasp"]
+    t = g.get("timing", {})
+    grasp_pt = np.asarray(obj_xyz, dtype=float) + np.array(
+        [0.0, 0.0, float(g["grasp_z_offset_m"])]
+    )
+    approach = grasp_pt + np.array([0.0, 0.0, float(g["approach_height_m"])])
+    lift = grasp_pt + np.array([0.0, 0.0, float(g["lift_height_m"])])
+    open_cmd, close_cmd = float(g["open_cmd"]), float(g["close_cmd"])
+
+    segs = [
+        PickSegment(approach, open_cmd, float(t.get("approach_s", 1.2))),
+        PickSegment(grasp_pt, open_cmd, float(t.get("descend_s", 1.0))),
+    ]
+    dwell_s = float(g.get("dwell_s", 0.0))
+    if dwell_s > 0.0:
+        segs.append(PickSegment(None, open_cmd, dwell_s))
+    segs.append(PickSegment(None, close_cmd, float(t.get("close_s", 1.0))))
+    segs.append(PickSegment(lift, close_cmd, float(t.get("lift_s", 1.5)), required=False))
+    return segs
 
 
 def grasp_point(model: mujoco.MjModel, data: mujoco.MjData, offset_local: np.ndarray) -> np.ndarray:
