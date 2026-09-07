@@ -214,7 +214,7 @@ select:focus,input:focus{border-color:#315efb;box-shadow:0 0 0 3px #e3eaff}tr.se
 
 /* Bright S.S.A.F.Y concept */
 .landing-page{color:#101828;background:#f7f9fc}.landing-header{position:absolute;height:84px;padding:0 38px;border-bottom:1px solid rgba(16,24,40,.1);background:rgba(255,255,255,.88);backdrop-filter:blur(14px);box-shadow:0 2px 18px rgba(16,24,40,.05)}.landing-header>img{width:190px;height:44px;filter:none;mix-blend-mode:normal}.landing-header nav{color:#344054}.landing-signin{color:#101828;background:transparent;border-color:#cdd5df!important}.landing-demo{color:#fff;background:#101828;border-color:#101828!important}.landing-hero{min-height:100vh;align-items:center;justify-content:flex-start;padding:138px 7vw 72px;background-image:linear-gradient(90deg,rgba(255,255,255,.98) 0%,rgba(255,255,255,.88) 31%,rgba(255,255,255,.26) 59%,rgba(255,255,255,.04) 100%),linear-gradient(180deg,rgba(255,255,255,.05) 55%,rgba(245,248,252,.88) 100%),url('/ssafy-fleet-hero-bright.png');background-position:center;background-size:cover}.landing-copy{width:min(650px,48vw);text-align:left}.landing-copy>p{color:#315efb}.landing-copy h1{color:#101828;font-size:clamp(46px,5vw,76px);text-shadow:none}.landing-copy h2{margin:24px 0 0;color:#475467;font-size:16px}.landing-actions{justify-content:flex-start}.landing-actions button:first-child{color:#fff;background:#101828;border-color:#101828}.landing-actions button:last-child{color:#101828;background:rgba(255,255,255,.72);border-color:#101828;backdrop-filter:blur(8px)}.landing-proof{right:auto;bottom:28px;left:7vw;justify-content:flex-start;color:#667085}.landing-proof strong{color:#101828}
-.landing-login-backdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(15,23,42,.32);backdrop-filter:blur(8px)}.landing-login-card{width:min(440px,100%);padding:30px;border:1px solid rgba(255,255,255,.75);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 28px 80px rgba(16,24,40,.22)}.landing-login-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}.landing-login-head img{width:155px;height:35px;object-fit:contain;object-position:left}.landing-login-head button{width:34px;height:34px;border:0;border-radius:9px;color:#667085;background:#f0f3f7;font-size:21px}.landing-login-card h2{font-size:25px;margin:0 0 7px}.landing-login-card>p:not(.eyebrow){margin:0 0 24px;color:#667085;font-size:13px}.landing-login-card label{margin-top:16px;font-size:12px}.landing-login-card input{height:48px;background:#fff}.landing-login-card>.primary-button{width:100%;height:50px;margin-top:24px}.landing-login-card>small{display:block;margin-top:12px;color:#98a2b3;text-align:center}
+.landing-login-backdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(15,23,42,.32);backdrop-filter:blur(8px)}.landing-login-card{width:min(440px,100%);padding:30px;border:1px solid rgba(255,255,255,.75);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 28px 80px rgba(16,24,40,.22)}.landing-login-head{position:relative;display:flex;align-items:center;justify-content:center;min-height:48px;margin-bottom:18px}.landing-login-head img{width:210px;height:48px;object-fit:contain;object-position:center}.landing-login-head button{position:absolute;top:50%;right:0;width:34px;height:34px;transform:translateY(-50%);border:0;border-radius:9px;color:#667085;background:#f0f3f7;font-size:21px}.landing-login-card h2{font-size:25px;margin:0 0 7px}.landing-login-card>p:not(.eyebrow){margin:0 0 24px;color:#667085;font-size:13px}.landing-login-card label{margin-top:16px;font-size:12px}.landing-login-card label:first-of-type{margin-top:0}.landing-login-card input{height:48px;background:#fff}.landing-login-card>.primary-button{width:100%;height:50px;margin-top:24px}.landing-login-card>small{display:block;margin-top:12px;color:#98a2b3;text-align:center}
 .brand-logo,.login-card-logo{filter:none;mix-blend-mode:normal}.login-logo{filter:brightness(0) invert(1);mix-blend-mode:screen}
 .sidebar{background:#fff;border-right:1px solid #e2e8f0;box-shadow:2px 0 14px rgba(16,24,40,.025)}.nav-item{color:#526174}.nav-item span{color:#8592a3}.nav-item:hover{color:#101828;background:#f2f5fa}.nav-item.active{color:#2045c7;background:#eef3ff;border-color:#d5e0ff}.nav-item.active span{color:#315efb}.nav-label{color:#a0a9b7}.sidebar-help{border-color:#dbe4f2;background:#f7f9fd}.sidebar-help strong{color:#344054}.sidebar-help small{color:#667085}.content{background:linear-gradient(180deg,#f8fafc,#f4f7fb)}.card,.guide-card,.overview-cards>button{border-color:#e4e9f0;background:rgba(255,255,255,.95);box-shadow:0 4px 16px rgba(16,24,40,.035)}.canvas{background-color:#fff}.topbar{box-shadow:0 1px 0 #e7ebf1,0 4px 16px rgba(16,24,40,.025)}
 @media(max-width:900px){.landing-header{height:66px;padding:0 16px}.landing-header>img{width:125px;height:30px}.landing-hero{min-height:100svh;align-items:flex-end;padding:104px 22px 52px;background-image:linear-gradient(180deg,rgba(255,255,255,.05) 15%,rgba(255,255,255,.72) 50%,rgba(247,249,252,.98) 78%),url('/ssafy-fleet-hero-bright.png');background-position:66% center}.landing-copy{width:100%;text-align:left}.landing-copy h1{font-size:clamp(36px,11vw,52px)}.landing-copy h2{font-size:13px}.landing-actions{align-items:stretch}.landing-actions button{width:100%}.landing-proof{display:none}}
@@ -336,6 +336,170 @@ html.figma-desktop-capture .landing-hero{height:770px!important;min-height:770px
 @media(min-width:901px) and (max-width:1280px){.global-nav{gap:10px}.global-nav button{width:76px}}
 @media(max-width:900px){.global-nav button{width:20%;font-size:8px}}
 
+/* S15P21A103-85: API v1 기반 학습 UX 재설계 */
+.learning-heading{align-items:center}.draft-label{padding:8px 12px;border:1px solid #d0d5dd;border-radius:999px;color:#667085;background:#fff;font-size:12px;font-weight:700}.redesigned-steps{grid-template-columns:repeat(5,1fr);max-width:none}.learning-wizard-card{max-width:1180px;margin:0 auto;padding:32px}.wizard-title{display:flex;gap:14px;align-items:flex-start;margin-bottom:26px}.wizard-title>span{flex:0 0 34px;height:34px;display:grid;place-items:center;border-radius:50%;color:#fff;background:#101828;font-weight:800}.wizard-title h2{font-size:22px}.wizard-title p{margin-top:6px;color:#667085;font-size:14px}.wizard-actions{display:flex;align-items:center;justify-content:space-between;margin-top:28px;padding-top:22px;border-top:1px solid #e4e7ec}.skill-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.skill-choice-grid>button{display:grid;grid-template-columns:48px 1fr 24px;gap:14px;align-items:center;text-align:left;padding:18px;border:1px solid #d0d5dd;border-radius:10px;background:#fff}.skill-choice-grid>button:hover,.skill-choice-grid>button.selected,.method-choice-grid>button:hover,.method-choice-grid>button.selected,.umi-choice-list>button.selected{border-color:#101828;box-shadow:inset 0 0 0 1px #101828}.skill-choice-grid>button>span{width:48px;height:48px;display:grid;place-items:center;border-radius:10px;background:#f2f4f7;font-weight:850}.skill-choice-grid strong,.method-choice-grid strong{display:block;font-size:15px}.skill-choice-grid p,.method-choice-grid p{margin-top:4px;color:#667085;font-size:13px}.skill-choice-grid small{display:block;margin-top:7px;color:#98a2b3;font-size:10px}.skill-choice-grid i{font-style:normal;font-weight:900}.method-choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.method-choice-grid>button{min-height:240px;padding:26px;text-align:left;border:1px solid #d0d5dd;border-radius:12px;background:#fff}.method-icon{display:grid;place-items:center;width:48px;height:48px;margin-bottom:22px;border-radius:50%;background:#f2f4f7;font-size:22px}.method-choice-grid ul{margin:22px 0 0;padding:16px 0 0 18px;border-top:1px solid #eaecf0;color:#475467;font-size:12px;line-height:1.9}.umi-choice-list{display:grid;gap:10px}.umi-choice-list>button{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:16px;text-align:left;border:1px solid #e4e7ec;border-radius:10px;background:#fff}.umi-choice-list>button:disabled{opacity:.5;cursor:not-allowed}.umi-choice-list p{margin-top:4px;color:#667085;font-size:12px}.episode-count{display:grid;grid-template-columns:1fr 140px;gap:5px 20px;align-items:center;margin-top:20px;padding:18px;border:1px solid #e4e7ec;border-radius:10px;font-size:13px;font-weight:800}.episode-count input{grid-column:2;grid-row:1/3;padding:12px;border:1px solid #d0d5dd;border-radius:8px}.episode-count small{color:#667085;font-weight:400}.episode-select-list{display:grid;gap:9px}.episode-select-list label{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:16px;border:1px solid #e4e7ec;border-radius:10px}.episode-select-list label.selected{border-color:#101828;background:#fafafa}.episode-select-list label.disabled{opacity:.55}.episode-select-list small{display:block;margin-top:4px;color:#667085}.episode-select-list em{font-size:12px;font-style:normal;color:#067647}.episode-select-list .disabled em{color:#b42318}.review-card dl{display:grid;grid-template-columns:1fr 1fr;border:1px solid #e4e7ec;border-radius:10px;overflow:hidden}.review-card dl>div{padding:18px;border-bottom:1px solid #e4e7ec}.review-card dl>div:nth-child(odd){border-right:1px solid #e4e7ec}.review-card dt{color:#667085;font-size:12px}.review-card dd{margin:7px 0 0;font-weight:800}.review-card dd small{display:block;margin-top:4px;color:#667085;font-weight:400}.review-notice{margin-top:18px;padding:16px 18px;border-left:3px solid #101828;background:#f8f9fa}.review-notice p{margin-top:5px;color:#667085;font-size:12px}.data-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}.data-overview article{padding:20px;border:1px solid #e4e7ec;border-radius:10px;background:#fff}.data-overview small,.data-overview p{color:#667085}.data-overview strong{display:block;margin:8px 0;font-size:26px}.data-overview p{font-size:12px}.episode-panel{padding:0 24px 12px}.episode-filters{display:flex;gap:8px}.episode-filters select{padding:9px;border:1px solid #d0d5dd;border-radius:8px;background:#fff}.episode-row{display:grid;grid-template-columns:1.2fr 1.3fr 1fr .9fr .8fr .8fr;gap:14px;align-items:center;padding:16px 4px;border-top:1px solid #eaecf0;font-size:12px}.episode-row.header{color:#667085;font-size:11px;font-weight:800}.episode-row strong,.episode-row small{display:block}.episode-row small{margin-top:4px;color:#667085}.quality-ready{color:#067647;font-weight:800}.quality-warning{color:#b54708;font-weight:800}
+@media(max-width:1280px){.global-nav{gap:8px}.global-nav button{width:78px;font-size:9px}.redesigned-steps small{display:none}}
+@media(max-width:900px){.redesigned-steps{grid-template-columns:1fr}.skill-choice-grid,.method-choice-grid,.review-card dl,.data-overview{grid-template-columns:1fr}.review-card dl>div:nth-child(odd){border-right:0}.episode-row.header{display:none}.episode-row{grid-template-columns:1fr 1fr}.learning-wizard-card{padding:20px}.episode-count{grid-template-columns:1fr}.episode-count input{grid-column:1;grid-row:auto}.global-nav{overflow-x:auto}.global-nav button{flex:0 0 84px!important}}
+
 /* Learning → Skill → Workflow connection */
 .block-category>span{float:right;padding:2px 6px;border-radius:9px;color:#475467;background:#f2f4f7;font-size:8px;letter-spacing:0}.work-preflight{grid-template-columns:1fr;margin:0 0 10px}.work-preflight+.safety-note{margin-top:10px}.run-panel .work-preflight small{white-space:normal;line-height:1.35}.run-panel .check-fail small{color:#b42318}
 @media(max-width:1180px){.run-panel{display:block}.run-panel dl{margin:18px 0}.run-panel .run-button,.run-panel .danger-button{width:100%}}
+
+/* Keep the five primary navigation items clear of the full brand name. */
+@media(min-width:1281px){
+  .global-header{grid-template-columns:370px minmax(0,1fr) 310px}
+  .global-brand{width:360px}
+  .global-nav{display:grid;grid-template-columns:repeat(5,max-content);justify-self:end;min-width:0;margin-right:-80px;gap:0 44px}
+  .global-nav button{position:relative;width:auto;min-width:0}
+  .global-nav button+button::before{position:absolute;top:50%;left:-22px;width:1px;height:18px;background:#d0d5dd;content:"";transform:translate(-50%,-50%)}
+}
+
+@media(min-width:901px) and (max-width:1280px){
+  .global-nav{position:relative;left:100px;display:grid;grid-template-columns:repeat(5,max-content);gap:0 38px}
+  .global-nav button{position:relative;width:auto;min-width:0}
+  .global-nav button+button::before{position:absolute;top:50%;left:-19px;width:1px;height:18px;background:#d0d5dd;content:"";transform:translate(-50%,-50%)}
+}
+
+html.figma-desktop-capture .global-header,
+html.figma-desktop-capture .landing-page>.global-header{grid-template-columns:370px minmax(0,1fr) 310px!important}
+html.figma-desktop-capture .global-brand{width:360px!important}
+html.figma-desktop-capture .global-nav{display:grid!important;grid-template-columns:repeat(5,max-content)!important;justify-self:end!important;min-width:0!important;margin-right:-80px!important;gap:0 44px!important}
+html.figma-desktop-capture .global-nav button{position:relative!important;width:auto!important;min-width:0!important}
+html.figma-desktop-capture .global-nav button+button::before{left:-22px!important}
+
+/* Secondary navigation inside LEARNING and TASKS. */
+.section-tabs{display:flex;align-items:center;gap:6px;max-width:1320px;margin:0 auto 22px;padding:4px;border-bottom:1px solid #e4e7ec}
+.section-tabs button{position:relative;height:42px;padding:0 16px;border:0;color:#667085;background:transparent;font-size:11px;font-weight:750}
+.section-tabs button:hover{color:#101828}
+.section-tabs button.active{color:#101828}
+.section-tabs button.active::after{position:absolute;right:14px;bottom:-5px;left:14px;height:2px;background:#101828;content:""}
+.page-heading .eyebrow{display:none}
+@media(max-width:900px){.section-tabs{overflow-x:auto;margin-bottom:16px}.section-tabs button{flex:0 0 auto}}
+
+/* Dark global navigation */
+.global-header,.landing-page>.global-header{background:rgba(38,52,77,.96);border-bottom-color:rgba(255,255,255,.28);box-shadow:0 5px 18px rgba(16,24,40,.14);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.global-header .global-brand img{opacity:1;filter:brightness(0) invert(1) contrast(1.35);transform:translateZ(0)}
+.global-header .brand-fullname{color:#fff;font-weight:650;opacity:1;text-shadow:0 0 .01px #fff}
+.global-header .global-nav button,.global-header .global-auth{color:#fff;font-weight:700;opacity:1;text-shadow:0 0 .01px #fff}
+.landing-page .landing-hero{background-image:linear-gradient(90deg,rgba(255,255,255,.92) 0%,rgba(255,255,255,.72) 31%,rgba(255,255,255,.18) 59%,rgba(255,255,255,.02) 100%),linear-gradient(180deg,rgba(255,255,255,.02) 55%,rgba(245,248,252,.72) 100%),url('/ssafy-fleet-hero-bright.png')}
+.landing-page .landing-copy>p{padding-left:6px;color:#52617a}
+.landing-page .landing-actions button:first-child,.landing-page .landing-actions button:first-child:disabled{color:#fff;background:rgba(38,52,77,.96);border-color:rgba(255,255,255,.28);box-shadow:0 5px 18px rgba(16,24,40,.14);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);font-weight:650;opacity:1}
+.global-brand img{filter:brightness(0) invert(1);opacity:1}
+.global-brand img{width:172px;height:42px}
+.brand-fullname{color:#fff;border-left-color:rgba(255,255,255,.45);font-weight:650;opacity:1}
+.global-nav button{color:#fff;opacity:1}
+.global-nav button:hover,.global-nav button.active{color:#fff}
+.global-nav button.active::after{background:#fff}
+.global-auth{color:#fff;background:transparent;border-color:rgba(255,255,255,.5)}
+.global-auth:hover{color:#283259;background:#fff;border-color:#fff}
+@media(min-width:901px){.global-nav button+button::before{background:rgba(255,255,255,.3)}}
+@media(min-width:901px) and (max-width:1280px){.global-brand img{width:140px;height:34px}}
+@media(max-width:900px){.global-nav{background:#101828;border-top-color:rgba(255,255,255,.18)}.global-nav button.active::after{background:#fff}}
+@media(max-width:900px){.landing-page .landing-hero{background-image:linear-gradient(180deg,rgba(255,255,255,.02) 15%,rgba(255,255,255,.56) 50%,rgba(247,249,252,.94) 78%),url('/ssafy-fleet-hero-bright.png')}}
+html.figma-desktop-capture .global-brand img{width:172px!important;height:42px!important}
+
+/* Compact mobile header and expandable navigation. */
+.global-menu-toggle,.mobile-auth{display:none}
+@media(max-width:900px){
+  .global-header,.landing-page>.global-header{height:66px;grid-template:66px / minmax(0,1fr) auto;padding:0 18px}
+  .app-shell{grid-template:66px 1fr / 1fr}
+  .global-brand{grid-column:1;grid-row:1;width:auto;height:52px;gap:10px}
+  .global-brand img{width:132px;height:34px}
+  .brand-fullname{display:none}
+  .global-actions{grid-column:2;grid-row:1;align-items:center}
+  .global-auth{display:none}
+  .global-menu-toggle{display:flex!important;width:44px!important;height:44px!important;padding:0!important;align-items:center;justify-content:center;flex-direction:column;gap:5px;border:1px solid rgba(255,255,255,.34)!important;background:transparent}
+  .global-menu-toggle i{display:block;width:19px;height:2px;background:#fff;transition:transform .18s ease,opacity .18s ease}
+  .global-menu-toggle.open i:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  .global-menu-toggle.open i:nth-child(2){opacity:0}
+  .global-menu-toggle.open i:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+  .global-nav,.landing-page>.global-header .global-nav{position:absolute;top:66px;right:0;left:0;z-index:70;grid-column:auto;grid-row:auto;display:none!important;width:100%;min-width:0;margin:0;padding:10px 14px 14px;flex-direction:column;align-items:stretch;gap:0;background:#283259;border-top:1px solid rgba(255,255,255,.16);box-shadow:0 14px 28px rgba(16,24,40,.2)}
+  .global-nav.open,.landing-page>.global-header .global-nav.open{display:flex!important}
+  .global-nav button{flex:none!important;width:100%!important;height:48px;padding:0 14px!important;text-align:left;font-size:13px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .global-nav button+button::before{display:none}
+  .global-nav button.active{background:rgba(255,255,255,.1)}
+  .global-nav button.active::after{top:10px;right:auto;bottom:10px;left:0;width:3px;height:auto}
+  .global-nav .mobile-auth{display:block;margin-top:10px;border:1px solid rgba(255,255,255,.5);text-align:center}
+}
+
+/* Desktop hover menus and mobile nested navigation. */
+.global-nav-item{position:relative;display:flex;height:100%;align-items:center;width:max-content}
+.global-nav-item.has-submenu>button{display:flex;align-items:center;justify-content:center}
+.nav-chevron{display:inline-block;width:8px;height:8px;margin:0 0 0 7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-1px) rotate(45deg)}
+.global-submenu{position:absolute;top:calc(100% - 1px);left:50%;z-index:80;display:flex;width:156px;padding:8px;flex-direction:column;background:#202a4a;border:1px solid rgba(255,255,255,.16);box-shadow:0 14px 28px rgba(16,24,40,.26);opacity:0;visibility:hidden;transform:translate(-50%,-7px);transition:opacity .16s ease,transform .16s ease,visibility .16s ease}
+@media(min-width:901px){
+  .global-nav-item.has-submenu:hover .global-submenu,.global-nav-item.has-submenu:focus-within .global-submenu{opacity:1;visibility:visible;transform:translate(-50%,0)}
+  .global-nav:has(.global-nav-item.has-submenu:hover) .global-nav-item.has-submenu:not(:hover) .global-submenu{opacity:0;visibility:hidden;transform:translate(-50%,-7px)}
+  .global-nav:has(>.global-nav-item:hover)>.global-nav-item>button.active::after{opacity:0}
+  .global-nav>.global-nav-item:hover>button::after{content:'';position:absolute;right:2px;bottom:-26px;left:2px;height:3px;background:#fff;opacity:1}
+}
+.global-submenu button{width:100%!important;height:42px!important;padding:0 13px!important;color:#fff!important;background:transparent!important;border:0!important;text-align:left;font-size:11px!important;font-weight:700;letter-spacing:0}
+.global-submenu button:hover,.global-submenu button:focus-visible{background:rgba(255,255,255,.12)!important}
+.global-submenu button::after,.global-submenu button::before{display:none!important}
+@media(min-width:901px){
+  .global-nav>.global-nav-item+.global-nav-item::before{position:absolute;top:50%;left:-22px;width:1px;height:18px;background:rgba(255,255,255,.3);content:"";transform:translate(-50%,-50%)}
+}
+@media(min-width:901px) and (max-width:1280px){.global-nav>.global-nav-item+.global-nav-item::before{left:-19px}}
+@media(max-width:900px){
+  .global-nav-item{width:100%;height:auto;flex-direction:column;align-items:stretch}
+  .global-nav-item>button{width:100%!important}
+  .global-nav-item.has-submenu>button{justify-content:flex-start;text-align:left}
+  .global-submenu{position:static;width:100%;padding:0 0 5px;background:rgba(0,0,0,.12);border:0;box-shadow:none;opacity:1;visibility:visible;transform:none;transition:none}
+  .global-submenu button{height:40px!important;padding-left:38px!important;color:rgba(255,255,255,.82)!important;font-size:12px!important}
+  .nav-chevron{display:none}
+}
+
+/* Lighter typography for the primary header. */
+.brand-fullname{font-weight:550}
+.global-nav-item>button{font-weight:600}
+.global-actions .global-auth{font-weight:600}
+
+/* Responsive workflow audit: readable controls and compact navigation. */
+.password-field{position:relative;width:100%}.password-field input{display:block;width:100%;padding-right:54px}
+.training-main strong{font-size:14px}
+@media(max-width:680px){
+  .training-table article{grid-template-columns:minmax(0,1fr) auto;gap:12px}
+  .training-table article>.training-progress{display:flex!important;grid-column:1/-1;width:100%;gap:12px;grid-row:2}
+  .training-table article>.training-progress>div{flex:1}
+}
+.password-field button{position:absolute;top:50%;right:8px;display:grid;width:40px;height:40px;min-width:0;min-height:0;padding:0;place-items:center;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:#667085}
+.password-field button:hover,.password-field button:focus-visible{background:#f2f4f7;color:#101828}.password-field button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.landing-login-card{max-height:calc(100dvh - 48px);overflow-y:auto}
+.section-tabs{overflow-y:hidden;flex-shrink:0}
+.mobile-step-status,.mobile-detail-back{display:none}
+.data-detail{display:grid;grid-template-columns:110px 1fr;gap:16px;margin:24px 0}.data-detail dd{margin:0}
+.deployment-status{margin-top:18px;padding:16px;border:1px solid #d0d5dd;border-radius:8px;background:#fafafa}
+.deployment-status p{margin:8px 0;color:#475467;font-size:13px}.deployment-status button{margin-top:8px;min-height:44px}
+.episode-row button{padding:8px 0;white-space:normal;text-align:left}
+@media(max-width:900px){
+  .section-tabs{overflow-y:hidden!important;min-height:52px}
+  .workflow-library-layout .saved-work-detail{display:none}
+  .workflow-library-layout.mobile-detail-open .saved-work-list{display:none}
+  .workflow-library-layout.mobile-detail-open .saved-work-detail{display:block}
+  .workflow-library-toolbar:has(+ .workflow-library-layout.mobile-detail-open),.library-page-heading:has(~ .workflow-library-layout.mobile-detail-open){display:none}
+  .mobile-detail-back{display:block;min-height:44px;margin:0 16px}
+  .saved-work-row strong{font-size:14px}.saved-work-row small,.saved-work-row em,.saved-work-updated{font-size:12px}
+}
+@media(max-width:680px){
+  .mobile-step-status{display:block;margin:18px 0;padding:12px 16px;border-radius:8px;background:#f2f4f7;font-size:14px;font-weight:700}
+  .redesigned-steps{display:none!important}
+  .learning-wizard-card{padding:18px}.wizard-title h2{font-size:20px;word-break:keep-all}
+  .wizard-actions{gap:10px}.wizard-actions button{min-height:46px;padding:10px 14px}
+  .episode-select-list label{display:grid;grid-template-columns:22px 1fr;gap:10px}
+  .episode-select-list label em{grid-column:2;font-size:12px}.episode-select-list small{font-size:12px!important}
+  .episode-row>span::before{content:attr(data-label);display:block;color:#667085;font-size:11px;margin-bottom:5px}
+  .episode-row>span{font-size:13px;min-width:0}.episode-filters{flex-wrap:wrap}
+  .block-library .library-block{width:100%!important;min-width:0!important;min-height:76px!important;margin:8px 0!important}
+  .block-library .library-block strong{font-size:14px;word-break:keep-all}
+  .block-library .library-block small{font-size:12px}
+  .block-library .block-category{margin-top:18px}
+  .block-actions button,.nested-block-head .block-actions button{width:36px;height:40px}
+  .block-top{flex-wrap:wrap}.block-top .block-actions{margin-left:auto}
+  .block-top strong,.nested-block-head strong{font-size:13px}
+  .block-top small,.nested-block-head small{font-size:11px}
+  .nested-block-head{flex-wrap:wrap}.nested-block-head .block-actions{margin-left:auto}
+  .workflow-block{max-width:100%}.canvas{min-width:0}
+  .workflow-library-toolbar{padding:16px}.workflow-filter-tabs{flex-wrap:wrap}
+  .learning-heading{align-items:flex-start}.draft-label{font-size:11px}
+  .data-detail{grid-template-columns:1fr;gap:8px}
+}
