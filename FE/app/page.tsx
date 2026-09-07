@@ -393,24 +393,32 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
   </>;
 }
 
+const datasetStatusMeta: Record<Dataset['status'], { label: string; description: string; className: string }> = {
+  REGISTERED: { label: '등록 완료', description: '파일 업로드를 기다리고 있어요.', className: 'registered' },
+  UPLOADING: { label: '업로드 중', description: '영상과 센서 데이터를 전송하고 있어요.', className: 'uploading' },
+  VALIDATING: { label: '확인 중', description: '파일 형식과 시간 정보를 확인하고 있어요.', className: 'validating' },
+  READY: { label: '학습 가능', description: '확인이 완료되어 학습에 사용할 수 있어요.', className: 'ready' },
+  INVALID: { label: '확인 실패', description: '문제를 확인하고 데이터를 다시 수집해 주세요.', className: 'invalid' },
+};
+
 function DataView() {
   const { datasets } = useAppStore();
   const [skillFilter, setSkillFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [detail, setDetail] = useState<Dataset | null>(null);
-  const filtered = datasets.filter(item => (!skillFilter || item.skillKey === skillFilter) && (!statusFilter || item.ready === (statusFilter === 'ready')));
+  const filtered = datasets.filter(item => (!skillFilter || item.skillKey === skillFilter) && (!statusFilter || item.status === statusFilter));
   return <>
     <div className="page-heading"><div><h1>데이터</h1><p>로봇에게 보여준 동작과 데이터 상태를 확인하세요. 학습에 사용할 데이터는 학습 생성에서 선택할 수 있어요.</p></div></div>
-    <div className="data-overview"><article><small>전체 데이터</small><strong>{datasets.length}</strong><p>등록된 동작 데이터</p></article><article><small>학습 가능</small><strong>{datasets.filter(item => item.ready).length}</strong><p>학습 준비 완료</p></article><article><small>확인 필요</small><strong>{datasets.filter(item => !item.ready).length}</strong><p>데이터 상태를 확인해 주세요</p></article></div>
+    <div className="data-overview"><article><small>전체 데이터</small><strong>{datasets.length}</strong><p>등록된 동작 데이터</p></article><article><small>학습 가능</small><strong>{datasets.filter(item => item.status === 'READY').length}</strong><p>학습 준비 완료</p></article><article><small>처리 중</small><strong>{datasets.filter(item => ['REGISTERED', 'UPLOADING', 'VALIDATING'].includes(item.status)).length}</strong><p>업로드 또는 확인 중</p></article><article><small>확인 실패</small><strong>{datasets.filter(item => item.status === 'INVALID').length}</strong><p>재수집이 필요한 데이터</p></article></div>
     <section className="card episode-panel">
-      <div className="training-table-head"><div><h2>데이터 목록</h2><p>데이터 번호를 누르면 상세 정보를 볼 수 있어요.</p></div><div className="episode-filters"><select aria-label="동작 필터" value={skillFilter} onChange={e => setSkillFilter(e.target.value)}><option value="">모든 동작</option>{skillOptions.map(skill => <option key={skill.key} value={skill.key}>{skill.name}</option>)}</select><select aria-label="상태 필터" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">모든 상태</option><option value="ready">학습 가능</option><option value="pending">확인 필요</option></select></div></div>
+      <div className="training-table-head"><div><h2>데이터 목록</h2><p>데이터 번호를 누르면 상세 정보와 확인 결과를 볼 수 있어요.</p></div><div className="episode-filters"><select aria-label="동작 필터" value={skillFilter} onChange={e => setSkillFilter(e.target.value)}><option value="">모든 동작</option>{skillOptions.map(skill => <option key={skill.key} value={skill.key}>{skill.name}</option>)}</select><select aria-label="상태 필터" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">모든 상태</option>{Object.entries(datasetStatusMeta).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></div></div>
       <div className="episode-table" role="table">
         <div className="episode-row header" role="row"><span>데이터 번호</span><span>학습 동작</span><span>사용 장치</span><span>확인 결과</span><span>보관 기간</span><span>학습 가능 여부</span></div>
-        {filtered.map(item => <div className="episode-row" role="row" key={item.id}><span data-label="데이터 번호"><button className="text-button" onClick={() => setDetail(item)}>데이터 {String(item.id).padStart(3, '0')} →</button><small>{item.date}</small></span><span data-label="학습 동작">{skillOptions.find(skill => skill.key === item.skillKey)?.name}</span><span data-label="사용 장치">{item.umiId}</span><span data-label="확인 결과" className={item.ready ? 'quality-ready' : 'quality-warning'}>{item.ready ? '확인 완료' : '확인 필요'}</span><span data-label="보관 기간">{item.retentionDays}일 남음</span><span data-label="학습 가능 여부">{item.ready ? '학습 가능' : '준비 필요'}</span></div>)}
+        {filtered.map(item => { const status = datasetStatusMeta[item.status]; return <div className="episode-row" role="row" key={item.id}><span data-label="데이터 번호"><button className="text-button" onClick={() => setDetail(item)}>데이터 {String(item.id).padStart(3, '0')} →</button><small>{item.date}</small></span><span data-label="학습 동작">{skillOptions.find(skill => skill.key === item.skillKey)?.name}</span><span data-label="사용 장치">{item.umiId}</span><span data-label="확인 결과"><span className={`dataset-status ${status.className}`}><i />{status.label}</span></span><span data-label="보관 기간">{item.retentionDays}일 남음</span><span data-label="학습 가능 여부">{item.status === 'READY' ? '선택 가능' : item.status === 'INVALID' ? '재수집 필요' : '처리 완료 후 가능'}</span></div>; })}
         {!filtered.length && <p className="table-empty">{datasets.length ? '조건에 맞는 데이터가 없어요. 필터를 변경해 주세요.' : '아직 등록된 데이터가 없어요. UMI에서 동작을 기록하면 여기에 표시됩니다.'}</p>}
       </div>
     </section>
-    {detail && <div className="modal-backdrop" onMouseDown={() => setDetail(null)}><section className="register-modal" role="dialog" aria-modal="true" aria-label="데이터 상세" onMouseDown={e => e.stopPropagation()}><div className="modal-heading"><h2>데이터 {String(detail.id).padStart(3, '0')}</h2><button className="close-button" aria-label="닫기" onClick={() => setDetail(null)}>×</button></div><dl className="data-detail"><dt>학습 동작</dt><dd>{skillOptions.find(skill => skill.key === detail.skillKey)?.name}</dd><dt>사용 장치</dt><dd>{detail.umiId}</dd><dt>촬영 시간 / 크기</dt><dd>{detail.duration} / {detail.size}</dd><dt>학습 준비</dt><dd>{detail.ready ? '학습 가능' : '데이터 확인이 끝나지 않았어요. 확인 완료 후 선택할 수 있어요.'}</dd></dl><p className="modal-note">영상 미리보기는 영상 연결 후 제공됩니다.</p></section></div>}
+    {detail && <div className="modal-backdrop" onMouseDown={() => setDetail(null)}><section className="register-modal" role="dialog" aria-modal="true" aria-label="데이터 상세" onMouseDown={e => e.stopPropagation()}><div className="modal-heading"><div><h2>데이터 {String(detail.id).padStart(3, '0')}</h2><span className={`dataset-status ${datasetStatusMeta[detail.status].className}`}><i />{datasetStatusMeta[detail.status].label}</span></div><button className="close-button" aria-label="닫기" onClick={() => setDetail(null)}>×</button></div><dl className="data-detail"><dt>학습 동작</dt><dd>{skillOptions.find(skill => skill.key === detail.skillKey)?.name}</dd><dt>사용 장치</dt><dd>{detail.umiId}</dd><dt>촬영 시간 / 크기</dt><dd>{detail.duration} / {detail.size}</dd><dt>확인 상태</dt><dd>{datasetStatusMeta[detail.status].description}</dd></dl>{detail.validationErrors?.length ? <div className="validation-error" role="alert"><strong>확인하지 못한 항목</strong><ul>{detail.validationErrors.map(error => <li key={error}>{error}</li>)}</ul></div> : detail.status !== 'READY' && <p className="validation-progress" role="status">상태가 바뀌면 이 화면에 자동으로 반영됩니다.</p>}<p className="modal-note">영상 미리보기는 영상 연결 후 제공됩니다.</p></section></div>}
   </>;
 }
 

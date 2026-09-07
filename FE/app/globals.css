@@ -510,3 +510,18 @@ html.figma-desktop-capture .global-brand img{width:172px!important;height:42px!i
   .learning-heading{align-items:flex-start}.draft-label{font-size:11px}
   .data-detail{grid-template-columns:1fr;gap:8px}
 }
+
+/* Episode transfer and validation states (S15P21A103-92) */
+.data-overview{grid-template-columns:repeat(4,1fr)}
+.dataset-status{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#f2f4f7;color:#475467;font-size:11px;font-weight:700;white-space:nowrap}
+.dataset-status i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.dataset-status.uploading,.dataset-status.validating{background:#eff4ff;color:#3538cd}
+.dataset-status.ready{background:#ecfdf3;color:#067647}
+.dataset-status.invalid{background:#fef3f2;color:#b42318}
+.validation-error,.validation-progress{margin:16px 0;padding:14px 16px;border-radius:8px}
+.validation-error{border:1px solid #fecdca;background:#fef3f2;color:#912018}
+.validation-error strong{font-size:13px}
+.validation-error ul{margin:8px 0 0;padding-left:18px;font-size:12px;line-height:1.7}
+.validation-progress{background:#f2f4f7;color:#475467;font-size:12px}
+@media(max-width:900px){.data-overview{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.data-overview{grid-template-columns:1fr}}
