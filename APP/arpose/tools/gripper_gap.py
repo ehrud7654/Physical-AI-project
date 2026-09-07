@@ -8,9 +8,10 @@
   python gripper_gap.py <rec폴더>            # <rec폴더>/gripper.csv 생성
   python gripper_gap.py <rec폴더> --plot     # gripper_gap.png 도 함께
 
-출력 gripper.csv: frame_index,gap_px,status
+출력 gripper.csv: frame_index,gap_px,gap_m,status
   status = D(양쪽 직접) / M(중심선 대칭 추정) / T(템플릿 보강) / X(실패)
-  gap_mm(물리 단위)은 px->mm 캘리브레이션 방식 확정 후 추가한다.
+  gap_m = 손가락 끝 폭(미터). 마커(16mm)로 프레임별 거리를 보정해 얻으므로 D 프레임에만 있다
+  (M/T 는 마커 크기를 못 재 빈값). 캘리브 상수는 파일 상단 참조.
 
 필요: numpy, opencv-python. --plot 은 matplotlib.
 """
@@ -20,6 +21,26 @@ import glob
 import itertools
 import numpy as np
 import cv2
+
+# --- 개폐폭 캘리브레이션 (rec_20260907_154317, S23 그리퍼) ---
+# 마커는 한 변 16mm. 이미지 속 마커 픽셀크기와의 비로 그 프레임의 거리를 보정한다
+# (marker_gap_mm = gap_px * MARKER_MM / 마커픽셀폭). 거리가 변해도 값이 유지됨을 실측 확인.
+MARKER_MM = 16.0
+# 레일 마커 중심간 거리(mm, 거리보정 후) — 완전폐쇄/완전개방에서 관측한 그리퍼 고유값.
+MARKER_GAP_CLOSED_MM = 38.0
+MARKER_GAP_OPEN_MM = 81.0
+# 그 두 극단의 손가락 끝 폭(mm): 완전폐쇄 0, 완전개방 90.
+# ponytail: 그리퍼 기구를 바꾸면 개폐 스윕 1회 재촬영해 이 4개 값을 다시 잡을 것.
+FINGERTIP_CLOSED_MM = 0.0
+FINGERTIP_OPEN_MM = 90.0
+
+
+def fingertip_m(marker_gap_mm):
+    """거리보정된 마커 간격(mm) -> 손가락 끝 폭(m). 두 극단 앵커로 선형 매핑 + 클램프."""
+    span = MARKER_GAP_OPEN_MM - MARKER_GAP_CLOSED_MM
+    ft = (FINGERTIP_CLOSED_MM + (FINGERTIP_OPEN_MM - FINGERTIP_CLOSED_MM)
+          * (marker_gap_mm - MARKER_GAP_CLOSED_MM) / span)
+    return np.clip(ft, FINGERTIP_CLOSED_MM, FINGERTIP_OPEN_MM) / 1000.0
 
 
 def imread_gray(path):
@@ -137,20 +158,22 @@ def track(files):
 
     # 2패스: 검출(D) 우선 → 한쪽만이면 대칭 미러(M) → 템플릿 보강(T) → 실패(X)
     L = R = None; tplL = tplR = None
-    status, gap = [], []
+    status, gap, mw = [], [], []      # mw: 직접검출(D) 프레임의 두 마커 평균 픽셀폭(거리보정용)
     for cs, f in zip(all_cs, files):
-        g = imread_gray(f); st = None
+        g = imread_gray(f); st = None; dW = np.nan
         for s, l, r in sym_pairs(cs, H):
             if valid_pair((l["cx"], l["cy"]), (r["cx"], r["cy"])) and size_ok(l) and size_ok(r):
                 L = (l["cx"], l["cy"]); R = (r["cx"], r["cy"]); st = "D"
-                x, y, bw, bh = l["box"]; tplL = g[y:y + bh, x:x + bw].copy()
-                x, y, bw, bh = r["box"]; tplR = g[y:y + bh, x:x + bw].copy()
+                lx, ly, lbw, lbh = l["box"]; tplL = g[ly:ly + lbh, lx:lx + lbw].copy()
+                rx, ry, rbw, rbh = r["box"]; tplR = g[ry:ry + rbh, rx:rx + rbw].copy()
+                dW = (lbw + rbw) / 2.0
                 break
         if st is None:
             singles = [c for c in cs if abs(c["cy"] - cy0) < CY_TOL
                        and abs(c["cx"] - cx0) > 30 and size_ok(c)]
             if len(singles) == 1:
-                L, R = mirror_from(singles[0]["cx"], singles[0]["cy"]); st = "M"
+                c = singles[0]; L, R = mirror_from(c["cx"], c["cy"]); st = "M"
+                dW = c["box"][2]   # 마커 하나만 보여도 그 폭으로 거리보정 가능
         if st is None and L and R:
             tl = template_track(g, tplL, L, W, H)
             tr = template_track(g, tplR, R, W, H)
@@ -164,7 +187,8 @@ def track(files):
             st = "X"
         status.append(st)
         gap.append((R[0] - L[0]) if (st != "X" and L and R) else np.nan)
-    return np.array(status), np.array(gap, float)
+        mw.append(dW)
+    return np.array(status), np.array(gap, float), np.array(mw, float)
 
 
 def main():
@@ -178,16 +202,22 @@ def main():
     if not files:
         sys.exit(f"프레임 없음: {frames_dir}")
 
-    status, gap = track(files)
+    status, gap, mw = track(files)
     n = len(files)
+
+    # 거리보정된 마커 간격(mm) -> 손가락 끝 폭(m). mw(마커 픽셀폭)는 D 프레임에만 있으므로
+    # gap_m 도 D 에서만 나온다. M/T 는 마커 크기를 못 재 거리보정 불가 -> gap_m 빈값.
+    marker_gap_mm = gap * MARKER_MM / mw
+    gap_m = fingertip_m(marker_gap_mm)
 
     out_csv = os.path.join(rec, "gripper.csv")
     with open(out_csv, "w", encoding="utf-8") as fh:
-        fh.write("frame_index,gap_px,status\n")
+        fh.write("frame_index,gap_px,gap_m,status\n")
         for i, path in enumerate(files):
             fid = int(os.path.splitext(os.path.basename(path))[0])  # poses.csv 와 join 되도록 실제 프레임번호
-            g = "" if np.isnan(gap[i]) else f"{gap[i]:.1f}"
-            fh.write(f"{fid},{g},{status[i]}\n")
+            gpx = "" if np.isnan(gap[i]) else f"{gap[i]:.1f}"
+            gm = "" if np.isnan(gap_m[i]) else f"{gap_m[i]:.4f}"
+            fh.write(f"{fid},{gpx},{gm},{status[i]}\n")
 
     cnt = {s: int((status == s).sum()) for s in "DMTX"}
     valid = n - cnt["X"]
@@ -197,6 +227,9 @@ def main():
           f"-> 유효 {valid/n*100:.0f}%")
     if valid:
         print(f"  gap 범위 {np.nanmin(gap):.0f}~{np.nanmax(gap):.0f}px")
+    if np.isfinite(gap_m).any():
+        print(f"  손가락폭 gap_m {np.nanmin(gap_m)*1000:.0f}~{np.nanmax(gap_m)*1000:.0f}mm "
+              f"(D 프레임 {np.isfinite(gap_m).sum()}개)")
 
     if do_plot:
         import matplotlib
