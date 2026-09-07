@@ -6,6 +6,10 @@ let trainings: Training[] = clone(initialTrainings);
 
 export async function fetchTrainings(status?: TrainingStatus | 'all'): Promise<Training[]> {
   await delay();
+  try {
+    const stored = JSON.parse(localStorage.getItem('ssafy-trainings-v1') || 'null');
+    if (Array.isArray(stored)) trainings = stored;
+  } catch { /* Use initial mock data if storage is unavailable. */ }
   if (!status || status === 'all') return clone(trainings);
   return clone(trainings.filter((item) => item.status === status));
 }
@@ -39,5 +43,6 @@ export async function addTraining(input: { name: string; robot: string }): Promi
     { name: input.name, robot: input.robot, progress: 100, stage: '모델 검증 완료', status: '완료', started: '방금 전' },
     ...trainings.filter((item) => item.name !== input.name),
   ];
+  try { localStorage.setItem('ssafy-trainings-v1', JSON.stringify(trainings)); } catch { /* Keep the in-memory result. */ }
   return clone(trainings);
 }
