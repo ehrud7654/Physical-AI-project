@@ -5,6 +5,7 @@ import type { BlockKind, Dataset, DeviceType, LearnedSkill, SavedWork, Training,
 import { blockCatalog, deployedModels, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
+import { clearMockSession, hasMockSession, startMockSession } from '@/services';
 
 let nextBlockId = 20;
 
@@ -76,6 +77,7 @@ function HomeInner() {
   const { loading, loadError, refresh } = useAppStore();
   const [entered, setEntered] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [view, setView] = useState<View>('dashboard');
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
@@ -83,6 +85,13 @@ function HomeInner() {
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, entered]);
   const [toast, setToast] = useState('');
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success');
+
+  /* eslint-disable react-hooks/set-state-in-effect -- restore the temporary mock session after hydration */
+  useEffect(() => {
+    setAuthenticated(hasMockSession());
+    setAuthReady(true);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     setToast(message);
@@ -122,11 +131,22 @@ function HomeInner() {
     setEditingWorkId(workId);
     setView('work');
   };
-  if (!entered) return <Landing authenticated={authenticated} onLogin={(target) => { setAuthenticated(true); enterView(target); }} onLogout={() => setAuthenticated(false)} />;
+  const login = (target: View) => {
+    startMockSession();
+    setAuthenticated(true);
+    enterView(target);
+  };
+  const logout = () => {
+    clearMockSession();
+    setAuthenticated(false);
+    setEntered(false);
+  };
+  if (!authReady) return null;
+  if (!entered) return <Landing authenticated={authenticated} onLogin={login} onLogout={logout} />;
 
   return (
     <main className="app-shell">
-      <GlobalHeader authenticated={authenticated} activeView={view} onHome={() => setEntered(false)} onNavigate={navigateTo} onAuth={() => { setAuthenticated(false); setEntered(false); }} />
+      <GlobalHeader authenticated={authenticated} activeView={view} onHome={() => setEntered(false)} onNavigate={navigateTo} onAuth={logout} />
 
       <section className="content">
         {loading && <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>데이터를 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>}
