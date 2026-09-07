@@ -34,6 +34,10 @@ interface AppStore {
   robots: Robot[];
   umis: Umi[];
   trainings: Training[];
+  trainingRefreshing: boolean;
+  trainingRefreshError: boolean;
+  trainingUpdatedAt: number | null;
+  refreshTrainings: () => Promise<boolean>;
   skills: LearnedSkill[];
   savedWorks: SavedWork[];
   users: AdminUser[];
@@ -81,6 +85,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [umis, setUmis] = useState<Umi[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [trainings, setTrainings] = useState<Training[]>([]);
+  const [trainingRefreshing, setTrainingRefreshing] = useState(false);
+  const [trainingRefreshError, setTrainingRefreshError] = useState(false);
+  const [trainingUpdatedAt, setTrainingUpdatedAt] = useState<number | null>(null);
   const [savedWorks, setSavedWorks] = useState<SavedWork[]>([]);
   const [permissions, setPermissions] = useState<Record<string, string[]>>(initialPermissions);
   const [loading, setLoading] = useState(true);
@@ -101,11 +108,27 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setUmis(nextUmis);
       setDatasets(nextDatasets);
       setTrainings(nextTrainings);
+      setTrainingUpdatedAt(Date.now());
       setSavedWorks(nextWorks);
     } catch {
       setLoadError(true);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const refreshTrainings = useCallback(async () => {
+    setTrainingRefreshing(true);
+    setTrainingRefreshError(false);
+    try {
+      setTrainings(await fetchTrainings());
+      setTrainingUpdatedAt(Date.now());
+      return true;
+    } catch {
+      setTrainingRefreshError(true);
+      return false;
+    } finally {
+      setTrainingRefreshing(false);
     }
   }, []);
 
@@ -195,6 +218,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       robots,
       umis,
       trainings: visibleTrainings,
+      trainingRefreshing,
+      trainingRefreshError,
+      trainingUpdatedAt,
+      refreshTrainings,
       learningDraft, updateLearningDraft, draftReady, draftStored,
       skills,
       savedWorks,
@@ -210,7 +237,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, datasets, visibleTrainings, learningDraft, updateLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, visibleTrainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingByName, retryTrainingByName, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
