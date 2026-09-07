@@ -57,10 +57,11 @@ class SafetyNode(Node):
         self.get_logger().info(f"so101_safety 시작 — {len(self._limits)}관절 리밋, 워치독 {self._wd}s")
 
     def _trip(self, why: str):
-        if not self._tripped:
-            self.get_logger().error(f"ESTOP: {why}")
-            self._tripped = True
-        self._estop.publish(Bool(data=True))  # 래치: 계속 True 유지
+        if self._tripped:
+            return  # 이미 걸림 — 래치 QoS가 전달, 재발행 안 함
+        self.get_logger().error(f"ESTOP: {why}")
+        self._tripped = True
+        self._estop.publish(Bool(data=True))  # 한 번만, 래치로 유지
 
     def _on_state(self, msg: JointState):        # 엔코더 범위 감시
         bad = violations(msg.name, msg.position, self._limits)
