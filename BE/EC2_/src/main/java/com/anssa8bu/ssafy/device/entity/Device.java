@@ -2,7 +2,6 @@ package com.anssa8bu.ssafy.device.entity;
 
 import com.anssa8bu.ssafy.common.entity.AuditableEntity;
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -24,7 +23,7 @@ public class Device extends AuditableEntity {
     @Column(name = "owner_id", nullable = false, updatable = false)
     private UUID ownerId;
 
-    @Convert(converter = DeviceTypeConverter.class)
+    @Enumerated(EnumType.STRING)
     @Column(name = "device_type", nullable = false, updatable = false, length = 20)
     private DeviceType deviceType;
 

@@ -111,7 +111,7 @@ class UserDeviceJpaMappingTest {
                 )
                 .setParameter("id", deviceId)
                 .getSingleResult();
-        assertThat(databaseDeviceType).isEqualTo("UMI_Camera");
+        assertThat(databaseDeviceType).isEqualTo("UMI_CAMERA");
     }
 
     @AfterTransaction

@@ -13,11 +13,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class UserDeviceEntityTest {
 
     @Test
-    void deviceTypeConvertsDocumentedDatabaseValue() {
-        assertThat(DeviceType.UMI_CAMERA.getDatabaseValue()).isEqualTo("UMI_Camera");
-        assertThat(DeviceType.fromDatabaseValue("JETSON")).isEqualTo(DeviceType.JETSON);
-        assertThatThrownBy(() -> DeviceType.fromDatabaseValue("UNKNOWN"))
-                .isInstanceOf(IllegalArgumentException.class);
+    void deviceTypeUsesDocumentedEnumNames() {
+        assertThat(DeviceType.valueOf("UMI_CAMERA")).isEqualTo(DeviceType.UMI_CAMERA);
+        assertThat(DeviceType.valueOf("JETSON")).isEqualTo(DeviceType.JETSON);
     }
 
     @Test
