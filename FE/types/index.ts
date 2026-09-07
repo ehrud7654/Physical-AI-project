@@ -40,6 +40,8 @@ export interface Dataset {
   skillKey: string;
   umiId: string;
   ready: boolean;
+  status: 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID';
+  validationErrors?: string[];
   retentionDays: number;
 }
 
