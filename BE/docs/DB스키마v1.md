@@ -1,14 +1,14 @@
-# UMI 로봇팔 스킬 학습·배포 플랫폼 DB 스키마 v4
+# UMI 로봇팔 스킬 학습·배포 플랫폼 DB 스키마 v1
 
-> 본 문서는 `DB스키마v3.md`의 Episode ZIP·학습·게이트·VLM·배포 구조를 유지하면서 학습 하이퍼파라미터를 백엔드 관리형 불변 TrainingProfile로 고정한 PostgreSQL 스키마 설계안이다.
+> 본 문서는 Episode ZIP·학습·모델·게이트·VLM·배포 메타데이터의 PostgreSQL 스키마를 정의한다.
 
 - 문서 상태: 구현 전 설계 초안
-- 문서 버전: 0.6.0
+- 문서 버전: 1.0.0
 - 기준 DB: PostgreSQL
 - 보조 저장소: Redis
 - 파일 저장소: GPU 로컬 스토리지(Episode ZIP), S3(CKPT)
-- 기준 문서: [API명세서 v5](./API명세서v5.md)
-- 인터페이스 계약: [인터페이스 계약 v5](./인터페이스계약v5.md)
+- 기준 문서: [API명세서 v1](./API명세서v1.md)
+- 인터페이스 계약: [인터페이스 계약 v1](./인터페이스계약v1.md)
 
 ## 1. 설계 원칙
 
@@ -562,7 +562,7 @@ WHERE status = 'ACTIVE';
 | `error_message` | text | 예 | 오류 설명 |
 | `created_at` | timestamptz | 아니요 | 생성 시각 |
 | `started_at` | timestamptz | 예 | 시작 시각 |
-| `model_completed_at` | timestamptz | 예 | 모델 학습 계산 완료를 백엔드가 최초 확인한 시각, CKPT key 시간 기준 |
+| `model_completed_at` | timestamptz | 예 | FastAPI의 최초 학습 완료 통지 발신 UTC 시각, GPU Spring Boot를 거쳐 전달 |
 | `finished_at` | timestamptz | 예 | 종료 시각 |
 | `updated_at` | timestamptz | 아니요 | 수정 시각 |
 | `row_version` | bigint | 아니요 | 상태 전이 낙관적 잠금 |
@@ -602,7 +602,7 @@ FOREIGN KEY (training_profile_id, training_config_sha256)
 
 TrainingJob 생성 트랜잭션은 현재 ACTIVE TrainingProfile을 조회해 `training_profile_id`, 전체 설정 snapshot과 SHA-256을 함께 저장한다. 사용자는 이 값을 입력하거나 수정할 수 없다. 이후 ACTIVE 프로필이 교체돼도 이미 생성된 QUEUED·RUNNING 작업의 snapshot은 바뀌지 않는다.
 
-GPU worker가 학습 계산을 끝내고 최초로 유효한 CKPT 업로드 세션을 요청하면 백엔드는 서버 UTC 현재 시각을 `model_completed_at`에 한 번만 기록한다. 같은 트랜잭션에서 SkillVersion 번호와 `checkpoint_key`를 예약하며, 같은 TrainingJob의 재요청에서는 세 값을 변경하지 않고 재사용한다. `finished_at`은 CKPT 검증을 포함한 작업의 최종 종료 시각이므로 파일명 시간 기준으로 사용하지 않는다.
+FastAPI는 학습·CKPT 생성 완료 후 GPU Spring Boot에 최초 완료 통지를 발신하기 직전 UTC 시각을 modelCompletedAt으로 영속 기록한다. 재전송은 최초 값을 유지한다. GPU Spring Boot는 이 값을 GPU-04에 전달하고 EC2는 현재 attempt와 시간 범위를 검증해 model_completed_at에 저장한다. 수신 시각·계산 종료 시각·finished_at으로 대체하지 않는다. 파일명·version·key는 최초 업로드 예약 시 고정한다.
 
 `dataset_query`는 입력을 선택한 조건을 보존하는 감사·재현 메타데이터다. 실제 학습에 사용된 고정 목록의 기준은 `training_job_episodes`이므로 두 정보를 함께 보관하고 `dataset_query`로 관계 테이블을 대체하지 않는다.
 
@@ -1379,7 +1379,6 @@ Redis TTL 만료를 비즈니스 완료로 해석하지 않는다. 예를 들어
 17. 부분 unique index와 검색 index 생성
 18. 기본 RetentionPolicy와 기본 VLM Policy seed 데이터 입력
 
-v3 데이터에서 전환할 때는 초기 TrainingProfile을 생성한 뒤 기존 `training_jobs.training_config`를 canonical JSON으로 정규화해 profile FK·snapshot·SHA-256을 backfill한다. 해당 작업이 만든 SkillVersion에도 같은 profile FK와 SHA-256을 채운 다음 NOT NULL·복합 FK를 적용한다. 기존 Episode ZIP 구조는 변경하지 않는다.
 
 ## 14. 구현 전 확정할 사항
 
@@ -1406,3 +1405,26 @@ v3 데이터에서 전환할 때는 초기 TrainingProfile을 생성한 뒤 기�
 - [ ] 사용자 탈퇴 시 개인정보 익명화와 작업 이력 유지 정책
 - [ ] Outbox 발행 방식과 DLQ 저장 위치
 - [ ] Flyway migration 파일 단위와 초기 seed 정책
+
+## 15. 파일 등록 및 업로드 확정 절차
+
+### 15.1 EpisodeArchive 예약·등록
+
+GPU Spring Boot가 인증된 (owner_id, umi_device_id, session_id)별 로컬 영속 journal에 UUID archiveId·ended_at·SHA-256·storageKey를 예약한다. ZIP 검증 후 최종 경로로 atomic rename하고 INGEST-03의 archive.archiveId로 전달한다. EC2는 전체 메타데이터가 준비된 등록 시점에 Episode·EpisodeArchive·TrainingJobEpisode를 한 트랜잭션으로 저장한다. episode_archives.id는 전달받은 예약 UUID를 사용하며 임의의 다른 ID로 재발급하지 않는다.
+
+동일 Episode·동일 hash 요청은 기존 등록을 반환한다. 다른 Episode에서 같은 archiveId 재사용은 PK 및 서비스 검증으로 차단한다. 서버가 생성했다는 것은 인증된 GPU Spring Boot의 ID 발급을 포함한다. 미등록 파일 및 응답 유실은 로컬 journal에서 재시도한다. 기존 NOT NULL 컬럼을 완화하거나 예약용 중앙 DB 테이블을 추가할 필요가 없다.
+
+### 15.2 CKPT 예약·검증
+
+GPU-04는 modelCompletedAt·전체 CheckpointMetadata·sizeBytes·sha256을 필수로 받는다. EC2는 현재 작업과 프로필을 검증하고 SkillVersion의 모든 필수 컬럼을 채운 UPLOADING 행을 생성한다. 메타데이터는 업로드 전 선언값이며 실제 S3 객체 검증은 GPU-05 이후 수행한다. checkpoint_bucket·checkpoint_key·version은 EC2가 결정한다. NOT NULL 제약은 유지하며 dummy 값은 사용하지 않는다.
+
+GPU-05의 metadata·크기·hash는 최초 예약값과 같아야 한다. 불일치는 CHECKPOINT_RESERVATION_CONFLICT로 거부한다. 업로드 URL 재발급은 같은 행·version·key·완료 시각을 사용한다. 다른 CKPT를 만들려면 새 TrainingJob으로 진행하고 기존 SkillVersion을 덮어쓰지 않는다.
+
+### 15.3 경로와 시간 기준
+
+API 명세서의 경로 형식을 기준으로 사용한다.
+
+- CKPT: ckpt/{owner_id}/{skill_key}/v{version}/{skill_key}_{YYYYMMDD}T{HHMMSS}Z.ckpt
+- Episode: episodes/{owner_id}/{YYYYMMDD}T{HHMMSS}Z/{episode_archive_id}/archive.zip
+- CKPT 시각: FastAPI가 학습·파일 생성 완료 후 GPU Spring Boot에 최초 완료 통지를 발신하기 직전 기록한 modelCompletedAt. 재전송·업로드 재시도에서 변경하지 않는다.
+- Episode 시각: 검증된 episodes.ended_at. 원본 전송 파일명은 {session_id}.zip이다.

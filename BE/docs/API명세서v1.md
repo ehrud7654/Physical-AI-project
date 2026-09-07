@@ -1,25 +1,14 @@
-# UMI 로봇팔 스킬 학습·배포 플랫폼 API 명세서 v5
+# UMI 로봇팔 스킬 학습·배포 플랫폼 API 명세서 v1
 
-> `API명세서v4.md`의 Episode ZIP, 학습 큐, CKPT 게이트, VLM 및 Jetson 계약을 유지하면서 사용자 학습 요청의 하이퍼파라미터 입력을 제거하고 백엔드 관리형 TrainingProfile을 적용한 초안이다.
+> Episode ZIP·고정 TrainingProfile·학습 큐·게이트·Jetson 계약을 정의하며, EC2 Spring Boot와 GPU Spring Boot 및 FastAPI 사이의 역할과 실행 계약을 포함한다.
 
-- 문서 버전: 0.6.0 (구현 전 초안)
+- 문서 버전: 1.0.0
 - 작성일: 2026-09-04
 - 기준 경로: `/api/v1`; GPU 데이터 수집 경로는 `/ingest/v1`
 - 범위: 웹 클라이언트, EC2 백엔드, UMI, GPU 워커, S3, Jetson 간 인터페이스
-- ERD 기준: [DB 스키마 v4](./DB스키마v4.md)
+- ERD 기준: [DB 스키마 v1](./DB스키마v1.md)
 - 주요 리소스: `TrainingProfile`, `EpisodeArchive`, `SkillVersion`, `VlmModelVersion`, `RobotSkillDeployment`
 - 이 문서는 제안 명세다. 실제 GPU 주소, 로컬 보관 기간과 용량 정책, S3 버킷, 토큰 만료 시간, CKPT 내부 포맷은 구현 전에 확정해야 한다.
-
-## 0. v5 변경 요약
-
-| 영역 | v4 대비 변경 |
-|---|---|
-| 학습 생성 | 사용자 요청의 `config`를 제거하고 Skill·UMI·입력 방식·Episode 계획만 수신 |
-| TrainingProfile | 고정 하이퍼파라미터를 백엔드가 버전 있는 ACTIVE 프로필로 선택 |
-| TrainingJob | 서버가 결정한 profile key·version·설정 snapshot·SHA-256을 읽기 전용으로 반환 |
-| GPU claim | 실제 사용할 전체 프로필과 config SHA-256을 GPU에 전달하고 임의 override 금지 |
-| CKPT 완료 | TrainingProfile key·version·SHA-256을 manifest 메타데이터로 검증 |
-| 오류 | 외부 `config` 입력과 worker 설정 불일치에 대한 오류 코드 추가 |
 
 ## 1. 설계 가정과 범위
 
@@ -89,6 +78,18 @@ Jetson → 자신의 pending Deployment manifest 요청
 - 사용자별·작업별 하이퍼파라미터 선택 및 수정 UI
 
 ## 2. 공통 규칙
+
+### 2.0 서비스 경계
+
+| 서비스 | 제공·호출 계약 |
+|---|---|
+| EC2 Spring Boot | 기존 /api/v1 제공, 대기 큐·lease·최종 업무 상태·게이트 관리 |
+| GPU Spring Boot | /ingest/v1 제공, GPU-01~07·INGEST-03·PURGE-01~03 호출, FastAPI 제어 및 S3 업로드 |
+| FastAPI + 별도 학습 프로세스 | GPU 내부 실행·조회·취소·임대 API 제공 (22절), 직접 EC2 claim·DB 접근 없음 |
+| 시뮬레이션·검증 worker | GATE-01 직접 호출, EC2가 결과를 검증해 gatePassed·배포 자격 관리 |
+
+이 문서에서 기존 'GPU' 호출 주체는 GPU Spring Boot를 의미한다. GATE-01의 평가 보고 주체는 시뮬레이션·검증 worker다. 웹 API는 기존 경로를 유지한다.
+
 
 ### 2.1 호출 주체와 인증
 
@@ -1323,7 +1324,8 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
     "units": { "position": "METER", "acceleration": "METER_PER_SECOND_SQUARED", "angularVelocity": "RADIAN_PER_SECOND", "gripper": "NORMALIZED_0_TO_1" }
   },
   "archive": {
-    "storageKey": "episodes/2026/09/7b5fba32-8852-4cff-a8af-761e91c6c031/archive.zip",
+    "archiveId": "6c156521-c456-48e7-90fc-3d2b461b2261",
+    "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip",
     "originalFilename": "01J7ABCDEF123456789XYZW000.zip",
     "contentType": "application/zip",
     "archiveFormatVersion": "umi-episode-zip-v1",
@@ -1353,6 +1355,12 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
 - `retentionExpiresAt`은 적용되는 RetentionPolicy로 서버가 계산한다.
 - 성공 `201`: 생성된 `Episode`.
 - 같은 식별자·archive hash 재요청은 기존 Episode를 `200`으로 반환한다. 같은 식별자에 다른 hash면 `409 EPISODE_ID_REUSED`다.
+- archive.archiveId는 GPU Spring Boot가 최종 저장 전에 예약한 UUID이며 필수다. EC2는 이를 episode_archives.id로 사용한다. 동일 ID의 다른 Episode 재사용은 409 ARCHIVE_ID_CONFLICT다.
+- owner_id·endedAt·archiveId로 API 기준 storageKey를 재구성해 요청값과 일치하는지 검증한다. 원본 ZIP 이름은 sessionId.zip이다.
+- GPU Spring Boot는 인증된 (ownerId, umiDeviceId, sessionId)를 키로 로컬 영속 journal에 archiveId·endedAt·sha256·storageKey를 최초 한 번 예약한다. 동시 요청도 같은 예약을 사용한다.
+- ZIP은 staging에 저장·검증한 뒤 같은 파일시스템의 최종 key로 atomic rename하고 INGEST-03을 호출한다. EC2는 등록 시 모든 NOT NULL 품질·파일 메타데이터를 함께 저장한다. 사전 DB 빈 행은 만들지 않는다.
+- EC2 응답 유실·GPU 재시작 시 journal 및 최종 파일 hash를 확인하고 같은 archiveId로 등록 재시도한다. 다른 hash면 EPISODE_ID_REUSED. 미등록 파일은 등록 재시도 대상으로 추적하며 등록 상태 확인 없이 삭제하지 않는다.
+
 ## 10. GPU 내부 학습 API
 
 내부 작업 수정 요청에는 현재 `attempt`와 `leaseToken`이 필요하다. 임대가 만료되거나 이전 attempt이면 `409 LEASE_EXPIRED`다.
@@ -1416,7 +1424,7 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
           "sessionId": "01J7ABCDEF123456789XYZW000",
           "qualityStatus": "VALID",
           "archive": {
-            "storageKey": "episodes/2026/09/7b5fba32-8852-4cff-a8af-761e91c6c031/archive.zip",
+            "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip",
             "contentType": "application/zip",
             "compressionMethod": "STORE",
             "sizeBytes": 524288000,
@@ -1512,10 +1520,44 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
 {
   "attempt": 1,
   "leaseToken": "...",
-  "filename": "policy.ckpt",
+  "filename": "model.ckpt",
+  "modelCompletedAt": "2026-09-07T06:30:00Z",
   "contentType": "application/octet-stream",
   "sizeBytes": 7340032,
-  "sha256": "..."
+  "sha256": "...",
+  "metadata": {
+    "architecture": "ACT",
+    "framework": "PyTorch",
+    "frameworkVersion": "2.x",
+    "contractVersion": "umi-policy-v1",
+    "robotProfileId": "so101-v1",
+    "trainingProfileKey": "umi-act-default",
+    "trainingProfileVersion": 1,
+    "trainingConfigSha256": "9999999999999999999999999999999999999999999999999999999999999999",
+    "actionSpace": "JOINT_DELTA",
+    "nParams": 52341234,
+    "controlRateHz": 30,
+    "cameraNames": [
+      "cam_front",
+      "cam_wrist"
+    ],
+    "inputSchema": {
+      "stateShape": [
+        6
+      ],
+      "imageShape": [
+        3,
+        224,
+        224
+      ]
+    },
+    "outputSchema": {
+      "actionShape": [
+        6
+      ],
+      "actionType": "normalized_joint_target"
+    }
+  }
 }
 ```
 
@@ -1530,7 +1572,7 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
     "version": 3,
     "method": "PUT",
     "uploadUrl": "https://s3...signed-put-url",
-    "expiresAt": "2026-09-01T05:15:00Z",
+    "expiresAt": "2026-09-07T06:45:00Z",
     "headers": {
       "Content-Type": "application/octet-stream"
     }
@@ -1538,8 +1580,15 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
 }
 ```
 
-- S3 key 예: `skill-checkpoints/{skillId}/v{version}/policy.ckpt`.
+- S3 key: `ckpt/{owner_id}/{skill_key}/v{version}/{skill_key}_{YYYYMMDD}T{HHMMSS}Z.ckpt`.
+- `filename`은 로컬 결과 파일명 참고값이며 최종 S3 key는 EC2가 생성한다.
+- `modelCompletedAt`은 필수 RFC 3339 UTC 값으로 FastAPI가 학습·CKPT 생성 완료 후 GPU Spring Boot에 최초 완료 통지를 발신하는 UTC 시각이다. GPU Spring Boot가 RUN-05 완료 통지의 값을 전달한다. EC2는 시작 시각·현재 시각과의 허용 오차 및 현재 attempt를 검증한다.
+- 최초 유효한 요청에서 `training_jobs.model_completed_at`, version, key를 고정한다. 같은 결과의 업로드 재시도는 기존 값을 재사용하며 다른 완료 시각·hash는 충돌 처리한다.
+- 새 Idempotency-Key로 URL을 재발급해도 동일 SkillVersion·key를 사용한다. 허용 시간 오차는 배포 전 확정한다.
 - 기존 key를 덮어쓰지 않으며 조건부 쓰기 또는 버킷 정책으로 재사용을 차단한다.
+
+- metadata는 CheckpointMetadata 전체 필드가 필수다. EC2는 형식·프로필·RobotProfile을 검증하고 sizeBytes·sha256·전체 메타데이터·version·key를 같은 트랜잭션에서 저장한 뒤 UPLOADING 행을 생성한다. 이 상태는 S3 객체 검증 완료를 뜻하지 않는다.
+- GPU-05의 metadata·크기·hash는 예약값과 일치해야 한다. 다른 값이면 409 CHECKPOINT_RESERVATION_CONFLICT이며 예약 행을 덮어쓰지 않는다.
 
 ### GPU-05 CKPT 업로드 완료
 
@@ -1580,6 +1629,7 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
 }
 ```
 
+- GPU-04에서 예약한 metadata·크기·hash와 대조하고 다르면 409 CHECKPOINT_RESERVATION_CONFLICT. 유효한 현재 attempt만 완료 보고할 수 있다.
 - 성공 접수 `202`: `{ "data": { "skillVersionId": "skill_ver_33", "status": "VALIDATING" } }`.
 - EC2 또는 검증 워커가 다음을 확인한다.
   1. S3 객체 존재
@@ -1701,7 +1751,7 @@ Lifecycle scheduler는 보관 기한이 지난 Episode를 직접 삭제하지 �
     "leaseToken": "...",
     "archive": {
       "episodeArchiveId": "episode_archive_01",
-      "storageKey": "episodes/2026/09/7b5fba32-8852-4cff-a8af-761e91c6c031/archive.zip",
+      "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip",
       "sizeBytes": 524288000,
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
@@ -2423,7 +2473,7 @@ episode_archives.entry_count
 episode_archives.status
 ```
 
-- `storage_key` 예: `episodes/2026/09/{opaqueArchiveId}/archive.zip`.
+- `storage_key` 예: `episodes/{owner_id}/{YYYYMMDD}T{HHMMSS}Z/{episode_archive_id}/archive.zip`.
 - StorageNode의 실제 mount root는 worker 설정에서 관리하고 API로 배포하지 않는다.
 - 사용자 API에는 `storage_node_id`, `storage_key`, 절대 경로를 노출하지 않는다.
 - ZIP이 삭제되어도 size, SHA-256, 형식, 품질 집계와 학습 사용 관계는 유지한다.
@@ -2680,3 +2730,221 @@ retentionExpiresAt = MAX(
 ---
 
 이 문서는 UMI 시연 원본을 무압축 Episode ZIP으로 GPU 로컬 스토리지에 정책 기간 동안 보관하고 CKPT는 S3에 영구 저장한다는 범위를 기준으로 작성했다. 학습 하이퍼파라미터는 사용자 요청에서 받지 않고 백엔드가 버전 있는 TrainingProfile로 고정하며, TrainingJob과 CKPT의 설정 SHA-256 일치를 검증한다. 보관 기간 안에는 READY Episode를 새 TrainingJob에 재사용할 수 있지만, 물리 ZIP 삭제 이후에는 메타데이터와 사용 이력만 조회할 수 있다.
+## 22. GPU Spring Boot ↔ FastAPI 학습 실행 계약
+
+### 22.1 배치 및 책임
+
+EC2 Spring Boot가 학습 대기 큐·claim·lease·최종 상태와 배포 게이트를 관리한다. GPU Spring Boot가 GPU-01~07, INGEST-03, PURGE-01~03의 EC2 호출 주체다. INGEST-01~02는 GPU Spring Boot가 제공한다. Python은 EC2 PostgreSQL에 직접 접근하거나 EC2 작업을 별도로 claim하지 않는다.
+
+| 구성 요소 | 책임 |
+|---|---|
+| EC2 Spring Boot | TrainingJob·입력 snapshot·TrainingProfile·lease·SkillVersion·게이트·Outbox·SSE |
+| GPU Spring Boot | UMI ZIP 수신·검증·저장, EC2 claim·heartbeat, Python 실행 제어, 진행 보고, CKPT S3 업로드·완료 보고, 원본 삭제 |
+| FastAPI | 실행 접수·조회·취소·실행 임대 관리, 로컬 실행 기록 복구 |
+| 별도 Python 프로세스 | 전처리·고정 설정 학습·진행 기록·CKPT 생성 |
+| 시뮬레이션·검증 worker | 평가 계산 및 GATE-01 직접 보고, EC2가 검증·저장·배포 판정 |
+
+FastAPI는 GPU 서버의 별도 내부 주소에서 서비스한다. 아래 경로에는 EC2의 /api/v1 prefix를 붙이지 않는다. 전용 Bearer 서비스 자격증명과 네트워크 접근 제한을 사용하고 호출자의 workerId·storageNodeId를 인증 정보와 대조한다. EC2 leaseToken과 사용자 토큰은 FastAPI에 전달하지 않는다.
+
+대기 큐는 EC2에 하나만 둔다. FastAPI는 즉시 실행 자원을 예약할 수 있을 때만 접수하고 GPU가 점유 중이면 409 GPU_BUSY를 반환한다. HTTP 요청 처리와 실제 학습은 별도 프로세스로 분리한다.
+
+### 22.2 RUN-01 학습 실행 접수
+
+- POST /internal/training-runs · GPU Spring Boot → FastAPI
+- 요청 필드:
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| trainingJobId | string | 예 | EC2 작업 ID |
+| attempt | integer | 예 | 현재 EC2 실행 시도, 1 이상 |
+| workerId | string | 예 | 인증된 GPU Spring Boot worker |
+| storageNodeId | string | 예 | 공유 볼륨의 StorageNode |
+| gpuIndex | integer | 예 | 예약할 GPU 번호 |
+| trainingProfile | TrainingProfileSnapshot | 예 | EC2 claim에서 받은 원본 고정 설정·SHA-256 |
+| inputSnapshotSha256 | string | 예 | EC2 고정 입력 목록 hash |
+| episodes | array | 예 | inputOrder, episodeId, storageKey, sha256, contractVersion을 포함한 고정 목록 |
+| executionLeaseExpiresAt | RFC 3339 UTC | 예 | EC2 lease 만료보다 늦지 않은 실행 허용 기한 |
+
+runId는 trainingJobId + ":" + attempt로 결정한다. path parameter로 전달할 때 URL 인코딩한다. 동일 worker의 동일 tuple·동일 불변 입력 재요청은 기존 실행을 반환한다. 다른 입력은 409 RUN_REQUEST_CONFLICT다. executionLeaseExpiresAt은 입력 hash에서 제외하며 RUN-01 재요청으로 갱신하지 않고 RUN-04로만 갱신한다.
+
+FastAPI는 로컬 영속 실행 기록과 GPU 예약을 확보한 뒤 응답한다. 검증 전 임의 프로세스를 시작하지 않으며, 지원하지 않는 프로필은 422 UNSUPPORTED_TRAINING_PROFILE, hash 불일치는 422 TRAINING_CONFIG_MISMATCH다.
+
+- 최초 성공 202, 동일 실행 재조회 성격의 중복 요청 200:
+
+```json
+{
+  "data": {
+    "runId": "job_31:1",
+    "trainingJobId": "job_31",
+    "attempt": 1,
+    "status": "STARTING"
+  }
+}
+```
+
+응답 유실 시 같은 tuple로 조회 또는 재요청한다. 새 attempt를 GPU 측에서 임의 생성하지 않는다. 다른 tuple을 접수할 때도 해당 gpuIndex의 이전 프로세스가 실제 종료되었는지 확인한다.
+
+### 22.3 RUN-02 학습 상태·결과 조회
+
+- GET /internal/training-runs/{runId} · GPU Spring Boot → FastAPI
+- 성공 200:
+
+```json
+{
+  "data": {
+    "runId": "job_31:1",
+    "trainingJobId": "job_31",
+    "attempt": 1,
+    "status": "COMPLETED",
+    "sequence": 18,
+    "stage": "CHECKPOINT_READY",
+    "percent": 100,
+    "epoch": 100,
+    "totalEpochs": 100,
+    "lastProgressAt": "2026-09-07T06:29:58Z",
+    "lastProcessHeartbeatAt": "2026-09-07T06:30:12Z",
+    "modelCompletedAt": "2026-09-07T06:30:00Z",
+    "result": {
+      "checkpointStorageKey": "training-results/job_31/1/model.ckpt",
+      "sizeBytes": 7340032,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "metadata": {
+        "architecture": "ACT",
+        "framework": "PyTorch",
+        "frameworkVersion": "2.x",
+        "contractVersion": "umi-policy-v1",
+        "robotProfileId": "so101-v1",
+        "trainingProfileKey": "umi-act-default",
+        "trainingProfileVersion": 1,
+        "trainingConfigSha256": "9999999999999999999999999999999999999999999999999999999999999999",
+        "actionSpace": "JOINT_DELTA",
+        "nParams": 52341234,
+        "controlRateHz": 30,
+        "cameraNames": ["cam_front", "cam_wrist"],
+        "inputSchema": {"stateShape": [6]},
+        "outputSchema": {"actionShape": [6]}
+      }
+    },
+    "error": null
+  }
+}
+```
+
+- status: STARTING, RUNNING, CANCEL_REQUESTED, CANCELED, COMPLETED, FAILED, LOST.
+- CKPT 생성 완료 전에는 result를 null로 반환한다. modelCompletedAt은 최초 RUN-05 발신 준비 시 영속 기록하며 그 전에는 null이다. 상태 조회만으로 완료 통지를 생략하지 않는다.
+- sequence는 실행별 단조 증가하는 로컬 상태 revision이며 재시작 후에도 유지한다.
+- COMPLETED는 Python 계산 및 최종 CKPT 파일 생성 완료다. result.metadata는 CheckpointMetadata 전체 계약을 따른다.
+- modelCompletedAt은 FastAPI가 학습·CKPT 생성 완료 후 GPU Spring Boot에 최초 완료 통지를 발신하는 UTC 시각이다. 최종 CKPT 생성·닫기·크기·hash 확인 후에만 COMPLETED와 result를 제공한다.
+- 체크포인트 경로는 공유 결과 root 기준 상대 key다. DB 또는 S3 key로 사용하지 않는다.
+- error는 실패·유실 시 { code, message }, 그 외 null이다.
+- 존재하지 않는 실행은 404 RUN_NOT_FOUND다. 존재하던 기록의 실행 상태를 복구할 수 없으면 LOST와 EXECUTION_STATE_LOST를 기록한다.
+- 진행률 정체만으로 실패 판정하지 않는다. 학습 프로세스 heartbeat·종료 상태를 함께 확인한다.
+
+### 22.4 RUN-03 취소
+
+- POST /internal/training-runs/{runId}/cancel
+- 요청: reason 문자열 필수.
+- 접수 202: { data: { runId, status: "CANCEL_REQUESTED" } }.
+- 실제 프로세스 종료 확인 후 CANCELED. 이미 terminal 상태면 현재 상태를 200으로 반환하고 상태를 덮어쓰지 않는다.
+- 제한 시간 내 정상 종료되지 않으면 프로세스 그룹 종료를 수행한다. 종료 grace period는 배포 설정으로 관리한다.
+- Spring Boot는 FastAPI의 CANCELED 확인 후 EC2에 취소 결과를 보고한다. EC2가 취소를 확정한 작업은 늦은 COMPLETED로 성공 전환하지 않는다.
+
+### 22.5 RUN-04 실행 임대 갱신
+
+- PATCH /internal/training-runs/{runId}/lease
+- 요청: executionLeaseExpiresAt RFC 3339 UTC 필수.
+- 성공 200: { data: { runId, executionLeaseExpiresAt } }.
+- GPU Spring Boot는 EC2 heartbeat 성공 후 EC2가 반환한 lease 만료 이하의 기한으로 갱신한다. EC2 갱신 실패 시 로컬 임대를 연장하지 않는다.
+- 만료된 실행은 409 EXECUTION_LEASE_EXPIRED, terminal 실행은 409 RUN_STATE_CONFLICT다. 종료된 실행을 되살리지 않는다.
+- FastAPI와 실행 supervisor는 만료 시 프로세스를 중단한다. FastAPI 재시작 여부와 무관하게 supervisor가 임대를 확인할 수 있어야 한다.
+- 호스트 간 시간 동기화를 적용하고 임대 갱신 주기는 EC2 heartbeat 주기보다 충분히 짧은 요청 timeout으로 운영한다.
+
+### 22.6 상태 매핑·파일·복구
+
+| Python 상태 | GPU Spring Boot 처리 |
+|---|---|
+| STARTING | EC2 PREPARING에 대응 |
+| RUNNING | EC2 RUNNING 진행 이벤트 발행 |
+| COMPLETED | RUN-05 통지 확인 → 파일 재검증 → GPU-04 → S3 PUT → GPU-05; EC2 검증 전 성공 처리 금지 |
+| CANCEL_REQUESTED / CANCELED | EC2 취소 상태와 대조 후 실제 종료 보고 |
+| FAILED / LOST | 현재 lease·attempt가 유효한 경우 EC2 실패 이벤트 보고 |
+
+Spring Boot만 EC2 이벤트 sequence와 eventId를 발급한다. FastAPI sequence와 별도로 관리하며 로컬 영속 전달 기록으로 재전송 시 동일 eventId를 사용한다. EC2가 상태의 최종 기준이다.
+
+로컬 실행 journal에는 runId·요청 hash·attempt·GPU 예약·프로세스 식별 정보·상태·sequence·실행 lease·결과 위치를 저장한다. Spring Boot 재시작 시 EC2의 기존 할당과 runId 상태를 대조한 후 제어를 재개한다. 프로세스 ID 하나만으로 동일 실행이라고 판단하지 않는다.
+
+FastAPI 재시작 시 supervisor의 실제 실행 상태와 journal을 복구한다. 활성 실행 여부를 확인하지 못한 GPU는 재사용하지 않고 이전 프로세스 종료를 확인한다. 기록 없이 응답만 재생하거나 중복 학습을 시작하지 않는다.
+
+Spring Boot와 Python은 동일 데이터를 공유 볼륨으로 접근한다. mount root는 각 서비스 설정에서 관리하고 논리 storage key의 매핑은 동일해야 한다. 원본 Episode를 HTTP로 재전송하지 않는다. 경로 이탈과 symlink 우회를 차단하고 학습 실행 중 원본은 변경하지 않는다.
+
+CKPT 업로드와 EC2 검증 완료까지 로컬 결과를 유지한다. 결과 정리는 상태 확인 후 수행한다. S3 업로드 재시도는 기존 SkillVersion·key를 재사용하고 동일 객체가 이미 존재하면 크기·hash를 확인해 완료 보고를 재시도한다.
+
+내부 오류 응답은 EC2와 동일한 error envelope를 사용한다. 인증 오류 401/403, 입력 오류 400/422, 상태 충돌 409, 자원 장애 503으로 구분한다. 통신 오류만으로 EC2 학습 실패를 즉시 확정하지 않고 조회·동일 실행 재요청 및 lease 정책에 따라 복구한다.
+
+### 22.7 검증 기준 및 DB 연계
+
+- [ ] 동일 trainingJobId·attempt의 동시 실행 요청에서 프로세스 하나만 생성
+- [ ] 실행 접수 응답 유실 후 동일 실행 복구
+- [ ] Spring Boot·FastAPI 재시작 후 실행 상태·sequence·결과 위치 복구
+- [ ] EC2 lease 만료 및 FastAPI 단절 시 이전 실행 중단·늦은 결과 차단
+- [ ] 학습 중 취소와 완료 경합에서 EC2 상태 전이 준수
+- [ ] Python COMPLETED만으로 웹 학습 성공 알림을 발행하지 않음
+- [ ] CKPT 최초 완료 통지 발신 시각과 업로드 재시도 시 파일 key 유지 검증
+
+중앙 DB 신규 테이블은 이번 서비스 분리만으로 요구하지 않는다. runId는 기존 TrainingJob ID와 attempt로 도출한다. 로컬 journal은 업무 대기 큐가 아니라 실행 복구 기록이다.
+
+
+### 22.8 RUN-05 학습 완료 통지 (FastAPI → GPU Spring Boot)
+
+- POST /internal/training-runs/{runId}/completion · GPU Spring Boot 전용 내부 주소에서 제공한다. FastAPI 실행 API의 호스트와 구분한다.
+- 인증: Python 서비스 전용 Bearer 자격증명. 호출자의 worker·StorageNode 범위를 확인한다. 콜백 주소는 서비스 설정으로 고정하며 사용자 입력으로 받지 않는다.
+- 요청 필수: eventId(string), trainingJobId(string), attempt(integer), modelCompletedAt(RFC 3339 UTC), result(RUN-02의 checkpointStorageKey·sizeBytes·sha256·전체 CheckpointMetadata).
+- FastAPI는 학습 및 최종 CKPT 생성·hash 계산 후 최초 호출 직전에 UTC 현재 시각을 modelCompletedAt으로 영속 기록한다. 이 값이 CKPT 파일명 기준이다. 재전송은 동일 eventId·시각·payload를 사용한다.
+- GPU Spring Boot는 runId·현재 attempt·작업 소유권·공유 파일·hash·메타데이터를 대조하고 영속 inbox에 저장한 뒤 202: { data: { runId, receiptStatus: "ACCEPTED" } }를 반환한다. 응답은 학습 최종 성공을 뜻하지 않는다.
+- 동일 이벤트·동일 본문 재전송은 200으로 기존 접수 결과를 반환한다. 동일 이벤트 또는 실행의 다른 결과는 409 COMPLETION_CONFLICT다. 이전 attempt·취소 확정·소유권 상실 결과는 409 RUN_STATE_CONFLICT로 차단한다.
+- 통신 실패·응답 유실·5xx는 영속 발신 journal에서 재시도한다. 409 영구 충돌은 무한 재시도하지 않고 운영 오류로 기록한다. Spring Boot 재시작 후 inbox에서 미처리 업로드를 재개한다.
+- RUN-02는 상태 복구용으로 유지한다. 결과를 조회하더라도 RUN-05 미접수 상태이면 콜백 재전송으로 같은 완료 시각·이벤트를 복구한다.
+- 접수 후 GPU Spring Boot는 GPU-04 → S3 업로드 → GPU-05를 실행한다. EC2는 현재 lease·attempt 및 예약 결과를 다시 검증한다.
+
+RUN-05 요청 예시:
+
+```json
+{
+  "eventId": "completion_job_31_1",
+  "trainingJobId": "job_31",
+  "attempt": 1,
+  "modelCompletedAt": "2026-09-07T06:30:00Z",
+  "result": {
+    "checkpointStorageKey": "training-results/job_31/1/model.ckpt",
+    "sizeBytes": 7340032,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "metadata": {
+      "architecture": "ACT",
+      "framework": "PyTorch",
+      "frameworkVersion": "2.x",
+      "contractVersion": "umi-policy-v1",
+      "robotProfileId": "so101-v1",
+      "trainingProfileKey": "umi-act-default",
+      "trainingProfileVersion": 1,
+      "trainingConfigSha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "actionSpace": "JOINT_DELTA",
+      "nParams": 52341234,
+      "controlRateHz": 30,
+      "cameraNames": [
+        "cam_front",
+        "cam_wrist"
+      ],
+      "inputSchema": {
+        "stateShape": [
+          6
+        ]
+      },
+      "outputSchema": {
+        "actionShape": [
+          6
+        ]
+      }
+    }
+  }
+}
+```
