@@ -1,13 +1,24 @@
 package com.ssafy.arpose
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
+import android.util.Range
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
@@ -18,6 +29,7 @@ import com.google.ar.core.CameraConfigFilter
 import com.google.ar.core.CameraIntrinsics
 import com.google.ar.core.Config
 import com.google.ar.core.Session
+import com.google.ar.core.SharedCamera
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.NotYetAvailableException
@@ -58,6 +70,15 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         // (1.2배 수준), 직전 N프레임 대비 배율을 함께 요구해 갈라낸다.
         private const val JUMP_CONT_K = 5.0         // 직전 최대값 대비 배율
         private const val JUMP_CONT_N = 3           // 비교할 직전 프레임 수
+
+        // FIXED 일 때 렌즈 초점 거리(디옵터, 1/m). 0 = 무한대 ≈ ARCore FIXED 동작(배경 선명).
+        // ponytail: 근접 물체가 흐리면 3.0(≈33cm)까지 올릴 것. 물리 튜닝 값.
+        private const val FIXED_FOCUS_DIOPTERS = 0f
+
+        // shared camera 에서 ARCore 가 30fps 프레임을 ~0.1ms 간격으로 두 번씩 준다.
+        // 정확히 같은 timestamp 만 버리면 중복이 새어 60Hz 로 저장되므로, 이 간격보다
+        // 촘촘하면 중복으로 보고 버린다. 실프레임은 33ms 라 20ms 로 안전하게 가른다.
+        private const val MIN_FRAME_GAP_NS = 20_000_000L
     }
 
     private lateinit var glView: GLSurfaceView
@@ -99,7 +120,22 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     @Volatile private var cameraConfigLine: String = "unknown"
     @Volatile private var pendingToggle = false
     @Volatile private var pendingFocusToggle = false
+    @Volatile private var pendingAeToggle = false
     @Volatile private var autoFocus = false   // 기본 FIXED
+
+    // SharedCamera: AE/AWB lock 을 위해 ARCore 옆에서 Camera2 캡처요청을 직접 쥔다.
+    private var sharedCamera: SharedCamera? = null
+    private var cameraId: String? = null
+    private var cameraDevice: CameraDevice? = null
+    private var captureSession: CameraCaptureSession? = null
+    private var previewBuilder: CaptureRequest.Builder? = null
+    private var camThread: HandlerThread? = null
+    private var camHandler: Handler? = null
+    @Volatile private var arcoreActive = false          // 캡처세션 구성 후에만 session.update() 허용
+    @Volatile private var aeLock = false                // 기본 AUTO, 토글로 LOCK
+    @Volatile private var camModesLine = "unknown"      // CaptureResult 실측 (OIS/AE/AF...) → meta
+    private var capLogCount = 0
+    private lateinit var aeBtn: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -126,6 +162,16 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         }
         updateFocusBtn()
 
+        aeBtn = findViewById(R.id.aeBtn)
+        aeBtn.setOnClickListener {
+            if (recorder?.isRecording == true) {
+                Toast.makeText(this, "녹화 중에는 바꿀 수 없음", Toast.LENGTH_SHORT).show()
+            } else {
+                pendingAeToggle = true
+            }
+        }
+        updateAeBtn()
+
         glView.preserveEGLContextOnPause = true
         glView.setEGLContextClientVersion(2)
         glView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
@@ -138,6 +184,13 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private fun updateFocusBtn() = runOnUiThread {
         focusBtn.text = "AF: ${focusName()}"
         focusBtn.setBackgroundColor(if (autoFocus) 0xFF885500.toInt() else 0xFF225533.toInt())
+    }
+
+    private fun aeName() = if (aeLock) "LOCK" else "AUTO"
+
+    private fun updateAeBtn() = runOnUiThread {
+        aeBtn.text = "AE/AWB: ${aeName()}"
+        aeBtn.setBackgroundColor(if (aeLock) 0xFF663322.toInt() else 0xFF444444.toInt())
     }
 
     private fun applyConfig(s: Session) {
@@ -167,9 +220,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     }
                     ArCoreApk.InstallStatus.INSTALLED -> {}
                 }
-                val s = Session(this)
+                val s = Session(this, EnumSet.of(Session.Feature.SHARED_CAMERA))
                 applyConfig(s)
                 selectCameraConfig(s)
+                sharedCamera = s.sharedCamera
+                cameraId = s.cameraConfig.cameraId
                 session = s
             } catch (e: UnavailableException) {
                 showError("ARCore 사용 불가: ${e.javaClass.simpleName} - ${e.message}")
@@ -180,14 +235,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             }
         }
 
-        try {
-            session?.resume()
-        } catch (e: CameraNotAvailableException) {
-            showError("카메라를 열 수 없음 (다른 앱이 점유 중?)")
-            session = null; return
-        }
+        // 공유 카메라: session.resume() 은 캡처세션이 구성된 뒤 resumeARCore() 에서 부른다.
+        startCamThread()
         glView.onResume()
         imu.register()
+        openCamera()
     }
 
     override fun onPause() {
@@ -195,8 +247,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         if (recorder?.isRecording == true) stopRecording()
         imu.unregister()
         if (session != null) {
+            arcoreActive = false
             glView.onPause()
             session?.pause()
+            closeCamera()
+            stopCamThread()
         }
     }
 
@@ -217,6 +272,137 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             configs.forEach { Log.i(TAG, "  option: cpu=${it.imageSize} tex=${it.textureSize} fps=${it.fpsRange}") }
         } catch (e: Exception) {
             Log.e(TAG, "CameraConfig 선택 실패 (기본값 사용)", e)
+        }
+    }
+
+    // ---------------- SharedCamera (AE/AWB lock + 모드 실측) ----------------
+
+    private fun startCamThread() {
+        if (camThread != null) return
+        camThread = HandlerThread("cam").apply { start() }
+        camHandler = Handler(camThread!!.looper)
+    }
+
+    private fun stopCamThread() {
+        camThread?.quitSafely()
+        camThread = null; camHandler = null
+    }
+
+    @SuppressLint("MissingPermission")   // onResume 에서 권한 확인 후에만 호출
+    private fun openCamera() {
+        val id = cameraId ?: return
+        val sc = sharedCamera ?: return
+        val h = camHandler ?: return
+        try {
+            val cm = getSystemService(CameraManager::class.java)
+            cm.openCamera(id, sc.createARDeviceStateCallback(deviceCb, h), h)
+        } catch (e: Exception) {
+            Log.e(TAG, "openCamera 실패", e)
+        }
+    }
+
+    private fun closeCamera() {
+        captureSession?.close(); captureSession = null
+        cameraDevice?.close(); cameraDevice = null
+    }
+
+    private val deviceCb = object : CameraDevice.StateCallback() {
+        override fun onOpened(device: CameraDevice) { cameraDevice = device; createCamSession() }
+        override fun onClosed(device: CameraDevice) {}
+        override fun onDisconnected(device: CameraDevice) { device.close(); cameraDevice = null }
+        override fun onError(device: CameraDevice, error: Int) {
+            Log.e(TAG, "camera error $error"); device.close(); cameraDevice = null
+        }
+    }
+
+    private fun createCamSession() {
+        val device = cameraDevice ?: return
+        val sc = sharedCamera ?: return
+        val h = camHandler ?: return
+        try {
+            val b = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+            sc.arCoreSurfaces.forEach { b.addTarget(it) }
+            previewBuilder = b
+            applyRequestKeys(b)
+            @Suppress("DEPRECATION")
+            device.createCaptureSession(sc.arCoreSurfaces, sc.createARSessionStateCallback(sessionCb, h), h)
+        } catch (e: Exception) {
+            Log.e(TAG, "createCamSession 실패", e)
+        }
+    }
+
+    private val sessionCb = object : CameraCaptureSession.StateCallback() {
+        override fun onConfigured(cs: CameraCaptureSession) {
+            captureSession = cs
+            setRepeating()
+            resumeARCore()
+        }
+        override fun onConfigureFailed(cs: CameraCaptureSession) { Log.e(TAG, "capture session 구성 실패") }
+    }
+
+    private fun resumeARCore() {
+        try {
+            session?.resume(); arcoreActive = true
+            Log.i(TAG, "ARCore resumed (shared camera)")
+        } catch (e: Exception) {
+            Log.e(TAG, "session.resume 실패", e)
+        }
+    }
+
+    /** 캡처요청에 손떨림보정 off + AF(포커스 토글) + AE/AWB lock 을 실어준다. */
+    private fun applyRequestKeys(b: CaptureRequest.Builder) {
+        // OIS/EIS off: 안정화가 켜지면 이미지 움직임이 실제 움직임과 분리돼
+        // "카메라가 그리퍼에 고정" 전제가 깨진다 (실측 OIS 기본 ON 이었음). 항상 끈다.
+        b.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+            CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_OFF)
+        b.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
+            CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_OFF)
+        // 30fps 고정. 우리가 캡처요청을 쥐면서 ARCore 의 fps 제약이 빠져 노출 짧을 때
+        // 카메라가 60fps 로 free-run 했다(계약 30Hz 위반). cameraConfig 와 동일하게 잠근다.
+        b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 30))
+        if (autoFocus) {
+            b.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+        } else {
+            b.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+            b.set(CaptureRequest.LENS_FOCUS_DISTANCE, FIXED_FOCUS_DIOPTERS)
+        }
+        b.set(CaptureRequest.CONTROL_AE_LOCK, aeLock)
+        b.set(CaptureRequest.CONTROL_AWB_LOCK, aeLock)
+    }
+
+    private fun setRepeating() {
+        val cs = captureSession ?: return
+        val b = previewBuilder ?: return
+        try {
+            cs.setRepeatingRequest(b.build(), captureCb, camHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "setRepeating 실패", e)
+        }
+    }
+
+    /** 포커스/AE 토글 시 캡처요청 갱신. */
+    private fun updateRepeatingRequest() {
+        val b = previewBuilder ?: return
+        applyRequestKeys(b)
+        camHandler?.post { setRepeating() }
+    }
+
+    private val captureCb = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            s: CameraCaptureSession, req: CaptureRequest, res: TotalCaptureResult
+        ) {
+            val ois = res.get(CaptureResult.LENS_OPTICAL_STABILIZATION_MODE)
+            val eis = res.get(CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE)
+            val aeMode = res.get(CaptureResult.CONTROL_AE_MODE)
+            val aeLk = res.get(CaptureResult.CONTROL_AE_LOCK)
+            val afMode = res.get(CaptureResult.CONTROL_AF_MODE)
+            val awbMode = res.get(CaptureResult.CONTROL_AWB_MODE)
+            val awbLk = res.get(CaptureResult.CONTROL_AWB_LOCK)
+            val exp = res.get(CaptureResult.SENSOR_EXPOSURE_TIME)
+            val iso = res.get(CaptureResult.SENSOR_SENSITIVITY)
+            camModesLine = "ois=$ois eis=$eis ae_mode=$aeMode ae_lock=$aeLk " +
+                "af_mode=$afMode awb_mode=$awbMode awb_lock=$awbLk exp_ns=$exp iso=$iso"
+            if (capLogCount < 6) { Log.i(TAG, "CAM $camModesLine"); capLogCount++ }
         }
     }
 
@@ -248,6 +434,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             append("device=${Build.MANUFACTURER} ${Build.MODEL}\n")
             append("android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
             append("focus_mode=${focusName()}\n")
+            append("ae_lock=${aeName()}\n")
+            append("camera_modes=$camModesLine\n")
             append("camera_config=$cameraConfigLine\n")
             append("intrinsics=$intrinsicsLine\n")
             append("start_wallclock_ms=${System.currentTimeMillis()}\n")
@@ -310,6 +498,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         val s = session ?: return
         if (bg.textureId == -1) return
+        if (!arcoreActive) return   // 공유 카메라 캡처세션 준비 전에는 update() 금지
 
         try {
             s.setCameraTextureName(bg.textureId)
@@ -325,7 +514,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                 pendingFocusToggle = false
                 autoFocus = !autoFocus
                 try {
-                    applyConfig(s)
+                    updateRepeatingRequest()     // 포커스는 이제 우리 캡처요청으로 제어
                     intrinsicsLine = "unknown"   // 포커스 바뀌면 내부 파라미터도 다시 읽는다
                     lastPos = null; lastQuat = null
                     recentCount = 0; recentIdx = 0
@@ -334,11 +523,18 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     Log.e(TAG, "focus 변경 실패", e)
                 }
             }
+            if (pendingAeToggle) {
+                pendingAeToggle = false
+                aeLock = !aeLock
+                updateRepeatingRequest()
+                updateAeBtn()
+            }
 
             val ts = frame.timestamp
 
-            // 화면은 60Hz, 카메라는 30Hz -> 같은 프레임이 두 번 온다. 중복은 버린다.
-            if (ts == lastFrameTs) return
+            // 카메라 30Hz 인데 프레임이 두 번씩 온다(shared 모드는 ~0.1ms 차, 옛 모드는 동일 ts).
+            // 직전 채택 프레임과 MIN_FRAME_GAP_NS 보다 촘촘하면 중복으로 보고 버린다.
+            if (lastFrameTs != 0L && ts - lastFrameTs < MIN_FRAME_GAP_NS) return
             val dtSec = if (lastFrameTs == 0L) 0.0 else (ts - lastFrameTs) / 1e9
             lastFrameTs = ts
 
