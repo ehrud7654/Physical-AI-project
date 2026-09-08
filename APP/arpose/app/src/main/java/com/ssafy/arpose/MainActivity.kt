@@ -453,6 +453,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         val meta = buildString {
             append("device=${Build.MANUFACTURER} ${Build.MODEL}\n")
             append("android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
+            // QR 로 채울 세션 메타 (지금은 빈 값). 서버 전송·episode.json 이 집어감.
+            append("server_url=${Prefs.serverUrl(this@MainActivity)}\n")
+            append("user_id=${Prefs.userId(this@MainActivity)}\n")
+            append("session_id=${Prefs.sessionId(this@MainActivity)}\n")
+            append("skill_id=${Prefs.skillId(this@MainActivity)}\n")
             append("focus_mode=${focusName()}\n")
             append("ae_lock=${aeName()}\n")
             append("camera_modes=$camModesLine\n")
