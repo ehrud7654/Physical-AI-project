@@ -1,0 +1,1 @@
+package com.anssa8bu.ssafy.common.redis.dto; import java.util.*; public record ActiveTrainingProfileCache(int schemaVersion,UUID profileId,String profileKey,int version,String configSha256,Map<String,Object> hyperparameters){public ActiveTrainingProfileCache{if(schemaVersion!=1)throw new IllegalArgumentException();hyperparameters=Map.copyOf(hyperparameters);}}
