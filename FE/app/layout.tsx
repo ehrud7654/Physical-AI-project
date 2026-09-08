@@ -19,5 +19,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="ko"><head><script dangerouslySetInnerHTML={{ __html: "if(location.hash.includes('figmacapture='))document.documentElement.classList.add('figma-desktop-capture')" }} /></head><body>{children}<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async /></body></html>;
+  return <html lang="ko"><head><link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" /><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css" /><script dangerouslySetInnerHTML={{ __html: "if(location.hash.includes('figmacapture='))document.documentElement.classList.add('figma-desktop-capture')" }} /></head><body>{children}<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async /></body></html>;
 }
