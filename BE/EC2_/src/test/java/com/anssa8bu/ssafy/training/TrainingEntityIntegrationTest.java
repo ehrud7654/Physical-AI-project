@@ -2,17 +2,16 @@ package com.anssa8bu.ssafy.training;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import com.anssa8bu.ssafy.training.entity.*;
 import jakarta.persistence.EntityManager;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
-class TrainingEntityIntegrationTest {
+class TrainingEntityIntegrationTest extends IntegrationTestBase {
   @Autowired EntityManager em;
 
   @Test

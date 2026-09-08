@@ -6,19 +6,18 @@ import com.anssa8bu.ssafy.device.entity.Device;
 import com.anssa8bu.ssafy.device.entity.DeviceConnectionStatus;
 import com.anssa8bu.ssafy.device.entity.DeviceCredential;
 import com.anssa8bu.ssafy.device.entity.DeviceType;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.transaction.AfterTransaction;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
 @Transactional
-class UserDeviceJpaMappingTest {
+class UserDeviceJpaMappingTest extends IntegrationTestBase {
 
   @Autowired private EntityManager entityManager;
 

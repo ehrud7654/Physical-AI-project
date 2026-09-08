@@ -7,6 +7,7 @@ import com.anssa8bu.ssafy.episode.entity.*;
 import com.anssa8bu.ssafy.episode.vo.*;
 import com.anssa8bu.ssafy.skill.entity.*;
 import com.anssa8bu.ssafy.storage.entity.*;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import com.anssa8bu.ssafy.user.entity.*;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -14,12 +15,10 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
-class EpisodeEntityIntegrationTest {
+class EpisodeEntityIntegrationTest extends IntegrationTestBase {
   @Autowired EntityManager em;
 
   @Test

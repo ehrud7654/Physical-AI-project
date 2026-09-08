@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.anssa8bu.ssafy.event.application.*;
 import com.anssa8bu.ssafy.event.entity.*;
 import com.anssa8bu.ssafy.event.repository.OutboxEventRepository;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -19,7 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
       "app.outbox.publisher-id=test-publisher",
       "app.outbox.batch-size=1"
     })
-class OutboxClaimIntegrationTest {
+class OutboxClaimIntegrationTest extends IntegrationTestBase {
   @Autowired OutboxEventRepository repo;
   @Autowired OutboxClaimService claim;
   @Autowired TransactionTemplate tx;

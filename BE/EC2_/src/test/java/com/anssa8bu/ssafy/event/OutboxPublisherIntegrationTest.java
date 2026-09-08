@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.anssa8bu.ssafy.event.application.*;
 import com.anssa8bu.ssafy.event.entity.*;
 import com.anssa8bu.ssafy.event.repository.OutboxEventRepository;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -20,7 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
       "app.outbox.lease-duration=50ms",
       "app.outbox.retention=1ms"
     })
-class OutboxPublisherIntegrationTest {
+class OutboxPublisherIntegrationTest extends IntegrationTestBase {
   @Autowired OutboxEventRepository repo;
   @Autowired OutboxPublishService publisher;
   @Autowired OutboxClaimService claim;

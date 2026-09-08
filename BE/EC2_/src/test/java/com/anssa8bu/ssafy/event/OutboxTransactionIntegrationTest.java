@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.anssa8bu.ssafy.event.application.*;
 import com.anssa8bu.ssafy.event.entity.*;
 import com.anssa8bu.ssafy.event.repository.OutboxEventRepository;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import com.anssa8bu.ssafy.user.entity.*;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -14,13 +15,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(properties = "app.outbox.enabled=false")
-class OutboxTransactionIntegrationTest {
+class OutboxTransactionIntegrationTest extends IntegrationTestBase {
   @Autowired TransactionalOutboxService service;
   @Autowired OutboxEventRepository outbox;
   @Autowired EntityManager em;
   @Autowired JdbcTemplate jdbc;
+  @Autowired TransactionTemplate tx;
   UUID committedUser;
   String duplicateEvent;
 
@@ -66,6 +69,40 @@ class OutboxTransactionIntegrationTest {
                     1L))
         .isInstanceOf(DataIntegrityViolationException.class);
     assertThat(count("users", rollbackUser)).isZero();
+  }
+
+  @Test
+  void rollsBackOutboxWhenBusinessChangeFails() {
+    String eventId = "business-fail-" + UUID.randomUUID();
+    assertThatThrownBy(
+            () ->
+                service.execute(
+                    () -> {
+                      throw new IllegalStateException("business failure");
+                    },
+                    event(eventId, UUID.randomUUID()),
+                    1L))
+        .isInstanceOf(IllegalStateException.class);
+    assertThat(outbox.findByEventId(eventId)).isEmpty();
+  }
+
+  @Test
+  void joinsOuterTransactionAndRollsBackWithIt() {
+    UUID outerUser = UUID.randomUUID();
+    String eventId = "outer-" + UUID.randomUUID();
+    tx.executeWithoutResult(
+        status -> {
+          service.execute(
+              () -> {
+                em.persist(user(outerUser));
+                return null;
+              },
+              event(eventId, outerUser),
+              1L);
+          status.setRollbackOnly();
+        });
+    assertThat(count("users", outerUser)).isZero();
+    assertThat(outbox.findByEventId(eventId)).isEmpty();
   }
 
   private User user(UUID id) {

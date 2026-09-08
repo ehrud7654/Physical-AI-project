@@ -6,18 +6,17 @@ import com.anssa8bu.ssafy.deployment.entity.*;
 import com.anssa8bu.ssafy.device.entity.*;
 import com.anssa8bu.ssafy.model.entity.RobotProfile;
 import com.anssa8bu.ssafy.robot.entity.*;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import com.anssa8bu.ssafy.task.entity.*;
 import com.anssa8bu.ssafy.user.entity.*;
 import jakarta.persistence.EntityManager;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
-class TaskRobotDeploymentEntityIntegrationTest {
+class TaskRobotDeploymentEntityIntegrationTest extends IntegrationTestBase {
   @Autowired EntityManager em;
 
   @Test

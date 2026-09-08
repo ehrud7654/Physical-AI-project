@@ -1,11 +1,14 @@
 package com.anssa8bu.ssafy.common.config;
 
+import com.anssa8bu.ssafy.common.redis.RedisTtlProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import com.anssa8bu.ssafy.common.redis.RedisTtlProperties;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableConfigurationProperties(RedisTtlProperties.class)
