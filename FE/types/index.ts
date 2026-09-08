@@ -4,7 +4,7 @@ export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
 export type RobotStatus = '온라인' | '오프라인' | '작업 중' | '오류';
 
-export type TrainingStatus = '진행 중' | '완료' | '실패';
+export type TrainingStatus = '진행 중' | '취소 요청' | '취소됨' | '완료' | '실패';
 
 export type DeviceType = 'robot' | 'umi';
 
@@ -43,6 +43,49 @@ export interface Dataset {
   status: 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID';
   validationErrors?: string[];
   retentionDays: number;
+  trainable: boolean;
+  blockingReasons: BlockingReason[];
+  recoveryAction: RecoveryAction;
+}
+
+export type RecoveryAction = 'WAIT' | 'RETRY_UPLOAD' | 'RECORD_AGAIN' | 'SET_LABEL' | 'EXTEND_RETENTION' | 'CREATE_DEPLOYMENT' | 'RETRY' | 'CONTACT_SUPPORT' | 'NONE';
+
+export interface BlockingReason { code: string; message: string; recoveryAction: RecoveryAction; }
+
+export interface EpisodePreviewSession {
+  episodeId: string;
+  status: 'READY';
+  previewType: 'FRAME_SEQUENCE' | 'VIDEO';
+  manifestUrl: string;
+  thumbnailUrl: string;
+  expiresAt: string;
+}
+
+export interface TrainingRequirements {
+  skillId: string;
+  skillKey: string;
+  minimumEpisodeCount: number;
+  recommendedEpisodeCount: number;
+  maximumEpisodeCount: number;
+  allowedSources: Array<'SIM' | 'REAL'>;
+  requiresSameUmiDevice: boolean;
+  requiredContractVersion: string;
+  supported: boolean;
+  requirementsVersion: number;
+}
+
+export type TaskReadiness = 'PREPARING' | 'READY' | 'BLOCKED' | 'UNKNOWN';
+export interface TaskReadinessResult {
+  valid: boolean; readiness: TaskReadiness; robotId: string; taskVersionId: string;
+  deploymentId: string | null; observedAt: string; blockingReasons: BlockingReason[]; warnings: string[];
+}
+
+export type RobotExecutionStatus = 'REQUESTED' | 'STARTING' | 'RUNNING' | 'CANCEL_REQUESTED' | 'CANCELED' | 'SUCCEEDED' | 'FAILED' | 'STATUS_UNKNOWN';
+export interface RobotExecution {
+  id: string; robotId: string; taskVersionId: string; deploymentId: string; status: RobotExecutionStatus;
+  currentStep: number | null; totalSteps: number; progressPercent: number;
+  error: { code: string; message: string; recoveryAction: RecoveryAction } | null;
+  requestedAt: string; startedAt: string | null; finishedAt: string | null; updatedAt: string;
 }
 
 export interface Training {

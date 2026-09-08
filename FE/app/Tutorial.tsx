@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 const steps = [
-  { label: '대시보드', title: '전체 상태를 한눈에 봐요', description: '장치 연결과 학습 진행 상황을 모아 보여줘요.', items: ['연결된 UMI와 사용 가능한 로봇 수 확인', '로봇별 상태와 최근 학습 진행률 확인'] },
+  { label: '대시 보드', title: '전체 상태를 한눈에 봐요', description: '장치 연결과 학습 진행 상황을 모아 보여줘요.', items: ['연결된 UMI와 사용 가능한 로봇 수 확인', '로봇별 상태와 최근 학습 진행률 확인'] },
   { label: '데이터', title: '기록한 동작을 확인해요', description: 'UMI로 기록한 동작과 학습 가능 여부를 보여줘요.', items: ['동작·상태별로 데이터 찾기', '데이터 번호를 눌러 상세 정보와 확인 결과 보기'] },
   { label: '학습', title: '로봇에게 동작을 가르쳐요', description: '새로운 기록이나 기존 데이터로 학습을 만들어요.', items: ['학습 목록: 진행률과 학습 결과 확인', '학습 생성: 동작과 데이터를 골라 학습 시작'] },
   { label: '작업', title: '배운 동작을 묶어 실행해요', description: '로봇이 할 일을 순서대로 만들고 실행해요.', items: ['작업 목록: 저장한 작업의 상세 확인·수정·실행', '작업 생성: 동작을 순서대로 추가하고 실행 준비'] },

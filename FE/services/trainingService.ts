@@ -1,8 +1,23 @@
-import type { Training, TrainingStatus } from '@/types';
+import type { Training, TrainingRequirements, TrainingStatus } from '@/types';
 import { initialTrainings } from '@/mocks';
 import { clone, delay } from './client';
 
 let trainings: Training[] = clone(initialTrainings);
+
+const requirementBySkill: Record<string, Pick<TrainingRequirements, 'minimumEpisodeCount' | 'recommendedEpisodeCount' | 'maximumEpisodeCount'>> = {
+  pick_place: { minimumEpisodeCount: 5, recommendedEpisodeCount: 10, maximumEpisodeCount: 100 },
+  sort_two: { minimumEpisodeCount: 8, recommendedEpisodeCount: 15, maximumEpisodeCount: 100 },
+  align_fixture: { minimumEpisodeCount: 8, recommendedEpisodeCount: 15, maximumEpisodeCount: 100 },
+  present_inspect: { minimumEpisodeCount: 5, recommendedEpisodeCount: 10, maximumEpisodeCount: 100 },
+  line_up: { minimumEpisodeCount: 10, recommendedEpisodeCount: 20, maximumEpisodeCount: 100 },
+};
+
+/** SKILL-09: 프리셋이 아닌 학습 입력 조건을 조회한다. */
+export async function fetchTrainingRequirements(skillKey: string): Promise<TrainingRequirements> {
+  await delay();
+  const counts = requirementBySkill[skillKey] ?? requirementBySkill.pick_place;
+  return { skillId: `skill_${skillKey}`, skillKey, ...counts, allowedSources: ['REAL'], requiresSameUmiDevice: false, requiredContractVersion: 'umi-policy-v1', supported: true, requirementsVersion: 1 };
+}
 
 export async function fetchTrainings(status?: TrainingStatus | 'all'): Promise<Training[]> {
   await delay();
@@ -14,14 +29,17 @@ export async function fetchTrainings(status?: TrainingStatus | 'all'): Promise<T
   return clone(trainings.filter((item) => item.status === status));
 }
 
-/** 진행 중인 학습을 취소한다. 실패 상태로 전환된다. */
+/** TRAIN-07: 실행 중인 학습은 취소 요청으로 표시하고 서버 확인 후에만 취소 완료로 바뀐다. */
 export async function cancelTraining(name: string): Promise<Training[]> {
   await delay();
   trainings = trainings.map((item) =>
     item.name === name && item.status === '진행 중'
-      ? { ...item, status: '실패' as const, stage: '사용자 취소' }
+      ? { ...item, status: '취소 요청' as const, stage: '취소 확인 중' }
       : item,
   );
+  window.setTimeout(() => {
+    trainings = trainings.map((item) => item.name === name && item.status === '취소 요청' ? { ...item, status: '취소됨' as const, stage: '취소 완료' } : item);
+  }, 1200);
   return clone(trainings);
 }
 

@@ -78,7 +78,7 @@ td strong, td small { display: block; }td strong { color: #303949; font-size: 11
 @media (max-width: 1100px) { .workspace-grid { grid-template-columns: 1fr; }.guide-card { display: none; }.content { padding: 32px 26px; }.handle-controls { grid-template-columns: 1fr 1fr auto; }.divider { display: none; } }
 
 /* Login */
-.landing-page{min-height:100vh;color:#fff;background:#070b12}.landing-header{position:absolute;z-index:5;top:0;right:0;left:0;height:94px;display:grid;grid-template-columns:260px 1fr auto;align-items:center;padding:0 34px;border-bottom:1px solid rgba(255,255,255,.13);background:linear-gradient(180deg,rgba(6,10,17,.72),rgba(6,10,17,.18))}.landing-header>img{width:205px;height:48px;object-fit:contain;object-position:left center;filter:brightness(0) invert(1)}.landing-header nav{display:flex;justify-content:flex-end;gap:42px;margin-right:38px;font-size:11px;font-weight:800;letter-spacing:.12em}.landing-header nav span{opacity:.82}.landing-header>div{display:flex}.landing-header button{height:48px;padding:0 22px;border:1px solid rgba(255,255,255,.5);font-size:10px;font-weight:900;letter-spacing:.14em}.landing-signin{color:#fff;background:rgba(7,11,18,.62)}.landing-demo{color:#111827;background:#fff}.landing-hero{position:relative;min-height:100vh;display:flex;align-items:flex-end;justify-content:center;padding:180px 50px 58px;background-image:linear-gradient(180deg,rgba(6,10,17,.12) 18%,rgba(6,10,17,.34) 48%,#070b12 92%),linear-gradient(90deg,rgba(6,10,17,.18),transparent 25%,transparent 75%,rgba(6,10,17,.18)),url('/ssafy-fleet-hero.png');background-size:cover;background-position:center}.landing-copy{position:relative;z-index:2;width:min(1120px,100%);text-align:center}.landing-copy>p{margin:0 0 24px;color:#b9c8e4;font-size:12px;font-weight:800;letter-spacing:.28em}.landing-copy h1{margin:0;font-size:clamp(42px,5vw,78px);line-height:1.08;letter-spacing:-.045em;text-shadow:0 3px 30px rgba(0,0,0,.4)}.landing-copy h2{max-width:850px;margin:24px auto 0;color:#d6dbe5;font-size:16px;font-weight:400;line-height:1.65}.landing-actions{display:flex;justify-content:center;gap:12px;margin-top:34px}.landing-actions button{height:54px;min-width:210px;padding:0 26px;border:1px solid #fff;font-size:12px;font-weight:900;letter-spacing:.03em}.landing-actions button:first-child{color:#111827;background:#fff}.landing-actions button:last-child{color:#fff;background:rgba(10,16,27,.55);backdrop-filter:blur(8px)}.landing-actions button span{margin-left:12px}.landing-proof{position:absolute;right:42px;bottom:34px;left:42px;display:flex;justify-content:center;gap:52px;color:#aeb9ca;font-size:10px;letter-spacing:.05em}.landing-proof span{display:flex;align-items:center;gap:10px}.landing-proof strong{color:#fff;font-size:11px;letter-spacing:.12em}
+.landing-page{min-height:100vh;color:#fff;background:#070b12}.landing-header{position:absolute;z-index:5;top:0;right:0;left:0;height:94px;display:grid;grid-template-columns:260px 1fr auto;align-items:center;padding:0 34px;border-bottom:1px solid rgba(255,255,255,.13);background:linear-gradient(180deg,rgba(6,10,17,.72),rgba(6,10,17,.18))}.landing-header>img{width:205px;height:48px;object-fit:contain;object-position:left center;filter:brightness(0) invert(1)}.landing-header nav{display:flex;justify-content:flex-end;gap:42px;margin-right:38px;font-size:11px;font-weight:800;letter-spacing:.12em}.landing-header nav span{opacity:.82}.landing-header>div{display:flex}.landing-header button{height:48px;padding:0 22px;border:1px solid rgba(255,255,255,.5);font-size:10px;font-weight:900;letter-spacing:.14em}.landing-signin{color:#fff;background:rgba(7,11,18,.62)}.landing-demo{color:#111827;background:#fff}.landing-hero{position:relative;min-height:100vh;display:flex;align-items:flex-end;justify-content:center;padding:180px 50px 58px;background-image:linear-gradient(180deg,rgba(6,10,17,.12) 18%,rgba(6,10,17,.34) 48%,#070b12 92%),linear-gradient(90deg,rgba(6,10,17,.18),transparent 25%,transparent 75%,rgba(6,10,17,.18)),url('/ssafy-fleet-hero.png');background-size:cover;background-position:center}.landing-copy{position:relative;z-index:2;width:min(1120px,100%);text-align:center}.landing-copy>p{margin:0 0 24px;color:#b9c8e4;font-size:12px;font-weight:800;letter-spacing:.28em}.landing-copy h1{margin:0;font-size:clamp(46px,5.4vw,84px);line-height:1.08;letter-spacing:-.045em;text-shadow:0 3px 30px rgba(0,0,0,.4)}.landing-copy h2{max-width:850px;margin:24px auto 0;color:#d6dbe5;font-size:16px;font-weight:400;line-height:1.65}.landing-actions{display:flex;justify-content:center;gap:12px;margin-top:34px}.landing-actions button{height:54px;min-width:210px;padding:0 26px;border:1px solid #fff;font-size:12px;font-weight:900;letter-spacing:.03em}.landing-actions button:first-child{color:#111827;background:#fff}.landing-actions button:last-child{color:#fff;background:rgba(10,16,27,.55);backdrop-filter:blur(8px)}.landing-actions button span{margin-left:12px}.landing-proof{position:absolute;right:42px;bottom:34px;left:42px;display:flex;justify-content:center;gap:52px;color:#aeb9ca;font-size:10px;letter-spacing:.05em}.landing-proof span{display:flex;align-items:center;gap:10px}.landing-proof strong{color:#fff;font-size:11px;letter-spacing:.12em}
 .login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(500px, 1.08fr) minmax(460px, .92fr); background: white; }
 .login-intro { position: relative; min-height: 720px; padding: 42px 64px; overflow: hidden; color: white; background: #172033; }
 .login-intro::before { content: ''; position: absolute; inset: 0; opacity: .65; background: radial-gradient(circle at 75% 25%, rgb(234 88 12 / 25%), transparent 32%), radial-gradient(circle at 28% 72%, rgb(255 255 255 / 8%), transparent 28%); }
@@ -498,12 +498,12 @@ html.figma-desktop-capture .global-brand img{width:172px!important;height:42px!i
   .app-sidebar .global-nav{position:absolute;top:66px;right:0;bottom:auto;left:0;z-index:92;display:none!important;box-sizing:border-box;width:100%;max-width:none;min-width:0;height:auto;max-height:calc(100dvh - 66px);padding:18px 16px 22px;overflow-x:hidden!important;overflow-y:auto;overscroll-behavior:contain;background:#283259;transform:none;transition:none}
   .app-sidebar.menu-open .global-nav.open{display:flex!important;transform:none}
   .app-sidebar .global-nav-item{flex:0 0 auto;width:100%;min-width:0}
-  .app-sidebar .global-nav-item>button{flex:none!important;box-sizing:border-box;width:100%!important;min-width:0;font-size:14px}
+  .app-sidebar .global-nav-item>button{display:flex!important;flex:none!important;box-sizing:border-box;width:100%!important;min-width:0;flex-direction:row;align-items:center;justify-content:flex-start;font-size:14px;line-height:1;white-space:nowrap}
   .app-sidebar .nav-chevron{display:block;margin-left:auto;transition:none}
   .app-sidebar .global-submenu{display:none;box-sizing:border-box;width:100%;min-width:0;margin-bottom:8px;overflow:visible}
   .app-sidebar .global-nav-item.expanded .global-submenu{display:flex}
   .app-sidebar .global-submenu button{box-sizing:border-box;width:100%!important;min-width:0}
-  .app-sidebar .mobile-auth{margin-top:auto}
+  .app-sidebar .mobile-auth{margin-top:10px}
   .app-sidebar .sidebar-backdrop{display:none}
   .app-shell>.content{min-height:calc(100vh - 66px)}
 }
@@ -759,13 +759,13 @@ select:focus,input:focus{border-color:#697be0;box-shadow:0 0 0 3px rgba(82,103,2
 .landing-page .landing-hero{min-height:100vh;display:flex;padding:132px 5vw 68px;align-items:center;justify-content:center;background-image:linear-gradient(180deg,rgba(18,29,50,.42),rgba(12,21,38,.68)),url('/ssafy-fleet-hero-bright.png');background-position:center;background-size:cover}
 .landing-page .landing-copy{width:min(980px,100%);text-align:center}
 .landing-page .landing-copy>p{margin:0 0 22px;padding:0;color:#d8e0f2;font-size:12px;font-weight:650;letter-spacing:.25em}
-.landing-page .landing-copy h1{color:#fff;font-size:clamp(44px,5.6vw,78px);line-height:1.12;letter-spacing:-.045em;text-shadow:0 3px 26px rgba(7,14,28,.3)}
+.landing-page .landing-copy h1{color:#fff;font-size:clamp(48px,5.9vw,84px);line-height:1.12;letter-spacing:-.045em;text-shadow:0 3px 26px rgba(7,14,28,.3)}
 .landing-page .landing-copy h2{max-width:720px;margin:24px auto 0;color:rgba(255,255,255,.86);font-size:17px;font-weight:400;line-height:1.75}
 .landing-page .landing-actions{justify-content:center;margin-top:34px}
 .landing-page .landing-actions button:first-child,.landing-page .landing-actions button:first-child:disabled{min-width:190px;height:52px;color:#26344d;background:#fff;border-color:#fff;box-shadow:0 8px 24px rgba(8,16,31,.2);font-size:12px;font-weight:600;opacity:1;backdrop-filter:none}
 @media(max-width:680px){
   .landing-simple-header{height:72px;padding:0 18px}.landing-simple-logo{width:142px;height:44px}.landing-auth-actions{gap:6px}.landing-auth-actions button{min-width:0;height:40px;padding:0 13px;font-size:11px}
-  .landing-page .landing-hero{padding:112px 22px 54px}.landing-page .landing-copy h1{font-size:clamp(38px,12vw,54px);word-break:keep-all}.landing-page .landing-copy h2{font-size:14px}.landing-page .landing-copy h2 br{display:none}
+  .landing-page .landing-hero{padding:112px 22px 54px}.landing-page .landing-copy h1{font-size:clamp(40px,12.5vw,58px);word-break:keep-all}.landing-page .landing-copy h2{font-size:14px}.landing-page .landing-copy h2 br{display:none}
 }
 
 .tutorial-dialog{width:min(960px,calc(100% - 40px));max-height:calc(100dvh - 40px);margin:auto;padding:0;border:0;border-radius:20px;background:#fff;color:#182033;box-shadow:0 32px 100px #10182860;overflow:hidden}
@@ -892,3 +892,886 @@ select:focus,input:focus{border-color:#697be0;box-shadow:0 0 0 3px rgba(82,103,2
 .landing-login-card>.signup-success{margin:0 0 18px!important;padding:11px 13px;border-radius:8px;color:#287b6c!important;background:#eaf7f2;font-size:11px!important;line-height:1.5}
 
 @media(max-width:680px){.signup-card{padding:22px 20px}}
+
+/* 2026 visual refinement — softer surfaces, depth and restrained color. */
+:root{
+  --ui-accent:#5969d8;
+  --ui-accent-deep:#4352b6;
+  --ui-accent-soft:#eef0ff;
+  --ui-canvas:#f5f6fb;
+  --ui-border:rgba(104,115,148,.16);
+  --ui-border-strong:rgba(104,115,148,.25);
+  --ui-shadow:0 8px 28px rgba(31,42,77,.07),0 1px 3px rgba(31,42,77,.05);
+  --ui-shadow-hover:0 14px 36px rgba(31,42,77,.11),0 2px 5px rgba(31,42,77,.06);
+}
+.app-shell>.content{
+  background:
+    radial-gradient(circle at 7% 0%,rgba(108,119,220,.08),transparent 28%),
+    linear-gradient(180deg,#f8f9fd 0%,var(--ui-canvas) 42%,#f7f8fb 100%)!important;
+}
+.app-shell>.app-sidebar{
+  background:linear-gradient(165deg,#303a59 0%,#28324e 58%,#242d47 100%);
+  border-right:1px solid rgba(255,255,255,.08);
+  box-shadow:12px 0 36px rgba(29,37,62,.1);
+}
+.app-sidebar .global-brand{border-bottom-color:rgba(255,255,255,.12)}
+.app-sidebar .global-nav-item>button{border-radius:11px;transition:background-color .18s ease,color .18s ease,transform .18s ease}
+.app-sidebar .global-nav-item>button:hover{background:rgba(255,255,255,.075);transform:translateX(2px)}
+.app-sidebar .global-nav-item>button.active{background:linear-gradient(105deg,rgba(134,145,223,.25),rgba(255,255,255,.09));box-shadow:inset 0 0 0 1px rgba(209,215,255,.08)}
+.app-sidebar .global-submenu{border-left-color:rgba(188,197,236,.22)}
+.app-sidebar .global-submenu button{border-radius:9px!important;transition:background-color .18s ease,color .18s ease}
+.app-sidebar .global-actions{border-top-color:rgba(255,255,255,.12)}
+.app-sidebar .global-auth{border-radius:10px;border-color:rgba(255,255,255,.28);background:rgba(255,255,255,.035)}
+.app-sidebar .global-auth:hover{background:rgba(255,255,255,.09)}
+.page-heading.title-divider{border-bottom-color:rgba(104,115,148,.17)}
+.app-shell .card,.app-shell .guide-card,.app-shell .training-summary,
+.overview-cards>button,.data-overview article,.detail-metrics article,
+.block-library,.canvas,.run-panel,.work-namebar,.saved-work-list,.saved-work-detail,
+.work-stage-steps,.learning-wizard-card{
+  border:1px solid var(--ui-border)!important;
+  border-radius:16px!important;
+  background:rgba(255,255,255,.94)!important;
+  box-shadow:var(--ui-shadow)!important;
+}
+.overview-cards>button,.device-card,.skill-choice-grid>button,.method-choice-grid>button,
+.umi-choice-list>button,.saved-work-row,.library-block{
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background-color .18s ease;
+}
+.overview-cards>button:hover,.device-card:hover,.skill-choice-grid>button:hover,
+.method-choice-grid>button:hover,.umi-choice-list>button:hover{
+  transform:translateY(-2px)!important;
+  border-color:rgba(89,105,216,.3)!important;
+  box-shadow:var(--ui-shadow-hover)!important;
+}
+.overview-cards>button:nth-child(1){background:linear-gradient(145deg,#eef1ff,#f7f8ff)!important}
+.overview-cards>button:nth-child(2){background:linear-gradient(145deg,#f5f0fb,#faf8fd)!important}
+.overview-cards>button:nth-child(3){background:linear-gradient(145deg,#edf8f5,#f7fbfa)!important}
+.overview-cards>button:nth-child(4){background:linear-gradient(145deg,#fcf2ef,#fdf9f7)!important}
+.overview-icon,.device-visual,.learning-symbol,.robot-tile,.model-list>p>span{
+  box-shadow:0 5px 15px rgba(49,59,96,.08),inset 0 0 0 1px rgba(255,255,255,.7);
+}
+.data-overview article::before,.detail-metrics article::before{right:18px!important;left:18px!important;height:3px!important;border-radius:0 0 999px 999px}
+.training-summary{background:#fff!important;overflow:hidden}
+.training-summary span{border-left-color:rgba(104,115,148,.12)}
+.training-summary span:nth-child(1){background:linear-gradient(145deg,#fafbfe,#f5f6fb)}
+.training-summary span:nth-child(2){background:linear-gradient(145deg,#f1f3ff,#f8f8ff)}
+.training-summary span:nth-child(3){background:linear-gradient(145deg,#eef8f5,#f8fbfa)}
+.training-summary span:nth-child(4){background:linear-gradient(145deg,#fcf3f0,#fdf9f8)}
+.primary-button{border-radius:10px;background:linear-gradient(135deg,#6574df,#5061cf);box-shadow:0 7px 17px rgba(80,97,207,.22);font-weight:650}
+.primary-button:hover{background:linear-gradient(135deg,#5969d8,#4352b6);box-shadow:0 9px 21px rgba(67,82,182,.27);transform:translateY(-1px)}
+.secondary-button{border-color:var(--ui-border-strong);border-radius:10px;background:rgba(255,255,255,.86);box-shadow:0 2px 7px rgba(31,42,77,.04);font-weight:550}
+.secondary-button:hover{border-color:rgba(89,105,216,.35);background:#fff;box-shadow:0 5px 14px rgba(31,42,77,.08)}
+select,input{border-color:var(--ui-border-strong);border-radius:10px;background:rgba(255,255,255,.92);transition:border-color .18s ease,box-shadow .18s ease}
+select:focus,input:focus{border-color:rgba(89,105,216,.7);box-shadow:0 0 0 4px rgba(89,105,216,.1)}
+.training-table article,.episode-row,.saved-work-row{border-color:rgba(104,115,148,.12)}
+.training-table article:hover,.episode-row:not(.header):hover,.saved-work-row:hover{background:linear-gradient(90deg,rgba(241,243,255,.7),rgba(249,250,253,.5))}
+.saved-work-row.selected{background:linear-gradient(90deg,#eff1ff,#f9f9fd);box-shadow:inset 3px 0 var(--ui-accent)}
+.dataset-status,.training-badge,.status-pill{box-shadow:inset 0 0 0 1px rgba(80,90,120,.05)}
+.wizard-title>span,.work-stage-steps li.current span{background:linear-gradient(135deg,#6e7ce2,#5363cf);box-shadow:0 5px 12px rgba(83,99,207,.2)}
+.skill-choice-grid>button,.method-choice-grid>button,.umi-choice-list>button,.episode-select-list label{
+  border-color:var(--ui-border);border-radius:13px;background:rgba(255,255,255,.9);
+}
+.skill-choice-grid>button.selected,.method-choice-grid>button.selected,.umi-choice-list>button.selected,.episode-select-list label.selected{
+  border-color:rgba(89,105,216,.48);background:linear-gradient(145deg,#f3f4ff,#fff);box-shadow:0 8px 20px rgba(68,82,164,.08),inset 0 0 0 1px rgba(89,105,216,.08);
+}
+.review-notice,.deployment-status,.execution-focus{border-radius:12px;background:linear-gradient(145deg,#f7f8fd,#fbfbfd);border-color:var(--ui-border)}
+.modal-backdrop{background:rgba(27,34,55,.48);backdrop-filter:blur(5px)}
+.register-modal,.confirm-modal,.video-modal,.landing-login-card{border:1px solid rgba(255,255,255,.8);border-radius:18px;box-shadow:0 28px 80px rgba(24,32,58,.23),0 4px 14px rgba(24,32,58,.1)}
+.dropdown-menu{border-color:var(--ui-border);border-radius:11px;box-shadow:0 14px 34px rgba(31,42,77,.14)}
+@media(max-width:900px){
+  .app-sidebar .global-nav{background:linear-gradient(165deg,#303a59,#28324e);box-shadow:0 20px 42px rgba(23,30,51,.2)}
+  .app-shell .card,.app-shell .training-summary,.data-overview article{border-radius:14px!important}
+}
+
+/* Floating desktop navigation shell. */
+@media(min-width:901px){
+  body{background:#eff1f7}
+  .app-shell{
+    padding-left:276px;
+    background:linear-gradient(145deg,#eef0f6 0%,#f7f8fc 36%,#f1f3f8 100%);
+  }
+  .app-shell>.app-sidebar{
+    top:18px;
+    bottom:18px;
+    left:18px;
+    width:240px;
+    height:auto;
+    padding:24px 18px 20px;
+    overflow:hidden;
+    border:1px solid rgba(221,226,255,.16);
+    border-radius:22px;
+    background:
+      radial-gradient(circle at 8% 2%,rgba(176,185,242,.2),transparent 31%),
+      radial-gradient(circle at 102% 42%,rgba(105,121,211,.13),transparent 38%),
+      linear-gradient(145deg,rgba(255,255,255,.055),transparent 34%),
+      linear-gradient(165deg,#374263 0%,#303a59 32%,#293350 68%,#242d48 100%);
+    box-shadow:
+      0 30px 68px rgba(30,38,65,.22),
+      0 10px 24px rgba(30,38,65,.14),
+      0 2px 6px rgba(30,38,65,.1),
+      inset 0 1px 0 rgba(255,255,255,.14),
+      inset 1px 0 0 rgba(255,255,255,.055),
+      inset -1px 0 0 rgba(10,16,33,.1);
+  }
+  .app-shell>.app-sidebar::after{
+    position:absolute;
+    right:-68px;
+    bottom:-82px;
+    width:190px;
+    height:190px;
+    border-radius:50%;
+    background:radial-gradient(circle,rgba(122,136,217,.15),transparent 68%);
+    pointer-events:none;
+    content:"";
+  }
+  .app-sidebar .global-brand,.app-sidebar .global-nav,.app-sidebar .global-actions{position:relative;z-index:1}
+  .app-sidebar .global-nav-item>button.active{
+    background:linear-gradient(105deg,rgba(151,162,232,.27),rgba(255,255,255,.09));
+    box-shadow:0 7px 18px rgba(15,21,39,.12),inset 0 0 0 1px rgba(220,225,255,.1);
+  }
+  .app-sidebar .global-submenu{
+    margin-left:17px;
+    padding-left:11px;
+    border-left-color:rgba(199,207,244,.19);
+  }
+  .app-sidebar .global-auth{box-shadow:inset 0 0 0 1px rgba(255,255,255,.04),0 7px 16px rgba(15,21,39,.1)}
+  .app-shell>.content{border-radius:24px 0 0 24px}
+}
+
+/* Stronger page hierarchy without changing card headings. */
+.page-heading h1{font-weight:700;letter-spacing:-.035em}
+
+/* Unified line icons for the sidebar navigation. */
+.global-nav-icon{display:none}
+.app-sidebar .global-nav-icon{display:grid;flex:0 0 22px;width:22px;height:22px;margin-right:12px;place-items:center;color:rgba(224,229,249,.72)}
+.app-sidebar .global-nav-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.app-sidebar .global-nav-item>button:hover .global-nav-icon{color:#fff}
+.app-sidebar .global-nav-item>button.active .global-nav-icon{color:#d7ddff;filter:drop-shadow(0 2px 5px rgba(166,178,255,.22))}
+@media(max-width:900px){.app-sidebar .global-nav-icon{margin-right:11px}}
+
+/* Cohesive console palette — color communicates state, not card identity. */
+:root{
+  --ui-accent:#52628f;
+  --ui-accent-deep:#34405f;
+  --ui-accent-soft:#eef1f7;
+  --ui-panel:#fbfcfe;
+  --ui-panel-muted:#f3f5f9;
+}
+.app-shell>.content{
+  background:
+    radial-gradient(circle at 4% 0%,rgba(77,91,135,.07),transparent 28%),
+    linear-gradient(180deg,#f8f9fc 0%,#f3f5f9 100%)!important;
+}
+.overview-cards>button,
+.overview-cards>button:nth-child(1),.overview-cards>button:nth-child(2),
+.overview-cards>button:nth-child(3),.overview-cards>button:nth-child(4){
+  border-color:rgba(87,99,132,.15)!important;
+  background:linear-gradient(145deg,#fff,#f8f9fc)!important;
+}
+.overview-cards>button::before{
+  align-self:stretch;width:2px;margin-right:-8px;border-radius:999px;
+  background:linear-gradient(180deg,#6d7ba4,#aeb7cf);content:"";
+}
+.overview-icon,.overview-icon.blue,.overview-icon.violet,.overview-icon.orange,.overview-icon.green,
+.device-visual,.device-visual.umi,.learning-symbol,.model-list>p>span,.robot-tile,.robot-illustration,
+.run-robot .robot-tile,.skill-choice-grid>button>span,.method-icon{
+  color:#50608c!important;
+  background:linear-gradient(145deg,#eef1f8,#f8f9fc)!important;
+}
+.data-overview article,.detail-metrics article{
+  border-color:rgba(87,99,132,.15)!important;
+  background:linear-gradient(145deg,#fff,#f8f9fc)!important;
+}
+.data-overview article::before,.detail-metrics article::before,
+.data-overview article:nth-child(1)::before,.data-overview article:nth-child(2)::before,
+.data-overview article:nth-child(3)::before,.data-overview article:nth-child(4)::before,
+.detail-metrics article:nth-child(1)::before,.detail-metrics article:nth-child(2)::before,
+.detail-metrics article:nth-child(3)::before,.detail-metrics article:nth-child(4)::before{
+  background:linear-gradient(90deg,#68779f,#aeb7ce)!important;
+}
+.training-summary span,.training-summary span:nth-child(1),.training-summary span:nth-child(2),
+.training-summary span:nth-child(3),.training-summary span:nth-child(4){
+  background:linear-gradient(145deg,#fff,#f7f8fb)!important;
+}
+.training-summary span:nth-child(2){background:linear-gradient(145deg,#f2f4f9,#fafbfc)!important}
+.primary-button{background:linear-gradient(135deg,#61719e,#48577f);box-shadow:0 7px 17px rgba(52,64,95,.2)}
+.primary-button:hover{background:linear-gradient(135deg,#53638e,#394665);box-shadow:0 9px 21px rgba(52,64,95,.24)}
+.text-button,.detail-link{color:#46567f}
+.tiny-progress i,.training-progress i,.progress-track i,.mini-progress i{background:linear-gradient(90deg,#6576a5,#48577f)}
+.wizard-title>span,.work-stage-steps li.current span{background:linear-gradient(135deg,#6879a7,#4c5b83);box-shadow:0 5px 12px rgba(52,64,95,.18)}
+.work-stage-steps li.current{color:#3f4e74;background:#f0f2f7}
+.skill-choice-grid>button.selected,.method-choice-grid>button.selected,.umi-choice-list>button.selected,.episode-select-list label.selected{
+  border-color:rgba(75,89,130,.38);background:linear-gradient(145deg,#f1f3f8,#fff);box-shadow:0 8px 20px rgba(52,64,95,.07),inset 0 0 0 1px rgba(75,89,130,.06);
+}
+.draft-label,.work-stage-heading>span{color:#4c5b83;background:#eef1f7;border-color:rgba(87,99,132,.18)}
+.tour-footer-actions .primary-button,.tour-mini-action{background:linear-gradient(135deg,#61719e,#48577f)}
+.tour-counter,.tour-percent{color:#4c5b83}.tour-progress i,.tour-dots button[aria-current] i{background:#596991}
+/* Semantic colors stay reserved for actual outcomes. */
+.status-온라인,.dataset-status.ready,.training-badge.complete,.check-pass{color:#28745f}
+.status-오류,.dataset-status.invalid,.training-badge.failed,.check-fail{color:#a24b48}
+.dataset-status.uploading,.dataset-status.validating{color:#4d5e8d;background:#eef1f7}
+
+/* Shared spacing and alignment rhythm across console pages. */
+.page-heading,
+.overview-cards,.dashboard-grid,
+.device-tabs,.device-grid,.robot-detail-hero,.detail-metrics,
+.training-summary,.training-table,
+.data-overview,.episode-panel,
+.section-tabs,.redesigned-steps,
+.workflow-library-toolbar,.workflow-library-layout,
+.work-namebar,.block-workspace,.work-stage-steps,.work-stage-actions{
+  width:100%;max-width:1280px;margin-right:auto;margin-left:auto;
+}
+.page-heading{margin-bottom:28px;padding:10px 2px 22px}
+.page-heading.title-divider{padding-bottom:22px}
+.overview-cards{gap:18px;margin-bottom:22px}
+.overview-cards>button{min-height:154px;padding:24px 22px;align-items:center;gap:16px}
+.dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.dashboard-section{min-width:0;padding:26px 28px}.dashboard-title{margin-bottom:16px}
+.dashboard-title>div{min-width:0}.dashboard-title .text-button{flex:0 0 auto;margin-left:18px;white-space:nowrap}
+.compact-robot-list>button{
+  display:grid;grid-template-columns:42px minmax(0,1fr) 92px 14px;
+  min-height:82px;padding:16px 8px;gap:14px;align-items:center;
+}
+.compact-robot-list .status-pill{justify-self:end}.compact-robot-list>button>em{text-align:right}
+.compact-robot-list strong,.compact-robot-list small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.compact-training-list>button{
+  display:grid;grid-template-columns:minmax(210px,1fr) 88px 150px 48px;
+  min-height:82px;padding:16px 8px;gap:18px;align-items:center;
+}
+.compact-training-list .training-badge{justify-self:center;text-align:center}
+.compact-training-list .tiny-progress{width:100%}.compact-training-list>button>em{min-width:44px;text-align:right}
+.device-tabs{margin-bottom:22px}.device-grid{gap:20px}.device-card{min-height:250px;padding:24px}
+.robot-detail-hero{margin-bottom:20px}.detail-metrics{gap:18px;margin-top:0;margin-bottom:22px}
+.training-summary{margin-bottom:22px}.training-summary span{min-height:88px;padding:20px 24px;display:flex;flex-direction:column;justify-content:center}
+.training-table{padding:0 28px 14px}.training-table-head{min-height:96px;padding:22px 0 18px}
+.training-table article{min-height:84px;padding:18px 4px;gap:22px}
+.training-controls{gap:10px}.training-controls .refresh-button,.training-controls select{height:40px}
+.data-overview{gap:18px;margin-bottom:22px}.data-overview article{min-height:148px;padding:24px}
+.episode-panel{padding:0 28px 16px}.episode-row{min-height:72px;padding:17px 6px;gap:18px}
+.section-tabs{margin-bottom:22px}.redesigned-steps{margin-bottom:22px}
+.learning-wizard-card{max-width:1120px;padding:34px 36px}.wizard-title{margin-bottom:28px}
+.workflow-library-toolbar{margin-bottom:18px;padding:16px 18px}.workflow-library-layout{gap:22px}
+.saved-work-list-head,.saved-work-detail-head{padding:24px 26px 20px}
+.saved-work-columns,.saved-work-row{padding-right:26px;padding-left:26px}
+.saved-work-row{min-height:104px}.detail-section{padding:22px 26px}.work-summary-metrics{padding:18px 26px}
+.work-namebar{margin-bottom:18px;padding:16px 18px}.block-workspace{gap:20px}.block-library{padding:20px}.canvas-head{padding:20px 22px}
+.work-stage-steps{margin-bottom:22px}.work-stage-actions{margin-top:20px}.work-stage-card{padding:32px}
+@media(max-width:1180px){
+  .dashboard-grid{grid-template-columns:1fr}
+  .compact-training-list>button{grid-template-columns:minmax(180px,1fr) 82px 120px 44px;gap:12px}
+}
+@media(max-width:900px){
+  .page-heading,.overview-cards,.dashboard-grid,.device-tabs,.device-grid,.training-summary,.training-table,.data-overview,.episode-panel,.section-tabs,.redesigned-steps,.workflow-library-toolbar,.workflow-library-layout,.work-namebar,.block-workspace,.work-stage-steps,.work-stage-actions{max-width:none}
+  .page-heading{margin-bottom:20px;padding:6px 0 18px}
+  .dashboard-grid{gap:16px}.dashboard-section{padding:22px}
+  .compact-training-list>button{grid-template-columns:minmax(0,1fr) auto;gap:10px 14px}
+  .compact-training-list .tiny-progress{grid-column:1}.compact-training-list>button>em{grid-column:2;grid-row:2}
+  .compact-robot-list>button{grid-template-columns:40px minmax(0,1fr) auto 12px;gap:11px}
+  .training-table,.episode-panel{padding-right:18px;padding-left:18px}
+  .learning-wizard-card{padding:24px}
+}
+@media(max-width:560px){
+  .overview-cards{gap:12px}.overview-cards>button{min-height:132px;padding:18px}
+  .dashboard-section{padding:19px}.dashboard-title{gap:12px}
+  .compact-robot-list>button{grid-template-columns:38px minmax(0,1fr) auto}.compact-robot-list>button>em{display:none}
+  .compact-training-list>button{min-height:94px;padding:16px 2px}
+  .device-card{min-height:0}.data-overview article{min-height:126px;padding:20px}
+  .training-table-head{align-items:stretch}.training-controls{margin-top:14px}
+}
+
+/* Keep dashboard list columns inside their card at every desktop width. */
+.dashboard-section{overflow:hidden}
+.compact-training-list,.compact-training-list>button{min-width:0;max-width:100%}
+.compact-training-list>button{
+  box-sizing:border-box;
+  grid-template-columns:minmax(180px,1.5fr) 76px minmax(72px,.75fr) 44px;
+  column-gap:12px;
+  overflow:hidden;
+}
+.compact-training-list>button>div:first-child{overflow:hidden}
+.compact-training-list>button>div:first-child strong{white-space:normal;word-break:keep-all;overflow-wrap:normal}
+.compact-training-list>button>div:first-child small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.compact-training-list .tiny-progress{box-sizing:border-box;width:100%;min-width:0;max-width:128px;justify-self:stretch}
+@media(max-width:1180px){
+  .compact-training-list>button{grid-template-columns:minmax(180px,1fr) 80px minmax(90px,140px) 44px}
+}
+@media(max-width:680px){
+  .compact-training-list>button{grid-template-columns:minmax(0,1fr) auto}
+  .compact-training-list .tiny-progress{grid-column:1;grid-row:2;max-width:none}
+  .compact-training-list>button>em{grid-column:2;grid-row:2}
+}
+
+/* Keep one compact page title and place the first content group close to it. */
+.app-shell .page-heading h1,
+.app-shell .data-list-title h1,
+.app-shell .robot-detail-hero h1{
+  font-size:24px;
+}
+.app-shell .page-heading{
+  margin-bottom:16px;
+  padding-bottom:2px;
+}
+.app-shell .page-heading.title-divider{
+  margin-bottom:12px;
+  padding-bottom:2px;
+}
+.training-table-head{
+  min-height:72px;
+  padding-top:15px;
+  padding-bottom:12px;
+}
+.saved-work-list>.saved-work-columns:first-child{
+  border-top:0;
+}
+@media(max-width:680px){
+  .app-shell .page-heading h1,
+  .app-shell .data-list-title h1,
+  .app-shell .robot-detail-hero h1{
+    font-size:22px;
+  }
+  .app-shell .page-heading,
+  .app-shell .page-heading.title-divider{
+    margin-bottom:12px;
+  }
+}
+
+/* SUIT uses a quieter weight hierarchy for dense Korean product interfaces. */
+button,input,select,textarea{font-family:inherit}
+.app-shell .page-heading h1,
+.app-shell .data-list-title h1,
+.app-shell .robot-detail-hero h1{
+  font-weight:650;
+  letter-spacing:-.025em;
+}
+.app-shell h2,.app-shell h3{font-weight:600;letter-spacing:-.018em}
+.dashboard-title h2,.device-card h2,.wizard-title h2,
+.saved-work-detail-head h2,.work-stage-heading h2{font-weight:600}
+.compact-robot-list strong,.compact-training-list strong,
+.training-title-button,.saved-work-main strong,.library-block strong,
+.block-top strong,.nested-block-head strong{font-weight:600}
+.primary-button,.secondary-button,.text-button,.detail-link,
+.device-tabs button,.workflow-filter-tabs button,.advanced-blocks summary,
+.app-sidebar .global-nav button,.app-sidebar .global-auth{font-weight:600}
+.status-pill,.training-badge,.dataset-status,.robot-status,
+.draft-label,.device-sort>span{font-weight:600}
+.overview-cards small,.detail-metrics small,.training-summary small,
+.episode-row.header,.saved-work-columns{font-weight:500}
+.overview-cards strong,.training-summary strong,.detail-metrics strong,
+.progress-number{font-weight:650}
+
+/* Compact, actionable training overview with restrained admin hierarchy. */
+.training-summary{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  padding:6px;
+  gap:4px;
+  border-radius:14px!important;
+  background:#fff;
+}
+.training-summary button{
+  position:relative;
+  display:flex;
+  min-width:0;
+  min-height:62px;
+  padding:12px 18px;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  border:1px solid transparent;
+  border-radius:10px;
+  color:#667085;
+  background:transparent;
+  text-align:left;
+  transition:background-color .18s ease,border-color .18s ease,color .18s ease;
+}
+.training-summary button:hover{
+  color:#34405f;
+  background:#f5f7fb;
+}
+.training-summary button.active{
+  color:#34405f;
+  border-color:#d7deeb;
+  background:#eef1f7;
+  box-shadow:inset 0 0 0 1px rgba(70,86,127,.025);
+}
+.training-summary button.active::before{
+  position:absolute;
+  top:14px;
+  bottom:14px;
+  left:0;
+  width:3px;
+  border-radius:0 3px 3px 0;
+  background:#52628f;
+  content:"";
+}
+.training-summary button small{
+  color:inherit;
+  font-size:13px;
+  font-weight:500;
+  white-space:nowrap;
+}
+.training-summary button strong{
+  color:#172033;
+  font-size:22px;
+  font-weight:650;
+  line-height:1;
+}
+.training-table-head{
+  margin:0 -28px;
+  padding-right:28px;
+  padding-left:28px;
+  border-radius:16px 16px 0 0;
+  background:#fafbfc;
+}
+.training-table article{
+  transition:background-color .16s ease,box-shadow .16s ease;
+}
+.training-table article:hover{
+  background:#f8f9fc;
+  box-shadow:10px 0 #f8f9fc,-10px 0 #f8f9fc;
+}
+@media(max-width:680px){
+  .training-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .training-summary button{min-height:56px;padding:10px 14px}
+  .training-table-head{margin-right:-15px;margin-left:-15px;padding-right:15px;padding-left:15px}
+}
+
+/* Dashboard summaries: keep only useful information and reduce card height. */
+.overview-cards>button{
+  min-height:126px;
+  padding:18px 24px 18px 30px;
+  gap:0;
+}
+.overview-cards>button>div{width:100%;min-width:0}
+.overview-cards strong{margin:3px 0}
+@media(max-width:560px){
+  .overview-cards>button{min-height:116px;padding:16px 20px 16px 26px}
+}
+
+/* Clean dashboard summary cards inspired by conventional admin dashboards. */
+.overview-cards>button,
+.overview-cards>button:nth-child(1),
+.overview-cards>button:nth-child(2),
+.overview-cards>button:nth-child(3),
+.overview-cards>button:nth-child(4){
+  border:1px solid #dce1eb!important;
+  border-radius:14px!important;
+  background:#fff!important;
+  box-shadow:0 4px 12px rgba(31,42,68,.045),0 1px 2px rgba(31,42,68,.035)!important;
+}
+.overview-cards>button::before{display:none!important;content:none!important}
+.overview-cards>button:hover{
+  transform:none!important;
+  border-color:#bfc8db!important;
+  background:#f6f8fc!important;
+  box-shadow:0 7px 18px rgba(39,52,87,.085),0 1px 3px rgba(39,52,87,.045)!important;
+}
+.overview-cards small{color:#667085}
+.overview-cards strong{color:#101828}
+.overview-cards p{color:#475467}
+
+/* Lift the page heading and its content group without changing internal rhythm. */
+.app-shell>.content{padding-top:28px}
+.page-heading{padding-top:4px}
+@media(max-width:900px){
+  .app-shell>.content{padding-top:20px}
+  .page-heading{padding-top:2px}
+}
+
+.device-toolbar{
+  display:flex;
+  width:100%;
+  max-width:1280px;
+  margin:0 auto 22px;
+  align-items:flex-end;
+  justify-content:space-between;
+  border-bottom:1px solid #dfe4ec;
+}
+.device-toolbar .device-tabs{width:auto;margin:0;border-bottom:0}
+.device-sort{display:flex;align-items:center;gap:9px;padding-bottom:9px}
+.device-sort>span{color:#667085;font-size:12px;font-weight:650}
+.device-sort select{height:40px;min-width:140px;padding:0 36px 0 13px;color:#344054;font-weight:600}
+@media(max-width:560px){
+  .device-toolbar{align-items:stretch;flex-direction:column;gap:10px;padding-bottom:12px}
+  .device-toolbar .device-tabs{width:100%}
+  .device-sort{justify-content:flex-end;padding:0}
+}
+
+.data-page-panel{margin-top:0}
+.data-list-title{display:flex;align-items:center;gap:10px}
+.data-list-title h1{margin:0;font-size:27px;font-weight:650;letter-spacing:-.035em}
+.data-list-title>span{
+  padding:3px 8px;
+  border-radius:999px;
+  color:#46567f;
+  background:#eef1f7;
+  font-size:11px;
+  font-weight:700;
+}
+.data-table-head{min-height:0;padding-top:24px;padding-bottom:14px}
+.data-status-filters{
+  display:flex;
+  gap:8px;
+  padding:0 0 16px;
+  overflow-x:auto;
+}
+.data-status-filters button{
+  display:flex;
+  min-width:118px;
+  height:42px;
+  padding:0 12px;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  border:1px solid #e1e5ed;
+  border-radius:10px;
+  color:#667085;
+  background:#fff;
+  font-size:12px;
+  font-weight:650;
+  cursor:pointer;
+}
+.data-status-filters button strong{
+  display:grid;
+  min-width:24px;
+  height:24px;
+  padding:0 6px;
+  place-items:center;
+  border-radius:999px;
+  color:#475467;
+  background:#f2f4f7;
+  font-size:11px;
+}
+.data-status-filters button:hover{border-color:#c8d0df;background:#f8f9fc}
+.data-status-filters button.active{
+  border-color:#aeb9cf;
+  color:#34446c;
+  background:#f1f4f9;
+  box-shadow:inset 0 0 0 1px rgba(70,86,127,.06);
+}
+.data-status-filters button.active strong{color:#fff;background:#52628f}
+@media(max-width:680px){
+  .data-status-filters{padding-bottom:13px}
+  .data-status-filters button{min-width:106px}
+}
+
+/* Taste-skill audit: one restrained system for the authenticated product. */
+:root{
+  --product-ink:#172033;
+  --product-muted:#667085;
+  --product-accent:#46567f;
+  --product-accent-strong:#34405f;
+  --product-accent-soft:#eef1f6;
+  --product-canvas:#f4f6f9;
+  --product-panel:#ffffff;
+  --product-line:#e1e6ed;
+  --product-line-strong:#cbd3df;
+  --product-shadow:0 8px 24px rgba(39,52,87,.055),0 1px 2px rgba(39,52,87,.035);
+}
+html{scroll-behavior:smooth}
+body{
+  color:var(--product-ink);
+  font-family:"SUIT Variable","SUIT",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR","Malgun Gothic",sans-serif;
+  font-weight:400;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.app-shell{font-variant-numeric:tabular-nums}
+.app-shell>.content{
+  background:var(--product-canvas)!important;
+  color:var(--product-ink);
+}
+.page-heading h1,.data-list-title h1{
+  color:var(--product-ink);
+  font-weight:650;
+  line-height:1.15;
+  letter-spacing:-.035em;
+  text-wrap:balance;
+}
+.page-heading>div>p:last-child,.dashboard-title p,.training-table-head p,
+.work-stage-heading p,.wizard-title p{max-width:65ch;color:var(--product-muted)}
+
+/* Outer surfaces carry depth; nested data structures stay flat. */
+.app-shell .card,.app-shell .guide-card,.app-shell .training-summary,
+.data-overview article,.detail-metrics article,.learning-wizard-card,
+.saved-work-list,.saved-work-detail,.work-stage-card{
+  border-color:var(--product-line)!important;
+  border-radius:16px!important;
+  background:var(--product-panel)!important;
+  box-shadow:var(--product-shadow)!important;
+}
+.episode-panel,.training-table,.workflow-library-toolbar,.block-library,.canvas,
+.run-panel,.work-namebar{
+  border-color:var(--product-line)!important;
+  background:var(--product-panel)!important;
+}
+.data-overview article::before,.detail-metrics article::before{display:none!important;content:none!important}
+.training-summary span,.training-summary span:nth-child(1),.training-summary span:nth-child(2),
+.training-summary span:nth-child(3),.training-summary span:nth-child(4){background:#fff!important}
+
+/* A single accent replaces generic AI gradients. */
+.primary-button,.tour-footer-actions .primary-button,.tour-mini-action{
+  border:1px solid var(--product-accent-strong)!important;
+  border-radius:9px;
+  background:var(--product-accent)!important;
+  box-shadow:0 4px 10px rgba(52,64,95,.14)!important;
+  font-weight:650;
+  transition:background-color .2s ease,border-color .2s ease,box-shadow .2s ease,transform .12s ease;
+}
+.primary-button:hover,.tour-footer-actions .primary-button:hover,.tour-mini-action:hover{
+  border-color:#2b354f!important;
+  background:var(--product-accent-strong)!important;
+  box-shadow:0 6px 14px rgba(52,64,95,.18)!important;
+  transform:none;
+}
+.primary-button:disabled,.primary-button:disabled:hover{
+  cursor:not-allowed;
+  border-color:#d5dae3!important;
+  color:#8b95a5;
+  background:#e8ebf0!important;
+  box-shadow:none!important;
+  transform:none!important;
+}
+.primary-button:active,.secondary-button:active,.text-button:active,
+.device-card:active,.saved-work-row:active,.data-status-filters button:active{transform:translateY(1px)!important}
+.secondary-button{
+  border-color:var(--product-line-strong);
+  border-radius:9px;
+  background:#fff;
+  box-shadow:none;
+  font-weight:600;
+}
+.secondary-button:hover{border-color:#aeb9ca;background:#f8f9fb;box-shadow:none}
+.text-button,.detail-link{color:var(--product-accent);font-weight:650}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{
+  outline:3px solid rgba(70,86,127,.22)!important;
+  outline-offset:2px;
+}
+select,input{
+  border-color:var(--product-line-strong);
+  border-radius:9px;
+  background:#fff;
+  box-shadow:none;
+}
+select:focus,input:focus{border-color:#7c8aa8;box-shadow:0 0 0 3px rgba(70,86,127,.12)}
+
+/* Selection is quiet and consistent across creation flows. */
+.skill-choice-grid>button,.method-choice-grid>button,.umi-choice-list>button,
+.episode-select-list label,.library-flow-block{
+  border-color:var(--product-line);
+  border-radius:12px;
+  background:#fff;
+  box-shadow:none;
+}
+.skill-choice-grid>button:hover,.method-choice-grid>button:hover,.umi-choice-list>button:hover{
+  border-color:#aeb9ca;
+  background:#fafbfc;
+  box-shadow:none;
+}
+.skill-choice-grid>button.selected,.method-choice-grid>button.selected,
+.umi-choice-list>button.selected,.episode-select-list label.selected{
+  border-color:#8d9ab5;
+  background:var(--product-accent-soft);
+  box-shadow:inset 0 0 0 1px rgba(70,86,127,.08);
+}
+.wizard-title>span,.work-stage-steps li.current span{
+  background:var(--product-accent)!important;
+  box-shadow:none;
+}
+.work-stage-steps li.current{color:var(--product-accent-strong);background:var(--product-accent-soft)}
+
+/* Dense product lists rely on rhythm and dividers, not decoration. */
+.episode-row,.training-table article,.saved-work-row,
+.compact-robot-list>button,.compact-training-list>button{
+  border-color:var(--product-line)!important;
+}
+.episode-row:not(.header):hover,.training-table article:hover,
+.compact-robot-list>button:hover,.compact-training-list>button:hover{background:#f8f9fb}
+.episode-row.header,.saved-work-columns{color:#596579;background:#f7f8fa}
+.dataset-status,.training-badge,.status-pill{box-shadow:inset 0 0 0 1px rgba(52,64,95,.07)}
+.tiny-progress,.training-progress>div,.progress-track,.mini-progress{background:#e5e9f0}
+.tiny-progress i,.training-progress i,.progress-track i,.mini-progress i{background:var(--product-accent)!important}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
+/* Data detail uses structure and dividers instead of decorative cards. */
+.data-detail-modal{
+  width:min(620px,100%);
+  padding:0;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.76);
+  border-radius:18px;
+  background:#fff;
+  box-shadow:0 30px 80px rgba(24,32,58,.2),0 5px 16px rgba(24,32,58,.08);
+}
+.data-modal-heading{
+  padding:26px 28px 22px;
+  align-items:flex-start;
+  border-bottom:1px solid var(--product-line);
+}
+.data-modal-heading>div>p{
+  margin:0 0 7px;
+  color:#7a8494;
+  font-size:11px;
+  font-weight:600;
+}
+.data-modal-title{display:flex;align-items:center;gap:12px}
+.data-modal-title h2{margin:0;font-size:24px;font-weight:650;letter-spacing:-.025em}
+.data-modal-heading .close-button{
+  width:36px;
+  height:36px;
+  border:1px solid transparent;
+  border-radius:9px;
+  background:#f3f5f8;
+  transition:background-color .18s ease,border-color .18s ease;
+}
+.data-modal-heading .close-button:hover{border-color:#d9dfe8;background:#eaedf2}
+.data-detail-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  margin:0;
+  padding:8px 28px;
+}
+.data-detail-grid>div{min-height:92px;padding:19px 0}
+.data-detail-grid>div:nth-child(even){padding-left:26px;border-left:1px solid var(--product-line)}
+.data-detail-grid>div:nth-child(n+3){border-top:1px solid var(--product-line)}
+.data-detail-grid dt{margin-bottom:8px;color:#7a8494;font-size:11px;font-weight:600}
+.data-detail-grid dd{margin:0;color:var(--product-ink);font-size:16px;font-weight:650}
+.data-detail-grid dd small{display:inline;margin-left:8px;color:#7a8494;font-size:12px;font-weight:500}
+.data-detail-modal>.validation-error,.data-detail-modal>.validation-progress,
+.data-detail-modal>.form-error{margin-right:28px;margin-left:28px}
+.data-detail-modal .video-stage{height:270px;margin:8px 28px 0;border-radius:12px}
+.data-modal-footer{
+  display:flex;
+  min-height:76px;
+  padding:17px 28px;
+  align-items:center;
+  justify-content:space-between;
+  gap:22px;
+  border-top:1px solid var(--product-line);
+  background:#fafbfc;
+}
+.data-modal-footer .modal-note{max-width:360px;margin:0;color:#667085;font-size:12px;line-height:1.5}
+.data-modal-footer .secondary-button{flex:0 0 auto}
+@media(max-width:560px){
+  .modal-backdrop{padding:14px}
+  .data-modal-heading{padding:22px 20px 18px}
+  .data-detail-grid{grid-template-columns:1fr;padding:6px 20px}
+  .data-detail-grid>div{min-height:0;padding:15px 0;border-top:1px solid var(--product-line)}
+  .data-detail-grid>div:first-child{border-top:0}
+  .data-detail-grid>div:nth-child(even){padding-left:0;border-left:0}
+  .data-detail-modal .video-stage{height:220px;margin-right:20px;margin-left:20px}
+  .data-modal-footer{align-items:stretch;flex-direction:column;padding:15px 20px}
+  .data-modal-footer .secondary-button{width:100%}
+}
+
+/* Page sections are separated by whitespace; keep rules only inside data structures. */
+.page-heading.title-divider{
+  margin-bottom:20px;
+  padding-bottom:4px;
+  border-bottom:0;
+}
+@media(max-width:900px){
+  .page-heading.title-divider{margin-bottom:16px;padding-bottom:2px}
+}
+
+/* Keep the dashboard progress value visible and use one badge system. */
+.compact-training-list>button{
+  grid-template-columns:minmax(180px,1fr) 76px minmax(72px,128px) 58px;
+}
+.compact-training-list>button>em{
+  min-width:58px;
+  overflow:visible;
+  white-space:nowrap;
+}
+.compact-robot-list .status-pill{
+  min-height:28px;
+  padding:5px 9px;
+  border-radius:99px;
+  font-size:11px;
+  font-weight:700;
+  box-sizing:border-box;
+}
+.compact-robot-list .status-온라인{
+  color:#287b6c!important;
+  background:#eaf7f2!important;
+}
+.compact-robot-list .status-작업-중{
+  color:#4156b5!important;
+  background:#eef1ff!important;
+}
+.compact-robot-list .status-오프라인{
+  color:#667085!important;
+  background:#f2f4f7!important;
+}
+.compact-robot-list .status-오류{
+  color:#a9574b!important;
+  background:#fbefed!important;
+}
+@media(max-width:1180px){
+  .compact-training-list>button{
+    grid-template-columns:minmax(180px,1fr) 76px minmax(90px,128px) 58px;
+  }
+}
+@media(max-width:680px){
+  .compact-training-list>button{grid-template-columns:minmax(0,1fr) 58px}
+}
+
+/* The bar and its value are one unit, so the percentage cannot be clipped. */
+.compact-training-list>button{
+  grid-template-columns:minmax(180px,1fr) 76px minmax(88px,128px) 58px;
+}
+.compact-training-progress{
+  grid-column:3/5;
+  min-width:0!important;
+  width:100%;
+  display:grid;
+  grid-template-columns:minmax(88px,1fr) 58px;
+  align-items:center;
+  column-gap:14px;
+}
+.compact-training-progress .tiny-progress{
+  width:100%;
+  max-width:none;
+}
+.compact-training-progress>em{
+  display:block!important;
+  min-width:58px;
+  color:#64748b;
+  font-size:12px;
+  font-style:normal;
+  line-height:1;
+  text-align:right;
+  white-space:nowrap;
+}
+.compact-training-list>button>.tiny-progress{
+  grid-column:3;
+  width:100%;
+  max-width:128px;
+}
+.compact-training-list>button>em{
+  display:block!important;
+  grid-column:4;
+  min-width:58px;
+  overflow:visible;
+  text-align:right;
+  white-space:nowrap;
+}
+@media(max-width:1180px){
+  .compact-training-list>button{
+    grid-template-columns:minmax(180px,1fr) 76px minmax(88px,128px) 58px;
+  }
+}
+@media(max-width:680px){
+  .compact-training-list>button{grid-template-columns:minmax(0,1fr) auto}
+  .compact-training-progress{
+    grid-column:1/-1;
+    grid-row:2;
+  }
+  .compact-training-list>button>.tiny-progress{grid-column:1;grid-row:2}
+  .compact-training-list>button>em{grid-column:2;grid-row:2}
+}

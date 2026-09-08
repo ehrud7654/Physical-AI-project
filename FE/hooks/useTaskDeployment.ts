@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { SavedWork } from '@/types';
+import type { SavedWork, TaskReadinessResult } from '@/types';
 import { delay } from '@/services/client';
 
 interface Deployment { signature: string; robotId: string; version: number; }
@@ -23,6 +23,16 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
   }, [signature, robotId]);
   /* eslint-enable react-hooks/set-state-in-effect */
   const ready = !!record && record.signature === signature && record.robotId === robotId;
+  const readiness: TaskReadinessResult = {
+    valid: Boolean(work?.blocks.length),
+    readiness: !work?.blocks.length ? 'BLOCKED' : pending || !ready ? 'PREPARING' : 'READY',
+    robotId,
+    taskVersionId: work ? `${work.id}-current` : '',
+    deploymentId: ready ? `${work?.id}-${record?.version}` : null,
+    observedAt: new Date().toISOString(),
+    blockingReasons: !work?.blocks.length ? [{ code: 'EMPTY_TASK', message: '실행할 동작이 없어요.', recoveryAction: 'NONE' }] : [],
+    warnings: [],
+  };
   const deploy = async () => {
     if (!work || pending) return;
     setPending(true);
@@ -37,5 +47,5 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
     } catch { setError('배포하지 못했어요. 연결 상태를 확인하고 다시 시도해 주세요.'); }
     finally { setPending(false); }
   };
-  return { ready, pending, error, version: ready ? record?.version : undefined, deploy };
+  return { ready, pending, error, version: ready ? record?.version : undefined, readiness, deploy };
 }
