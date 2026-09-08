@@ -1,32 +1,95 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#111111"
-    android:padding="24dp">
+    android:background="#111111">
 
-    <Button
-        android:id="@+id/backBtn"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="← 뒤로"
-        android:textColor="#FFFFFF"
-        android:background="#333333" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:text="설정"
-        android:textColor="#FFFFFF"
-        android:textSize="24sp" />
+        <Button
+            android:id="@+id/backBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="← 뒤로"
+            android:textColor="#FFFFFF"
+            android:background="#333333" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="AE/AF/해상도 이동 예정 (S15P21A103-145)"
-        android:textColor="#888888"
-        android:textSize="14sp" />
-</LinearLayout>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="설정"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp" />
+
+        <!-- 초점 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:text="초점 (AF)"
+            android:textColor="#66DDFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="FIXED 권장 — 배경 특징점이 선명해 추적에 유리 (수집 기본값)"
+            android:textColor="#888888"
+            android:textSize="13sp" />
+        <RadioGroup
+            android:id="@+id/afGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+            <RadioButton android:id="@+id/afFixed" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="FIXED" android:textColor="#FFFFFF" />
+            <RadioButton android:id="@+id/afAuto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="24dp" android:text="AUTO" android:textColor="#FFFFFF" />
+        </RadioGroup>
+
+        <!-- 노출/화벨 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="노출·화이트밸런스 (AE/AWB)"
+            android:textColor="#66DDFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LOCK = 밝기·색 고정(학습 데이터 계약 요구). 촬영 화면 복귀 시 현재 장면에 잠금."
+            android:textColor="#888888"
+            android:textSize="13sp" />
+        <RadioGroup
+            android:id="@+id/aeGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+            <RadioButton android:id="@+id/aeAuto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="AUTO" android:textColor="#FFFFFF" />
+            <RadioButton android:id="@+id/aeLock" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="24dp" android:text="LOCK" android:textColor="#FFFFFF" />
+        </RadioGroup>
+
+        <!-- 해상도 (고정) -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="해상도"
+            android:textColor="#66DDFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="640×480 고정 (데이터 계약). 변경 옵션은 필요 시 추가."
+            android:textColor="#888888"
+            android:textSize="13sp" />
+    </LinearLayout>
+</ScrollView>

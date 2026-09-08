@@ -85,7 +85,6 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private lateinit var glView: GLSurfaceView
     private lateinit var poseText: TextView
     private lateinit var recBtn: Button
-    private lateinit var focusBtn: Button
 
     private val bg = BackgroundRenderer()
     private var session: Session? = null
@@ -120,9 +119,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     @Volatile private var intrinsicsLine: String = "unknown"
     @Volatile private var cameraConfigLine: String = "unknown"
     @Volatile private var pendingToggle = false
-    @Volatile private var pendingFocusToggle = false
-    @Volatile private var pendingAeToggle = false
-    @Volatile private var autoFocus = false   // 기본 FIXED
+    @Volatile private var autoFocus = false   // 기본 FIXED (설정에서 변경)
 
     // SharedCamera: AE/AWB lock 을 위해 ARCore 옆에서 Camera2 캡처요청을 직접 쥔다.
     private var sharedCamera: SharedCamera? = null
@@ -136,7 +133,6 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     @Volatile private var aeLock = false                // 기본 AUTO, 토글로 LOCK
     @Volatile private var camModesLine = "unknown"      // CaptureResult 실측 (OIS/AE/AF...) → meta
     private var capLogCount = 0
-    private lateinit var aeBtn: Button
 
     // 촬영 화면 지표 (친화 UI)
     private lateinit var sigDot: TextView
@@ -154,7 +150,6 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
 
         poseText = findViewById(R.id.poseText)
         recBtn = findViewById(R.id.recBtn)
-        focusBtn = findViewById(R.id.focusBtn)
         glView = findViewById(R.id.glView)
 
         recorder = Recorder(getExternalFilesDir(null)!!)
@@ -166,28 +161,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             when {
                 recorder?.isRecording == true -> pendingToggle = true   // 정지는 항상 허용
                 !trackingOk -> Toast.makeText(this, "추적 대기 - TRACKING 뜬 뒤 녹화하세요", Toast.LENGTH_SHORT).show()
-                !aeLock -> Toast.makeText(this, "AE 잠금 후 녹화하세요 (좌하단 AE 버튼)", Toast.LENGTH_SHORT).show()
+                !aeLock -> Toast.makeText(this, "AE 잠금 후 녹화하세요 (설정 → AE=LOCK)", Toast.LENGTH_SHORT).show()
                 else -> pendingToggle = true
             }
         }
-        focusBtn.setOnClickListener {
-            if (recorder?.isRecording == true) {
-                Toast.makeText(this, "녹화 중에는 바꿀 수 없음", Toast.LENGTH_SHORT).show()
-            } else {
-                pendingFocusToggle = true
-            }
-        }
-        updateFocusBtn()
-
-        aeBtn = findViewById(R.id.aeBtn)
-        aeBtn.setOnClickListener {
-            if (recorder?.isRecording == true) {
-                Toast.makeText(this, "녹화 중에는 바꿀 수 없음", Toast.LENGTH_SHORT).show()
-            } else {
-                pendingAeToggle = true
-            }
-        }
-        updateAeBtn()
 
         // 설정·기록은 별도 화면. 녹화 중엔 못 나가게 막는다.
         findViewById<Button>(R.id.settingsBtn).setOnClickListener {
@@ -224,17 +201,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
 
     private fun focusName() = if (autoFocus) "AUTO" else "FIXED"
 
-    private fun updateFocusBtn() = runOnUiThread {
-        focusBtn.text = "AF: ${focusName()}"
-        focusBtn.setBackgroundColor(if (autoFocus) 0xFF885500.toInt() else 0xFF225533.toInt())
-    }
-
     private fun aeName() = if (aeLock) "LOCK" else "AUTO"
-
-    private fun updateAeBtn() = runOnUiThread {
-        aeBtn.text = "AE/AWB: ${aeName()}"
-        aeBtn.setBackgroundColor(if (aeLock) 0xFF663322.toInt() else 0xFF444444.toInt())
-    }
 
     private fun applyConfig(s: Session) {
         s.configure(Config(s).apply {
@@ -254,6 +221,13 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_REQ)
             return
         }
+
+        // 설정 화면에서 바꾼 AF/AE 모드 반영. 세션 생성(applyConfig)·카메라 오픈(applyRequestKeys)이
+        // 이 값을 읽으므로 그 전에 세팅한다. AE=LOCK 이면 아래 openCamera 가 현재 장면에 잠근다.
+        val afChanged = autoFocus != Prefs.afAuto(this)
+        autoFocus = Prefs.afAuto(this)
+        aeLock = Prefs.aeLock(this)
+        if (afChanged) intrinsicsLine = "unknown"   // 초점 바뀌면 내부 파라미터 다시 읽기
 
         if (session == null) {
             try {
@@ -433,13 +407,6 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         }
     }
 
-    /** 포커스/AE 토글 시 캡처요청 갱신. */
-    private fun updateRepeatingRequest() {
-        val b = previewBuilder ?: return
-        applyRequestKeys(b)
-        camHandler?.post { setRepeating() }
-    }
-
     private val captureCb = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureCompleted(
             s: CameraCaptureSession, req: CaptureRequest, res: TotalCaptureResult
@@ -562,29 +529,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             val frame = s.update()
             bg.draw(frame)
 
-            // 버튼 처리 (중복 프레임 여부와 무관하게 즉시 반응)
+            // REC 토글 (중복 프레임 여부와 무관하게 즉시 반응). AF/AE 는 설정 화면에서 바꾼다.
             if (pendingToggle) {
                 pendingToggle = false
                 if (recorder?.isRecording == true) stopRecording() else startRecording()
-            }
-            if (pendingFocusToggle) {
-                pendingFocusToggle = false
-                autoFocus = !autoFocus
-                try {
-                    updateRepeatingRequest()     // 포커스는 이제 우리 캡처요청으로 제어
-                    intrinsicsLine = "unknown"   // 포커스 바뀌면 내부 파라미터도 다시 읽는다
-                    lastPos = null; lastQuat = null
-                    recentCount = 0; recentIdx = 0
-                    updateFocusBtn()
-                } catch (e: Exception) {
-                    Log.e(TAG, "focus 변경 실패", e)
-                }
-            }
-            if (pendingAeToggle) {
-                pendingAeToggle = false
-                aeLock = !aeLock
-                updateRepeatingRequest()
-                updateAeBtn()
             }
 
             val ts = frame.timestamp
