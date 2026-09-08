@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.util.Range
+import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
@@ -137,6 +138,15 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private var capLogCount = 0
     private lateinit var aeBtn: Button
 
+    // 촬영 화면 지표 (친화 UI)
+    private lateinit var sigDot: TextView
+    private lateinit var sigText: TextView
+    private lateinit var aeBadge: TextView
+    private lateinit var dropWarn: TextView
+    private lateinit var recTimer: TextView
+    @Volatile private var trackingOk = false   // REC 가드용: TRACKING 여부
+    private var recStartMs = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -152,7 +162,14 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         pendingUploads = UploadQueue.pendingCount(this)
         UploadQueue.enqueue(this)   // 지난번에 못 보낸 것이 있으면 이어서 보낸다
 
-        recBtn.setOnClickListener { pendingToggle = true }
+        recBtn.setOnClickListener {
+            when {
+                recorder?.isRecording == true -> pendingToggle = true   // 정지는 항상 허용
+                !trackingOk -> Toast.makeText(this, "추적 대기 - TRACKING 뜬 뒤 녹화하세요", Toast.LENGTH_SHORT).show()
+                !aeLock -> Toast.makeText(this, "AE 잠금 후 녹화하세요 (좌하단 AE 버튼)", Toast.LENGTH_SHORT).show()
+                else -> pendingToggle = true
+            }
+        }
         focusBtn.setOnClickListener {
             if (recorder?.isRecording == true) {
                 Toast.makeText(this, "녹화 중에는 바꿀 수 없음", Toast.LENGTH_SHORT).show()
@@ -186,6 +203,16 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             } else {
                 startActivity(android.content.Intent(this, HistoryActivity::class.java))
             }
+        }
+
+        // 지표 뷰 + 상세(원시값) 토글
+        sigDot = findViewById(R.id.sigDot)
+        sigText = findViewById(R.id.sigText)
+        aeBadge = findViewById(R.id.aeBadge)
+        dropWarn = findViewById(R.id.dropWarn)
+        recTimer = findViewById(R.id.recTimer)
+        findViewById<Button>(R.id.detailBtn).setOnClickListener {
+            poseText.visibility = if (poseText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
         glView.preserveEGLContextOnPause = true
@@ -470,6 +497,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             append(imu.describe())
         }
         lastJumpMm = 0.0; lastJumpDeg = 0.0
+        recStartMs = System.currentTimeMillis()
         recorder?.start(meta)
         recorder?.currentDir?.let { imu.start(it) }
         runOnUiThread {
@@ -490,9 +518,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             jumps == 0 -> "OK  점프 없음 — 그대로 사용 가능"
             else -> "점프 ${jumps}회 (최대 ${"%.0f".format(maxJump)}mm) — 분할 필요"
         }
+        recStartMs = 0L
         runOnUiThread {
             recBtn.text = "● REC"
             recBtn.setBackgroundColor(0xFF333333.toInt())
+            recTimer.visibility = View.GONE
+            dropWarn.visibility = View.GONE
             Toast.makeText(
                 this,
                 "[AF ${focusName()}] $verdict\n프레임 $saved / 드롭 $dropped\n${dir?.name}",
@@ -671,27 +702,46 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             val now = System.nanoTime()
             if (now - lastUiNs > 100_000_000L) {
                 lastUiNs = now
+                trackingOk = state == TrackingState.TRACKING
+                val recording = rec != null && rec.isRecording
+                val dropped = rec?.droppedFrames ?: 0
+                val elapsed = if (recording && recStartMs > 0) (System.currentTimeMillis() - recStartMs) / 1000 else 0L
                 val (roll, pitch, yaw) = quatToEulerDeg(q)
                 val reason = if (state == TrackingState.PAUSED)
                     "  (${camera.trackingFailureReason})" else ""
-                val recLine = if (rec != null && rec.isRecording)
-                    "\n● REC ${rec.savedFrames}프레임  드롭${rec.droppedFrames}  점프${rec.jumpCount}" +
-                        (if (rec.jumpCount > 0) " (최대 ${"%.0f".format(rec.maxJumpMm)}mm)" else "")
+                val recLine = if (recording)
+                    "\n● REC ${rec?.savedFrames ?: 0}프레임  드롭${dropped}  점프${rec?.jumpCount ?: 0}" +
+                        (if ((rec?.jumpCount ?: 0) > 0) " (최대 ${"%.0f".format(rec?.maxJumpMm ?: 0.0)}mm)" else "")
                 else if (lastJumpMm > 0 || lastJumpDeg > 0)
                     "\n최근 점프 ${"%.0f".format(lastJumpMm)}mm / ${"%.1f".format(lastJumpDeg)}°"
                 else ""
-                val text = buildString {
-                    if (lowSpaceNotice) {
-                        append("!! 저장 공간 부족 - 녹화 불가 (남은 ${recorder?.freeMb()}MB)\n")
-                        append("!! 이전 녹화를 PC 로 옮기고 지울 것\n\n")
-                    }
+                val detail = buildString {
                     append("$state$reason   ${"%.1f".format(fps)} fps   AF:${focusName()}$recLine\n")
                     if (pendingUploads > 0) append("전송 대기 ${pendingUploads}건\n")
                     append("\n")
                     append("x ${"%+.4f".format(t[0])}   y ${"%+.4f".format(t[1])}   z ${"%+.4f".format(t[2])}  (m)\n")
                     append("r ${"%+.1f".format(roll)}°  p ${"%+.1f".format(pitch)}°  y ${"%+.1f".format(yaw)}°\n")
                 }
-                runOnUiThread { poseText.text = text }
+                runOnUiThread {
+                    // 추적 신호등
+                    when {
+                        lowSpaceNotice -> { sigDot.setTextColor(0xFFFF4444.toInt()); sigText.text = "저장공간 부족 - 녹화 불가" }
+                        trackingOk -> { sigDot.setTextColor(0xFF33DD55.toInt()); sigText.text = if (recording) "추적 양호 · 녹화 중" else "추적 양호" }
+                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFFF4444.toInt()); sigText.text = "추적 끊김 - 텍스처 있는 곳을 비추세요" }
+                        else -> { sigDot.setTextColor(0xFFCCCC44.toInt()); sigText.text = "추적 대기" }
+                    }
+                    aeBadge.text = if (aeLock) "AE 🔒" else "AE AUTO"
+                    aeBadge.setTextColor(if (aeLock) 0xFF66DD88.toInt() else 0xFFFFCC66.toInt())
+                    dropWarn.text = "⚠ 드롭 $dropped"
+                    dropWarn.visibility = if (recording && dropped > 0) View.VISIBLE else View.GONE
+                    if (recording) {
+                        recTimer.visibility = View.VISIBLE
+                        recTimer.text = "● %02d:%02d".format(elapsed / 60, elapsed % 60)
+                    } else recTimer.visibility = View.GONE
+                    // 녹화 못 하는 상태면 REC 를 흐리게 (탭하면 이유 토스트)
+                    recBtn.alpha = if (recording || trackingOk) 1f else 0.45f
+                    poseText.text = detail
+                }
             }
         } catch (e: Throwable) {
             Log.e(TAG, "onDrawFrame 예외", e)
