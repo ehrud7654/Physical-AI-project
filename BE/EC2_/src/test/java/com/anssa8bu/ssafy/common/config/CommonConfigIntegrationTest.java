@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -29,7 +29,7 @@ class CommonConfigIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
+    private StringRedisTemplate redisTemplate;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -61,8 +61,7 @@ class CommonConfigIntegrationTest {
             redisTemplate.opsForValue().set(key, "value", Duration.ofMillis(300));
 
             assertThat(redisTemplate.opsForValue().get(key)).isEqualTo("value");
-            assertThat(redisTemplate.getKeySerializer())
-                    .isInstanceOf(StringRedisSerializer.class);
+            assertThat(redisTemplate.getKeySerializer()).isInstanceOf(StringRedisSerializer.class);
 
             long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
             while (Boolean.TRUE.equals(redisTemplate.hasKey(key)) && System.nanoTime() < deadline) {
