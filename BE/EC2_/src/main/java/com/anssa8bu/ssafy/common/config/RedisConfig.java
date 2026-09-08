@@ -11,22 +11,20 @@ import tools.jackson.databind.ObjectMapper;
 @Configuration
 public class RedisConfig {
 
-    @Bean
-    public RedisTemplate<String, Object> redisTemplate(
-            RedisConnectionFactory connectionFactory,
-            ObjectMapper objectMapper
-    ) {
-        StringRedisSerializer keySerializer = new StringRedisSerializer();
-        GenericJacksonJsonRedisSerializer valueSerializer =
-                new GenericJacksonJsonRedisSerializer(objectMapper);
+  @Bean
+  public RedisTemplate<String, Object> redisTemplate(
+      RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+    StringRedisSerializer keySerializer = new StringRedisSerializer();
+    GenericJacksonJsonRedisSerializer valueSerializer =
+        new GenericJacksonJsonRedisSerializer(objectMapper);
 
-        RedisTemplate<String, Object> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
-        template.setKeySerializer(keySerializer);
-        template.setHashKeySerializer(keySerializer);
-        template.setValueSerializer(valueSerializer);
-        template.setHashValueSerializer(valueSerializer);
-        template.afterPropertiesSet();
-        return template;
-    }
+    RedisTemplate<String, Object> template = new RedisTemplate<>();
+    template.setConnectionFactory(connectionFactory);
+    template.setKeySerializer(keySerializer);
+    template.setHashKeySerializer(keySerializer);
+    template.setValueSerializer(valueSerializer);
+    template.setHashValueSerializer(valueSerializer);
+    template.afterPropertiesSet();
+    return template;
+  }
 }

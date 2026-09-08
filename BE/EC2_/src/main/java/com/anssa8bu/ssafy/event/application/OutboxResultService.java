@@ -1,1 +1,38 @@
-package com.anssa8bu.ssafy.event.application; import com.anssa8bu.ssafy.event.config.OutboxProperties; import com.anssa8bu.ssafy.event.repository.OutboxEventRepository; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional; import java.time.*; import java.util.UUID; @Service public class OutboxResultService {private final OutboxEventRepository repo;private final OutboxProperties props;private final Clock clock;public OutboxResultService(OutboxEventRepository r,OutboxProperties p,Clock c){repo=r;props=p;clock=c;}@Transactional public void published(UUID id){repo.findById(id).orElseThrow().markPublished(props.publisherId(),clock.instant());}@Transactional public void failed(UUID id,String error){var e=repo.findById(id).orElseThrow();if(e.getAttempt()>=props.maxAttempts())e.markDead(props.publisherId(),error);else e.reschedule(props.publisherId(),clock.instant().plus(backoff(e.getAttempt())),error);}private Duration backoff(int n){long seconds=Math.min(1800,5L*(1L<<Math.min(8,Math.max(0,n-1))));return Duration.ofSeconds(seconds);}}
+package com.anssa8bu.ssafy.event.application;
+
+import com.anssa8bu.ssafy.event.config.OutboxProperties;
+import com.anssa8bu.ssafy.event.repository.OutboxEventRepository;
+import java.time.*;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class OutboxResultService {
+  private final OutboxEventRepository repo;
+  private final OutboxProperties props;
+  private final Clock clock;
+
+  public OutboxResultService(OutboxEventRepository r, OutboxProperties p, Clock c) {
+    repo = r;
+    props = p;
+    clock = c;
+  }
+
+  @Transactional
+  public void published(UUID id) {
+    repo.findById(id).orElseThrow().markPublished(props.publisherId(), clock.instant());
+  }
+
+  @Transactional
+  public void failed(UUID id, String error) {
+    var e = repo.findById(id).orElseThrow();
+    if (e.getAttempt() >= props.maxAttempts()) e.markDead(props.publisherId(), error);
+    else e.reschedule(props.publisherId(), clock.instant().plus(backoff(e.getAttempt())), error);
+  }
+
+  private Duration backoff(int n) {
+    long seconds = Math.min(1800, 5L * (1L << Math.min(8, Math.max(0, n - 1))));
+    return Duration.ofSeconds(seconds);
+  }
+}

@@ -1,1 +1,8 @@
-package com.anssa8bu.ssafy.purge.entity; public enum DataPurgeJobStatus { PENDING,RUNNING,SUCCEEDED,FAILED }
+package com.anssa8bu.ssafy.purge.entity;
+
+public enum DataPurgeJobStatus {
+  PENDING,
+  RUNNING,
+  SUCCEEDED,
+  FAILED
+}

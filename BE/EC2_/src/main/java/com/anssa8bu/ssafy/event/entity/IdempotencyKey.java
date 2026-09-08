@@ -1,1 +1,87 @@
-package com.anssa8bu.ssafy.event.entity; import com.anssa8bu.ssafy.common.entity.CreatedEntity; import jakarta.persistence.*; import org.hibernate.annotations.JdbcTypeCode; import org.hibernate.type.SqlTypes; import java.time.Instant; import java.util.*; @Entity @Table(name="idempotency_keys") public class IdempotencyKey extends CreatedEntity { @Id private UUID id; @Enumerated(EnumType.STRING) @Column(name="actor_type",nullable=false,length=30) private ActorType actorType; @Column(name="actor_id",nullable=false,length=150) private String actorId; @Column(name="http_method",nullable=false,length=10) private String httpMethod; @Column(name="request_path",nullable=false,length=500) private String requestPath; @Column(name="idempotency_key",nullable=false,length=200) private String idempotencyKey; @Column(name="request_hash",nullable=false,length=64) private String requestHash; @Column(name="response_status") private Integer responseStatus; @JdbcTypeCode(SqlTypes.JSON) @Column(name="response_body",columnDefinition="jsonb") private Map<String,Object> responseBody; @Column(name="resource_type",length=100) private String resourceType; @Column(name="resource_id",length=150) private String resourceId; @Column(name="expires_at",nullable=false) private Instant expiresAt; protected IdempotencyKey(){} public IdempotencyKey(UUID id,ActorType type,String actor,String method,String path,String key,String hash,Instant expires){if(hash==null||!hash.matches("[0-9a-f]{64}"))throw new IllegalArgumentException();this.id=id;actorType=type;actorId=actor;httpMethod=method;requestPath=path;idempotencyKey=key;requestHash=hash;expiresAt=expires;} public UUID getId(){return id;} public ActorType getActorType(){return actorType;} public Instant getExpiresAt(){return expiresAt;} public Map<String,Object> getResponseBody(){return responseBody;}}
+package com.anssa8bu.ssafy.event.entity;
+
+import com.anssa8bu.ssafy.common.entity.CreatedEntity;
+import jakarta.persistence.*;
+import java.time.Instant;
+import java.util.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+@Entity
+@Table(name = "idempotency_keys")
+public class IdempotencyKey extends CreatedEntity {
+  @Id private UUID id;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "actor_type", nullable = false, length = 30)
+  private ActorType actorType;
+
+  @Column(name = "actor_id", nullable = false, length = 150)
+  private String actorId;
+
+  @Column(name = "http_method", nullable = false, length = 10)
+  private String httpMethod;
+
+  @Column(name = "request_path", nullable = false, length = 500)
+  private String requestPath;
+
+  @Column(name = "idempotency_key", nullable = false, length = 200)
+  private String idempotencyKey;
+
+  @Column(name = "request_hash", nullable = false, length = 64)
+  private String requestHash;
+
+  @Column(name = "response_status")
+  private Integer responseStatus;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "response_body", columnDefinition = "jsonb")
+  private Map<String, Object> responseBody;
+
+  @Column(name = "resource_type", length = 100)
+  private String resourceType;
+
+  @Column(name = "resource_id", length = 150)
+  private String resourceId;
+
+  @Column(name = "expires_at", nullable = false)
+  private Instant expiresAt;
+
+  protected IdempotencyKey() {}
+
+  public IdempotencyKey(
+      UUID id,
+      ActorType type,
+      String actor,
+      String method,
+      String path,
+      String key,
+      String hash,
+      Instant expires) {
+    if (hash == null || !hash.matches("[0-9a-f]{64}")) throw new IllegalArgumentException();
+    this.id = id;
+    actorType = type;
+    actorId = actor;
+    httpMethod = method;
+    requestPath = path;
+    idempotencyKey = key;
+    requestHash = hash;
+    expiresAt = expires;
+  }
+
+  public UUID getId() {
+    return id;
+  }
+
+  public ActorType getActorType() {
+    return actorType;
+  }
+
+  public Instant getExpiresAt() {
+    return expiresAt;
+  }
+
+  public Map<String, Object> getResponseBody() {
+    return responseBody;
+  }
+}
