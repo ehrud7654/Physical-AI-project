@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { BlockKind, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, SavedWork, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
-import { blockCatalog, deployedModels, motorRanges } from '@/mocks';
+import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 import { clearMockSession, createEpisodePreviewSession, hasMockSession, startMockSession } from '@/services';
@@ -158,7 +158,7 @@ function HomeInner() {
         {!loading && !loadError && <>
           {view === 'dashboard' && <DashboardView onNavigate={navigateTo} onOpenDevices={(tab) => { setDeviceTab(tab); setView('devices'); }} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} />}
           {view === 'data' && <DataView onNavigate={navigateTo} />}
-          {view === 'library' && <WorkflowLibraryView onEdit={editWork} onNavigate={navigateTo} onToast={showToast} />}
+          {view === 'library' && <WorkflowLibraryView onEdit={editWork} onToast={showToast} />}
           {view === 'devices' && <DevicesView initialTab={deviceTab} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} onToast={showToast} />}
           {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'training' && <TrainingStatusView onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
@@ -229,7 +229,6 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
     </form></div>}
     {signupOpen && <div className="landing-login-backdrop" onMouseDown={() => setSignupOpen(false)}><form ref={signupForm} role="dialog" aria-modal="true" aria-label="회원가입" className="landing-login-card signup-card" onSubmit={(event) => { event.preventDefault(); if (!signupName.trim() || !signupId.trim() || !signupPassword || !signupPasswordConfirm) { setSignupError('모든 항목을 입력해 주세요.'); return; } if (signupPassword.length < 8) { setSignupError('비밀번호는 8자 이상 입력해 주세요.'); return; } if (signupPassword !== signupPasswordConfirm) { setSignupError('비밀번호가 일치하지 않아요.'); return; } setId(signupId.trim()); setPassword(signupPassword); setSignupComplete(true); setSignupOpen(false); setPendingView('dashboard'); setLoginOpen(true); }} onMouseDown={(event) => event.stopPropagation()}>
       <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" onClick={() => setSignupOpen(false)} aria-label="회원가입 닫기">×</button></div>
-      <h2>회원가입</h2>
       <label>이름<input value={signupName} onChange={(event) => { setSignupName(event.target.value); setSignupError(''); }} autoComplete="name" placeholder="이름을 입력하세요" /></label>
       <label>아이디<input value={signupId} onChange={(event) => { setSignupId(event.target.value); setSignupError(''); }} autoComplete="username" placeholder="사용할 아이디를 입력하세요" /></label>
       <label>비밀번호<input type="password" value={signupPassword} onChange={(event) => { setSignupPassword(event.target.value); setSignupError(''); }} autoComplete="new-password" placeholder="8자 이상 입력하세요" /></label>
@@ -319,15 +318,14 @@ function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { onNavigat
 
 function DevicesView({ initialTab, onSelectRobot, onToast }: { initialTab: DeviceType; onSelectRobot: (id: string) => void; onToast: (message: string) => void }) {
   const [tab, setTab] = useState<DeviceType>(initialTab);
-  const [sort, setSort] = useState<'default' | 'recent' | 'status' | 'name' | 'id'>('default');
+  const [sort, setSort] = useState<'recent' | 'oldest'>('recent');
   const [registerOpen, setRegisterOpen] = useState(false);
   const { robots, umis: umi } = useAppStore();
-  const statusOrder = { '온라인': 0, '작업 중': 1, '오프라인': 2, '오류': 3 } as const;
-  const recentOrder = (value: string) => value.startsWith('오늘') ? 0 : value.startsWith('어제') ? 1 : Number.parseInt(value, 10) || 99;
-  const sortedRobots = [...robots].sort((a, b) => sort === 'status' ? statusOrder[a.status] - statusOrder[b.status] : sort === 'name' ? a.name.localeCompare(b.name, 'ko') : sort === 'id' ? a.id.localeCompare(b.id) : 0);
-  const sortedUmi = [...umi].sort((a, b) => sort === 'recent' ? recentOrder(a.collected) - recentOrder(b.collected) : sort === 'status' ? statusOrder[a.status] - statusOrder[b.status] : sort === 'id' || sort === 'name' ? a.id.localeCompare(b.id) : 0);
-  const changeTab = (nextTab: DeviceType) => { setTab(nextTab); setSort('default'); };
-  return <><div className="page-heading title-divider"><div><h1>장치 관리</h1></div><button className="primary-button" onClick={() => setRegisterOpen(true)}>＋ 장치 등록</button></div><div className="device-toolbar"><div className="device-tabs"><button className={tab === 'umi' ? 'active' : ''} onClick={() => changeTab('umi')}>UMI <span>{umi.length}</span></button><button className={tab === 'robot' ? 'active' : ''} onClick={() => changeTab('robot')}>로봇 <span>{robots.length}</span></button></div><label className="device-sort"><span>정렬</span><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="default">기본 순서</option>{tab === 'umi' && <option value="recent">최근 사용순</option>}<option value="status">상태순</option>{tab === 'robot' && <option value="name">이름순</option>}<option value="id">ID순</option></select></label></div>
+  const recentOrder = (value: string) => value === '방금 전' ? -1 : value.startsWith('오늘') ? 0 : value.startsWith('어제') ? 1 : Number.parseInt(value, 10) || 99;
+  const sortedRobots = sort === 'recent' ? [...robots] : [...robots].reverse();
+  const sortedUmi = [...umi].sort((a, b) => sort === 'recent' ? recentOrder(a.collected) - recentOrder(b.collected) : recentOrder(b.collected) - recentOrder(a.collected));
+  const changeTab = (nextTab: DeviceType) => { setTab(nextTab); setSort('recent'); };
+  return <><div className="page-heading title-divider"><div><h1>장치 관리</h1></div></div><div className="device-toolbar"><div className="device-tabs"><button className={tab === 'umi' ? 'active' : ''} onClick={() => changeTab('umi')}>UMI <span>{umi.length}</span></button><button className={tab === 'robot' ? 'active' : ''} onClick={() => changeTab('robot')}>로봇 <span>{robots.length}</span></button></div><label className="device-sort"><select aria-label="장치 정렬" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="recent">최근 사용순</option><option value="oldest">오래된 순</option></select></label><button className="device-register-action" onClick={() => setRegisterOpen(true)}>새 장치 등록 <span aria-hidden="true">›</span></button></div>
     {tab === 'robot' && !robots.length && <p className="table-empty">등록된 로봇이 없어요. ‘장치 등록’ 버튼으로 추가해 보세요.</p>}
     {tab === 'umi' && !umi.length && <p className="table-empty">등록된 UMI가 없어요. ‘장치 등록’ 버튼으로 추가해 보세요.</p>}
     {tab === 'robot' ? <div className="device-grid">{sortedRobots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.id} · {robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.status === '오프라인' ? '확인 불가' : robot.model}</dd></div><div><dt>최근 작업</dt><dd>{robot.status === '작업 중' ? '부품 이동 중' : '오늘 10:24'}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{sortedUmi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 사용</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">데이터 보기</button></article>)}</div>}
@@ -377,23 +375,12 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
 }
 
 function RobotDetailView({ robotId, onBack, onNavigate, onToast }: { robotId: string; onBack: () => void; onNavigate: (view: View) => void; onToast: (message: string) => void }) {
-  const { robots, applyModelToRobot, updateRobotInfo } = useAppStore();
+  const { robots, updateRobotInfo } = useAppStore();
   const robot = robots.find(item => item.id === robotId) ?? robots[0];
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [applying, setApplying] = useState('');
-  const currentModel = deployedModels.find((model) => model.name === robot?.model);
-
-  const apply = async (modelName: string) => {
-    if (!robot) return;
-    setApplying(modelName);
-    await applyModelToRobot(robot.id, modelName);
-    setApplying('');
-    onToast(`‘${modelName}’ 모델을 적용했어요.`);
-  };
-
   if (!robot) return <div className="center-panel"><section className="card state-card"><span className="state-icon">R</span><h2>등록된 로봇이 없어요</h2><p>장치 관리에서 로봇을 먼저 등록해 주세요.</p><button className="primary-button" onClick={onBack}>장치 관리로 이동</button></section></div>;
 
-  return <><button className="back-link" onClick={onBack}>← 로봇 목록</button><div className="robot-detail-hero card"><div className="device-visual large">R</div><div><p className="eyebrow">{robot.id}</p><h1>{robot.name}</h1><p>{robot.location} · 마지막 통신 방금 전</p></div><span className={`status-pill large status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><div className="detail-actions"><button className="secondary-button" onClick={() => setSettingsOpen(true)}>설정</button><button className="primary-button" disabled={robot.status !== '온라인'} onClick={() => onNavigate('work')}>작업 생성</button></div></div><div className="detail-metrics"><article className="card"><small>현재 모델</small><strong>{robot.model}</strong><p>{currentModel ? `${currentModel.deployedAt} 배포` : '배포 정보 없음'}</p></article><article className="card"><small>오늘 작업</small><strong>8건</strong><p>성공 7 · 실패 1</p></article><article className="card"><small>가동 시간</small><strong>6시간 24분</strong><p>최근 24시간 기준</p></article><article className="card"><small>오류 알림</small><strong>{robot.status === '오류' ? '2건' : '0건'}</strong><p>{robot.status === '오류' ? '확인이 필요해요' : '정상 작동 중'}</p></article></div><div className="dashboard-grid"><section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 작업</h2><p>이 로봇에서 실행된 작업 기록입니다.</p></div></div><div className="history-list"><p><strong>빨간 블록 정리</strong><span className="training-badge complete">성공</span><small>오늘 10:24 · 1분 18초</small></p><p><strong>부품 상자 이동</strong><span className="training-badge complete">성공</span><small>오늘 09:47 · 2분 03초</small></p><p><strong>컵 분류하기</strong><span className="training-badge failed">실패</span><small>어제 17:31 · 연결 끊김</small></p></div></section><section className="card dashboard-section"><div className="dashboard-title"><div><h2>배포된 모델</h2><p>현재 로봇에서 사용할 수 있는 학습된 동작입니다.</p></div></div><div className="model-list">{deployedModels.map((model) => <p key={model.name}><span>{model.version}</span><strong>{model.name}<small>{model.name === robot.model ? '현재 사용 중' : model.deployedAt}</small></strong>{model.name === robot.model ? <em>활성</em> : <button className="text-button" disabled={!!applying} onClick={() => apply(model.name)}>{applying === model.name ? '적용 중...' : '적용'}</button>}</p>)}</div></section></div>
+  return <><button className="back-link" onClick={onBack}>← 로봇 목록</button><div className="robot-detail-hero card"><div className="device-visual large">R</div><div><p className="eyebrow">{robot.id}</p><h1>{robot.name}</h1><p>{robot.location} · 마지막 통신 방금 전</p></div><span className={`status-pill large status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><div className="detail-actions"><button className="secondary-button" onClick={() => setSettingsOpen(true)}>설정</button><button className="primary-button" disabled={robot.status !== '온라인'} onClick={() => onNavigate('work')}>작업 생성</button></div></div><div className="detail-metrics robot-detail-metrics"><article className="card"><small>오늘 작업</small><strong>8건</strong><p>성공 7 · 실패 1</p></article><article className="card"><small>가동 시간</small><strong>6시간 24분</strong><p>최근 24시간 기준</p></article><article className="card"><small>오류</small><strong>{robot.status === '오류' ? '2건' : '0건'}</strong><p>{robot.status === '오류' ? '확인이 필요해요' : '정상 작동 중'}</p></article></div><div className="robot-history-grid"><section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 작업 기록</h2></div></div><div className="history-list"><p><strong>빨간 블록 정리</strong><span className="training-badge complete">성공</span><small>오늘 10:24 · 1분 18초</small></p><p><strong>부품 상자 이동</strong><span className="training-badge complete">성공</span><small>오늘 09:47 · 2분 03초</small></p><p><strong>컵 분류하기</strong><span className="training-badge failed">실패</span><small>어제 17:31 · 연결 끊김</small></p></div></section></div>
     {settingsOpen && <RobotSettingsModal robot={robot} onClose={() => setSettingsOpen(false)} onSave={async (patch) => { await updateRobotInfo(robot.id, patch); setSettingsOpen(false); onToast('로봇 설정을 저장했어요.'); }} />}
   </>;
 }
@@ -431,7 +418,6 @@ function RobotSettingsModal({ robot, onClose, onSave }: { robot: { id: string; n
 function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: (view: View) => void; onToast: (message: string) => void; onUseResult: (name: string) => void }) {
   const { skills, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, cancelTrainingByName, retryTrainingByName } = useAppStore();
   const [statusFilter, setStatusFilter] = useState<'all' | TrainingStatus>('all');
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [detailName, setDetailName] = useState<string | null>(null);
   const [confirmFor, setConfirmFor] = useState<Training | null>(null);
   const [busy, setBusy] = useState(false);
@@ -440,7 +426,7 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
   const detail = detailName ? trainings.find((item) => item.name === detailName) ?? null : null;
 
   const retry = async (item: Training) => {
-    setMenuFor(null);
+    setDetailName(null);
     await retryTrainingByName(item.name);
     onToast(`‘${item.name}’ 학습을 다시 시작했어요.`);
   };
@@ -461,7 +447,7 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
     : '확인 중';
 
   return <>
-    <div className="page-heading title-divider"><div><h1>학습 목록</h1></div><button className="primary-button" onClick={() => onNavigate('learn')}>＋ 학습 생성</button></div>
+    <div className="page-heading list-page-heading title-divider"><div><h1>학습 목록</h1></div><button className="primary-button page-create-button" onClick={() => onNavigate('learn')}>새 학습 생성 <span aria-hidden="true">›</span></button></div>
     <div className="training-summary" aria-label="학습 상태별 보기"><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}><small>전체</small><strong>{trainings.length}</strong></button><button className={statusFilter === '진행 중' ? 'active' : ''} onClick={() => setStatusFilter('진행 중')}><small>진행 중</small><strong>{countOf('진행 중')}</strong></button><button className={statusFilter === '완료' ? 'active' : ''} onClick={() => setStatusFilter('완료')}><small>완료</small><strong>{countOf('완료')}</strong></button><button className={statusFilter === '실패' ? 'active' : ''} onClick={() => setStatusFilter('실패')}><small>확인 필요</small><strong>{countOf('실패')}</strong></button></div>
     <section className="card training-table">
       <div className="training-table-head"><p className={`refresh-status ${trainingRefreshError ? 'failed' : ''}`} role="status">{trainingRefreshError ? '마지막 갱신에 실패했어요.' : `마지막 갱신 ${updatedLabel}`}</p><div className="training-controls"><button className="secondary-button refresh-button" disabled={trainingRefreshing} onClick={() => void refreshStatus()}>{trainingRefreshing ? '갱신 중...' : '↻ 새로고침'}</button><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | TrainingStatus)} aria-label="학습 상태 필터"><option value="all">전체 상태</option><option value="진행 중">진행 중</option><option value="취소 요청">취소 요청</option><option value="취소됨">취소됨</option><option value="완료">완료</option><option value="실패">실패</option></select></div></div>
@@ -470,11 +456,10 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
         <div><small>현재 단계</small><strong>{item.stage}</strong></div>
         <div className="training-progress"><div><i style={{width: `${item.progress}%`}} /></div><strong>{item.progress}%</strong></div>
         <span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span>
-        <div className="menu-wrap"><button className="more-button" aria-label={`${item.name} 메뉴`} aria-expanded={menuFor === item.name} onClick={() => setMenuFor(menuFor === item.name ? null : item.name)}>•••</button>{menuFor === item.name && <><div className="menu-backdrop" onClick={() => setMenuFor(null)} /><div className="dropdown-menu" role="menu"><button role="menuitem" onClick={() => { setDetailName(item.name); setMenuFor(null); }}>상세 보기</button>{item.status === '진행 중' && <button role="menuitem" className="danger" onClick={() => { setConfirmFor(item); setMenuFor(null); }}>학습 취소</button>}{item.status === '실패' && <button role="menuitem" onClick={() => retry(item)}>다시 시도</button>}</div></>}</div>
       </article>)}
       {!filtered.length && <div className="table-empty empty-with-action"><p>{trainings.length ? '선택한 상태의 학습이 없어요.' : '아직 생성한 학습이 없어요.'}</p><button className="secondary-button" onClick={() => trainings.length ? setStatusFilter('all') : onNavigate('learn')}>{trainings.length ? '전체 상태 보기' : '학습 생성하기'}</button></div>}
     </section>
-    {detail && <div className="modal-backdrop" onMouseDown={() => setDetailName(null)}><section className="register-modal" role="dialog" aria-modal="true" aria-label="학습 상세 정보" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>{detail.name}</h2><p>{detail.robot} · {detail.started} 시작</p></div><button className="close-button" onClick={() => setDetailName(null)} aria-label="닫기">×</button></div><div className="training-detail-grid"><div><small>상태</small><span className={`training-badge ${detail.status === '실패' ? 'failed' : detail.status === '완료' ? 'complete' : ''}`}>{detail.status}</span></div><div><small>현재 단계</small><strong>{detail.stage}</strong></div><div><small>대상 로봇</small><strong>{detail.robot}</strong></div><div><small>시작 시각</small><strong>{detail.started}</strong></div></div><div className="training-progress"><div><i style={{width: `${detail.progress}%`}} /></div><strong>{detail.progress}%</strong></div><p className="modal-note">{detail.status === '완료' ? '완료된 동작을 작업에 추가할 수 있어요.' : '학습이 완료되면 결과를 작업에서 사용할 수 있어요.'}</p>{detail.status === '완료' && <button className="primary-button" disabled={!skills.some(skill => skill.name === detail.name)} onClick={() => onUseResult(detail.name)}>이 동작으로 작업 생성</button>}{detail.status === '완료' && !skills.some(skill => skill.name === detail.name) && <p className="modal-note">이 학습 결과의 동작 연결 정보가 아직 없어요.</p>}</section></div>}
+    {detail && <div className="modal-backdrop" onMouseDown={() => setDetailName(null)}><section className="register-modal data-detail-modal training-detail-modal" role="dialog" aria-modal="true" aria-label="학습 상세 정보" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading data-modal-heading"><div><p>학습 상세</p><div className="data-modal-title"><h2>{detail.name}</h2><span className={`training-badge ${detail.status === '실패' ? 'failed' : detail.status === '완료' ? 'complete' : ''}`}>{detail.status}</span></div></div><button className="close-button" onClick={() => setDetailName(null)} aria-label="닫기">×</button></div><dl className="data-detail-grid"><div><dt>현재 단계</dt><dd>{detail.stage}</dd></div><div><dt>대상 로봇</dt><dd>{detail.robot}</dd></div><div><dt>시작 시각</dt><dd>{detail.started}</dd></div><div><dt>진행률</dt><dd>{detail.progress}%</dd></div></dl><div className="training-modal-progress"><div className="training-progress"><div><i style={{width: `${detail.progress}%`}} /></div><strong>{detail.progress}%</strong></div></div>{(['완료', '진행 중', '실패'] as TrainingStatus[]).includes(detail.status) && <div className="data-modal-footer training-modal-footer"><div>{detail.status === '완료' && !skills.some(skill => skill.name === detail.name) && <p className="modal-note">이 학습 결과의 동작 연결 정보가 아직 없어요.</p>}</div>{detail.status === '완료' && <button className="primary-button" disabled={!skills.some(skill => skill.name === detail.name)} onClick={() => onUseResult(detail.name)}>이 동작으로 작업 생성</button>}{detail.status === '진행 중' && <button className="danger-button" onClick={() => { setDetailName(null); setConfirmFor(detail); }}>학습 취소</button>}{detail.status === '실패' && <button className="primary-button" onClick={() => void retry(detail)}>다시 시도</button>}</div>}</section></div>}
     {confirmFor && <div className="modal-backdrop" onMouseDown={() => !busy && setConfirmFor(null)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="학습 취소 확인" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>학습을 취소할까요?</h2><p>취소 요청 후 서버가 중단을 확인하면 취소 완료로 표시돼요.</p></div><button className="close-button" onClick={() => setConfirmFor(null)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={busy} onClick={() => setConfirmFor(null)}>계속 진행</button><button className="danger-button" disabled={busy} onClick={cancelConfirmed}>{busy ? '요청 중...' : '취소 요청'}</button></div></section></div>}
   </>;
 }
@@ -483,7 +468,7 @@ const datasetStatusMeta: Record<Dataset['status'], { label: string; description:
   REGISTERED: { label: '등록 완료', description: '파일 업로드를 기다리고 있어요.', className: 'registered' },
   UPLOADING: { label: '업로드 중', description: '영상과 센서 데이터를 전송하고 있어요.', className: 'uploading' },
   VALIDATING: { label: '확인 중', description: '파일 형식과 시간 정보를 확인하고 있어요.', className: 'validating' },
-  READY: { label: '학습 가능', description: '확인이 완료되어 학습에 사용할 수 있어요.', className: 'ready' },
+  READY: { label: '학습 가능', description: '', className: 'ready' },
   INVALID: { label: '확인 실패', description: '문제를 확인하고 데이터를 다시 수집해 주세요.', className: 'invalid' },
 };
 
@@ -495,7 +480,7 @@ const recoveryActionLabel: Record<Dataset['recoveryAction'], string> = {
 
 function DataView({ onNavigate }: { onNavigate: (view: View) => void }) {
   const { datasets } = useAppStore();
-  const [skillFilter, setSkillFilter] = useState('');
+  const [sortMode, setSortMode] = useState<'latest' | 'oldest' | 'retention'>('latest');
   const [statusFilter, setStatusFilter] = useState('');
   const [detail, setDetail] = useState<Dataset | null>(null);
   const [preview, setPreview] = useState<EpisodePreviewSession | null>(null);
@@ -503,7 +488,7 @@ function DataView({ onNavigate }: { onNavigate: (view: View) => void }) {
   const [previewError, setPreviewError] = useState('');
   const processingStatuses = ['REGISTERED', 'UPLOADING', 'VALIDATING'];
   const matchesStatus = (item: Dataset) => !statusFilter || (statusFilter === 'PROCESSING' ? processingStatuses.includes(item.status) : item.status === statusFilter);
-  const filtered = datasets.filter(item => (!skillFilter || item.skillKey === skillFilter) && matchesStatus(item));
+  const filtered = datasets.filter(matchesStatus).sort((a, b) => sortMode === 'retention' ? a.retentionDays - b.retentionDays : sortMode === 'oldest' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
   const statusCount = (status: string) => datasets.filter(item => item.status === status).length;
   const processingCount = datasets.filter(item => processingStatuses.includes(item.status)).length;
   const openPreview = async () => {
@@ -514,21 +499,15 @@ function DataView({ onNavigate }: { onNavigate: (view: View) => void }) {
     finally { setPreviewLoading(false); }
   };
   return <>
-    <section className="card episode-panel data-page-panel">
-      <div className="training-table-head data-table-head"><div className="data-list-title"><h1>데이터</h1></div><div className="episode-filters"><select aria-label="동작 필터" value={skillFilter} onChange={e => setSkillFilter(e.target.value)}><option value="">전체</option>{skillOptions.map(skill => <option key={skill.key} value={skill.key}>{skill.name} ({datasets.filter(item => item.skillKey === skill.key).length})</option>)}</select></div></div>
-      <div className="data-status-filters" aria-label="데이터 상태 필터">
-        <button className={!statusFilter ? 'active' : ''} onClick={() => setStatusFilter('')}><span>전체</span><strong>{datasets.length}</strong></button>
-        <button className={statusFilter === 'READY' ? 'active' : ''} onClick={() => setStatusFilter('READY')}><span>학습 가능</span><strong>{statusCount('READY')}</strong></button>
-        <button className={statusFilter === 'PROCESSING' ? 'active' : ''} onClick={() => setStatusFilter('PROCESSING')}><span>처리 중</span><strong>{processingCount}</strong></button>
-        <button className={statusFilter === 'INVALID' ? 'active' : ''} onClick={() => setStatusFilter('INVALID')}><span>확인 실패</span><strong>{statusCount('INVALID')}</strong></button>
-      </div>
+    <div className="page-heading data-page-heading"><div><h1>데이터</h1></div><div className="data-list-controls"><select aria-label="데이터 상태" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">전체 ({datasets.length})</option><option value="READY">학습 가능 ({statusCount('READY')})</option><option value="PROCESSING">처리 중 ({processingCount})</option><option value="INVALID">확인 실패 ({statusCount('INVALID')})</option></select><select aria-label="데이터 정렬" value={sortMode} onChange={e => setSortMode(e.target.value as typeof sortMode)}><option value="latest">최신 등록순</option><option value="oldest">오래된 등록순</option><option value="retention">보관 만료 임박순</option></select></div></div>
+    <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table">
         <div className="episode-row header" role="row"><span>데이터 번호</span><span>학습 동작</span><span>사용 장치</span><span>확인 결과</span><span>보관 기간</span><span>학습 가능 여부</span></div>
         {filtered.map(item => { const status = datasetStatusMeta[item.status]; return <div className="episode-row" role="row" key={item.id}><span data-label="데이터 번호"><button className="text-button" onClick={() => setDetail(item)}>데이터 {String(item.id).padStart(3, '0')} →</button><small>{item.date}</small></span><span data-label="학습 동작">{skillOptions.find(skill => skill.key === item.skillKey)?.name}</span><span data-label="사용 장치">{item.umiId}</span><span data-label="확인 결과"><span className={`dataset-status ${status.className}`}><i />{status.label}</span></span><span data-label="보관 기간">{item.retentionDays}일 남음</span><span data-label="학습 가능 여부">{item.status === 'READY' ? '선택 가능' : item.status === 'INVALID' ? '재수집 필요' : '처리 완료 후 가능'}</span></div>; })}
-        {!filtered.length && <div className="table-empty empty-with-action"><p>{datasets.length ? '조건에 맞는 데이터가 없어요.' : '아직 등록된 데이터가 없어요.'}</p><button className="secondary-button" onClick={() => { if (datasets.length) { setSkillFilter(''); setStatusFilter(''); } else onNavigate('learn'); }}>{datasets.length ? '필터 초기화' : '새 데이터 준비하기'}</button></div>}
+        {!filtered.length && <div className="table-empty empty-with-action"><p>{datasets.length ? '조건에 맞는 데이터가 없어요.' : '아직 등록된 데이터가 없어요.'}</p><button className="secondary-button" onClick={() => { if (datasets.length) setStatusFilter(''); else onNavigate('learn'); }}>{datasets.length ? '전체 상태 보기' : '새 데이터 준비하기'}</button></div>}
       </div>
     </section>
-    {detail && <div className="modal-backdrop" onMouseDown={() => { setDetail(null); setPreview(null); }}><section className="register-modal data-detail-modal" role="dialog" aria-modal="true" aria-label="데이터 상세" onMouseDown={e => e.stopPropagation()}><div className="modal-heading data-modal-heading"><div><p>데이터 상세</p><div className="data-modal-title"><h2>데이터 {String(detail.id).padStart(3, '0')}</h2><span className={`dataset-status ${datasetStatusMeta[detail.status].className}`}><i />{datasetStatusMeta[detail.status].label}</span></div></div><button className="close-button" aria-label="닫기" onClick={() => { setDetail(null); setPreview(null); }}>×</button></div><dl className="data-detail-grid"><div><dt>학습 동작</dt><dd>{skillOptions.find(skill => skill.key === detail.skillKey)?.name}</dd></div><div><dt>사용 장치</dt><dd>{detail.umiId}</dd></div><div><dt>촬영 정보</dt><dd>{detail.duration}<small>{detail.size}</small></dd></div><div><dt>학습 사용</dt><dd>{detail.trainable ? '사용 가능' : '사용할 수 없음'}</dd></div></dl>{detail.blockingReasons.length > 0 && <div className="validation-error" role="alert"><strong>확인이 필요한 이유</strong><ul>{detail.blockingReasons.map(reason => <li key={reason.code}>{reason.message}</li>)}</ul><p>{recoveryActionLabel[detail.recoveryAction]}</p></div>}{detail.status !== 'READY' && !detail.blockingReasons.length && <p className="validation-progress" role="status">상태가 바뀌면 이 화면에 자동으로 반영됩니다.</p>}{preview && <div className={`video-stage ${detail.tone}`} role="img" aria-label="데이터 프레임 미리보기"><span className="big-play">▦</span><p>프레임 미리보기 준비 완료</p></div>}{previewError && <p className="form-error" role="alert">{previewError}</p>}<div className="data-modal-footer"><p className="modal-note">{preview ? `미리보기는 ${new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(preview.expiresAt))}까지 열 수 있어요.` : datasetStatusMeta[detail.status].description}</p>{detail.status === 'READY' && !preview && <button className="secondary-button" disabled={previewLoading} onClick={() => void openPreview()}>{previewLoading ? '준비 중...' : '데이터 미리보기'}</button>}</div></section></div>}
+    {detail && <div className="modal-backdrop" onMouseDown={() => { setDetail(null); setPreview(null); }}><section className="register-modal data-detail-modal" role="dialog" aria-modal="true" aria-label="데이터 상세" onMouseDown={e => e.stopPropagation()}><div className="modal-heading data-modal-heading"><div><p>데이터 상세</p><div className="data-modal-title"><h2>데이터 {String(detail.id).padStart(3, '0')}</h2><span className={`dataset-status ${datasetStatusMeta[detail.status].className}`}><i />{datasetStatusMeta[detail.status].label}</span></div></div><button className="close-button" aria-label="닫기" onClick={() => { setDetail(null); setPreview(null); }}>×</button></div><dl className="data-detail-grid"><div><dt>학습 동작</dt><dd>{skillOptions.find(skill => skill.key === detail.skillKey)?.name}</dd></div><div><dt>사용 장치</dt><dd>{detail.umiId}</dd></div><div><dt>촬영 정보</dt><dd>{detail.duration}<small>{detail.size}</small></dd></div><div><dt>학습 사용</dt><dd>{detail.trainable ? '사용 가능' : '사용할 수 없음'}</dd></div></dl>{detail.blockingReasons.length > 0 && <div className="validation-error" role="alert"><strong>확인이 필요한 이유</strong><ul>{detail.blockingReasons.map(reason => <li key={reason.code}>{reason.message}</li>)}</ul><p>{recoveryActionLabel[detail.recoveryAction]}</p></div>}{detail.status !== 'READY' && !detail.blockingReasons.length && <p className="validation-progress" role="status">상태가 바뀌면 이 화면에 자동으로 반영됩니다.</p>}{preview && <div className={`video-stage ${detail.tone}`} role="img" aria-label="데이터 프레임 미리보기"><span className="big-play">▦</span><p>프레임 미리보기 준비 완료</p></div>}{previewError && <p className="form-error" role="alert">{previewError}</p>}{(preview || (detail.status === 'READY' && !preview)) && <div className="data-modal-footer"><p className="modal-note">{preview ? `미리보기는 ${new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(preview.expiresAt))}까지 열 수 있어요.` : ''}</p>{detail.status === 'READY' && !preview && <button className="secondary-button" disabled={previewLoading} onClick={() => void openPreview()}>{previewLoading ? '준비 중...' : '데이터 미리보기'}</button>}</div>}</section></div>}
   </>;
 }
 
@@ -699,11 +678,10 @@ export function LegacyLearnView({ onToast, onGoWork }: { onToast: (message: stri
   );
 }
 
-function WorkflowLibraryView({ onEdit, onNavigate, onToast }: { onEdit: (workId: string) => void; onNavigate: (view: View) => void; onToast: (message: string) => void }) {
+function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => void; onToast: (message: string) => void }) {
   const { robots, savedWorks } = useAppStore();
   const [mobileDetail, setMobileDetail] = useState(false);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'skill' | 'control'>('all');
   const [selectedWorkId, setSelectedWorkId] = useState(savedWorks[0]?.id ?? '');
   const initialWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
   const [robotId, setRobotId] = useState(initialWork?.robotId ?? robots[0]?.id ?? '');
@@ -712,11 +690,7 @@ function WorkflowLibraryView({ onEdit, onNavigate, onToast }: { onEdit: (workId:
   const filteredWorks = savedWorks.filter((work) => {
     const blocks = flattenWorkflowBlocks(work.blocks);
     const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR');
-    const matchesQuery = !normalizedQuery || [work.name, ...blocks.map((block) => block.title)].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery));
-    const matchesFilter = filter === 'all'
-      || (filter === 'skill' && blocks.some(isSkillBlock))
-      || (filter === 'control' && blocks.some((block) => !isSkillBlock(block)));
-    return matchesQuery && matchesFilter;
+    return !normalizedQuery || [work.name, ...blocks.map((block) => block.title)].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery));
   });
 
   const selectedWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
@@ -751,32 +725,27 @@ function WorkflowLibraryView({ onEdit, onNavigate, onToast }: { onEdit: (workId:
   }
 
   return <>
-    <div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div><button className="primary-button" onClick={() => onEdit('')}>＋ 작업 생성</button></div>
+    <div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div></div>
 
-    <section className="card workflow-library-toolbar" aria-label="작업 검색 및 필터">
+    <section className="workflow-library-toolbar" aria-label="작업 검색">
       <label className="workflow-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="작업명 또는 포함된 블록 검색" aria-label="저장된 작업 검색" /></label>
-      <div className="workflow-filter-tabs" role="group" aria-label="블록 종류 필터">
-        <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>전체</button>
-        <button className={filter === 'skill' ? 'active' : ''} onClick={() => setFilter('skill')}>학습 동작 포함</button>
-        <button className={filter === 'control' ? 'active' : ''} onClick={() => setFilter('control')}>제어 블록 포함</button>
-      </div>
-      <span className="workflow-result-count">{filteredWorks.length}개 작업</span>
+      <button className="primary-button page-create-button" onClick={() => onEdit('')}>새 작업 생성 <span aria-hidden="true">›</span></button>
     </section>
 
     <div className={`workflow-library-layout${mobileDetail ? ' mobile-detail-open' : ''}`}>
       <section className="card saved-work-list" aria-label="저장된 작업 목록">
-        <div className="saved-work-columns" aria-hidden="true"><span>작업</span><span>예상 시간</span><span>최근 수정일</span><span /></div>
+        <div className="saved-work-columns" aria-hidden="true"><span>작업</span><span>예상 시간</span><span>최근 수정일</span><span className="saved-work-total">전체 {savedWorks.length}개</span></div>
         {filteredWorks.length ? filteredWorks.map((work) => {
           const workBlocks = flattenWorkflowBlocks(work.blocks);
           const workSkills = workBlocks.filter(isSkillBlock).length;
           const workControls = workBlocks.length - workSkills;
-          return <button key={work.id} className={`saved-work-row${selectedWork.id === work.id ? ' selected' : ''}`} onClick={() => selectWork(work)}>
+          return <button key={work.id} className="saved-work-row" onClick={() => selectWork(work)}>
             <span className="saved-work-main"><i>W</i><span><strong>{work.name}</strong><small>{workSkills ? `학습 동작 ${workSkills}개` : '학습 동작 없음'} · 제어 블록 {workControls}개</small><em>{workBlocks.slice(0, 3).map((block) => block.title).join(' · ')}{workBlocks.length > 3 ? ` 외 ${workBlocks.length - 3}개` : ''}</em></span></span>
             <span className="saved-work-duration">{formatWorkDuration(work.estimatedSeconds)}</span>
             <span className="saved-work-updated">{formatUpdatedAt(work.updatedAt)}</span>
             <span className="saved-work-chevron">›</span>
           </button>;
-        }) : <div className="library-empty"><strong>검색 결과가 없어요</strong><p>검색어나 블록 필터를 변경해 보세요.</p></div>}
+        }) : <div className="library-empty"><strong>검색 결과가 없어요</strong><p>다른 작업명이나 동작을 검색해 보세요.</p></div>}
       </section>
 
       <aside className="card saved-work-detail"><button className="text-button mobile-detail-back" onClick={() => setMobileDetail(false)}>← 작업 목록</button>
