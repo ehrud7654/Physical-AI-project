@@ -1,1 +1,11 @@
-package com.anssa8bu.ssafy.vlm.entity; import jakarta.persistence.*; import java.io.Serializable; import java.util.UUID; @Embeddable public record SkillDestinationId(@Column(name="skill_id") UUID skillId,@Column(name="destination_key",length=100) String destinationKey) implements Serializable {}
+package com.anssa8bu.ssafy.vlm.entity;
+
+import jakarta.persistence.*;
+import java.io.Serializable;
+import java.util.UUID;
+
+@Embeddable
+public record SkillDestinationId(
+    @Column(name = "skill_id") UUID skillId,
+    @Column(name = "destination_key", length = 100) String destinationKey)
+    implements Serializable {}

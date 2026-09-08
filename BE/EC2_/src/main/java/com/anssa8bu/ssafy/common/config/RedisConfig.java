@@ -11,8 +11,20 @@ import com.anssa8bu.ssafy.common.redis.RedisTtlProperties;
 @EnableConfigurationProperties(RedisTtlProperties.class)
 public class RedisConfig {
 
-    @Bean
-    public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory connectionFactory) {
-        return new StringRedisTemplate(connectionFactory);
-    }
+  @Bean
+  public RedisTemplate<String, Object> redisTemplate(
+      RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+    StringRedisSerializer keySerializer = new StringRedisSerializer();
+    GenericJacksonJsonRedisSerializer valueSerializer =
+        new GenericJacksonJsonRedisSerializer(objectMapper);
+
+    RedisTemplate<String, Object> template = new RedisTemplate<>();
+    template.setConnectionFactory(connectionFactory);
+    template.setKeySerializer(keySerializer);
+    template.setHashKeySerializer(keySerializer);
+    template.setValueSerializer(valueSerializer);
+    template.setHashValueSerializer(valueSerializer);
+    template.afterPropertiesSet();
+    return template;
+  }
 }

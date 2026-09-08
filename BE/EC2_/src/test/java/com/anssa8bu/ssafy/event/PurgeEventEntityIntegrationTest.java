@@ -1,4 +1,56 @@
-package com.anssa8bu.ssafy.event; import com.anssa8bu.ssafy.event.entity.*; import jakarta.persistence.EntityManager; import org.junit.jupiter.api.Test; import org.springframework.beans.factory.annotation.Autowired; import org.springframework.boot.test.context.SpringBootTest; import org.springframework.test.annotation.Rollback; import org.springframework.transaction.annotation.Transactional; import java.time.Instant; import java.util.*; import static org.assertj.core.api.Assertions.assertThat;
-@SpringBootTest class PurgeEventEntityIntegrationTest { @Autowired EntityManager em;
- @Test @Transactional @Rollback void idempotencyAndOutboxJsonUuidEnumInstantNullableSurviveRoundTrip(){UUID keyId=UUID.randomUUID(),eventId=UUID.randomUUID();Instant at=Instant.parse("2026-09-08T02:00:00Z");em.persist(new IdempotencyKey(keyId,ActorType.GPU,"gpu-1","POST","/internal/events","idem-1","d".repeat(64),at.plusSeconds(3600)));Map<String,Object> payload=Map.of("jobId",UUID.randomUUID().toString(),"progress",100);em.persist(new OutboxEvent(eventId,"event-"+eventId,"TRAINING_JOB","job-1","TRAINING_COMPLETED",payload,at));em.flush();em.clear();IdempotencyKey key=em.find(IdempotencyKey.class,keyId);OutboxEvent event=em.find(OutboxEvent.class,eventId);assertThat(key.getActorType()).isEqualTo(ActorType.GPU);assertThat(key.getExpiresAt()).isEqualTo(at.plusSeconds(3600));assertThat(key.getResponseBody()).isNull();assertThat(event.getPayload()).isEqualTo(payload);assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);assertThat(event.getPublishedAt()).isNull();}
+package com.anssa8bu.ssafy.event;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.anssa8bu.ssafy.event.entity.*;
+import jakarta.persistence.EntityManager;
+import java.time.Instant;
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Rollback;
+import org.springframework.transaction.annotation.Transactional;
+
+@SpringBootTest
+class PurgeEventEntityIntegrationTest {
+  @Autowired EntityManager em;
+
+  @Test
+  @Transactional
+  @Rollback
+  void idempotencyAndOutboxJsonUuidEnumInstantNullableSurviveRoundTrip() {
+    UUID keyId = UUID.randomUUID(), eventId = UUID.randomUUID();
+    Instant at = Instant.parse("2026-09-08T02:00:00Z");
+    em.persist(
+        new IdempotencyKey(
+            keyId,
+            ActorType.GPU,
+            "gpu-1",
+            "POST",
+            "/internal/events",
+            "idem-1",
+            "d".repeat(64),
+            at.plusSeconds(3600)));
+    Map<String, Object> payload = Map.of("jobId", UUID.randomUUID().toString(), "progress", 100);
+    em.persist(
+        new OutboxEvent(
+            eventId,
+            "event-" + eventId,
+            "TRAINING_JOB",
+            "job-1",
+            "TRAINING_COMPLETED",
+            payload,
+            at));
+    em.flush();
+    em.clear();
+    IdempotencyKey key = em.find(IdempotencyKey.class, keyId);
+    OutboxEvent event = em.find(OutboxEvent.class, eventId);
+    assertThat(key.getActorType()).isEqualTo(ActorType.GPU);
+    assertThat(key.getExpiresAt()).isEqualTo(at.plusSeconds(3600));
+    assertThat(key.getResponseBody()).isNull();
+    assertThat(event.getPayload()).isEqualTo(payload);
+    assertThat(event.getStatus()).isEqualTo(OutboxStatus.PENDING);
+    assertThat(event.getPublishedAt()).isNull();
+  }
 }

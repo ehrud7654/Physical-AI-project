@@ -1,1 +1,43 @@
-package com.anssa8bu.ssafy.deployment.entity; import jakarta.persistence.*; import org.hibernate.annotations.JdbcTypeCode; import org.hibernate.type.SqlTypes; import java.math.BigDecimal; import java.time.Instant; import java.util.*; @Entity @Table(name="deployment_reports") public class DeploymentReport { @Id private UUID id; @Column(name="deployment_id",nullable=false) private UUID deploymentId; @Column(name="report_id",nullable=false,length=150) private String reportId; @Column(nullable=false) private long sequence; @Enumerated(EnumType.STRING) @Column(nullable=false,length=30) private DeploymentStatus status; @Column(name="progress_percent",nullable=false,precision=5,scale=2) private BigDecimal progressPercent; @JdbcTypeCode(SqlTypes.JSON) @Column(nullable=false,columnDefinition="jsonb") private List<Map<String,Object>> items; @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition="jsonb") private Map<String,Object> error; @Column(name="reported_at",nullable=false) private Instant reportedAt; protected DeploymentReport(){} }
+package com.anssa8bu.ssafy.deployment.entity;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+@Entity
+@Table(name = "deployment_reports")
+public class DeploymentReport {
+  @Id private UUID id;
+
+  @Column(name = "deployment_id", nullable = false)
+  private UUID deploymentId;
+
+  @Column(name = "report_id", nullable = false, length = 150)
+  private String reportId;
+
+  @Column(nullable = false)
+  private long sequence;
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 30)
+  private DeploymentStatus status;
+
+  @Column(name = "progress_percent", nullable = false, precision = 5, scale = 2)
+  private BigDecimal progressPercent;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(nullable = false, columnDefinition = "jsonb")
+  private List<Map<String, Object>> items;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  private Map<String, Object> error;
+
+  @Column(name = "reported_at", nullable = false)
+  private Instant reportedAt;
+
+  protected DeploymentReport() {}
+}
