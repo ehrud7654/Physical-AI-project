@@ -125,35 +125,6 @@
             android:text="설정" />
     </LinearLayout>
 
-    <!-- 좌하단: AF · AE (임시, 설정 이관은 S15P21A103-145) -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:orientation="horizontal"
-        android:layout_marginStart="20dp"
-        android:layout_marginBottom="24dp">
-
-        <Button
-            android:id="@+id/focusBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="#FF225533"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:text="@string/af" />
-
-        <Button
-            android:id="@+id/aeBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:background="#FF444444"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:text="AE" />
-    </LinearLayout>
-
     <!-- 하단 중앙: 큰 REC -->
     <Button
         android:id="@+id/recBtn"
