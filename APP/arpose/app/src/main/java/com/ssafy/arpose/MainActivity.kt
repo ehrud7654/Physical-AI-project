@@ -267,8 +267,18 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             glView.onPause()
             session?.pause()
             closeCamera()
-            stopCamThread()
+            // 카메라 스레드는 여기서 죽이지 않는다. cameraDevice.close() 는 비동기라
+            // onClosed 콜백이 잠시 뒤 이 스레드로 오는데, 지금 종료하면 "dead thread" 예외로
+            // 앱이 죽는다. 스레드는 onDestroy 에서만 정리한다.
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        closeCamera()
+        stopCamThread()
+        try { session?.close() } catch (_: Exception) {}
+        session = null
     }
 
     /** CPU 이미지 640x480 에 가장 가깝고 30fps 인 카메라 설정을 고른다. */
