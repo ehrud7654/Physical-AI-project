@@ -172,6 +172,22 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         }
         updateAeBtn()
 
+        // 설정·기록은 별도 화면. 녹화 중엔 못 나가게 막는다.
+        findViewById<Button>(R.id.settingsBtn).setOnClickListener {
+            if (recorder?.isRecording == true) {
+                Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
+            } else {
+                startActivity(android.content.Intent(this, SettingsActivity::class.java))
+            }
+        }
+        findViewById<Button>(R.id.historyBtn).setOnClickListener {
+            if (recorder?.isRecording == true) {
+                Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
+            } else {
+                startActivity(android.content.Intent(this, HistoryActivity::class.java))
+            }
+        }
+
         glView.preserveEGLContextOnPause = true
         glView.setEGLContextClientVersion(2)
         glView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
