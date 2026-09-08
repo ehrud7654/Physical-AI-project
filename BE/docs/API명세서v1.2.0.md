@@ -1,14 +1,37 @@
-# UMI 로봇팔 스킬 학습·배포 플랫폼 API 명세서 v1
+# UMI 로봇팔 스킬 학습·배포 플랫폼 API 명세서
 
 > Episode ZIP·고정 TrainingProfile·학습 큐·게이트·Jetson 계약을 정의하며, EC2 Spring Boot와 GPU Spring Boot 및 FastAPI 사이의 역할과 실행 계약을 포함한다.
 
-- 문서 버전: 1.0.0
-- 작성일: 2026-09-04
+- 문서 버전: 1.2.0
+- 작성일: 2026-09-08
 - 기준 경로: `/api/v1`; GPU 데이터 수집 경로는 `/ingest/v1`
 - 범위: 웹 클라이언트, EC2 백엔드, UMI, GPU 워커, S3, Jetson 간 인터페이스
-- ERD 기준: [DB 스키마 v1](./DB스키마v1.md)
-- 주요 리소스: `TrainingProfile`, `EpisodeArchive`, `SkillVersion`, `VlmModelVersion`, `RobotSkillDeployment`
+- ERD 기준: [DB 스키마 1.2.0](./DB스키마v1.2.0.md)
+- 주요 리소스: `TrainingProfile`, `EpisodeArchive`, `SkillVersion`, `RobotSkillDeployment`, `RobotExecution`
 - 이 문서는 제안 명세다. 실제 GPU 주소, 로컬 보관 기간과 용량 정책, S3 버킷, 토큰 만료 시간, CKPT 내부 포맷은 구현 전에 확정해야 한다.
+
+## 1.2.0 변경 요약
+
+DB 스키마 1.2.0에서 VLM 도메인(`skill_destinations`, `vlm_model_versions`, `vlm_policies`, `vlm_inference_results`, `skills.needs_vlm`, 배포 테이블의 `vlm_model_version_id`)이 제외됨에 따라 API에서 VLM 계약을 제거한다. VLM 모델·정책·목적지 계약이 확정되면 별도 문서와 버전으로 다시 도입한다.
+
+| 구분 | 1.1.0 → 1.2.0 |
+|---|---|
+| 삭제 API | `SKILL-08` 스킬별 VLM 목적지 목록, `VLM-01`~`VLM-04`(12장 전체) |
+| 삭제 모델 | `SkillDestination`, `VlmModelVersion`, `VlmPolicy`, `VlmInferenceResult` |
+| 삭제 필드 | `Skill.needsVlm`, `DeploymentItem.vlmModelVersionId`, `RobotSkillDeployment.vlmModelVersionId`, `SKILL-01` 쿼리 `needsVlm`, `DEPLOY-01` 요청 `vlmModelVersions`, `JETSON-01` manifest `models[].vlmModelVersion` |
+| 삭제 오류 코드 | `409 VLM_MODEL_REQUIRED`, `422 INVALID_DESTINATION`, `422 VLM_OUTPUT_INVALID` |
+| 삭제 SSE 이벤트 | `vlm.inference-completed` |
+| 변경 | `DEPLOY-01`은 TaskVersion만 받고 `READY`·`gate.passed=true`·RobotProfile 호환성만 검증한다. `SKILL-03`·스킬 카탈로그의 호출 주체와 `skillKey` 계약 설명에서 VLM을 제외했다. 18장 ERD 호환성 표·다이어그램·UNIQUE 목록, 19.4 모델 로딩 시나리오, 20장 체크리스트, 21장 확정 사항에서 VLM 항목을 정리했다. |
+| 유지 | 그 외 모든 API·모델·상태 전이는 1.1.0과 동일하다. 장 번호는 참조 안정성을 위해 유지하며 12장은 "제외" 표시로 남긴다. |
+
+## 1.1.0 변경 요약
+
+- Episode에 학습 가능 여부·차단 사유·복구 행동을 추가하고, 만료형 미리보기 세션 API를 정의했다.
+- TrainingJob의 수집 진행 집계를 상세 조회와 SSE에서 동일한 구조로 제공한다.
+- 고정 TrainingProfile은 유지하고, FE 안내용 스킬별 학습 데이터 요구사항 조회만 추가했다.
+- TaskVersion의 로봇 준비 상태 응답을 구체화하고 RobotExecution 생성·조회·취소·Jetson 보고 계약을 추가했다.
+- 목록 응답의 전체 건수와 RobotExecution SSE를 추가해 새로고침·재연결 후 상태를 복구할 수 있게 했다.
+- 이 버전은 별도 CaptureSession, 사용자 학습 프리셋, 튜토리얼 API를 추가하지 않는다. 신규 수집의 묶음은 `COLLECT_NEW` TrainingJob으로 관리한다.
 
 ## 1. 설계 가정과 범위
 
@@ -23,17 +46,16 @@
 | 원본 삭제 | 보관 기한이 지났고 활성 TrainingJob이 참조하지 않을 때만 삭제한다. 파일 삭제 후에도 Episode와 학습 사용 이력은 DB에 tombstone으로 유지한다. |
 | 모델 파일 | 학습 결과인 CKPT만 S3에 영구 저장한다. |
 | CKPT 메타데이터 | DB에는 S3 bucket/key, 크기, SHA-256, 모델·입출력 계약, 호환 로봇 프로파일을 저장한다. |
-| 스킬 | 회원별 자유 생성 리소스가 아니라 FE·BE·AI·VLM이 동일한 `skillKey`를 사용하는 시스템 공통 카탈로그다. |
+| 스킬 | 회원별 자유 생성 리소스가 아니라 FE·BE·AI가 동일한 `skillKey`를 사용하는 시스템 공통 카탈로그다. |
 | 스킬 버전 | 한 번의 학습으로 생성한 불변 CKPT 한 개다. 기존 버전과 S3 객체를 덮어쓰지 않는다. |
 | 배포 게이트 | SkillVersion은 CKPT 검증 후 READY가 될 수 있지만, rollout 게이트를 통과한 버전만 DeploymentItem으로 생성할 수 있다. |
-| VLM | 스킬별 허용 목적지와 confidence 정책을 DB에서 버전 관리하고, `abstain=true` 또는 임계값 미만이면 동작을 허용하지 않는다. |
 | Task | 여러 스킬을 순서대로 조합한 논리적 로봇 작업이다. 학습 데이터의 episode와 구분한다. |
 | TaskVersion | 실행 순서와 정확한 `skillVersionId`를 고정한 불변 버전이다. |
 | 배포 | 사용자가 Robot에 TaskVersion 적용을 요청하고, Jetson이 모든 CKPT를 검증·로드한 뒤 성공을 보고한다. |
 | 다운로드 | EC2는 DB의 S3 경로를 그대로 노출하지 않고, 권한 확인 후 제한 시간 다운로드 URL을 발급한다. |
 | 인증 | 사용자, UMI, GPU, Jetson을 별도 주체로 인증한다. 핸들 번호는 식별자이지 인증 수단이 아니다. |
 | 상태 기준 | 학습 완료, CKPT 검증 완료, Jetson 적용 완료를 서로 다른 상태로 관리한다. |
-| 평가 | 별도 EvaluationRun/Trial 도메인은 두지 않고 SkillVersion에 배포 게이트 집계 결과만 저장한다. 상세 실행 이력이 필요하면 후속 테이블로 확장한다. |
+| 평가 | 별도 EvaluationRun/Trial 도메인은 두지 않고 SkillVersion에 배포 게이트 집계 결과만 저장한다. 사용자가 요청한 실제 로봇 작업의 상태와 결과는 RobotExecution으로 추적한다. |
 | 재학습 | 보관 중인 READY Episode로 새 TrainingJob을 만들 수 있다. 기존 TrainingJob 자체를 되돌리거나 덮어쓰지는 않는다. |
 
 ### 1.1 주요 흐름
@@ -55,7 +77,7 @@
 
 모델 로딩
 사용자 → Robot에 TaskVersion 배포 요청
-      → EC2가 CKPT 게이트와 VLM 요구사항 검증
+      → EC2가 CKPT 게이트와 RobotProfile 호환성 검증
       → EC2가 Deployment와 DeploymentItem 생성
 Jetson → 자신의 pending Deployment manifest 요청
        → S3 CKPT 다운로드
@@ -67,7 +89,7 @@ Jetson → 자신의 pending Deployment manifest 요청
 
 ### 1.2 범위 밖
 
-- 브라우저에서 Episode ZIP 또는 내부 원본 재생 및 다운로드
+- 브라우저에서 Episode ZIP 또는 내부 원본 다운로드. 사용자 확인용 만료형 미리보기는 별도 preview session으로만 제공한다.
 - 로컬 보관 기한을 넘는 Episode ZIP 장기 보관과 백업 보장
 - DatasetVersion 및 데이터 라벨링·가공 파이프라인
 - 서로 다른 StorageNode에 저장된 Episode의 자동 복제·전송
@@ -122,12 +144,14 @@ Jetson → 자신의 pending Deployment manifest 요청
   "data": [],
   "page": {
     "nextCursor": null,
-    "hasNext": false
+    "hasNext": false,
+    "totalCount": 0
   }
 }
 ```
 
 - 목록 공통 쿼리: `cursor?: string`, `limit?: integer`이며 기본 20, 범위 1~100이다.
+- `totalCount`는 현재 필터 조건에 해당하는 전체 건수이며 현재 페이지의 배열 길이로 대체하지 않는다.
 - 기본 정렬은 `createdAt DESC, id DESC`다.
 - 모든 EC2 응답에 `X-Request-Id`를 반환한다.
 - `204` 응답에는 본문이 없다.
@@ -142,6 +166,7 @@ Jetson → 자신의 pending Deployment manifest 요청
   - CKPT 업로드 세션 생성 및 완료
   - TaskVersion 생성
   - Deployment 생성
+  - RobotExecution 생성
 - 동일 키·동일 본문은 최초 응답을 재사용한다.
 - 동일 키·다른 본문은 `409 IDEMPOTENCY_KEY_REUSED`다.
 - 학습 이벤트는 `(trainingJobId, attempt, eventId)`로 중복 제거한다.
@@ -170,10 +195,14 @@ Jetson → 자신의 pending Deployment manifest 요청
         "reason": "skill_ver_33 is VALIDATING"
       }
     ],
-    "requestId": "req_001"
+    "requestId": "req_001",
+    "recoveryAction": "WAIT"
   }
 }
 ```
+
+- `recoveryAction`은 사용자가 취할 수 있는 행동이 명확한 경우에만 반환하는 선택 필드다.
+- 허용 값은 `WAIT`, `RETRY_UPLOAD`, `RECORD_AGAIN`, `SET_LABEL`, `EXTEND_RETENTION`, `CREATE_DEPLOYMENT`, `RETRY`, `CONTACT_SUPPORT`, `NONE`이다.
 
 | HTTP | 대표 오류 코드 | 의미 |
 |---|---|---|
@@ -181,9 +210,9 @@ Jetson → 자신의 pending Deployment manifest 요청
 | 401 | `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `INVALID_CREDENTIALS` | 인증 실패 |
 | 403 | `FORBIDDEN` | 해당 주체에게 허용되지 않은 작업 |
 | 404 | `RESOURCE_NOT_FOUND` | 리소스 없음 또는 소유 범위 밖 |
-| 409 | `STATE_CONFLICT`, `ROBOT_BUSY`, `LEASE_EXPIRED`, `SKILL_VERSION_NOT_READY`, `SKILL_VERSION_GATE_FAILED`, `EPISODE_IN_USE`, `EPISODE_NOT_AVAILABLE`, `VLM_MODEL_REQUIRED` | 상태·동시성 충돌 |
+| 409 | `STATE_CONFLICT`, `ROBOT_BUSY`, `LEASE_EXPIRED`, `SKILL_VERSION_NOT_READY`, `SKILL_VERSION_GATE_FAILED`, `EPISODE_IN_USE`, `EPISODE_NOT_AVAILABLE` | 상태·동시성 충돌 |
 | 413 | `PAYLOAD_TOO_LARGE` | GPU ingest 정책상 크기 초과 |
-| 422 | `VALIDATION_ERROR`, `CHECKPOINT_INVALID`, `MODEL_INCOMPATIBLE`, `EPISODE_INVALID`, `INVALID_SKILL_KEY`, `INVALID_DESTINATION`, `VLM_OUTPUT_INVALID`, `UNSUPPORTED_TRAINING_PROFILE`, `TRAINING_CONFIG_MISMATCH` | 요청·파일·설정·호환성 검증 실패 |
+| 422 | `VALIDATION_ERROR`, `CHECKPOINT_INVALID`, `MODEL_INCOMPATIBLE`, `EPISODE_INVALID`, `INVALID_SKILL_KEY`, `UNSUPPORTED_TRAINING_PROFILE`, `TRAINING_CONFIG_MISMATCH` | 요청·파일·설정·호환성 검증 실패 |
 | 429 | `RATE_LIMITED` | 요청 제한. `Retry-After` 반환 |
 | 500 | `INTERNAL_ERROR` | 예기치 않은 오류 |
 | 503 | `GPU_UNAVAILABLE`, `STORAGE_UNAVAILABLE`, `STORAGE_CAPACITY_EXCEEDED`, `TRAINING_PROFILE_UNAVAILABLE` | GPU, 로컬 저장소, S3 또는 활성 학습 프로필 사용 불가 |
@@ -280,8 +309,34 @@ type Episode = {
   captureMetadata: Record<string, unknown>;
   qualitySummary: Record<string, unknown>;
   archive: EpisodeArchive;
-  error: { code: string; message: string } | null;
+  trainable: boolean;
+  blockingReasons: BlockingReason[];
+  recoveryAction: RecoveryAction;
+  error: ApiResourceError | null;
   createdAt: string;
+};
+
+type RecoveryAction =
+  | 'WAIT'
+  | 'RETRY_UPLOAD'
+  | 'RECORD_AGAIN'
+  | 'SET_LABEL'
+  | 'EXTEND_RETENTION'
+  | 'CREATE_DEPLOYMENT'
+  | 'RETRY'
+  | 'CONTACT_SUPPORT'
+  | 'NONE';
+
+type BlockingReason = {
+  code: string;
+  message: string;
+  recoveryAction: RecoveryAction;
+};
+
+type ApiResourceError = {
+  code: string;
+  message: string;
+  recoveryAction: RecoveryAction;
 };
 
 type RetentionPolicy = {
@@ -321,7 +376,9 @@ type Robot = {
   robotProfileId: string;
   name: string;
   connectionStatus: 'ONLINE' | 'OFFLINE';
+  busy: boolean;
   currentDeploymentId: string | null;
+  currentTaskVersionId: string | null;
   lastSeenAt: string | null;
   createdAt: string;
 };
@@ -340,10 +397,22 @@ type Skill = {
   status: 'PLANNED' | 'COLLECTING' | 'TRAINING' | 'GATE_FAILED' | 'DEPLOYED';
   displayName: string;
   description: string | null;
-  needsVlm: boolean;
   persona: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type TrainingRequirements = {
+  skillId: string;
+  skillKey: SkillKey;
+  minimumEpisodeCount: number;
+  recommendedEpisodeCount: number;
+  maximumEpisodeCount: number;
+  allowedSources: Array<'SIM' | 'REAL'>;
+  requiresSameUmiDevice: boolean;
+  requiredContractVersion: string;
+  supported: boolean;
+  requirementsVersion: number;
 };
 
 type TrainingProfileSnapshot = {
@@ -393,6 +462,15 @@ type TrainingJob = {
   receivedEpisodeCount: number;
   receivedBytes: number;
   episodeCount: number;
+  collection: {
+    expectedCount: number;
+    uploadedCount: number;
+    validatingCount: number;
+    readyCount: number;
+    warningCount: number;
+    invalidCount: number;
+    receivedBytes: number;
+  };
   inputSnapshotSha256: string | null;
   progress: {
     stage: string;
@@ -402,7 +480,7 @@ type TrainingJob = {
   };
   attempt: number;
   resultSkillVersionId: string | null;
-  error: { code: string; message: string } | null;
+  error: ApiResourceError | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -449,49 +527,6 @@ type SkillVersion = {
   createdAt: string;
 };
 
-type SkillDestination = {
-  skillId: string;
-  destinationKey: string;
-  displayName: string;
-  enabled: boolean;
-};
-
-type VlmModelVersion = {
-  id: string;
-  version: string;
-  modelName: string;
-  status: 'CANDIDATE' | 'READY' | 'ARCHIVED';
-  metadata: Record<string, unknown>;
-};
-
-type VlmPolicy = {
-  id: string;
-  policyKey: string;
-  version: number;
-  confidenceThreshold: number;
-  enabled: boolean;
-};
-
-type VlmInferenceResult = {
-  id: string;
-  requestId: string;
-  robotId: string;
-  skillId: string;
-  skillKey: SkillKey;
-  vlmModelVersionId: string | null;
-  vlmPolicyId: string;
-  destinationKey: string;
-  target: {
-    descriptionKo: string;
-    bboxNorm: [number, number, number, number];
-  };
-  confidence: number;
-  confidenceThreshold: number;
-  abstain: boolean;
-  motionAllowed: boolean;
-  createdAt: string;
-};
-
 type Task = {
   id: string;
   ownerId: string;
@@ -522,7 +557,6 @@ type DeploymentItem = {
   id: string;
   skillVersionId: string;
   gatePassed: true;
-  vlmModelVersionId: string | null;
   status: 'PENDING' | 'DOWNLOADING' | 'VERIFIED' | 'FAILED';
   downloadedAt: string | null;
   verifiedAt: string | null;
@@ -556,10 +590,34 @@ type RobotSkillDeployment = {
   skillKey: SkillKey;
   skillVersionId: string;
   deploymentId: string;
-  vlmModelVersionId: string | null;
   status: 'ACTIVE' | 'RETIRED';
   deployedAt: string;
   retiredAt: string | null;
+};
+
+type RobotExecution = {
+  id: string;
+  ownerId: string;
+  robotId: string;
+  taskVersionId: string;
+  deploymentId: string;
+  status:
+    | 'REQUESTED'
+    | 'STARTING'
+    | 'RUNNING'
+    | 'CANCEL_REQUESTED'
+    | 'CANCELED'
+    | 'SUCCEEDED'
+    | 'FAILED'
+    | 'STATUS_UNKNOWN';
+  currentStep: number | null;
+  totalSteps: number;
+  progressPercent: number;
+  error: ApiResourceError | null;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
 };
 ```
 
@@ -836,14 +894,40 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 성공 `200`: 갱신된 `Episode`.
 - 실패: `409 EPISODE_IN_USE`, `409 LABEL_ALREADY_FINALIZED`, `409 STATE_CONFLICT`.
 
+### EPISODE-08 Episode 미리보기 세션 발급
+
+- `POST /episodes/{episodeId}/preview-session` · 사용자
+- 요청 본문 없음.
+- 사용자 소유 Episode이며 archive가 `AVAILABLE`이고 실제 로컬 ZIP이 존재할 때만 발급한다.
+- EC2는 소유권과 상태를 검증하고, GPU StorageNode가 제공하는 미리보기 전용 URL에 짧은 TTL의 토큰을 부여한다. 로컬 절대 경로와 내부 `storageKey`는 노출하지 않는다.
+- 성공 `201`:
+
+```json
+{
+  "data": {
+    "episodeId": "episode_100",
+    "status": "READY",
+    "previewType": "FRAME_SEQUENCE",
+    "manifestUrl": "/api/v1/episode-previews/preview_01/manifest",
+    "thumbnailUrl": "/api/v1/episode-previews/preview_01/thumbnail",
+    "expiresAt": "2026-09-08T06:15:00Z"
+  }
+}
+```
+
+- 미리보기 세션은 짧은 TTL로 만료되며 만료 후 재발급할 수 있다.
+- MVP는 ZIP의 JPEG 목록을 제공하는 `FRAME_SEQUENCE`를 사용한다. 임시 MP4 생성이 확정되면 `VIDEO`를 추가한다.
+
+
+
 ## 7. 스킬 API
 
-스킬은 시스템 공통 카탈로그이며 일반 사용자가 생성·수정하지 않는다. `skillKey`는 FE·BE·AI·VLM 간 계약값이고 내부 UUID `skillId`는 DB 관계와 사용자 API 경로에 사용한다.
+스킬은 시스템 공통 카탈로그이며 일반 사용자가 생성·수정하지 않는다. `skillKey`는 FE·BE·AI 간 계약값이고 내부 UUID `skillId`는 DB 관계와 사용자 API 경로에 사용한다.
 
 ### SKILL-01 스킬 목록
 
 - `GET /skills` · 사용자
-- 쿼리: `q?: string`, `tier?: TUTORIAL | DEMO`, `status?: Skill.status`, `needsVlm?: boolean`, 공통 페이지네이션.
+- 쿼리: `q?: string`, `tier?: TUTORIAL | DEMO`, `status?: Skill.status`, 공통 페이지네이션.
 - 성공 `200`: `Skill[]`.
 
 ### SKILL-02 스킬 상세
@@ -853,7 +937,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 
 ### SKILL-03 SkillKey로 스킬 조회
 
-- `GET /skills/by-key/{skillKey}` · 사용자·GPU·VLM
+- `GET /skills/by-key/{skillKey}` · 사용자·GPU
 - 성공 `200`: `Skill`.
 - 정의되지 않은 값은 `404 RESOURCE_NOT_FOUND` 또는 입력 검증 단계에서 `422 INVALID_SKILL_KEY`.
 
@@ -888,13 +972,6 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 호출 사용자가 해당 버전을 만든 TrainingJob 소유자이거나 관리자여야 한다.
 - 활성 RobotSkillDeployment가 참조하면 `409 SKILL_VERSION_IN_USE`.
 - 보관 처리는 S3 파일 즉시 삭제를 의미하지 않는다.
-
-### SKILL-08 스킬별 VLM 목적지 목록
-
-- `GET /skills/{skillId}/destinations` · 사용자·VLM·Jetson
-- 쿼리: `enabledOnly?: boolean`, 기본 true.
-- 성공 `200`: `SkillDestination[]`.
-- `needsVlm=false`인 스킬은 빈 배열을 반환할 수 있다.
 
 ## 8. 학습 관리 API
 
@@ -1795,65 +1872,9 @@ Lifecycle scheduler는 보관 기한이 지난 Episode를 직접 삭제하지 �
 - 삭제 실패 시 DataPurgeJob을 `FAILED`, Episode와 EpisodeArchive를 `DELETE_FAILED`로 변경하고 오류를 저장한다.
 - archive가 이미 존재하지 않는 경우에도 허용된 경로를 확인한 뒤 멱등한 삭제 성공으로 처리할 수 있다.
 - 삭제 후에도 DB의 Episode, EpisodeArchive, TrainingJobEpisode 이력은 유지한다.
-## 12. VLM 계약 API
+## 12. VLM 계약 API (1.2.0에서 제외)
 
-VLM API의 문자열 `skillId`는 DB UUID가 아니라 `skills.skill_key`에 해당하는 `SkillKey`다. 백엔드는 이를 내부 UUID로 변환해 저장한다. VLM 출력값만으로 모터 명령을 직접 실행하지 않으며 백엔드와 Jetson이 동작 허용 조건을 다시 검증한다.
-
-### VLM-01 사용 가능한 VLM 모델 버전 목록
-
-- `GET /vlm-model-versions` · 사용자
-- 쿼리: `status?: CANDIDATE | READY | ARCHIVED`, 기본 `READY`.
-- 성공 `200`: `VlmModelVersion[]`.
-
-### VLM-02 현재 동작 허용 정책 조회
-
-- `GET /vlm-policies/current` · 사용자·VLM·Jetson
-- 쿼리: `policyKey?: string`, 기본 `default-motion-gate`.
-- 성공 `200`: 활성 `VlmPolicy`.
-- 초기 confidence threshold는 `0.7000`이지만 코드 상수로 가정하지 않는다.
-
-### VLM-03 VLM 추론 결과 등록
-
-- `POST /internal/vlm/inference-results` · VLM 워커 · `Idempotency-Key` 필수
-- 요청:
-
-```json
-{
-  "requestId": "vlm_req_001",
-  "robotId": "robot_01",
-  "skillId": "sort_two",
-  "vlmModelVersionId": "vlm_ver_01",
-  "policyKey": "default-motion-gate",
-  "target": {
-    "descriptionKo": "긁힘 있는 부품",
-    "bboxNorm": [0.31, 0.44, 0.39, 0.52]
-  },
-  "destination": "right_tray",
-  "confidence": 0.87,
-  "abstain": false,
-  "rawOutput": {}
-}
-```
-
-- `skillId`는 `SkillKey` enum이며 `destination`은 해당 스킬의 enabled `SkillDestination`이어야 한다.
-- `bboxNorm`은 `[x1, y1, x2, y2]`이고 모든 값은 0~1이며 `x1 < x2`, `y1 < y2`여야 한다.
-- 백엔드는 활성 VLM 정책의 threshold를 snapshot으로 저장하고 다음 식으로 `motionAllowed`를 계산한다.
-
-```text
-motionAllowed = (abstain = false) AND (confidence >= confidenceThreshold)
-```
-
-- `motionAllowed`는 요청으로 받지 않는다.
-- 같은 `requestId`와 같은 본문은 중복 성공, 다른 본문은 `409 IDEMPOTENCY_KEY_REUSED`.
-- 성공 `201`: `VlmInferenceResult`.
-- 실패: `422 INVALID_SKILL_KEY`, `422 INVALID_DESTINATION`, `422 VLM_OUTPUT_INVALID`.
-
-### VLM-04 로봇 VLM 추론 결과 조회
-
-- `GET /robots/{robotId}/vlm-inference-results` · 사용자
-- 쿼리: `skillId?: SkillKey`, `motionAllowed?: boolean`, 공통 페이지네이션.
-- 성공 `200`: `VlmInferenceResult[]`.
-- 원본 입력 이미지는 이 API와 DB에 저장하지 않는다.
+1.1.0의 `VLM-01`~`VLM-04`와 `SkillDestination`·`VlmModelVersion`·`VlmPolicy`·`VlmInferenceResult` 모델은 DB 스키마 1.2.0에서 VLM 도메인이 제외되어 삭제했다. 장 번호는 이후 장의 참조 안정성을 위해 유지한다.
 
 ## 13. Task API
 
@@ -1973,21 +1994,17 @@ motionAllowed = (abstain = false) AND (confidence >= confidenceThreshold)
 
 ```json
 {
-  "taskVersionId": "task_ver_15",
-  "vlmModelVersions": {
-    "sort_two": "vlm_ver_01"
-  }
+  "taskVersionId": "task_ver_15"
 }
 ```
 
 - EC2는 TaskVersion의 SkillVersion을 중복 제거하여 DeploymentItem을 생성한다.
 - 모든 SkillVersion이 `READY`, `gate.passed=true`이며 Robot과 호환되어야 한다.
-- `needsVlm=true`인 스킬은 `vlmModelVersions`에 READY VLM 모델 버전을 지정해야 한다. VLM이 필요 없는 스킬의 값은 생략한다.
-- DeploymentItem에 `gatePassed=true`와 선택한 `vlmModelVersionId`를 고정한다.
+- DeploymentItem에 `gatePassed=true`를 고정한다.
 - 진행 중 Deployment가 있으면 `409 ROBOT_BUSY`.
 - Robot이 OFFLINE이어도 `PENDING`으로 생성할 수 있다.
 - 성공 `201`: `Deployment`.
-- 실패: `409 SKILL_VERSION_GATE_FAILED`, `409 VLM_MODEL_REQUIRED`, `422 MODEL_INCOMPATIBLE`.
+- 실패: `409 SKILL_VERSION_GATE_FAILED`, `422 MODEL_INCOMPATIBLE`.
 
 ### DEPLOY-02 사용자용 배포 목록
 
@@ -2051,8 +2068,7 @@ motionAllowed = (abstain = false) AND (confidence >= confidenceThreshold)
           "controlRateHz": 30,
           "cameraNames": ["cam_front", "cam_wrist"]
         },
-        "gatePassed": true,
-        "vlmModelVersion": null
+        "gatePassed": true
       },
       {
         "deploymentItemId": "dep_item_02",
@@ -2074,11 +2090,7 @@ motionAllowed = (abstain = false) AND (confidence >= confidenceThreshold)
           "controlRateHz": 30,
           "cameraNames": ["cam_front", "cam_wrist"]
         },
-        "gatePassed": true,
-        "vlmModelVersion": {
-          "id": "vlm_ver_01",
-          "version": "qwen2.5-vl-3b-r1"
-        }
+        "gatePassed": true
       }
     ],
     "steps": [
@@ -2103,7 +2115,6 @@ motionAllowed = (abstain = false) AND (confidence >= confidenceThreshold)
 
 - 동일 SkillVersion이 여러 step에 등장해도 `models`에는 한 번만 포함된다.
 - Jetson은 `gatePassed=true`를 확인하되 이 값만 신뢰하지 않고 manifest 서명과 모델 계약을 함께 검증한다.
-- VLM이 필요한 모델은 `vlmModelVersion`이 없으면 적용을 거부한다.
 - Deployment 생성 당시의 TaskVersion 및 SkillVersion만 반환한다.
 - 새 학습이 완료되어도 기존 Deployment manifest는 바뀌지 않는다.
 
@@ -2206,8 +2217,8 @@ data: {"trainingJobId":"job_31","skillId":"skill_12","status":"RUNNING","percent
 | `episode.purge-updated` | `{ episodeId, purgeJobId, status, error, occurredAt }` |
 | `skill-version.updated` | `{ skillId, skillKey, skillVersionId, version, status, gatePassed, occurredAt }` |
 | `deployment.updated` | `{ robotId, deploymentId, status, progressPercent, occurredAt }` |
+| `execution.updated` | `{ executionId, robotId, taskVersionId, deploymentId, status, currentStep, totalSteps, progressPercent, error, occurredAt }` |
 | `robot-skill.updated` | `{ robotId, skillId, skillKey, skillVersionId, status, occurredAt }` |
-| `vlm.inference-completed` | `{ robotId, inferenceResultId, skillKey, destination, confidence, abstain, motionAllowed, occurredAt }` |
 | `device.connection` | `{ deviceId, connectionStatus, occurredAt }` |
 | `robot.connection` | `{ robotId, connectionStatus, occurredAt }` |
 
@@ -2374,7 +2385,6 @@ ACTIVE → RETIRED
 
 - `(robotId, skillId)`당 ACTIVE 행은 하나만 허용한다.
 - 과거 RETIRED 행은 배포 이력으로 유지한다.
-- VLM 필요 스킬은 활성 행에 `vlmModelVersionId`가 있어야 한다.
 
 ## 18. ERD 호환성
 
@@ -2390,19 +2400,15 @@ ACTIVE → RETIRED
 | DataPurgeJob | `data_purge_jobs` | Episode당 활성 삭제 작업 하나 |
 | RobotProfile | `robot_profiles` | contract_version·runtime 규격 |
 | Robot | `robots` | jetson_device_id UNIQUE, current_deployment_id nullable |
-| Skill | `skills` | 전역 `skill_key` UNIQUE, tier·status·needs_vlm·persona |
+| Skill | `skills` | 전역 `skill_key` UNIQUE, tier·status·persona |
 | TrainingProfile | `training_profiles` | profile_key·version UNIQUE, 시스템 ACTIVE 하나, 불변 config·SHA-256 |
 | TrainingJob | `training_jobs` | profile FK, 설정 snapshot·SHA-256, dataset_query·gpu_index·git_rev·attempt |
 | SkillVersion | `skill_versions` | profile·설정 SHA-256, CKPT 계약·action_space·n_params·gate 집계 |
-| SkillDestination | `skill_destinations` | PK(skill_id, destination_key), 스킬별 VLM enum |
-| VLM 모델 | `vlm_model_versions` | version UNIQUE, READY 수명주기 |
-| VLM 정책 | `vlm_policies` | policy_key·version UNIQUE, 활성 confidence threshold |
-| VLM 추론 | `vlm_inference_results` | request_id UNIQUE, 목적지·bbox·confidence·motion_allowed |
 | Task | `tasks` | UNIQUE(owner_id, task_key) |
 | TaskVersion | `task_versions` | UNIQUE(task_id, version), 생성 후 불변 |
 | TaskStep | `task_steps` | UNIQUE(task_version_id, step_order), skill_version_id FK |
 | Deployment | `deployments` | robot_id·task_version_id FK |
-| DeploymentItem | `deployment_items` | gate_passed=true 복합 FK, nullable VLM 모델 버전 |
+| DeploymentItem | `deployment_items` | gate_passed=true 복합 FK, READY 검증 트리거 |
 | RobotSkillDeployment | `robot_skill_deployments` | Robot·Skill별 ACTIVE 하나, 적용 이력 유지 |
 | Idempotency | `idempotency_keys` | actor_id·method·path·key 범위 |
 | 이벤트 | `outbox_events` | event_id UNIQUE, 상태 변경과 같은 트랜잭션 |
@@ -2427,11 +2433,6 @@ erDiagram
     TRAINING_JOB ||--o| SKILL_VERSION : produces
     TRAINING_PROFILE ||--o{ SKILL_VERSION : recorded_in
     SKILL ||--o{ SKILL_VERSION : versions
-    SKILL ||--o{ SKILL_DESTINATION : allows
-    SKILL ||--o{ VLM_INFERENCE_RESULT : inferred_as
-    VLM_MODEL_VERSION ||--o{ VLM_INFERENCE_RESULT : produces
-    VLM_POLICY ||--o{ VLM_INFERENCE_RESULT : evaluates
-    SKILL_DESTINATION ||--o{ VLM_INFERENCE_RESULT : selected_as
     TASK ||--o{ TASK_VERSION : versions
     TASK_VERSION ||--|{ TASK_STEP : contains
     SKILL_VERSION ||--o{ TASK_STEP : referenced_by
@@ -2439,7 +2440,6 @@ erDiagram
     TASK_VERSION ||--o{ DEPLOYMENT : deployed_as
     DEPLOYMENT ||--|{ DEPLOYMENT_ITEM : contains
     SKILL_VERSION ||--o{ DEPLOYMENT_ITEM : downloads
-    VLM_MODEL_VERSION ||--o{ DEPLOYMENT_ITEM : accompanies
     ROBOT ||--o{ ROBOT_SKILL_DEPLOYMENT : runs
     SKILL ||--o{ ROBOT_SKILL_DEPLOYMENT : assigns
     SKILL_VERSION ||--o{ ROBOT_SKILL_DEPLOYMENT : activates
@@ -2542,8 +2542,6 @@ UNIQUE (id, training_profile_id, training_config_sha256) -- training_jobs, 복�
 UNIQUE (skill_key)
 UNIQUE (skill_id, version)
 UNIQUE (training_job_id)
-UNIQUE (skill_id, destination_key)
-UNIQUE (request_id)                                  -- vlm_inference_results
 UNIQUE (owner_id, task_key)
 UNIQUE (task_id, version)
 UNIQUE (task_version_id, step_order)
@@ -2638,8 +2636,8 @@ retentionExpiresAt = MAX(
 ### 19.4 모델 로딩
 
 1. 사용자가 READY SkillVersion들로 TaskVersion을 생성한다.
-2. 사용자가 Robot에 TaskVersion과 VLM 필요 스킬의 정확한 VLM 모델 버전을 지정해 배포를 요청한다.
-3. EC2가 모든 SkillVersion의 `gate.passed=true`, RobotProfile 호환성, VLM 요구사항을 검증한다.
+2. 사용자가 Robot에 TaskVersion을 지정해 배포를 요청한다.
+3. EC2가 모든 SkillVersion의 `gate.passed=true`와 RobotProfile 호환성을 검증한다.
 4. EC2가 Deployment와 중복 제거된 DeploymentItem을 생성한다.
 5. Jetson이 pending Deployment를 조회한다.
 6. EC2가 고정된 TaskStep과 SkillVersion에 대한 제한 시간 S3 URL을 반환한다.
@@ -2661,7 +2659,7 @@ retentionExpiresAt = MAX(
 - [ ] 필수 ZIP entry, Zip Slip·symlink·nested ZIP·크기/entry 제한 검증
 - [ ] JSON/CSV schema, frame mapping, timestamp·단위·좌표계 계약 검증
 - [ ] Episode의 skillId·source·labelStatus·success·contractVersion·qualityStatus 저장 및 검색 검증
-- [ ] 정의되지 않은 skillKey로 학습·VLM·배포 요청 차단
+- [ ] 정의되지 않은 skillKey로 학습·배포 요청 차단
 - [ ] `READY` Episode만 새 학습 입력으로 선택 가능
 - [ ] 한 TrainingJob의 Episode가 동일 StorageNode에 존재하는지 확인
 - [ ] TrainingJob 입력 snapshot 생성 후 Episode 목록 변경 차단
@@ -2695,9 +2693,6 @@ retentionExpiresAt = MAX(
 - [ ] 배포 실패 시 기존 currentDeployment 유지
 - [ ] 같은 Robot에 진행 중 Deployment 중복 생성 차단
 - [ ] Robot·Skill별 ACTIVE RobotSkillDeployment 하나만 유지
-- [ ] needsVlm 스킬에 READY VLM 모델 버전 누락 시 배포 차단
-- [ ] VLM skillKey·destination·bbox·confidence 계약 검증
-- [ ] abstain=true 또는 confidence 미달 시 motionAllowed=false 확인
 - [ ] SSE 단절 후 REST 조회로 상태 복구
 - [ ] 토큰·서명 URL·장치 secret 로그 마스킹
 - [ ] 원격 통신 단절과 무관한 Jetson 로컬 안전 정지 검증
@@ -2717,15 +2712,13 @@ retentionExpiresAt = MAX(
 11. GPU worker가 지원할 TrainingProfile key·version과 설정 override 차단 방식.
 12. CKPT 내부 필수 메타데이터 및 안전한 검증 방식.
 13. 게이트 재측정 허용 여부, 측정 주체, `rollout_success` 집계 방식.
-14. VLM 모델 버전 등록 주체와 스킬별 destination seed.
-15. VLM inference 결과 보존 기간과 원본 입력 이미지 연계 여부.
-16. S3 버킷 이름, 버전 관리, 객체 잠금·삭제 정책.
-17. RobotProfile의 contractVersion, 카메라, 입력·출력 규격.
-18. TaskStep의 지원 parameters와 timeout 의미.
-19. TaskVersion에 서로 다른 architecture의 SkillVersion을 혼합할 수 있는지.
-20. Jetson 모델 캐시·용량 제한·기존 버전 보관 개수.
-21. 배포 URL 만료 시간과 대용량 CKPT 재개 다운로드 지원 여부.
-22. 실제 로봇의 시작·중지·통신 두절·복구 안전 정책.
+14. S3 버킷 이름, 버전 관리, 객체 잠금·삭제 정책.
+15. RobotProfile의 contractVersion, 카메라, 입력·출력 규격.
+16. TaskStep의 지원 parameters와 timeout 의미.
+17. TaskVersion에 서로 다른 architecture의 SkillVersion을 혼합할 수 있는지.
+18. Jetson 모델 캐시·용량 제한·기존 버전 보관 개수.
+19. 배포 URL 만료 시간과 대용량 CKPT 재개 다운로드 지원 여부.
+20. 실제 로봇의 시작·중지·통신 두절·복구 안전 정책.
 
 ---
 
@@ -2948,3 +2941,53 @@ RUN-05 요청 예시:
   }
 }
 ```
+
+
+
+
+## 23. 웹 클라이언트 보완 API (1.1.0)
+
+이 절은 1.1.0에서 추가된 계약이며 앞 절과 충돌하면 이 절을 적용한다.
+
+### SKILL-09 학습 입력 조건 조회
+
+GET /api/v1/skills/{skillId}/training-requirements · 사용자. 성공 200은 TrainingRequirements를 반환한다. 프리셋 선택 API가 아니며 고정 TrainingProfile 정책을 유지한다. TRAIN-01과 TRAIN-06에서 같은 조건을 다시 검증한다.
+
+### 수집 진행 계약
+
+COLLECT_NEW TrainingJob 자체를 수집 묶음으로 사용하며 CaptureSession은 추가하지 않는다. CREATED, COLLECTING, INPUT_VALIDATING은 데이터 준비 단계이고 QUEUED 이후가 학습 단계다. TRAIN-03과 training.input-progress SSE는 collection의 expectedCount, uploadedCount, validatingCount, readyCount, warningCount, invalidCount, receivedBytes를 동일하게 반환한다.
+
+### TASK-08 준비 상태 보완
+
+응답에 valid, readiness, robotId, taskVersionId, deploymentId, observedAt, blockingReasons, warnings를 반환한다. readiness는 PREPARING, READY, BLOCKED, UNKNOWN이다. 실행 생성 시 상태를 다시 검증한다.
+
+### EXEC-01 실행 생성
+
+POST /api/v1/robots/{robotId}/executions · 사용자 · Idempotency-Key 필수. 요청은 taskVersionId와 deploymentId를 포함한다. 서버는 소유권, Robot busy 및 연결 상태, Deployment SUCCEEDED, 현재 TaskVersion, 모델 호환성과 gate를 다시 검증한다. 성공 202는 RobotExecution을 반환한다.
+
+### EXEC-02 실행 목록
+
+GET /api/v1/robots/{robotId}/executions · 사용자. taskVersionId, status, startedFrom, startedTo와 공통 페이지네이션을 지원한다.
+
+### EXEC-03 실행 상세
+
+GET /api/v1/robots/{robotId}/executions/{executionId} · 사용자. 성공 200은 RobotExecution을 반환한다.
+
+### EXEC-04 실행 취소
+
+POST /api/v1/robots/{robotId}/executions/{executionId}/cancel · 사용자 · Idempotency-Key 필수. REQUESTED는 즉시 CANCELED가 될 수 있다. STARTING 또는 RUNNING은 202와 CANCEL_REQUESTED를 반환하며 Jetson 확인 전 CANCELED로 표시하지 않는다. 종료 상태는 409 STATE_CONFLICT다.
+
+### JETSON-06 실행 상태 보고
+
+PATCH /api/v1/robots/me/executions/{executionId} · Jetson. 요청은 reportId, sequence, status, currentStep, totalSteps, progressPercent, error를 포함한다. reportId와 sequence로 중복 및 역순 보고를 차단한다. FAILED에는 error가 필수다.
+
+
+RobotExecution 상태는 REQUESTED, STARTING, RUNNING, CANCEL_REQUESTED, CANCELED, SUCCEEDED, FAILED, STATUS_UNKNOWN이다. 현재 DB 스키마에는 영속 구조가 없으므로 구현 전에 robot_executions 테이블, 상태 CHECK, FK, 멱등성 및 로봇별 활성 실행 UNIQUE 제약을 Flyway migration으로 추가한다.
+
+### SSE 실행 이벤트
+
+| `execution.updated` | `{ executionId, robotId, taskVersionId, deploymentId, status, currentStep, totalSteps, progressPercent, error, occurredAt }` |
+
+### 범위 제외
+
+CaptureSession, 사용자 학습 preset, 튜토리얼 이수, 알림 센터, 관리자 권한 및 원격 모터 제어 API는 1.1.0 범위에 포함하지 않는다.
