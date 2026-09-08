@@ -18,20 +18,24 @@
             android:textSize="22sp"
             android:textStyle="bold" />
 
-        <!-- QR 스캔 영역(예정) 자리표시 -->
+        <!-- QR 스캔 라이브 미리보기 -->
         <FrameLayout
-            android:layout_width="220dp"
-            android:layout_height="220dp"
+            android:layout_width="240dp"
+            android:layout_height="240dp"
             android:layout_marginTop="24dp"
             android:background="#1C1C1C">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="▢\nQR 스캔 영역"
-                android:gravity="center"
-                android:textColor="#666666"
-                android:textSize="14sp" />
+
+            <androidx.camera.view.PreviewView
+                android:id="@+id/previewView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- 스캔 가이드 프레임 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_margin="16dp"
+                android:background="@android:color/transparent" />
         </FrameLayout>
 
         <TextView
@@ -41,16 +45,18 @@
             android:text="QR 을 인식해 주세요"
             android:textColor="#FFFFFF"
             android:textSize="18sp" />
+
         <TextView
+            android:id="@+id/scanStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="세션·스킬 연동용 (준비 중)"
+            android:text="세션·스킬 연동용"
             android:textColor="#888888"
             android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- 하단: 임시 넘어가기 -->
+    <!-- 하단: QR 없이 진행 -->
     <Button
         android:id="@+id/skipBtn"
         android:layout_width="wrap_content"
@@ -62,5 +68,5 @@
         android:background="#FF2A6E3F"
         android:textColor="#FFFFFF"
         android:textSize="17sp"
-        android:text="넘어가기 →" />
+        android:text="QR 없이 진행 →" />
 </FrameLayout>
