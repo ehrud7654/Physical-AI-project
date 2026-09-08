@@ -47,4 +47,10 @@ dependencies {
     implementation("com.google.ar:core:1.45.0")
     // 업로드 큐 (앱이 죽어도 재시도, Wi-Fi·충전 조건)
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // QR 스캔(온보딩): CameraX 미리보기 + ML Kit 바코드(온디바이스, 네트워크 불필요)
+    implementation("androidx.activity:activity-ktx:1.9.2")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 }
