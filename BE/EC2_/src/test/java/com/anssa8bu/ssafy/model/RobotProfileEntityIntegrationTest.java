@@ -4,23 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.anssa8bu.ssafy.model.entity.RobotProfile;
 import com.anssa8bu.ssafy.support.IntegrationTestBase;
-import com.anssa8bu.ssafy.vlm.entity.*;
 import jakarta.persistence.EntityManager;
-import java.math.BigDecimal;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 
-class ModelVlmEntityIntegrationTest extends IntegrationTestBase {
+class RobotProfileEntityIntegrationTest extends IntegrationTestBase {
   @Autowired EntityManager em;
 
   @Test
   @Transactional
   @Rollback
-  void jsonUuidEnumNumericSurviveFlushClearAndRollback() {
-    UUID profileId = UUID.randomUUID(), modelId = UUID.randomUUID(), policyId = UUID.randomUUID();
+  void jsonUuidSurviveFlushClearAndRollback() {
+    UUID profileId = UUID.randomUUID();
     Map<String, Object> camera = Map.of("names", List.of("front"));
     em.persist(
         new RobotProfile(
@@ -33,16 +31,8 @@ class ModelVlmEntityIntegrationTest extends IntegrationTestBase {
             camera,
             Map.of("joints", 6),
             Map.of("space", "joint")));
-    em.persist(
-        new VlmModelVersion(
-            modelId, "test-" + modelId, "vlm", VlmModelStatus.CANDIDATE, Map.of("params", 7)));
-    em.persist(new VlmPolicy(policyId, "policy-" + policyId, 1, new BigDecimal("0.7500"), true));
     em.flush();
     em.clear();
     assertThat(em.find(RobotProfile.class, profileId).getCameraContract()).isEqualTo(camera);
-    assertThat(em.find(VlmModelVersion.class, modelId).getModelMetadata())
-        .containsEntry("params", 7);
-    assertThat(em.find(VlmPolicy.class, policyId).getConfidenceThreshold())
-        .isEqualByComparingTo("0.7500");
   }
 }

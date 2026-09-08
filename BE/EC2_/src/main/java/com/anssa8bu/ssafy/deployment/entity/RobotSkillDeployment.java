@@ -22,9 +22,6 @@ public class RobotSkillDeployment extends CreatedEntity {
   @Column(name = "deployment_id", nullable = false)
   private UUID deploymentId;
 
-  @Column(name = "vlm_model_version_id")
-  private UUID vlmModelVersionId;
-
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 20)
   private RobotSkillDeploymentStatus status;

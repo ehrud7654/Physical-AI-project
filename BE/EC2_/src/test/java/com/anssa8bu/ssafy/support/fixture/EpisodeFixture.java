@@ -83,7 +83,6 @@ public final class EpisodeFixture {
             SkillStatus.PLANNED,
             "fixture",
             null,
-            false,
             null);
     em.persist(skill);
     return skill;

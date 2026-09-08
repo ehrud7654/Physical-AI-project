@@ -113,18 +113,6 @@ class CheckConstraintIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void vlmPolicyThresholdBetweenZeroAndOne() {
-    assertCheckViolation(
-        "vlm_policies_confidence_threshold_check",
-        () ->
-            jdbc.update(
-                "insert into vlm_policies (id, policy_key, version, confidence_threshold, enabled)"
-                    + " values (?, ?, 1, 1.5, false)",
-                UUID.randomUUID(),
-                "policy-" + UUID.randomUUID()));
-  }
-
-  @Test
   void outboxStatusEnumAfterV5() {
     UUID id = outbox();
     assertCheckViolation(

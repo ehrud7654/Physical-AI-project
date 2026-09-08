@@ -19,9 +19,6 @@ public class DeploymentItem extends AuditableEntity {
   @Column(name = "gate_passed", nullable = false)
   private boolean gatePassed;
 
-  @Column(name = "vlm_model_version_id")
-  private UUID vlmModelVersionId;
-
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 30)
   private DeploymentItemStatus status;

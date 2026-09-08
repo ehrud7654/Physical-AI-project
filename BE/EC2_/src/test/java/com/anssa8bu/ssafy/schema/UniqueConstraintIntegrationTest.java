@@ -13,9 +13,7 @@ import com.anssa8bu.ssafy.training.entity.TrainingProfile;
 import com.anssa8bu.ssafy.training.entity.TrainingProfileStatus;
 import com.anssa8bu.ssafy.user.entity.User;
 import com.anssa8bu.ssafy.user.entity.UserStatus;
-import com.anssa8bu.ssafy.vlm.entity.VlmPolicy;
 import jakarta.persistence.EntityManager;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -106,22 +104,6 @@ class UniqueConstraintIntegrationTest extends IntegrationTestBase {
     deployments.pendingDeployment(g.robotId(), g.taskVersionId());
     deployments.pendingDeployment(g.robotId(), g.taskVersionId());
     assertUniqueViolation("uq_robot_active_deployment", em::flush);
-  }
-
-  @Test
-  void vlmPolicyKeyHasAtMostOneEnabledVersion() {
-    String key = "policy-" + UUID.randomUUID();
-    em.persist(new VlmPolicy(UUID.randomUUID(), key, 1, new BigDecimal("0.7000"), true));
-    em.persist(new VlmPolicy(UUID.randomUUID(), key, 2, new BigDecimal("0.8000"), true));
-    assertUniqueViolation("uq_vlm_policy_enabled", em::flush);
-  }
-
-  @Test
-  void disabledVlmPolicyVersionsMayCoexist() {
-    String key = "policy-" + UUID.randomUUID();
-    em.persist(new VlmPolicy(UUID.randomUUID(), key, 1, new BigDecimal("0.7000"), false));
-    em.persist(new VlmPolicy(UUID.randomUUID(), key, 2, new BigDecimal("0.8000"), false));
-    assertThatCode(em::flush).doesNotThrowAnyException();
   }
 
   @Test

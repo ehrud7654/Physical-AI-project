@@ -18,7 +18,6 @@ class SkillTest {
             SkillStatus.PLANNED,
             "집어 옮기기",
             null,
-            false,
             null);
 
     assertThat(skill.getTier()).isEqualTo(SkillTier.TUTORIAL);
@@ -37,7 +36,6 @@ class SkillTest {
                     SkillStatus.PLANNED,
                     "데모 스킬",
                     null,
-                    false,
                     null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("DEMO skill requires persona");
