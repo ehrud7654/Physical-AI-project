@@ -60,7 +60,6 @@ class EpisodeEntityIntegrationTest extends IntegrationTestBase {
             SkillStatus.PLANNED,
             "test",
             null,
-            false,
             null));
     Instant started = Instant.parse("2026-09-08T01:00:00Z"), ended = started.plusSeconds(5);
     CaptureMetadata metadata =

@@ -25,7 +25,6 @@ class SkillJpaMappingTest extends IntegrationTestBase {
             SkillStatus.PLANNED,
             "JPA 매핑 테스트",
             null,
-            false,
             null);
 
     entityManager.persist(skill);

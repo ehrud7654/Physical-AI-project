@@ -35,9 +35,6 @@ public class Skill extends AuditableEntity {
   @Column(name = "description", columnDefinition = "text")
   private String description;
 
-  @Column(name = "needs_vlm", nullable = false)
-  private boolean needsVlm;
-
   @Column(name = "persona", columnDefinition = "text")
   private String persona;
 
@@ -50,7 +47,6 @@ public class Skill extends AuditableEntity {
       SkillStatus status,
       String displayName,
       String description,
-      boolean needsVlm,
       String persona) {
     this.id = Objects.requireNonNull(id, "id must not be null");
     this.skillKey = requireText(skillKey, "skillKey");
@@ -58,7 +54,6 @@ public class Skill extends AuditableEntity {
     this.status = Objects.requireNonNull(status, "status must not be null");
     this.displayName = requireText(displayName, "displayName");
     this.description = description;
-    this.needsVlm = needsVlm;
     this.persona = persona;
 
     if (tier == SkillTier.DEMO && (persona == null || persona.isBlank())) {
@@ -95,10 +90,6 @@ public class Skill extends AuditableEntity {
 
   public String getDescription() {
     return description;
-  }
-
-  public boolean isNeedsVlm() {
-    return needsVlm;
   }
 
   public String getPersona() {
