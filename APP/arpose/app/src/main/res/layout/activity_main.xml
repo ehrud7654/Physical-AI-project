@@ -9,76 +9,162 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <TextView
-        android:id="@+id/poseText"
+    <!-- 상단 상태바: 추적 신호등 + AE 배지 + 드롭경고 + REC 타이머 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:background="#99000000"
-        android:padding="14dp"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp">
+
+        <TextView
+            android:id="@+id/sigDot"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="●"
+            android:textColor="#888888"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/sigText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="추적 대기"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/dropWarn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="14dp"
+            android:text="⚠ 드롭"
+            android:textColor="#FF5555"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/aeBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="14dp"
+            android:text="AE AUTO"
+            android:textColor="#FFCC66"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/recTimer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="● 00:00"
+            android:textColor="#FF4444"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- 상세(개발용 원시값). 기본 숨김, ⓘ 토글로 표시 -->
+    <TextView
+        android:id="@+id/poseText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="52dp"
+        android:background="#AA000000"
+        android:padding="10dp"
         android:textColor="#00FF66"
-        android:textSize="14sp"
+        android:textSize="12sp"
         android:fontFamily="monospace"
+        android:visibility="gone"
         android:text="@string/waiting" />
 
-    <Button
-        android:id="@+id/focusBtn"
+    <!-- 우상단: 상세토글 · 기록 · 설정 -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:orientation="horizontal"
+        android:layout_marginTop="48dp"
+        android:layout_marginEnd="12dp">
+
+        <Button
+            android:id="@+id/detailBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingHorizontal="14dp"
+            android:background="#AA333333"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:text="ⓘ" />
+
+        <Button
+            android:id="@+id/historyBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="#AA333333"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:text="기록" />
+
+        <Button
+            android:id="@+id/settingsBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="#AA333333"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:text="설정" />
+    </LinearLayout>
+
+    <!-- 좌하단: AF · AE (임시, 설정 이관은 S15P21A103-145) -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
+        android:orientation="horizontal"
         android:layout_marginStart="20dp"
-        android:layout_marginBottom="52dp"
-        android:background="#FF225533"
-        android:textColor="#FFFFFF"
-        android:textSize="15sp"
-        android:text="@string/af" />
+        android:layout_marginBottom="24dp">
 
-    <Button
-        android:id="@+id/settingsBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="10dp"
-        android:layout_marginEnd="12dp"
-        android:background="#AA333333"
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:text="설정" />
+        <Button
+            android:id="@+id/focusBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#FF225533"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:text="@string/af" />
 
-    <Button
-        android:id="@+id/historyBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="10dp"
-        android:layout_marginEnd="84dp"
-        android:background="#AA333333"
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:text="기록" />
+        <Button
+            android:id="@+id/aeBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:background="#FF444444"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:text="AE" />
+    </LinearLayout>
 
-    <Button
-        android:id="@+id/aeBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="20dp"
-        android:layout_marginBottom="52dp"
-        android:background="#FF444444"
-        android:textColor="#FFFFFF"
-        android:textSize="15sp"
-        android:text="AE" />
-
+    <!-- 하단 중앙: 큰 REC -->
     <Button
         android:id="@+id/recBtn"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="48dp"
-        android:paddingLeft="44dp"
-        android:paddingRight="44dp"
+        android:layout_marginBottom="20dp"
+        android:paddingHorizontal="64dp"
+        android:paddingVertical="14dp"
         android:background="#FF333333"
         android:textColor="#FFFFFF"
-        android:textSize="20sp"
+        android:textSize="22sp"
         android:text="@string/rec" />
 </FrameLayout>
