@@ -10,6 +10,7 @@ import {
   fetchRobots,
   fetchDatasets,
   fetchSavedWorks,
+  fetchLearnedSkills,
   fetchTrainings,
   fetchUmis,
   registerDevice,
@@ -50,7 +51,7 @@ interface AppStore {
   cancelTrainingByName: (name: string) => Promise<void>;
   retryTrainingByName: (name: string) => Promise<void>;
   completeLearning: (input: { name: string; robot: string }) => Promise<void>;
-  saveWorkflow: (work: SavedWork) => Promise<void>;
+  saveWorkflow: (work: SavedWork) => Promise<SavedWork>;
   saveRobotPermissions: (next: Record<string, string[]>) => Promise<void>;
 }
 
@@ -97,17 +98,19 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setLoadError(false);
     try {
-      const [nextRobots, nextUmis, nextDatasets, nextTrainings, nextWorks] = await Promise.all([
+      const [nextRobots, nextUmis, nextDatasets, nextTrainings, nextSkills, nextWorks] = await Promise.all([
         fetchRobots(),
         fetchUmis(),
         fetchDatasets(),
         fetchTrainings(),
+        fetchLearnedSkills(),
         fetchSavedWorks(),
       ]);
       setRobots(nextRobots);
       setUmis(nextUmis);
       setDatasets(nextDatasets);
       setTrainings(nextTrainings);
+      setSkills(nextSkills);
       setTrainingUpdatedAt(Date.now());
       setSavedWorks(nextWorks);
     } catch {
@@ -203,7 +206,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     : trainings, [learningDraft, trainings]);
 
   const saveWorkflow = useCallback(async (work: SavedWork) => {
-    setSavedWorks(await saveWork(work));
+    const next = await saveWork(work);
+    setSavedWorks(next);
+    const saved = work.id.startsWith('draft-')
+      ? next.find((item) => item.name === work.name)
+      : next.find((item) => item.id === work.id);
+    if (!saved) throw new Error('저장된 작업을 다시 조회하지 못했어요.');
+    return saved;
   }, []);
 
   const saveRobotPermissions = useCallback(async (next: Record<string, string[]>) => {

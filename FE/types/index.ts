@@ -60,6 +60,7 @@ export interface DashboardData {
 
 export interface Robot {
   id: string;
+  jetsonDeviceId?: string;
   name: string;
   location: string;
   status: RobotStatus;
@@ -162,6 +163,7 @@ export interface WorkflowBlock {
 /** 학습이 완료되어 WORKFLOW에서 사용할 수 있는 단일 동작 */
 export interface LearnedSkill {
   id: string;
+  skillId?: string;
   name: string;
   kind: Extract<BlockKind, 'umi' | 'vlm'>;
   description: string;
@@ -171,6 +173,9 @@ export interface LearnedSkill {
 /** 여러 Skill과 제어 블록을 순서대로 조합한 저장 작업 */
 export interface SavedWork {
   id: string;
+  taskKey?: string;
+  taskVersionId?: string | null;
+  version?: number | null;
   name: string;
   /** 편집기에서 마지막으로 선택한 로봇. 실행 시 다른 로봇으로 변경할 수 있다. */
   robotId: string;

@@ -15,6 +15,14 @@ interface ApiDevice {
   createdAt: string;
 }
 
+interface ApiRobot {
+  id: string;
+  jetsonDeviceId: string;
+  name: string;
+  connectionStatus: 'ONLINE' | 'OFFLINE';
+  busy: boolean;
+}
+
 export interface RegisterDeviceInput {
   type: DeviceType;
   id: string;
@@ -23,8 +31,12 @@ export interface RegisterDeviceInput {
 }
 
 export async function fetchRobots(): Promise<Robot[]> {
-  const devices = await apiRequest<ApiDevice[]>('/devices?deviceType=JETSON');
-  return devices.map(toRobot);
+  const [robots, devices] = await Promise.all([
+    apiRequest<ApiRobot[]>('/robots'),
+    apiRequest<ApiDevice[]>('/devices?deviceType=JETSON'),
+  ]);
+  const devicesById = new Map(devices.map((device) => [device.id, device]));
+  return robots.map((robot) => toRobot(robot, devicesById.get(robot.jetsonDeviceId)));
 }
 
 export async function fetchUmis(): Promise<Umi[]> {
@@ -71,12 +83,13 @@ function toApiDeviceType(type: DeviceType): ApiDeviceType {
   return type === 'robot' ? 'JETSON' : 'UMI_CAMERA';
 }
 
-function toRobot(device: ApiDevice): Robot {
+function toRobot(robot: ApiRobot, device?: ApiDevice): Robot {
   return {
-    id: device.id,
-    name: device.name,
-    location: device.location ?? '위치 미지정',
-    status: device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    id: robot.id,
+    jetsonDeviceId: robot.jetsonDeviceId,
+    name: robot.name,
+    location: device?.location ?? '위치 미지정',
+    status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     model: '배포 정보 없음',
   };
 }

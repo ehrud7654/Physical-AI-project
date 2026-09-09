@@ -57,6 +57,8 @@ function getWorkflowIssues(work: SavedWork): string[] {
   if (!work.name.trim()) issues.push('작업명이 비어 있어요.');
   if (!work.blocks.length) issues.push('실행할 블록이 없어요.');
   blocks.forEach((block) => {
+    if (isSkillBlock(block) && !block.skillId) issues.push(`${block.title}에 학습 버전 정보가 없어요.`);
+    if (!isSkillBlock(block)) issues.push(`${block.title}은 현재 서버 작업 명세에서 지원하지 않아요.`);
     if (block.kind === 'motor') {
       const range = motorRanges[block.motor ?? ''];
       if (!range || block.angle === undefined || block.angle < range[0] || block.angle > range[1]) issues.push(`${block.title} 설정을 확인해 주세요.`);
@@ -321,7 +323,9 @@ function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { onNavigat
     catch { setError(true); }
     finally { setLoading(false); }
   }, []);
+  /* eslint-disable react-hooks/set-state-in-effect -- 화면 진입 시 서버 대시보드를 조회한다. */
   useEffect(() => { void loadDashboard(); }, [loadDashboard]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (loading) return <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>대시보드를 불러오는 중이에요</h2></section></div>;
   if (error || !dashboard) return <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>대시보드를 불러오지 못했어요</h2><button className="primary-button" onClick={() => void loadDashboard()}>다시 시도</button></section></div>;
@@ -424,7 +428,7 @@ function RobotDetailView({ robotId, onBack, onNavigate, onToast }: { robotId: st
   if (!robot) return <div className="center-panel"><section className="card state-card"><span className="state-icon">R</span><h2>등록된 로봇이 없어요</h2><p>장치 관리에서 로봇을 먼저 등록해 주세요.</p><button className="primary-button" onClick={onBack}>장치 관리로 이동</button></section></div>;
 
   return <><button className="back-link" onClick={onBack}>← 로봇 목록</button><div className="robot-detail-hero card"><div className="device-visual large">R</div><div><p className="eyebrow">{robot.id}</p><h1>{robot.name}</h1><p>{robot.location} · 마지막 통신 방금 전</p></div><span className={`status-pill large status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><div className="detail-actions"><button className="secondary-button" onClick={() => setSettingsOpen(true)}>설정</button><button className="primary-button" disabled={robot.status !== '온라인'} onClick={() => onNavigate('work')}>작업 생성</button></div></div><div className="detail-metrics robot-detail-metrics"><article className="card"><small>오늘 작업</small><strong>8건</strong><p>성공 7 · 실패 1</p></article><article className="card"><small>가동 시간</small><strong>6시간 24분</strong><p>최근 24시간 기준</p></article><article className="card"><small>오류</small><strong>{robot.status === '오류' ? '2건' : '0건'}</strong><p>{robot.status === '오류' ? '확인이 필요해요' : '정상 작동 중'}</p></article></div><div className="robot-history-grid"><section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 작업 기록</h2></div></div><div className="history-list"><p><strong>빨간 블록 정리</strong><span className="training-badge complete">성공</span><small>오늘 10:24 · 1분 18초</small></p><p><strong>부품 상자 이동</strong><span className="training-badge complete">성공</span><small>오늘 09:47 · 2분 03초</small></p><p><strong>컵 분류하기</strong><span className="training-badge failed">실패</span><small>어제 17:31 · 연결 끊김</small></p></div></section></div>
-    {settingsOpen && <RobotSettingsModal robot={robot} onClose={() => setSettingsOpen(false)} onSave={async (patch) => { await updateRobotInfo(robot.id, patch); setSettingsOpen(false); onToast('로봇 설정을 저장했어요.'); }} />}
+    {settingsOpen && <RobotSettingsModal robot={robot} onClose={() => setSettingsOpen(false)} onSave={async (patch) => { await updateRobotInfo(robot.jetsonDeviceId ?? robot.id, patch); setSettingsOpen(false); onToast('로봇 설정을 저장했어요.'); }} />}
   </>;
 }
 
@@ -727,7 +731,7 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
   const [query, setQuery] = useState('');
   const [selectedWorkId, setSelectedWorkId] = useState(savedWorks[0]?.id ?? '');
   const initialWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
-  const [robotId, setRobotId] = useState(initialWork?.robotId ?? robots[0]?.id ?? '');
+  const [robotId, setRobotId] = useState(initialWork?.robotId || robots[0]?.id || '');
   const [executing, setExecuting] = useState(false);
 
   const filteredWorks = savedWorks.filter((work) => {
@@ -754,14 +758,16 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
     setExecuting(false);
   };
 
-  useEffect(() => {
-    if (!executing || !selectedWork) return;
-    const timer = window.setTimeout(() => {
-      setExecuting(false);
-      onToast(`‘${selectedWork.name}’ 작업을 완료했어요.`);
-    }, 2200);
-    return () => window.clearTimeout(timer);
-  }, [executing, selectedWork, onToast]);
+  const executeSelectedWork = async () => {
+    if (!selectedWork || !canExecute) return;
+    try {
+      await deployment.execute();
+      setExecuting(true);
+      onToast(`‘${selectedWork.name}’ 작업 실행을 요청했어요.`);
+    } catch (cause) {
+      onToast(cause instanceof Error ? cause.message : '작업을 시작하지 못했어요.');
+    }
+  };
 
   if (!selectedWork) {
     return <div className="center-panel"><section className="card state-card"><span className="state-icon">i</span><h2>저장된 작업이 없어요</h2><p>첫 작업을 만들어 로봇이 할 일을 구성해 보세요.</p><button className="primary-button" onClick={() => onEdit('')}>작업 생성하기</button></section></div>;
@@ -802,9 +808,9 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
         <section className="detail-section execution-setup"><div className="detail-section-title"><div><h3>실행 설정</h3><p>실행할 로봇을 선택하고 준비 상태를 확인하세요.</p></div></div><label>실행할 로봇<select value={robotId} disabled={executing} onChange={(event) => { setRobotId(event.target.value); setExecuting(false); }}>{robots.map((robot) => <option key={robot.id} value={robot.id}>{robot.name} · {robot.status}</option>)}</select></label>
           <div className="preflight-grid"><div className={robotReady ? 'check-pass' : 'check-fail'}><span>{robotReady ? '✓' : '!'}</span><div><strong>로봇 상태</strong><small>{selectedRobot ? `${selectedRobot.name} · ${selectedRobot.status}` : '로봇을 선택해 주세요.'}</small></div></div><div className={!workflowIssues.length ? 'check-pass' : 'check-fail'}><span>{!workflowIssues.length ? '✓' : '!'}</span><div><strong>작업 유효성</strong><small>{workflowIssues[0] ?? `학습 동작 ${skillCount}개와 제어 블록 ${controlCount}개를 실행할 수 있어요.`}</small></div></div></div>
           <div className="deployment-status" role="status"><strong>{deployment.pending ? '배포 중' : deployment.ready ? `작업 v${deployment.version} · 실행 가능` : '배포 필요'}</strong><p>{deployment.ready ? `${selectedRobot?.name}에 현재 작업 버전이 준비됐어요.` : '현재 작업 구성을 확인하고 선택한 로봇에 배포하세요.'}</p>{deployment.error && <p role="alert">{deployment.error}</p>}{!deployment.ready && <button className="secondary-button" disabled={!robotReady || !!workflowIssues.length || deployment.pending} onClick={() => void deployment.deploy()}>{deployment.pending ? '배포 중...' : deployment.error ? '배포 다시 시도' : '작업 버전 배포'}</button>}</div>
-          <div className="execution-actions"><button className="secondary-button" onClick={() => onEdit(selectedWork.id)}>수정하기</button><button className="primary-button" disabled={!canExecute} onClick={() => { setExecuting(true); onToast(`‘${selectedWork.name}’ 작업을 시작했어요.`); }}>{executing ? '작업 실행 중...' : '▶ 작업 실행'}</button></div>
+          <div className="execution-actions"><button className="secondary-button" onClick={() => onEdit(selectedWork.id)}>수정하기</button><button className="primary-button" disabled={!canExecute} onClick={() => void executeSelectedWork()}>{executing ? '작업 실행 요청됨' : '▶ 작업 실행'}</button></div>
           {!robotReady && <p className="execution-disabled-reason">온라인 상태의 로봇에서만 작업을 실행할 수 있어요.</p>}
-          {executing && <div className="library-running"><i /><span>선택한 로봇에서 작업을 실행하고 있어요.</span><button className="danger-button" onClick={() => { setExecuting(false); onToast('작업을 중지했어요.'); }}>작업 중지</button></div>}
+          {executing && <div className="library-running"><i /><span>선택한 로봇에서 작업을 실행하고 있어요.</span><button className="danger-button" onClick={() => void deployment.cancel().then(() => { setExecuting(false); onToast('작업 중지를 요청했어요.'); })}>작업 중지</button></div>}
         </section>
       </aside>
     </div>
@@ -814,15 +820,12 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
 function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { editingWorkId: string | null; suggestedSkillName: string | null; onNavigate: (view: View) => void; onToast: (message: string) => void }) {
   const { robots, skills, savedWorks, saveWorkflow } = useAppStore();
   const editingWork = savedWorks.find((work) => work.id === editingWorkId);
-  const [robotId, setRobotId] = useState(editingWork?.robotId ?? robots[0]?.id ?? '');
-  const [blocks, setBlocks] = useState<WorkflowBlock[]>(() => structuredClone(editingWork?.blocks ?? (suggestedSkillName && skills.find(skill => skill.name === suggestedSkillName) ? [makeSkillBlock(skills.find(skill => skill.name === suggestedSkillName)!)] : [
-    { id: 1, kind: 'umi', title: '빨간 블록 집기' },
-    { id: 2, kind: 'motor', title: '모터 움직이기', motor: 'J2', angle: 35 },
-    { id: 3, kind: 'repeat', title: '반복하기', repeat: 2, children: [
-      { id: 4, kind: 'vlm', title: '물체를 상자로 이동' },
-      { id: 5, kind: 'motor', title: '모터 움직이기', motor: 'J3', angle: 25 },
-    ] },
-  ])));
+  const [robotId, setRobotId] = useState(editingWork?.robotId || robots[0]?.id || '');
+  const [blocks, setBlocks] = useState<WorkflowBlock[]>(() => structuredClone(
+    editingWork?.blocks ?? (suggestedSkillName && skills.find(skill => skill.name === suggestedSkillName)
+      ? [makeSkillBlock(skills.find(skill => skill.name === suggestedSkillName)!)]
+      : skills.slice(0, 1).map(makeSkillBlock)),
+  ));
   const [runningIndex, setRunningIndex] = useState(-1);
   const [workName, setWorkName] = useState(editingWork?.name ?? '빨간 블록 정리 작업');
   const [selectedWorkId, setSelectedWorkId] = useState(editingWork?.id ?? '');
@@ -845,10 +848,10 @@ function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { 
     if (!workName.trim()) { setNameError('작업 이름을 입력해 주세요.'); return false; }
     setNameError('');
     setSaving(true);
-    const workId = selectedWorkId || `WF-${Date.now()}`;
+    const workId = selectedWorkId || `draft-${Date.now()}`;
     try {
-      await saveWorkflow({ id: workId, name: workName.trim(), robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: new Date().toISOString() });
-      setSelectedWorkId(workId);
+      const saved = await saveWorkflow({ id: workId, name: workName.trim(), robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: new Date().toISOString() });
+      setSelectedWorkId(saved.id);
       onToast(`‘${workName.trim()}’ 작업을 저장했어요.`);
       return true;
     } catch { setNameError('저장하지 못했어요. 다시 시도해 주세요.'); return false; }
@@ -870,21 +873,18 @@ function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { 
     onToast(`‘${work.name}’ 작업을 불러왔어요.`);
   };
 
-  const startRun = () => {
+  const startRun = async () => {
     if (!workName.trim()) { setNameError('작업 이름을 입력해 주세요.'); return; }
     if (!canStartRun) return;
     setNameError('');
-    setRunningIndex(0);
+    try {
+      await deployment.execute();
+      setRunningIndex(0);
+      onToast('로봇에 작업 실행을 요청했어요.');
+    } catch (cause) {
+      setNameError(cause instanceof Error ? cause.message : '작업을 시작하지 못했어요.');
+    }
   };
-
-  useEffect(() => {
-    if (!running) return;
-    const timer = window.setTimeout(() => {
-      if (runningIndex >= blocks.length - 1) { setRunningIndex(-1); onToast('작업을 안전하게 완료했어요.'); }
-      else setRunningIndex((index) => index + 1);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [running, runningIndex, blocks.length, onToast]);
 
   const addBlock = (kind: BlockKind, repeatId?: number) => {
     const block = makeBlock(kind);
@@ -983,7 +983,7 @@ function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { 
       {workStep === 3 && <section className="card work-stage-card execution-stage">
         <div className="work-stage-heading"><div><p className="eyebrow">작업 실행</p><h2>{workName}</h2><p>{selectedRobot.name}에서 작업을 실행합니다.</p></div><span>{formatWorkDuration(estimateWorkflowSeconds(blocks))}</span></div>
         <div className="run-robot"><span className="robot-illustration">R</span><div><strong>{selectedRobot.name}</strong><small>{selectedRobot.location}</small></div><span className={`status-dot ${robotReady ? 'online' : 'busy'}`} /></div>
-        {running ? <div className="execution-focus"><strong>{runningIndex + 1} / {blocks.length}</strong><p>{blocks[runningIndex]?.title} 블록을 실행하고 있어요.</p><div className="mini-progress"><i style={{ width: `${((runningIndex + 1) / Math.max(1, blocks.length)) * 100}%` }} /></div><button className="danger-button" onClick={() => setRunningIndex(-1)}>■ 작업 중지</button></div> : <div className="execution-focus"><strong>실행 준비 완료</strong><p>작업 v{deployment.version}이 배포되었습니다. 주변 안전을 확인하고 시작하세요.</p><button className="primary-button run-button" disabled={!canStartRun} onClick={startRun}>▶ 작업 시작</button></div>}
+        {running ? <div className="execution-focus"><strong>{deployment.execution?.currentStep ?? 0} / {blocks.length}</strong><p>로봇이 작업 실행 요청을 처리하고 있어요.</p><div className="mini-progress"><i style={{ width: `${deployment.execution?.progressPercent ?? 0}%` }} /></div><button className="danger-button" onClick={() => void deployment.cancel().then(() => { setRunningIndex(-1); onToast('작업 중지를 요청했어요.'); })}>■ 작업 중지</button></div> : <div className="execution-focus"><strong>실행 준비 완료</strong><p>작업 v{deployment.version}이 배포되었습니다. 주변 안전을 확인하고 시작하세요.</p><button className="primary-button run-button" disabled={!canStartRun} onClick={() => void startRun()}>▶ 작업 시작</button></div>}
         <div className="work-stage-actions inside"><button className="secondary-button" disabled={running} onClick={() => setWorkStep(2)}>← 실행 준비</button><button className="text-button" disabled={running} onClick={() => onNavigate('library')}>작업 목록으로</button></div>
       </section>}
     </>
