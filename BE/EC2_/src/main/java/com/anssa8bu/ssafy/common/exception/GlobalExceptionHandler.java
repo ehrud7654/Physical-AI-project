@@ -25,7 +25,6 @@ public class GlobalExceptionHandler {
             .map(error -> error.getField() + ": " + error.getDefaultMessage())
             .distinct()
             .collect(Collectors.joining(", "));
-    return ResponseEntity.status(422)
-        .body(new ErrorResponse("VALIDATION_ERROR", message));
+    return ResponseEntity.status(422).body(new ErrorResponse("VALIDATION_ERROR", message));
   }
 }

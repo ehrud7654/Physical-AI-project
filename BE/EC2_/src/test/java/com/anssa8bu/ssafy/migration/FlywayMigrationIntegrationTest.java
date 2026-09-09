@@ -15,8 +15,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Spring 컨텍스트 없이 별도의 빈 database에서 Flyway를 직접 실행한다. IntegrationTestBase는 컨텍스트 기동 시 이미
- * migration을 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
+ * Spring 컨텍스트 없이 별도의 빈 database에서 Flyway를 직접 실행한다. IntegrationTestBase는 컨텍스트 기동 시 이미 migration을
+ * 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
  */
 class FlywayMigrationIntegrationTest {
   static final int MIGRATION_COUNT = 9;
@@ -88,7 +88,8 @@ class FlywayMigrationIntegrationTest {
     assertThat(count(url, "select count(*) from skills")).isEqualTo(7);
     assertThat(
             count(
-                url, "select count(*) from training_profiles where profile_key = 'umi-act-default'"))
+                url,
+                "select count(*) from training_profiles where profile_key = 'umi-act-default'"))
         .isOne();
     assertThat(
             count(

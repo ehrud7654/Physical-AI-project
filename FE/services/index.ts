@@ -6,3 +6,4 @@ export { fetchUsers, fetchPermissions, savePermissions } from './adminService';
 export { login, logout } from './authService';
 export { fetchDatasets, createEpisodePreviewSession } from './datasetService';
 export { fetchTaskReadiness, createRobotExecution, fetchRobotExecutions, cancelRobotExecution } from './executionService';
+export { fetchDashboard } from './dashboardService';

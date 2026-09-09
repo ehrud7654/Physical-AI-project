@@ -1,11 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { AuthenticatedUser, BlockKind, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, SavedWork, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
+import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotStatus, SavedWork, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { createEpisodePreviewSession, login as requestLogin, logout as clearAuthentication } from '@/services';
+import { createEpisodePreviewSession, fetchDashboard, login as requestLogin, logout as clearAuthentication } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -310,24 +310,52 @@ function GlobalHeader({ authenticated, activeView, onHome, onNavigate, onAuth, v
 }
 
 function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { onNavigate: (view: View) => void; onOpenDevices: (tab: DeviceType) => void; onSelectRobot: (id: string) => void }) {
-  const { robots, umis, trainings } = useAppStore();
-  const umiOnline = umis.filter((item) => item.status === '온라인').length;
-  const robotAvailable = robots.filter((item) => item.status === '온라인').length;
-  const runningTrainings = trainings.filter((item) => item.status === '진행 중');
-  const averageProgress = runningTrainings.length ? Math.round(runningTrainings.reduce((sum, item) => sum + item.progress, 0) / runningTrainings.length) : 0;
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try { setDashboard(await fetchDashboard()); }
+    catch { setError(true); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void loadDashboard(); }, [loadDashboard]);
+
+  if (loading) return <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>대시보드를 불러오는 중이에요</h2></section></div>;
+  if (error || !dashboard) return <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>대시보드를 불러오지 못했어요</h2><button className="primary-button" onClick={() => void loadDashboard()}>다시 시도</button></section></div>;
+
+  const { summary, robots, recentTrainings } = dashboard;
   return <>
     <div className="page-heading title-divider"><div><h1>대시 보드</h1></div></div>
     <div className="overview-cards">
-      <button onClick={() => onOpenDevices('umi')}><div><small>등록된 UMI</small><strong>{umis.length}<em>대</em></strong><p><i className="online-dot" /> {umiOnline}대 연결됨</p></div></button>
-      <button onClick={() => onOpenDevices('robot')}><div><small>등록된 로봇</small><strong>{robots.length}<em>대</em></strong><p><i className="online-dot" /> {robotAvailable}대 사용 가능</p></div></button>
-      <button onClick={() => onNavigate('training')}><div><small>진행 중인 학습</small><strong>{runningTrainings.length}<em>건</em></strong><p>평균 진행률 {averageProgress}%</p></div></button>
-      <button onClick={() => onNavigate('work')}><div><small>오늘 완료한 작업</small><strong>12<em>건</em></strong><p>성공률 96%</p></div></button>
+      <button onClick={() => onOpenDevices('umi')}><div><small>등록된 UMI</small><strong>{summary.umi.totalCount}<em>대</em></strong><p><i className="online-dot" /> {summary.umi.onlineCount}대 연결됨</p></div></button>
+      <button onClick={() => onOpenDevices('robot')}><div><small>등록된 로봇</small><strong>{summary.robots.totalCount}<em>대</em></strong><p><i className="online-dot" /> {summary.robots.availableCount}대 사용 가능</p></div></button>
+      <button onClick={() => onNavigate('training')}><div><small>진행 중인 학습</small><strong>{summary.trainings.runningCount}<em>건</em></strong><p>평균 진행률 {Math.round(summary.trainings.averageProgressPercent)}%</p></div></button>
+      <button onClick={() => onNavigate('work')}><div><small>오늘 완료한 작업</small><strong>{summary.executions.completedTodayCount}<em>건</em></strong><p>성공률 {Math.round(summary.executions.successRatePercent)}%</p></div></button>
     </div>
     <div className="dashboard-grid">
-      <section className="card dashboard-section"><div className="dashboard-title"><div><h2>로봇 상태</h2></div><button className="text-button" onClick={() => onOpenDevices('robot')}>전체 보기 →</button></div><div className="compact-robot-list">{robots.map(robot => <button key={robot.id} onClick={() => onSelectRobot(robot.id)}><span className="robot-tile">R</span><div><strong>{robot.name}</strong><small>{robot.id} · {robot.location}</small></div><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><em>›</em></button>)}</div></section>
-      <section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 학습</h2></div><button className="text-button" onClick={() => onNavigate('training')}>전체 보기 →</button></div><div className="compact-training-list">{trainings.map(item => <button key={item.name} onClick={() => onNavigate('training')}><div><strong>{item.name}</strong><small>{item.robot} · {item.stage}</small></div><span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span><div className="compact-training-progress"><div className="tiny-progress"><i style={{width: `${item.progress}%`}} /></div><em>{item.progress}%</em></div></button>)}</div></section>
+      <section className="card dashboard-section"><div className="dashboard-title"><div><h2>로봇 상태</h2></div><button className="text-button" onClick={() => onOpenDevices('robot')}>전체 보기 →</button></div><div className="compact-robot-list">{robots.map(robot => { const label = dashboardRobotStatusLabel[robot.status]; return <button key={robot.id} onClick={() => onSelectRobot(robot.id)}><span className="robot-tile">R</span><div><strong>{robot.name}</strong><small>{robot.id} · {formatDashboardTime(robot.lastSeenAt)}</small></div><span className={`status-pill status-${label.replace(' ', '-')}`}><i />{label}</span><em>›</em></button>; })}{!robots.length && <p className="table-empty">등록된 로봇이 없어요.</p>}</div></section>
+      <section className="card dashboard-section"><div className="dashboard-title"><div><h2>최근 학습</h2></div><button className="text-button" onClick={() => onNavigate('training')}>전체 보기 →</button></div><div className="compact-training-list">{recentTrainings.map(item => { const status = dashboardTrainingStatus(item.status); return <button key={item.id} onClick={() => onNavigate('training')}><div><strong>{item.skillName}</strong><small>{item.umiDeviceName} · {item.stage ?? '단계 확인 중'}</small></div><span className={`training-badge ${status === '실패' ? 'failed' : status === '완료' ? 'complete' : ''}`}>{status}</span><div className="compact-training-progress"><div className="tiny-progress"><i style={{width: `${item.progressPercent}%`}} /></div><em>{Math.round(item.progressPercent)}%</em></div></button>; })}{!recentTrainings.length && <p className="table-empty">최근 학습이 없어요.</p>}</div></section>
     </div>
   </>;
+}
+
+const dashboardRobotStatusLabel: Record<DashboardRobotStatus, RobotStatus> = {
+  AVAILABLE: '온라인', BUSY: '작업 중', OFFLINE: '오프라인',
+};
+
+function dashboardTrainingStatus(status: string): TrainingStatus {
+  if (status === 'SUCCEEDED') return '완료';
+  if (status === 'FAILED') return '실패';
+  if (status === 'CANCELED') return '취소됨';
+  if (status === 'CANCEL_REQUESTED') return '취소 요청';
+  return '진행 중';
+}
+
+function formatDashboardTime(value: string | null): string {
+  if (!value) return '통신 기록 없음';
+  return new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
 function DevicesView({ initialTab, onSelectRobot, onToast }: { initialTab: DeviceType; onSelectRobot: (id: string) => void; onToast: (message: string) => void }) {

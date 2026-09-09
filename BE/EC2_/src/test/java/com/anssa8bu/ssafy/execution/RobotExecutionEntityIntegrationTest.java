@@ -40,7 +40,8 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
     UUID executionId = UUID.randomUUID();
 
     entityManager.persist(
-        new User(ownerId, "execution-" + ownerId + "@test.local", "hash", "owner", UserStatus.ACTIVE));
+        new User(
+            ownerId, "execution-" + ownerId + "@test.local", "hash", "owner", UserStatus.ACTIVE));
     entityManager.persist(
         new Device(
             deviceId,
@@ -64,13 +65,7 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
         new Task(taskId, ownerId, "execution_" + taskId.toString().replace("-", ""), "task", null));
     entityManager.persist(new TaskVersion(taskVersionId, taskId, 1));
     entityManager.persist(
-        new Robot(
-            robotId,
-            ownerId,
-            deviceId,
-            profileId,
-            "robot",
-            RobotConnectionStatus.OFFLINE));
+        new Robot(robotId, ownerId, deviceId, profileId, "robot", RobotConnectionStatus.OFFLINE));
     entityManager.persist(new Deployment(deploymentId, robotId, taskVersionId));
 
     RobotExecution execution =

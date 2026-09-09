@@ -22,6 +22,42 @@ export interface LoginResponse {
   user: AuthenticatedUser;
 }
 
+export type DashboardRobotStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE';
+
+export interface DashboardData {
+  summary: {
+    umi: { totalCount: number; onlineCount: number };
+    robots: { totalCount: number; availableCount: number };
+    trainings: { runningCount: number; averageProgressPercent: number };
+    executions: {
+      completedTodayCount: number;
+      succeededTodayCount: number;
+      failedTodayCount: number;
+      successRatePercent: number;
+    };
+  };
+  robots: Array<{
+    id: string;
+    name: string;
+    status: DashboardRobotStatus;
+    lastSeenAt: string | null;
+    currentDeploymentId: string | null;
+  }>;
+  recentTrainings: Array<{
+    id: string;
+    skillId: string;
+    skillName: string;
+    umiDeviceId: string;
+    umiDeviceName: string;
+    status: string;
+    stage: string | null;
+    progressPercent: number;
+    startedAt: string | null;
+    updatedAt: string;
+  }>;
+  generatedAt: string;
+}
+
 export interface Robot {
   id: string;
   name: string;
