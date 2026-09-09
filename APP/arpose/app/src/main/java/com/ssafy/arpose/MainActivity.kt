@@ -160,8 +160,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         recBtn.setOnClickListener {
             when {
                 recorder?.isRecording == true -> pendingToggle = true   // 정지는 항상 허용
-                !trackingOk -> Toast.makeText(this, "추적 대기 - TRACKING 뜬 뒤 녹화하세요", Toast.LENGTH_SHORT).show()
-                !aeLock -> Toast.makeText(this, "AE 잠금 후 녹화하세요 (설정 → AE=LOCK)", Toast.LENGTH_SHORT).show()
+                !trackingOk -> Toast.makeText(this, "위치 잡는 중이에요 — 잠시 후 다시 시도", Toast.LENGTH_SHORT).show()
+                !aeLock -> Toast.makeText(this, "밝기를 고정해 주세요 (설정 → 밝기 고정)", Toast.LENGTH_SHORT).show()
                 else -> pendingToggle = true
             }
         }
@@ -473,8 +473,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         recorder?.start(meta)
         recorder?.currentDir?.let { imu.start(it) }
         runOnUiThread {
-            recBtn.text = "■ STOP"
-            recBtn.setBackgroundColor(0xFFCC2222.toInt())
+            recBtn.text = "■ 정지"
+            recBtn.setBackgroundColor(0xFFE0685E.toInt())
         }
     }
 
@@ -492,8 +492,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         }
         recStartMs = 0L
         runOnUiThread {
-            recBtn.text = "● REC"
-            recBtn.setBackgroundColor(0xFF333333.toInt())
+            recBtn.text = "● 촬영 시작"
+            recBtn.setBackgroundColor(0xFFE0685E.toInt())
             recTimer.visibility = View.GONE
             dropWarn.visibility = View.GONE
             Toast.makeText(
@@ -676,23 +676,29 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     append("r ${"%+.1f".format(roll)}°  p ${"%+.1f".format(pitch)}°  y ${"%+.1f".format(yaw)}°\n")
                 }
                 runOnUiThread {
-                    // 추적 신호등
+                    // 촬영 신호등 — 개발용 용어 대신 사람 말로
                     when {
-                        lowSpaceNotice -> { sigDot.setTextColor(0xFFFF4444.toInt()); sigText.text = "저장공간 부족 - 녹화 불가" }
-                        trackingOk -> { sigDot.setTextColor(0xFF33DD55.toInt()); sigText.text = if (recording) "추적 양호 · 녹화 중" else "추적 양호" }
-                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFFF4444.toInt()); sigText.text = "추적 끊김 - 텍스처 있는 곳을 비추세요" }
-                        else -> { sigDot.setTextColor(0xFFCCCC44.toInt()); sigText.text = "추적 대기" }
+                        lowSpaceNotice -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "저장공간 부족 — 녹화 불가" }
+                        trackingOk -> { sigDot.setTextColor(0xFF3FBF87.toInt()); sigText.text = if (recording) "녹화 중" else "촬영 준비 완료" }
+                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "위치 잡는 중 — 천천히 움직이세요" }
+                        else -> { sigDot.setTextColor(0xFFE0A44E.toInt()); sigText.text = "준비 중…" }
                     }
-                    aeBadge.text = if (aeLock) "AE 🔒" else "AE AUTO"
-                    aeBadge.setTextColor(if (aeLock) 0xFF66DD88.toInt() else 0xFFFFCC66.toInt())
-                    dropWarn.text = "⚠ 드롭 $dropped"
+                    aeBadge.text = if (aeLock) "밝기 고정" else "밝기 자동 (고정 필요)"
+                    aeBadge.setTextColor(if (aeLock) 0xFF3FBF87.toInt() else 0xFFE0A44E.toInt())
+                    dropWarn.text = "⚠ 누락 $dropped"
                     dropWarn.visibility = if (recording && dropped > 0) View.VISIBLE else View.GONE
                     if (recording) {
                         recTimer.visibility = View.VISIBLE
                         recTimer.text = "● %02d:%02d".format(elapsed / 60, elapsed % 60)
-                    } else recTimer.visibility = View.GONE
-                    // 녹화 못 하는 상태면 REC 를 흐리게 (탭하면 이유 토스트)
-                    recBtn.alpha = if (recording || trackingOk) 1f else 0.45f
+                    } else {
+                        recTimer.visibility = View.GONE
+                        // 녹화 아닐 때만 버튼 갱신 (녹화 중엔 startRecording 이 '정지'로 세팅)
+                        if (trackingOk) {
+                            recBtn.text = "● 촬영 시작"; recBtn.setBackgroundColor(0xFFE0685E.toInt()); recBtn.alpha = 1f
+                        } else {
+                            recBtn.text = "잠시만요…"; recBtn.setBackgroundColor(0xFF2E3A5E.toInt()); recBtn.alpha = 0.6f
+                        }
+                    }
                     poseText.text = detail
                 }
             }

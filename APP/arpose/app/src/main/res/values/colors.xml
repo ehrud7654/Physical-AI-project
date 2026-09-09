@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 웹 대시보드 테마: 네이비 크롬 + 실버 텍스트 + 상태색(초록/인디고/빨강) -->
+    <color name="navy900">#171E33</color>   <!-- 배경(설정·기록·온보딩) -->
+    <color name="navy800">#202A47</color>   <!-- 크롬(상태바·카드) -->
+    <color name="navy700">#2E3A5E</color>   <!-- 버튼·비활성 -->
+    <color name="chrome">#CC202A47</color>  <!-- 카메라 위 반투명 크롬 -->
+    <color name="silver">#E8EAF0</color>
+    <color name="silverMuted">#9AA2B8</color>
+    <color name="stGreen">#3FBF87</color>   <!-- 준비 완료/양호 -->
+    <color name="stIndigo">#9AA6F5</color>  <!-- 강조(어두운 배경용) -->
+    <color name="stRed">#E0685E</color>     <!-- REC/오류 -->
+    <color name="stAmber">#E0A44E</color>   <!-- 경고(고정 필요) -->
+</resources>
