@@ -77,7 +77,7 @@ class CommonConfigIntegrationTest extends IntegrationTestBase {
 
     mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
     mockMvc.perform(post("/api/v1/auth/login")).andExpect(status().isBadRequest());
-    mockMvc.perform(get("/api/v1/protected-test")).andExpect(status().isForbidden());
+    mockMvc.perform(get("/api/v1/protected-test")).andExpect(status().isUnauthorized());
   }
 
   private record JsonSample(Instant occurredAt, int count) {}
