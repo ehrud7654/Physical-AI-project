@@ -16,7 +16,7 @@
         android:layout_gravity="top"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#99000000"
+        android:background="@color/chrome"
         android:paddingHorizontal="16dp"
         android:paddingVertical="10dp">
 
@@ -25,7 +25,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="●"
-            android:textColor="#888888"
+            android:textColor="@color/silverMuted"
             android:textSize="20sp" />
 
         <TextView
@@ -34,8 +34,8 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="추적 대기"
-            android:textColor="#FFFFFF"
+            android:text="준비 중…"
+            android:textColor="@color/silver"
             android:textSize="17sp"
             android:textStyle="bold" />
 
@@ -44,8 +44,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="14dp"
-            android:text="⚠ 드롭"
-            android:textColor="#FF5555"
+            android:text="⚠ 누락"
+            android:textColor="@color/stRed"
             android:textSize="15sp"
             android:visibility="gone" />
 
@@ -54,8 +54,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="14dp"
-            android:text="AE AUTO"
-            android:textColor="#FFCC66"
+            android:text="밝기 자동 (고정 필요)"
+            android:textColor="@color/stAmber"
             android:textSize="15sp" />
 
         <TextView
@@ -63,7 +63,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="● 00:00"
-            android:textColor="#FF4444"
+            android:textColor="@color/stRed"
             android:textSize="17sp"
             android:textStyle="bold"
             android:visibility="gone" />
@@ -99,8 +99,8 @@
             android:layout_height="wrap_content"
             android:minWidth="0dp"
             android:paddingHorizontal="14dp"
-            android:background="#AA333333"
-            android:textColor="#FFFFFF"
+            android:background="@color/chrome"
+            android:textColor="@color/silverMuted"
             android:textSize="13sp"
             android:text="ⓘ" />
 
@@ -109,8 +109,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:background="#AA333333"
-            android:textColor="#FFFFFF"
+            android:background="@color/chrome"
+            android:textColor="@color/silver"
             android:textSize="13sp"
             android:text="기록" />
 
@@ -119,8 +119,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:background="#AA333333"
-            android:textColor="#FFFFFF"
+            android:background="@color/chrome"
+            android:textColor="@color/silver"
             android:textSize="13sp"
             android:text="설정" />
     </LinearLayout>
@@ -134,8 +134,8 @@
         android:layout_marginBottom="20dp"
         android:paddingHorizontal="64dp"
         android:paddingVertical="14dp"
-        android:background="#FF333333"
-        android:textColor="#FFFFFF"
+        android:background="@color/navy700"
+        android:textColor="@color/silver"
         android:textSize="22sp"
-        android:text="@string/rec" />
+        android:text="촬영 시작" />
 </FrameLayout>
