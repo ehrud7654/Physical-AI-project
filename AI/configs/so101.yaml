@@ -10,8 +10,9 @@
 robot:
   name: so101
   calibration: new_calib        # 관절 중앙 = 0
-  # ⚠️ old_calib(수평 완전신전 = 0)도 공식 배포본에 있다.
-  #    실물 펌웨어가 어느 쪽으로 캘리브되는지 HW 파트 확인 전까지 이 값은 미검증.
+  # 실물 J1~J5 calibration zero 및 direction=+1 확인 (HW, 2026-09-09).
+  # 실물 J3 하한은 encoder-safe -pi/2이며 configs/real/so101_ver1.json에서
+  # 더 좁게 적용한다. 이 파일은 공식 MuJoCo 모델의 -1.69를 유지한다.
   dof: 6                        # 5 관절 + 그리퍼
   mjcf: Simulation_mujoco/SO101/so101_new_calib.xml
 
