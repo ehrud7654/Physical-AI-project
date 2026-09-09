@@ -34,6 +34,6 @@ BE ──SSE(load_ckpt/start_skill/stop/estop)──> [SSE 스레드] ──큐�
 ## 스텁 / 미결 (착수 시점)
 
 - **BE 계약** (SSE/POST 엔드포인트·이벤트 필드·인증·run_id): `../../../docs/deploy_control_interface_draft.md` 제안 기준. `be_client.py`의 `TODO(BE)` 지점만 고치면 됨
-- **정책 lifecycle** (46 미구현): 서비스 미준비면 경고만. 46 완성 시 자동 연결
+- **정책 lifecycle**: 46 골격 완료 — `/so101_policy/change_state` 로 configure/activate/deactivate 전이 가능 (더미 모드). 정책 노드 미기동이면 경고만. 오케스트레이터↔정책 통합 검증은 아직
 - **ckpt 다운로드·sha256 검증**: `_on_load_ckpt`에 자리만. EC2 경유(EC2가 S3 연동)
 - **heartbeat 자원 수집** (cpu/mem/gpu_mem): 이슈 42(8GB 감시)와 연동 예정
