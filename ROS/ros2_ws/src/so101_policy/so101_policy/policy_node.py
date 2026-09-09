@@ -1,4 +1,5 @@
-"""정책 노드 (S15P21A103-46) — lifecycle 노드 골격.
+"""
+정책 노드 (S15P21A103-46) — lifecycle 노드 골격.
 
 역할: ckpt 추론 → EE pose → IK → 관절각(rad) 을 30Hz 로
       /forward_position_controller/commands 에 발행.
