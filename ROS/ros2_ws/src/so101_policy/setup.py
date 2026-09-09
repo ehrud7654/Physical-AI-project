@@ -13,10 +13,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ssafy',
-    maintainer_email='ssafy@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    maintainer='Hw',
+    maintainer_email='shwzone@gmail.com',
+    description='SO-101 정책 노드 (lifecycle, ckpt→IK→관절각 발행)',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'policy_node = so101_policy.policy_node:main',
         ],
     },
 )
