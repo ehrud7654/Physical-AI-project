@@ -86,11 +86,20 @@ FE/
 ├─ services/            # 인증과 도메인별 Mock 비동기 서비스
 ├─ types/               # 공통 TypeScript 타입
 ├─ public/              # 로고와 랜딩 이미지
-├─ DESIGN_SPEC.md       # 현재 UI·UX 규칙
-└─ TEAM_SETUP.md        # 팀원 개발 환경 안내
+├─ docs/
+│  ├─ README.md         # 문서 목차
+│  ├─ DESIGN_SPEC.md    # 현재 UI·UX 규칙
+│  └─ TEAM_SETUP.md     # 팀원 개발 환경 안내
+├─ package.json         # 실행 명령과 의존성
+└─ README.md            # 프로젝트 개요
 ```
 
 화면 컴포넌트는 현재 `app/page.tsx`에 모여 있습니다. 기능 확장 시 도메인별 화면과 공통 컴포넌트 분리가 필요합니다.
+
+### 문서 바로가기
+
+- [UI·UX 명세](docs/DESIGN_SPEC.md)
+- [팀 개발 환경 안내](docs/TEAM_SETUP.md)
 
 ## 로컬 실행
 

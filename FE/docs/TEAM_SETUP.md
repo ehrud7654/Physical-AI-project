@@ -72,9 +72,11 @@ FE/
 ├─ services/            # 비동기 Mock 서비스
 ├─ types/               # 도메인 타입
 ├─ public/              # 로고와 이미지
-├─ DESIGN_SPEC.md       # UI·UX 명세
-├─ README.md            # 프로젝트 개요와 연동 원칙
-└─ TEAM_SETUP.md        # 이 문서
+├─ docs/
+│  ├─ README.md         # 문서 목차
+│  ├─ DESIGN_SPEC.md    # UI·UX 명세
+│  └─ TEAM_SETUP.md     # 이 문서
+└─ README.md            # 프로젝트 개요와 연동 원칙
 ```
 
 새 API를 연결할 때는 UI에서 데이터를 직접 처리하지 말고 `services` 구현을 교체하고 `types`를 명세와 맞춥니다. 공통 상태 변경은 `hooks/useAppStore.tsx`를 통해 화면에 전달합니다.
