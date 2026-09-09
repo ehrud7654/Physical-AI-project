@@ -4,7 +4,7 @@ SO-101 로봇 팔의 **배포·실물 제어** ROS2 (Humble) 워크스페이스.
 학습·시뮬은 `AI/`(순수 파이썬), 여기는 **실물이 도는 곳**이다.
 
 > 이 문서는 **살아있는 설계 문서**다. 구조·계약이 바뀌면 여기부터 고친다.
-> 마지막 갱신 기준: 액션 공간 = EE pose(상대) 방향, 그리퍼 신호 미결 (§5·§9).
+> 마지막 갱신(2026-09-09): **ros2_control 표준층 전환**. 커스텀 `so101_driver`·`so101_msgs` 폐기 → `so101_hardware`(132)+`so101_bringup`(150). 정책=EE pose 액션, IK는 AI측. FakeBus 30Hz end-to-end 검증 완료.
 
 ---
 
@@ -19,9 +19,12 @@ SO-101 로봇 팔의 **배포·실물 제어** ROS2 (Humble) 워크스페이스.
    상세: docs/deploy_control_interface_draft.md
 
 ━━ 데이터 평면 (젯슨 내부, ROS, 30Hz 실시간) ━━━━━━━━━━━━━━
-   정책노드(ckpt) → IK → 드라이버 → 모터
-                  ← 관절상태·카메라 ←
+   정책노드(ckpt, EE pose) →[AI측 IK]→ 관절각[rad] 30Hz
+        → forward_command_controller → SO101System(rad↔tick) → 모터
+                  ← 관절상태(joint_states)·카메라 ←
 ```
+
+**IK는 AI측**(정책이 EE pose→관절각까지 냄). ROS는 관절각 라디안을 받아 서보로 흘리는 ros2_control 층.
 
 **BE는 관절 명령을 보내지 않는다.** 고수준(시작/정지/ckpt)만. 실제 관절 명령은 젯슨 내부 정책이 30Hz로 생성한다.
 
@@ -40,45 +43,43 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 
 ---
 
-## 3. 배포 런타임 — 젯슨 ROS 그래프
+## 3. 배포 런타임 — 젯슨 ROS 그래프 (ros2_control)
 
 ```
 [오케스트레이터]  ── SSE/POST ──> BE          (rclpy + httpx, FastAPI 아님)
       │ lifecycle/service (start/stop, ckpt 로드)
       ▼
-[정책 노드](46) ──/ee_command(pose+gripper)──> [IK 노드](45, MoveIt)
-                                                   │ pose→관절각
-                                                   ▼
-                              ──/joint_command(관절각 6)──> [드라이버](50) → 모터
-[안전 노드](49) ──/estop──> 전체                  <──/joint_states, /camera── 
+[정책 노드](46, ckpt+IK) ──관절각[rad] 6, 30Hz──> /forward_position_controller/commands
+                                                    │  (controller_manager)
+                                                    ▼
+                          [forward_command_controller] → [SO101System](132, rad↔tick)
+                                                    │        │ IServoBus(tick)
+                                                    │        ▼
+                                                    │   [st3215_bus](151) / FakeBus → 모터
+   [joint_state_broadcaster] ──/joint_states(rad)──> 정책 관측
+   [안전 노드](49) ──/estop──> 전체
 ```
 
-- **리허설(팔 없을 때):** 드라이버 자리에 `so101_sim_bridge`(MuJoCo 래핑) 꽂음. 같은 토픽, 반대편만 교체.
-- 3 모드: **검증**(PC 단독, ROS 없음) / **리허설**(PC sim_bridge ↔ 젯슨 ROS) / **실물**(젯슨).
+- **명령 = ros2_control 표준 인터페이스**(`Float64MultiArray` → forward_command_controller). 커스텀 msg 없음.
+- **bus 스왑:** `bus:=fake`(기본, 실물 없이 검증) ↔ `bus:=st3215`(실물, 151 완료 후). 같은 그래프, 하드웨어 플러그인만 교체.
+- **리허설(팔 없을 때):** FakeBus 로 controller_manager 까지 그대로 돎 (검증 완료). MuJoCo 연동은 별도.
 
 ---
 
-## 4. 인터페이스 계약 (so101_msgs)
+## 4. 인터페이스 계약 (ros2_control 표준)
 
-**선(wire)엔 생 SI 단위**(라디안·미터·원본 이미지). 정규화([-1,1], 224²)는 **정책 노드 한 곳**에서. → 드라이버·sim_bridge가 하드웨어에 정직, 계약 드리프트 방지.
+**선(wire)엔 생 SI 단위**(라디안·미터·원본 이미지). 정규화([-1,1], 224²)는 **정책 노드 한 곳**에서. → 하드웨어에 정직, 계약 드리프트 방지. 커스텀 msg 없음 — ros2_control 표준 인터페이스만.
 
-### 관측·안전 (표준 msg — 확정)
-
-| 토픽 | 방향 | 타입 | 단위·규칙 |
+| 토픽/인터페이스 | 방향 | 타입 | 단위·규칙 |
 |---|---|---|---|
-| `/joint_states` | HW→정책 | `sensor_msgs/JointState` | 라디안, 순서=so101.yaml, **30Hz, header.stamp=캡처시각** |
+| `/forward_position_controller/commands` | 정책→ctrl | `std_msgs/Float64MultiArray` | 관절각 6, **라디안**, 순서=so101.yaml, 30Hz |
+| `/joint_states` | HW→정책 | `sensor_msgs/JointState` | 라디안, 순서=so101.yaml, 30Hz |
 | `/camera/<name>/image` | HW→정책 | `sensor_msgs/CompressedImage` | 원본 프레임 |
 | `/estop` | 안전→전체 | `std_msgs/Bool` | true=전 서보 토크 off |
 
-### 명령 (커스텀 msg — EE pose 계약)
-
-| msg | 구간 | 내용 |
-|---|---|---|
-| `EECommand` | 정책 → IK | `geometry_msgs/Pose`(위치+회전) + `float64 gripper` |
-| `JointCommand` | IK → 드라이버 | `float64[] positions` 관절각 6 (팔5+그리퍼1), 라디안 |
-
-- IK는 pose만 변환, **그리퍼는 통과**시켜 JointCommand에 합침.
-- ⛔ `.msg` 정확한 필드 확정 = 이슈 108 (액션 공간 결정 후).
+- **IK는 AI측**: 정책이 EE pose→관절각까지 냄. ROS 경계엔 관절각 라디안이 도착 → 별도 IK 노드·`EECommand`·`JointCommand` 불필요(폐기).
+- **틱은 최하위(IServoBus/st3215_bus)까지만**. rad↔tick 변환 = `so101_hardware` SO101System 한 곳. 캘리브(zero_tick·방향)는 URDF `<joint><param>`(로봇별 온보딩 프로필).
+- 정책이 틱 관측(raw present-position) 원하면 SO101System에서 별도 발행 — **AI 확인 대기**.
 
 ---
 
@@ -90,7 +91,7 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 - **상대(델타):** arpose 세션마다 원점이 달라 절대 pose 불가 → t₀ 상대. 데이터 특성과 일치.
 - **그리퍼 차원은 지금 계약에 넣어둔다** (나중 shape 변경 = 데이터 무효 방지). 신호 들어오기 전엔 상수.
 
-**IK 위치:** 드라이버 아님 → **별도 IK 노드(45, MoveIt)**. 드라이버는 항상 관절각만 받아 하드웨어에서 절연.
+**IK 위치:** **AI측 정책 파이프라인 안**(EE pose→관절각까지 정책이 냄). ROS는 IK 안 함 → 관절각 라디안을 forward_command_controller 로 스트림. MoveIt 은 시각화/검증용으로만 (실시간 경로 아님).
 
 **ckpt 메타:** ckpt는 `contract_version`·`action_space`·정규화 등 메타를 달고 와야 정책 노드가 검증·설정 (엉뚱한 ckpt 로드 방지).
 
@@ -100,14 +101,16 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 
 | 구성요소 | 패키지/이슈 | 담당 |
 |---|---|---|
-| 토픽 계약 | `so101_msgs` (108) | ROS (인터페이스) |
-| IK 노드 | (45, MoveIt) | ROS |
-| 오케스트레이터 (BE↔ROS) | (51 근처) | ROS |
-| 정책 노드 | `so101_policy` (46) | ROS 래퍼 + AI ckpt |
-| 드라이버 (Feetech) | `so101_driver` (50) | ROS 팀원 (하드웨어) |
-| 안전 노드 | `so101_safety` (49) | ROS |
-| sim_bridge | (66) | AI (시뮬 소유) |
+| **하드웨어 인터페이스** (rad↔tick, IServoBus) | `so101_hardware` (132) ✅ | ROS/신현우 |
+| **bringup** (URDF+컨트롤러+launch) | `so101_bringup` (150) ✅ | ROS/신현우 |
+| **모터 드라이버** (st3215_bus, IServoBus 구현) | `so101_hardware` (151) | ROS 팀원 (C++) |
+| 오케스트레이터 (BE↔ROS) | `so101_orchestrator` | ROS |
+| 정책 노드 (ckpt+IK, EE pose) | `so101_policy` (46) | ROS 래퍼 + AI ckpt |
+| 안전 노드 (FK충돌·estop) | `so101_safety` (49) | ROS |
+| IK | AI 정책 파이프라인 | AI |
 | hand-eye·좌표변환 | (28·29·30) | 트랙 A (오프라인) |
+
+폐기: `so101_driver`(→132), `so101_msgs`/`EECommand`·`JointCommand`(→ros2_control 표준 인터페이스).
 
 ---
 
@@ -147,16 +150,18 @@ source install/setup.bash
 
 | 항목 | 상태 |
 |---|---|
+| **st3215_bus C++** (IServoBus 구현) | 151, 팀원 진행 (핸드오프 전달) |
+| **실물 캘리브** (zero_tick·방향) | URDF param placeholder 상태. 실측 후 교체 → REAL 게이트 |
 | **그리퍼 신호 캡처** | arpose 미지원 (손가락 마커/포텐셔미터 추가 필요). **파지 학습 전제조건** |
-| 액션 공간 최종 확정 | EE pose 방향이나 팀 합의 D-AI 기록 필요 (108·계약) |
-| `so101_msgs` .msg 필드 | 액션 확정 후 (108) |
+| 틱 관측(raw present-position) 발행 여부 | AI 확인 대기 |
 | ckpt 메타데이터 스키마 | AI와 합의 |
 | 오케스트레이터 BE 계약 | SSE/POST 포맷·인증·run_id → BE와 (docs 초안) |
+| MoveIt/RViz 시각화 | ver1 URDF(mesh·gripper prismatic) 붙일 때 |
 | hand-eye 캘리브 값 `T_cam→tcp` | 트랙 A (오프라인 데이터 변환에서 적용) |
-| PC↔젯슨 크로스머신 DDS | 리허설(66)에서 검증 |
 
 ---
 
 ## 10. 관련 이슈
 
-`44`(환경, 완료) · `45`(MoveIt IK) · `46`(정책 노드) · `48`(카메라) · `49`(안전) · `50`(드라이버) · `51`(상태→BE) · `66`(sim→real adapter) · `67`(시뮬 추론검증) · `108`(so101_msgs) · `42`(젯슨 용량) · `24`(BE 관제 API)
+`44`(환경, 완료) · **`132`(so101_hardware, 완료✅)** · **`150`(bringup, 완료✅)** · `151`(st3215_bus 모터, 진행) · `46`(정책 노드) · `48`(카메라) · `49`(안전) · `51`(상태→BE) · `66`(sim→real adapter) · `67`(시뮬 추론검증) · `42`(젯슨 용량) · `24`(BE 관제 API)
+폐기: `45`(ROS IK→AI측) · `50`(드라이버→132) · `108`(so101_msgs→표준 인터페이스)
