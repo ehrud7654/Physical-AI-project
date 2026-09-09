@@ -37,8 +37,12 @@ import numpy as np
 from contract.skills import GATE_MIN_RUNS, ROLLOUT_GATE
 from eval.stats import wilson_ci
 from paths import AI_ROOT, DEFAULT_EXP_LOG
+from policy.bc import DEFAULT_TRAIN_CONFIG
 from sim.mujoco.build_scene import DEFAULT_CONFIG
-from tracking.exp_log import file_digest, log_run
+from tracking.exp_log import code_digest, file_digest, log_run
+from tracking.findings import brief as findings_brief
+from tracking.findings import write as findings_write
+from tracking.monitor import print_drift
 
 
 @dataclass
@@ -81,6 +85,69 @@ def _latest_record(experiment: str, match: dict[str, Any]) -> dict[str, Any] | N
     return found
 
 
+# Captured when the module loads, i.e. when the run starts.
+# `log_run` computes `code_sha` and `git_rev` at **log time**, which for a job
+# that runs for hours is a different tree than the one that produced the number.
+# Measured 2026-09-07 🟢: the v6 run logged git_rev b7ffabe -- a commit that did
+# not exist when the job launched -- and its `train_config_sha` came out None
+# because the loaded module predated that field. A record that names the wrong
+# code is worse than one that names none.
+# 모듈이 로드될 때, 즉 **실행이 시작될 때** 잡는다. `log_run` 은 `code_sha` 와
+# `git_rev` 를 **로그 시점에** 계산하는데, 몇 시간 도는 잡에서는 그 트리가 수치를
+# 만든 트리와 다르다. 2026-09-07 실측 🟢: v6 실행이 git_rev b7ffabe 로 기록됐는데
+# 그 커밋은 잡이 시작될 때 존재하지 않았고, `train_config_sha` 가 None 으로 나온
+# 것도 로드된 모듈이 그 필드보다 먼저였기 때문이다. 틀린 코드를 가리키는 기록은
+# 아무것도 가리키지 않는 기록보다 나쁘다.
+CODE_SHA_AT_LAUNCH = code_digest()
+
+
+def _worktree_dirty() -> bool:
+    """Are there uncommitted tracked changes right now?
+    지금 커밋되지 않은 추적 변경이 있는가?"""
+    try:
+        out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"],
+                             cwd=AI_ROOT, capture_output=True, text=True, timeout=10)
+        return out.returncode == 0 and bool(out.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def run_conditions(args: Any, train_seeds: list[int] | None = None) -> dict[str, Any]:
+    """The one place a repeat_runs condition set is built.
+    repeat_runs 조건 묶음을 만드는 **유일한** 자리.
+
+    Both the pre-run drift check and the EXP_LOG record read from here. They used
+    to be two separate literals, and on 2026-09-07 the drift check reported "no
+    change" for a run that had changed `image_noise_gray` and `tag` -- because
+    those keys had been added to one literal and not the other. A drift detector
+    that can itself drift is worse than none: it reports safety it has not checked.
+    실행 전 표류 검사와 EXP_LOG 기록이 **둘 다** 여기서 읽는다. 예전에는 두 개의
+    별도 리터럴이었고, 2026-09-07 에 `image_noise_gray` 와 `tag` 가 바뀐 실행을
+    표류 검사가 "동일하다"로 보고했다 -- 한쪽 리터럴에만 키를 넣었기 때문이다.
+    스스로 표류하는 표류 감지기는 없느니만 못하다. 검사하지 않은 안전을 보고한다."""
+    cond: dict[str, Any] = {
+        "runs": args.runs,
+        "epochs": args.epochs,
+        "episodes": args.episodes,
+        "eval_seed_base": args.eval_seed_base,
+        "jitter_m": args.jitter,
+        "tag": args.tag,
+        "image_noise_gray": args.image_noise,
+        # 씬 설정과 **학습 설정을 따로** 해싱한다. 예전에는 씬만 해싱해서
+        # bc.yaml 변경(epochs·lr·행동공간)이 표류 감지 밖에 있었다.
+        "config_sha": file_digest(DEFAULT_CONFIG),
+        "code_sha_at_launch": CODE_SHA_AT_LAUNCH,
+        # 추론 장치. v2~v6 은 전부 cpu 였고 기록에 없었다 (eval/rollout.py 주석 참조).
+        "policy_device": getattr(args, "policy_device", "cpu"),
+        "train_config_sha": file_digest(DEFAULT_TRAIN_CONFIG),
+        "gate": {"rollout": ROLLOUT_GATE, "min_runs": GATE_MIN_RUNS},
+    }
+    if train_seeds is not None:
+        cond["data"] = str(args.data)
+        cond["train_seeds"] = train_seeds
+    return cond
+
+
 def repeat(
     data: Path,
     *,
@@ -91,21 +158,36 @@ def repeat(
     device: str,
     jitter: float,
     epochs: int | None = None,
+    tag: str = "",
+    image_noise: float | None = None,
+    policy_device: str = "cpu",
 ) -> list[RunResult]:
     """Train `runs` times, score each, and collect the results.
     `runs` 회 학습하고 각각 채점해 결과를 모은다."""
     out: list[RunResult] = []
     for i in range(runs):
         seed = seed_base + i
-        ckpt = AI_ROOT / "checkpoints" / "bc" / f"{data.name}_seed{seed}.pt"
+        # 체크포인트 이름이 데이터셋 이름에서만 파생되면, 같은 데이터로 다른 설정을
+        # 돌릴 때 **조용히 덮어쓴다**. 2026-09-07 에 완주한 실험을 그렇게 잃었다.
+        # `tag` 는 그 충돌을 막는 자리다.
+        name = f"{data.name}{('_' + tag) if tag else ''}_seed{seed}.pt"
+        ckpt = AI_ROOT / "checkpoints" / "bc" / name
+        if ckpt.exists():
+            print(f"⚠️ 덮어쓴다: {ckpt.name} (이미 있다). 보존하려면 --tag 를 바꿔라")
 
         train_cmd = [sys.executable, "tools/train_bc.py", "--data", str(data),
                      "--seed", str(seed), "--out", str(ckpt), "--device", device, "--log"]
         if epochs is not None:
             train_cmd += ["--epochs", str(epochs)]
+        if image_noise is not None:
+            train_cmd += ["--image-noise", str(image_noise)]
         _run(train_cmd)
+        # `--policy-device` 를 자식에게 넘긴다. 안 넘기면 repeat_runs 의 conditions 에는
+        # 기록되는데 실제 평가는 eval_rollout 기본값으로 돌아 **기록과 실행이 갈린다.**
+        # 오늘 같은 유형의 구멍(기록이 그 코드를 안 가리킴)을 이미 한 번 냈다.
         _run([sys.executable, "tools/eval_rollout.py", "--episodes", str(episodes),
               "--seed-base", str(eval_seed_base), "--jitter", str(jitter), "--render",
+              "--policy-device", policy_device,
               "--policy-ckpt", str(ckpt), "--log"])
 
         roll = _latest_record("rollout_baselines", {"policy_ckpt": str(ckpt)})
@@ -187,7 +269,15 @@ def main() -> int:
     parser.add_argument("--seed-base", type=int, default=0, help="학습 시드 시작값")
     parser.add_argument("--eval-seed-base", type=int, default=3000, help="평가 시드 블록")
     parser.add_argument("--jitter", type=float, default=0.05)
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--tag", type=str, default="",
+                        help="체크포인트 이름에 붙일 꼬리표. 같은 데이터로 다른 설정을 "
+                             "돌릴 때 덮어쓰기를 막는다")
+    parser.add_argument("--image-noise", type=float, default=None,
+                        metavar="GRAY", help="학습 이미지 잡음 σ, 단위 계조. train_bc 로 전달")
+    parser.add_argument("--device", type=str, default="cuda",
+                        help="학습 장치")
+    parser.add_argument("--policy-device", type=str, default="cpu",
+                        help="평가 시 정책 추론 장치. 기본 cpu 로 v2~v6 비교선 유지")
     parser.add_argument("--author", type=str, default="김준태(트랙B)")
     parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
@@ -197,6 +287,20 @@ def main() -> int:
             f"⚠️ runs={args.runs} 는 배포 게이트의 최소치 {GATE_MIN_RUNS} 보다 작다. "
             "이 결과로는 배포 판정을 할 수 없다."
         )
+
+    # 조건 표류를 실행 **전에** 찍는다. 결과를 다 뽑은 뒤에 알면 늦다.
+    print_drift(run_conditions(args))
+
+    # 지금까지 기록된 repeat_runs 5건이 **전부** dirty=True 였다 🟢 2026-09-07.
+    # 그래서 v2→v3→v5 의 차이를 어느 변경에 귀속시킬 수 없다. 커밋 해시가
+    # 가리키는 트리에서 돈 것이 아니기 때문이다.
+    if _worktree_dirty():
+        print("⚠️ 커밋되지 않은 변경이 있는 트리에서 돈다. 이 수치는 git 커밋으로 "
+              "되짚어갈 수 없고, code_sha 로만 특정된다. 조건 비교가 목적이면 "
+              "먼저 커밋하라")
+
+    # 지난 실험 성적을 **시작 전에** 찍는다. 끝난 뒤에 대조하면 이미 조건을 정한 뒤다.
+    print("\n" + findings_brief() + "\n")
 
     print(f"학습 {args.runs}회 × 롤아웃 {args.episodes}편 · 데이터 {args.data}")
     print(f"평가 시드 블록 {args.eval_seed_base}~{args.eval_seed_base + args.episodes - 1} "
@@ -211,6 +315,9 @@ def main() -> int:
         eval_seed_base=args.eval_seed_base,
         device=args.device,
         jitter=args.jitter,
+        tag=args.tag,
+        image_noise=args.image_noise,
+        policy_device=args.policy_device,
     )
     summary = summarise(results)
 
@@ -240,17 +347,7 @@ def main() -> int:
             experiment="repeat_runs",
             author=args.author,
             issue="S15P21A103-34",
-            conditions={
-                "data": str(args.data),
-                "runs": args.runs,
-                "epochs": args.epochs,
-                "episodes": args.episodes,
-                "train_seeds": [r.seed for r in results],
-                "eval_seed_base": args.eval_seed_base,
-                "jitter_m": args.jitter,
-                "config_sha": file_digest(DEFAULT_CONFIG),
-                "gate": {"rollout": ROLLOUT_GATE, "min_runs": GATE_MIN_RUNS},
-            },
+            conditions=run_conditions(args, [r.seed for r in results]),
             result={
                 **summary,
                 "passed": passed,
@@ -262,6 +359,8 @@ def main() -> int:
             },
         )
         print(f"\nEXP_LOG.jsonl 기록 (git {rec['git_rev']}, dirty={rec['git_dirty']})")
+        # 기록 직후 원장을 다시 생성한다. 손으로 갱신하면 갱신 안 된 상태가 기본값이 된다.
+        print(f"FINDINGS.md 갱신: {findings_write()}")
 
     return 0 if passed else 1
 

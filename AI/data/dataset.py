@@ -18,6 +18,16 @@ from typing import Any
 
 import numpy as np
 import torch
+
+# BLAS 캡(OMP/MKL/...)은 torch 의 intra-op 스레드를 항상 따라가지 않는다.
+# 여기서 명시로 건다 — 공유 머신이고, 이 모델은 1.3M 파라미터라 스레드가
+# 많아서 빨라지지 않는다. 실측 🟢 2026-09-07: 6개 프로세스에서 load average 165/80.
+try:
+    import runtime_limits as _rl
+
+    _rl.torch_threads()
+except Exception:  # 단독 실행 등 경로에 없을 때
+    pass
 from torch.utils.data import Dataset
 
 from contract.episode import IMAGE_SHAPE, read_episode, validate
@@ -49,6 +59,16 @@ class EpisodeDataset(Dataset):
         d = cfg["data"]
         self.mean = float(d["image_mean"])
         self.std = float(d["image_std"])
+
+        # 학습 입력에만 거는 이미지 잡음. 단위는 **계조**(0~255) 다.
+        # 근거 🟢 (2026-09-07): 폐루프 롤아웃에서 t=1 에 이미 관측이 0.28 계조
+        # 갈라지고 t=10 에 1.19 계조로 벌어진다. 그리고 L39 는 **1 계조 차이가
+        # 성공/실패를 뒤집는다**는 실측이다. 즉 정책은 자기 오차가 만든 관측
+        # 변화에 이미 민감하다. 학습 때 같은 크기의 잡음을 보여 둔감하게 만든다.
+        # `augment_indices` 는 train 쪽 인덱스만 담는다 — val 은 흔들지 않는다.
+        # 평가·수집 렌더는 결정론을 유지한다 (L37). 흔드는 것은 학습 입력뿐이다.
+        self.aug_gray_levels: float = 0.0
+        self.augment_indices: set[int] | None = None
 
         self.index: list[tuple[int, int]] = []   # (episode idx, timestep)
         self.episodes: list[Any] = []
@@ -87,13 +107,35 @@ class EpisodeDataset(Dataset):
     def __getitem__(self, i: int) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         ep_i, t = self.index[i]
         ep = self.episodes[ep_i]
+        augment = (
+            self.aug_gray_levels > 0.0
+            and (self.augment_indices is None or i in self.augment_indices)
+        )
         images = {}
         for cam in self.camera_names:
             arr = torch.from_numpy(ep.images[cam][t].astype(np.float32) / 255.0)
+            if augment:
+                # torch 전역 RNG 를 쓴다 — train_bc 의 manual_seed(seed) 가 덮으므로
+                # 같은 시드면 같은 잡음 열이 나온다.
+                arr = arr + torch.randn_like(arr) * (self.aug_gray_levels / 255.0)
+                arr = arr.clamp_(0.0, 1.0)
             images[cam] = (arr - self.mean) / self.std
         state = torch.from_numpy(ep.state[t].astype(np.float32))
         action = torch.from_numpy(ep.action[t].astype(np.float32))
         return images, state, action
+
+    def set_image_noise(self, gray_levels: float, train_indices: list[int] | None) -> None:
+        """Turn on gray-level image noise for the training indices only.
+        학습 인덱스에만 계조 단위 이미지 잡음을 켠다.
+
+        `train_indices` of None means every sample. Passing the split explicitly
+        is what keeps val clean -- a validation loss measured on augmented images
+        is not comparable to any earlier run.
+        `train_indices` 가 None 이면 전체다. 분할을 명시로 받는 이유는 val 을
+        깨끗하게 두기 위해서다 -- 증강된 이미지로 잰 val loss 는 이전 실행과
+        비교할 수 없다."""
+        self.aug_gray_levels = float(gray_levels)
+        self.augment_indices = None if train_indices is None else set(train_indices)
 
     def summary(self) -> str:
         return (
