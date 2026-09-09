@@ -166,6 +166,7 @@ INDEX (user_id, expires_at)
 | `device_type` | varchar(20) | 아니요 | `UMI_CAMERA`, `JETSON` |
 | `handle_number` | varchar(100) | 아니요 | 외부 장치 식별자 |
 | `name` | varchar(100) | 아니요 | 사용자 표시 이름 |
+| `location` | varchar(200) | 예 | 장치 설치 위치. 기존 등록 장치는 `801호`로 초기화 |
 | `connection_status` | varchar(20) | 아니요 | `ONLINE`, `OFFLINE` |
 | `firmware_version` | varchar(100) | 예 | 마지막 heartbeat 값 |
 | `runtime_version` | varchar(100) | 예 | 마지막 heartbeat 값 |

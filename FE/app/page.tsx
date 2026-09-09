@@ -134,6 +134,7 @@ function HomeInner() {
     } else if (!currentUser) return;
     setAuthenticated(true);
     enterView(target);
+    void refresh();
   };
   const logout = () => {
     clearAuthentication();

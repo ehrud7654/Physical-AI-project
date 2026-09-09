@@ -230,9 +230,10 @@ type User = {
 type Device = {
   id: string;
   ownerId: string;
-  deviceType: 'UMI' | 'JETSON';
+  deviceType: 'UMI_CAMERA' | 'JETSON';
   handleNumber: string;
   name: string;
+  location: string | null;
   connectionStatus: 'ONLINE' | 'OFFLINE';
   lastSeenAt: string | null;
   createdAt: string;
@@ -697,20 +698,22 @@ type RobotExecution = {
 
 ```json
 {
+  "deviceType": "UMI_CAMERA",
   "handleNumber": "UMI-0001",
-  "registrationCode": "...",
-  "name": "1번 UMI"
+  "name": "1번 UMI",
+  "location": "801호"
 }
 ```
 
 - 성공 `201`: `Device`.
-- 장치 유형은 사전 프로비저닝 정보로 결정하며 사용자가 지정하지 않는다.
-- 실패: `409 DEVICE_ALREADY_REGISTERED`, `422 INVALID_REGISTRATION_CODE`.
+- `deviceType`은 사용자가 웹 화면에서 `UMI_CAMERA` 또는 `JETSON` 중 선택한다.
+- 등록 직후 연결 상태는 `OFFLINE`이며 heartbeat 수신 후 갱신한다.
+- 실패: `409 DEVICE_ALREADY_REGISTERED`, `422 VALIDATION_ERROR`.
 
 ### DEVICE-02 내 장치 목록
 
 - `GET /devices` · 사용자
-- 쿼리: `deviceType?: UMI | JETSON`, 공통 페이지네이션.
+- 쿼리: `deviceType?: UMI_CAMERA | JETSON`, 공통 페이지네이션.
 - 성공 `200`: `Device[]`.
 
 ### DEVICE-03 장치 상세
@@ -721,7 +724,7 @@ type RobotExecution = {
 ### DEVICE-04 장치 이름 수정
 
 - `PATCH /devices/{deviceId}` · 사용자
-- 요청: `name: string`.
+- 요청: `name: string`, `location?: string | null`.
 - 성공 `200`: 수정된 `Device`.
 - 핸들 번호·장치 유형·소유자는 변경하지 않는다.
 
@@ -745,7 +748,7 @@ type RobotExecution = {
     "accessToken": "...",
     "tokenType": "Bearer",
     "expiresIn": 900,
-    "deviceType": "UMI"
+    "deviceType": "UMI_CAMERA"
   }
 }
 ```
