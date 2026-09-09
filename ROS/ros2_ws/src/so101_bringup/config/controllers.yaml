@@ -1,0 +1,23 @@
+# ros2_control 컨트롤러 설정.
+# 정책 = 30Hz 스트림 → forward_command_controller(position). 궤적 컨트롤러 안 씀.
+controller_manager:
+  ros__parameters:
+    update_rate: 30  # Hz — 데이터 규격(so101.yaml control.rate_hz)과 일치
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+# 관절 순서 = so101.yaml index. 정책이 이 순서로 6개 position[rad] 을 30Hz 로 스트림.
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan
+      - shoulder_lift
+      - elbow_flex
+      - wrist_flex
+      - wrist_roll
+      - gripper
+    interface_name: position
