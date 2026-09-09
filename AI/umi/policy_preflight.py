@@ -70,6 +70,8 @@ def run_policy_preflight(policy: Any, observation: Any, *, t_current: np.ndarray
     predict = getattr(policy, "predict_action", None)
     if not callable(predict):
         raise TypeError("policy must provide callable predict_action(observation)")
+    t_current = np.array(t_current, dtype=float, copy=True)
+    q_current = np.array(q_current, dtype=float, copy=True)
     start = clock()
     action = extract_action_pred(predict(observation))
     predicted = clock()

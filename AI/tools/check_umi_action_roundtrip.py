@@ -8,6 +8,9 @@ from tools.umi_mujoco import (MujocoIK, eef_pose_from_joints, gap_from_angle,
                               load_config, build_model, DEFAULT_CONFIG, DEFAULT_SCENE)
 from umi.ik import quat_to_matrix
 from umi.action_ik import actions_to_joints
+from umi.arm_preflight import prepare_arm_commands
+from umi.convert import invert_gap_curve
+from tools.umi_mujoco import MujocoArmAdapter
 
 
 def main():
@@ -36,6 +39,18 @@ def main():
         a[:, 3:9] = relative[:, :2, :3].reshape(-1, 6)
         a[:, 9] = [gap_from_angle(q[5], curve) for q in truth]
         recovered = actions_to_joints(a, current, q0, ik, ik.ranges, curve, max_step_rad=0.1)
+        class Policy:
+            def predict_action(self, observation):
+                return {'action_pred': a}
+        commands = prepare_arm_commands(Policy(), {}, t_current=current,
+            arm_current_rad=q0[:5], gripper_current_m=gap_from_angle(q0[5], curve),
+            solver=MujocoArmAdapter(ik, curve), ranges_rad=ik.ranges[:5],
+            gap_range_m=[min(row[1] for row in curve)/100, max(row[1] for row in curve)/100],
+            max_step_rad=0.1, max_gap_step_m=0.01, max_position_error_m=0.005,
+            max_axis_error_deg=5, max_roll_error_deg=5)
+        restored = np.array([np.r_[c.arm_positions_rad, invert_gap_curve(c.gripper_width_m, curve)]
+                             for c in commands])
+        np.testing.assert_allclose(restored, recovered, atol=1e-10)
         for target, q, gap in zip(absolute, recovered, a[:, 9]):
             achieved = fk(q)
             pos_errors.append(np.linalg.norm(target[:3, 3] - achieved[:3, 3]))

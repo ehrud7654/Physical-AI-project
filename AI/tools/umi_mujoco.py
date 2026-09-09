@@ -173,6 +173,24 @@ def signed_roll_error_rad(
     return ang
 
 
+class MujocoArmAdapter:
+    """Five-joint API over the simulation-only six-joint solver."""
+
+    def __init__(self, solver, gap_curve):
+        self.solver, self.gap_curve = solver, gap_curve
+
+    def solve(self, target_pose, *, seed_rad, gripper_width_m):
+        from umi.arm_preflight import ArmSolution
+        from umi.convert import invert_gap_curve
+        seed = np.r_[seed_rad, invert_gap_curve(gripper_width_m, self.gap_curve)]
+        sol = self.solver.solve(target_pose[:3, 3],
+                                matrix_to_quat(target_pose[:3, :3]),
+                                gripper_width_m, q_init=seed)
+        return ArmSolution(sol.q_rad[:5].copy(), sol.pos_error_m,
+                           sol.axis_error_deg, sol.roll_residual_deg,
+                           sol.converged and sol.within_limits)
+
+
 class MujocoIK:
     """`umi.ik.IKSolver` over `sim.mujoco.kinematics.solve_pose_ik`.
     `solve_pose_ik` 를 감싼 `umi.ik.IKSolver` 구현.
