@@ -136,7 +136,11 @@ public class RobotExecution {
   }
 
   public UUID getId() { return id; }
+  public UUID getOwnerId() { return ownerId; }
   public UUID getRobotId() { return robotId; }
+  public UUID getTaskVersionId() { return taskVersionId; }
+  public UUID getDeploymentId() { return deploymentId; }
+  public Integer getCurrentStep() { return currentStep; }
   public RobotExecutionStatus getStatus() { return status; }
   public int getTotalSteps() { return totalSteps; }
   public BigDecimal getProgressPercent() { return progressPercent; }
@@ -144,11 +148,27 @@ public class RobotExecution {
   public String getLastReportId() { return lastReportId; }
   public String getLastReportHash() { return lastReportHash; }
   public String getErrorCode() { return errorCode; }
+  public String getErrorMessage() { return errorMessage; }
   public ExecutionRecoveryAction getRecoveryAction() { return recoveryAction; }
   public Instant getRequestedAt() { return requestedAt; }
   public Instant getStartedAt() { return startedAt; }
   public Instant getFinishedAt() { return finishedAt; }
   public Instant getUpdatedAt() { return updatedAt; }
   public Long getRowVersion() { return rowVersion; }
+
+  public void requestCancel(Instant occurredAt) {
+    if (status == RobotExecutionStatus.REQUESTED) {
+      status = RobotExecutionStatus.CANCELED;
+      finishedAt = occurredAt;
+      return;
+    }
+    if (status == RobotExecutionStatus.STARTING || status == RobotExecutionStatus.RUNNING) {
+      status = RobotExecutionStatus.CANCEL_REQUESTED;
+      return;
+    }
+    if (status != RobotExecutionStatus.CANCEL_REQUESTED) {
+      throw new IllegalStateException("execution is already terminal");
+    }
+  }
 }
 

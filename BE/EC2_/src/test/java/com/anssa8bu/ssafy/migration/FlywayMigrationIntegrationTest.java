@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  * 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
  */
 class FlywayMigrationIntegrationTest {
-  static final int MIGRATION_COUNT = 9;
+  static final int MIGRATION_COUNT = 11;
   static final int TABLE_COUNT = 28;
   static final List<String> PARTIAL_UNIQUE_INDEXES =
       List.of(

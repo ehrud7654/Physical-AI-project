@@ -121,4 +121,12 @@ public class SkillVersion extends CreatedEntity {
   public UUID getId() {
     return id;
   }
+
+  public UUID getSkillId() { return skillId; }
+  public UUID getRobotProfileId() { return robotProfileId; }
+  public int getVersion() { return version; }
+  public SkillVersionStatus getStatus() { return status; }
+  public long getCheckpointBytes() { return checkpointBytes; }
+  public String getCheckpointSha256() { return checkpointSha256; }
+  public String getContractVersion() { return contractVersion; }
 }

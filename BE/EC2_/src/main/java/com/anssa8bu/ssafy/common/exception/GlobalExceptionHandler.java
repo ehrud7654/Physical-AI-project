@@ -13,6 +13,18 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  @ExceptionHandler(ResourceNotFoundException.class)
+  public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException exception) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+        .body(new ErrorResponse("RESOURCE_NOT_FOUND", exception.getMessage()));
+  }
+
+  @ExceptionHandler(BusinessConflictException.class)
+  public ResponseEntity<ErrorResponse> handleConflict(BusinessConflictException exception) {
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(new ErrorResponse(exception.getCode(), exception.getMessage()));
+  }
+
   @ExceptionHandler(DeviceNotFoundException.class)
   public ResponseEntity<ErrorResponse> handleDeviceNotFound(DeviceNotFoundException exception) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND)

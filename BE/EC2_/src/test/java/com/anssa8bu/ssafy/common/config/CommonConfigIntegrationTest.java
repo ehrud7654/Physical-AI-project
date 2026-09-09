@@ -76,7 +76,7 @@ class CommonConfigIntegrationTest extends IntegrationTestBase {
     assertThat(encoded).doesNotContain("test-password");
 
     mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
-    mockMvc.perform(post("/api/v1/auth/login")).andExpect(status().isNotFound());
+    mockMvc.perform(post("/api/v1/auth/login")).andExpect(status().isBadRequest());
     mockMvc.perform(get("/api/v1/protected-test")).andExpect(status().isForbidden());
   }
 

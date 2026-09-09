@@ -28,7 +28,26 @@ public class TaskStep {
 
   protected TaskStep() {}
 
+  public TaskStep(UUID id, UUID taskVersionId, UUID skillVersionId, int stepOrder,
+      Map<String, Object> parameters, Integer timeoutSeconds) {
+    this.id = Objects.requireNonNull(id);
+    this.taskVersionId = Objects.requireNonNull(taskVersionId);
+    this.skillVersionId = Objects.requireNonNull(skillVersionId);
+    if (stepOrder < 1) throw new IllegalArgumentException("stepOrder must be positive");
+    if (timeoutSeconds != null && timeoutSeconds < 1) throw new IllegalArgumentException("timeoutSeconds must be positive");
+    this.stepOrder = stepOrder;
+    this.parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
+    this.timeoutSeconds = timeoutSeconds;
+  }
+
+  public UUID getId() { return id; }
+  public UUID getTaskVersionId() { return taskVersionId; }
+  public UUID getSkillVersionId() { return skillVersionId; }
+  public int getStepOrder() { return stepOrder; }
+
   public Map<String, Object> getParameters() {
     return parameters;
   }
+
+  public Integer getTimeoutSeconds() { return timeoutSeconds; }
 }
