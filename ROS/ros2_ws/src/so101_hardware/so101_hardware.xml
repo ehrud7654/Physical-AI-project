@@ -1,0 +1,10 @@
+<library path="so101_hardware">
+  <class name="so101_hardware/SO101System"
+         type="so101_hardware::SO101System"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      SO-101 ros2_control SystemInterface. 라디안 command/state 를 STS3215 tick 으로
+      변환하는 얇은 래퍼(IK 없음). 서보 통신은 IServoBus(FakeBus / st3215_bus).
+    </description>
+  </class>
+</library>
