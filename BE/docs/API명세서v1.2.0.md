@@ -535,6 +535,7 @@ type Task = {
   displayName: string;
   description: string | null;
   latestVersion: number | null;
+  latestVersionDetails: TaskVersion | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -1901,12 +1902,17 @@ Lifecycle scheduler는 보관 기한이 지난 Episode를 직접 삭제하지 �
 ### TASK-02 Task 목록
 
 - `GET /tasks` · 사용자
-- 쿼리: `q?: string`, 공통 페이지네이션.
+- 쿼리: `q?: string`, `includeLatestVersion?: boolean`(기본 `false`), 공통 페이지네이션.
 - 성공 `200`: `Task[]`.
+- 작업 탭의 최신 구성 미리보기가 필요한 경우 `includeLatestVersion=true`로 요청한다. 이때 각 Task의
+  `latestVersionDetails`에 최신 `TaskVersion`과 정렬된 `steps`가 포함되며, 버전이 없으면 `null`이다.
+  기본값에서는 `latestVersionDetails`가 `null`이므로 단순 목록 조회 비용을 늘리지 않는다.
 
 ### TASK-03 Task 상세
 
 - `GET /tasks/{taskId}` · 사용자
+- 쿼리: `includeLatestVersion?: boolean`(기본 `false`). `true`이면 최신 버전 및 단계 구성을
+  `latestVersionDetails`로 함께 반환한다.
 - 성공 `200`: `Task`.
 
 ### TASK-04 Task 정보 수정
