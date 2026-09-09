@@ -29,6 +29,7 @@ itself is in `umi/convert.py`, which imports neither.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import subprocess
 import sys
 from collections import Counter
@@ -41,11 +42,28 @@ import numpy as np  # noqa: E402
 from contract.episode import validate, write_dataset_index, write_episode  # noqa: E402
 from paths import DATASET_DIR, DEFAULT_CONFIG, DEFAULT_SCENE, OUT_DIR  # noqa: E402
 from sim.mujoco.build_scene import build_model, load_config  # noqa: E402
-from tracking.exp_log import file_digest, log_run  # noqa: E402
+from tracking.exp_log import code_digest, file_digest, log_run  # noqa: E402
 from umi.convert import ConversionError, ConversionPolicy, convert  # noqa: E402
 from umi.raw import read_raw  # noqa: E402
 from tools.make_umi_synth import decode_frame  # noqa: E402
 from tools.umi_mujoco import MujocoIK  # noqa: E402
+
+
+def raw_bundle_digest(raw_dir: Path, raw_npzs: list[Path]) -> str:
+    """Hash raw arrays and their metadata with stable relative file names."""
+    root = raw_dir.resolve()
+    files: list[Path] = []
+    for npz_path in raw_npzs:
+        meta_path = npz_path.with_suffix("").with_suffix(".raw.json")
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"raw metadata missing: {meta_path}")
+        files.extend((npz_path, meta_path))
+    digest = hashlib.sha256()
+    for path in sorted(files, key=lambda item: item.resolve().relative_to(root).as_posix()):
+        relative = path.resolve().relative_to(root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()[:12]
 
 
 def verify_image_index(episode, raw, kept_span: tuple[int, int]) -> tuple[int, int]:
@@ -95,6 +113,9 @@ def main() -> int:
     if not raws:
         print(f"raw 기록이 없다: {args.raw}")
         return 1
+    raw_path = str(args.raw.resolve())
+    raw_sha = raw_bundle_digest(args.raw, raws)
+    tool_sha = code_digest()
     if args.out.exists() and sorted(args.out.glob("*.npz")):
         print(f"이미 에피소드가 있다: {args.out}\n"
               "  기존 이름을 재사용하지 않는다 — ckpt 까지 덮어쓴다. --out 에 다음 번호를 줘라")
@@ -224,6 +245,9 @@ def main() -> int:
             "image_index_not_applicable_episodes": n_index_skipped,
             "solver_pos_tol_m": ik.pos_tol_m,
             "match_roll": ik.match_roll,
+            "raw_path": raw_path,
+            "raw_sha": raw_sha,
+            "tool_sha": tool_sha,
         })
         print(f"인덱스: {index}")
 
@@ -235,6 +259,7 @@ def main() -> int:
             conditions={
                 "raw_dir": str(args.raw), "out": str(args.out), "n_raw": len(raws),
                 "config_sha": config_sha, "git_rev": rev,
+                "raw_path": raw_path, "raw_sha": raw_sha, "tool_sha": tool_sha,
                 "solver_pos_tol_m": ik.pos_tol_m, "match_roll": ik.match_roll,
                 "python": ".".join(map(str, sys.version_info[:3])),
             },

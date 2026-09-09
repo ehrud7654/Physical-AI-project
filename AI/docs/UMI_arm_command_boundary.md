@@ -55,3 +55,21 @@ timestamp는 주입한 monotonic clock과 같은 기준이어야 한다. 미래 
 
 가짜 시계 테스트 6개와 명령 경계 테스트를 통과했다. 실제 30Hz 처리량 또는
 실물 안전성에 대한 측정 결과는 아니다.
+
+## 확정 실물 URDF와 상태 경계 (2026-09-09)
+
+하드웨어 전달 수정본을 `configs/real/so101_ver1.urdf`로 고정했다. 원본 바이트
+SHA는 `78e20d4e...2efc18`이며, 저장소 줄바꿈 정규화본 SHA는 real config에
+기록한다. 기준은 `base_link`, TCP는 `gripper_tcp`다. J1~J5 zero tick과
+direction=+1, J3 encoder-safe 하한 `-1.57079632679rad`를 실물 설정에 반영했다.
+
+`umi.real_fk.SO101UrdfFK`는 이 URDF의 base→TCP 체인을 직접 읽어 FK한다.
+`snapshot_from_joint_state`는 이름 순서에 의존하지 않고 J1~J5 rad와 `gripper`
+전체 접촉면 폭 `0~0.09m`를 추출한다. ROS timestamp는 그대로 보존하며 monotonic
+clock으로 가장하지 않는다. 순차 READ의 관절 간 skew와 발행 지연이 계측되기 전에는
+실물 freshness가 검증됐다고 볼 수 없다.
+
+시뮬 J3 모델 하한은 `-1.69rad`, 실물 encoder-safe 하한은 `-pi/2`로 서로 다르다.
+시뮬 정본을 변조하지 않고 실물 preflight에서 더 좁은 real config를 적용한다.
+그리퍼도 시뮬 hinge 각도와 실물 전체 폭을 별도 경계로 유지한다. 실물 endpoint는
+아직 자 실측 전이므로 `gripper_endpoint_measured=false`다.
