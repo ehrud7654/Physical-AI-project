@@ -1,11 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { BlockKind, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, SavedWork, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
+import type { AuthenticatedUser, BlockKind, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, SavedWork, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { clearMockSession, createEpisodePreviewSession, hasMockSession, startMockSession } from '@/services';
+import { createEpisodePreviewSession, login as requestLogin, logout as clearAuthentication } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -79,7 +79,7 @@ function HomeInner() {
   const [entered, setEntered] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('admin01');
-  const [authReady, setAuthReady] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [view, setView] = useState<View>('dashboard');
   const [deviceTab, setDeviceTab] = useState<DeviceType>('umi');
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
@@ -88,13 +88,6 @@ function HomeInner() {
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, entered]);
   const [toast, setToast] = useState('');
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success');
-
-  /* eslint-disable react-hooks/set-state-in-effect -- restore the temporary mock session after hydration */
-  useEffect(() => {
-    setAuthenticated(hasMockSession());
-    setAuthReady(true);
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     setToast(message);
@@ -134,18 +127,20 @@ function HomeInner() {
     setEditingWorkId(workId);
     setView('work');
   };
-  const login = (target: View, userId = 'admin01') => {
-    startMockSession();
-    setCurrentUserId(userId);
+  const login = (target: View, user?: AuthenticatedUser) => {
+    if (user) {
+      setCurrentUser(user);
+      setCurrentUserId(user.name);
+    } else if (!currentUser) return;
     setAuthenticated(true);
     enterView(target);
   };
   const logout = () => {
-    clearMockSession();
+    clearAuthentication();
+    setCurrentUser(null);
     setAuthenticated(false);
     setEntered(false);
   };
-  if (!authReady) return null;
   if (!entered) return <Landing authenticated={authenticated} onLogin={login} onLogout={logout} />;
 
   return (
@@ -172,13 +167,14 @@ function HomeInner() {
   );
 }
 
-function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean; onLogin: (target: View, userId?: string) => void; onLogout: () => void }) {
+function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean; onLogin: (target: View, user?: AuthenticatedUser) => void; onLogout: () => void }) {
   const [loginOpen, setLoginOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('figmaView') === 'login');
   const [signupOpen, setSignupOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [pendingView, setPendingView] = useState<View>('dashboard');
-  const [id, setId] = useState('admin01');
+  const [id, setId] = useState('admin01@ssafy.local');
   const [password, setPassword] = useState('12345678');
+  const [loginPending, setLoginPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [signupName, setSignupName] = useState('');
@@ -207,6 +203,24 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
     document.addEventListener('keydown', handle);
     return () => { document.removeEventListener('keydown', handle); document.body.style.overflow = overflow; previous?.focus(); };
   }, [loginOpen, signupOpen]);
+  const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!id.trim() || !password) {
+      setLoginError('이메일과 비밀번호를 입력해 주세요.');
+      return;
+    }
+    setLoginPending(true);
+    setLoginError('');
+    try {
+      const result = await requestLogin(id.trim(), password);
+      setLoginOpen(false);
+      onLogin(pendingView, result.user);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : '로그인하지 못했어요.');
+    } finally {
+      setLoginPending(false);
+    }
+  };
   return <main className="landing-page">
     {tutorialOpen && <Tutorial onClose={() => setTutorialOpen(false)} />}
     <header className="landing-simple-header">
@@ -221,11 +235,11 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
         <div className="landing-actions"><button type="button" onClick={() => setTutorialOpen(true)}>튜토리얼</button></div>
       </div>
     </section>
-    {loginOpen && <div className="landing-login-backdrop" onMouseDown={() => setLoginOpen(false)}><form ref={loginForm} role="dialog" aria-modal="true" aria-label="로그인" className="landing-login-card" onSubmit={(event) => { event.preventDefault(); if (!id.trim() || !password) { setLoginError('아이디와 비밀번호를 입력해 주세요.'); return; } onLogin(pendingView, id.trim()); }} onMouseDown={(event) => event.stopPropagation()}>
+    {loginOpen && <div className="landing-login-backdrop" onMouseDown={() => setLoginOpen(false)}><form ref={loginForm} role="dialog" aria-modal="true" aria-label="로그인" className="landing-login-card" onSubmit={submitLogin} onMouseDown={(event) => event.stopPropagation()}>
       <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" onClick={() => setLoginOpen(false)} aria-label="로그인 닫기">×</button></div>
       {signupComplete && <p className="signup-success" role="status">회원가입이 완료됐어요. 입력한 아이디로 로그인해 주세요.</p>}
-      <label>아이디<input value={id} onChange={(event) => { setId(event.target.value); setLoginError(''); setSignupComplete(false); }} autoComplete="username" /></label><label htmlFor="login-password">비밀번호</label><div className="password-field"><input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => { setPassword(event.target.value); setLoginError(''); }} autoComplete="current-password" /><button type="button" aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.8-5 9-5 9 5 9 5-3.8 5-9 5-9-5-9-5z" /><circle cx="12" cy="12" r="2.5" />{showPassword && <path d="M4 4l16 16" />}</svg></button></div>{loginError && <p className="field-error" role="alert">{loginError}</p>}
-      <button className="primary-button">로그인</button>
+      <label>이메일<input type="email" value={id} onChange={(event) => { setId(event.target.value); setLoginError(''); setSignupComplete(false); }} autoComplete="username" /></label><label htmlFor="login-password">비밀번호</label><div className="password-field"><input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => { setPassword(event.target.value); setLoginError(''); }} autoComplete="current-password" /><button type="button" aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.8-5 9-5 9 5 9 5-3.8 5-9 5-9-5-9-5z" /><circle cx="12" cy="12" r="2.5" />{showPassword && <path d="M4 4l16 16" />}</svg></button></div>{loginError && <p className="field-error" role="alert">{loginError}</p>}
+      <button className="primary-button" disabled={loginPending}>{loginPending ? '로그인 중...' : '로그인'}</button>
     </form></div>}
     {signupOpen && <div className="landing-login-backdrop" onMouseDown={() => setSignupOpen(false)}><form ref={signupForm} role="dialog" aria-modal="true" aria-label="회원가입" className="landing-login-card signup-card" onSubmit={(event) => { event.preventDefault(); if (!signupName.trim() || !signupId.trim() || !signupPassword || !signupPasswordConfirm) { setSignupError('모든 항목을 입력해 주세요.'); return; } if (signupPassword.length < 8) { setSignupError('비밀번호는 8자 이상 입력해 주세요.'); return; } if (signupPassword !== signupPasswordConfirm) { setSignupError('비밀번호가 일치하지 않아요.'); return; } setId(signupId.trim()); setPassword(signupPassword); setSignupComplete(true); setSignupOpen(false); setPendingView('dashboard'); setLoginOpen(true); }} onMouseDown={(event) => event.stopPropagation()}>
       <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" onClick={() => setSignupOpen(false)} aria-label="회원가입 닫기">×</button></div>

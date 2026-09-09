@@ -8,6 +8,20 @@ export type TrainingStatus = '진행 중' | '취소 요청' | '취소됨' | '완
 
 export type DeviceType = 'robot' | 'umi';
 
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+  user: AuthenticatedUser;
+}
+
 export interface Robot {
   id: string;
   name: string;

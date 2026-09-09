@@ -75,6 +75,9 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
 
     RobotExecution execution =
         new RobotExecution(executionId, ownerId, robotId, taskVersionId, deploymentId, 3);
+    repository.save(execution);
+    entityManager.flush();
+
     Instant startedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     execution.acceptReport(
         "report-1",
@@ -84,7 +87,6 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
         1,
         new BigDecimal("10.00"),
         startedAt);
-    repository.save(execution);
     entityManager.flush();
     entityManager.clear();
 
@@ -98,6 +100,6 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
     assertThat(loaded.getLastReportHash()).isEqualTo("a".repeat(64));
     assertThat(loaded.getRequestedAt()).isNotNull();
     assertThat(loaded.getUpdatedAt()).isNotNull();
-    assertThat(loaded.getRowVersion()).isZero();
+    assertThat(loaded.getRowVersion()).isOne();
   }
 }
