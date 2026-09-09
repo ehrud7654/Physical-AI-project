@@ -3,9 +3,16 @@
 <package format="3">
   <name>so101_bringup</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="ssafy@todo.todo">ssafy</maintainer>
-  <license>TODO: License declaration</license>
+  <description>SO-101 ros2_control bringup (URDF+controllers+launch)</description>
+  <maintainer email="shwzone@gmail.com">Hw</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>forward_command_controller</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>so101_hardware</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

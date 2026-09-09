@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<!-- SO-101 ros2_control 최소 운동학 + 하드웨어 인터페이스.
+     목적 = controller_manager 로딩 + FakeBus 30Hz 흐름 검증.
+     ⚠️ mesh/충돌/정확한 링크 오프셋 없음 — 그건 MoveIt/RViz 붙일 때 ver1 URDF 재사용.
+     관절 순서·범위 = AI/configs/so101.yaml (단일 출처). gripper 는 서보 각(revolute),
+     prismatic gap 은 시각화용이라 여기 없음. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="so101">
+
+  <!-- bus: fake(기본) | st3215(151 완료 후). launch 인자로 덮어씀. -->
+  <xacro:arg name="bus" default="fake"/>
+
+  <!-- ── 최소 링크 체인 (dummy geometry) ───────────────────────────── -->
+  <link name="base_link"/>
+  <link name="shoulder_link"/>
+  <link name="upper_arm_link"/>
+  <link name="lower_arm_link"/>
+  <link name="wrist_link"/>
+  <link name="wrist_roll_link"/>
+  <link name="gripper_link"/>
+
+  <!-- 각 관절: 범위=so101.yaml. 축은 잠정(z) — 정확한 축/오프셋은 ver1 URDF 재사용 시. -->
+  <joint name="shoulder_pan" type="revolute">
+    <parent link="base_link"/><child link="shoulder_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/><axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.9198621771937616" upper="1.9198621771937634"/>
+  </joint>
+  <joint name="shoulder_lift" type="revolute">
+    <parent link="shoulder_link"/><child link="upper_arm_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/><axis xyz="0 1 0"/>
+    <limit effort="10" velocity="10" lower="-1.7453292519943224" upper="1.7453292519943366"/>
+  </joint>
+  <joint name="elbow_flex" type="revolute">
+    <parent link="upper_arm_link"/><child link="lower_arm_link"/>
+    <origin xyz="0 0 0.11" rpy="0 0 0"/><axis xyz="0 1 0"/>
+    <limit effort="10" velocity="10" lower="-1.69" upper="1.69"/>
+  </joint>
+  <joint name="wrist_flex" type="revolute">
+    <parent link="lower_arm_link"/><child link="wrist_link"/>
+    <origin xyz="0 0 0.11" rpy="0 0 0"/><axis xyz="0 1 0"/>
+    <limit effort="10" velocity="10" lower="-1.6580628494556928" upper="1.6580627293335335"/>
+  </joint>
+  <joint name="wrist_roll" type="revolute">
+    <parent link="wrist_link"/><child link="wrist_roll_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/><axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-2.7438472969992493" upper="2.841206309382605"/>
+  </joint>
+  <!-- gripper = 서보 각(revolute), 하한=닫힘. gap(m) 아님. -->
+  <joint name="gripper" type="revolute">
+    <parent link="wrist_roll_link"/><child link="gripper_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/><axis xyz="0 0 1"/>
+    <limit effort="30" velocity="3" lower="-0.17453297762778586" upper="1.7453291995659765"/>
+  </joint>
+
+  <!-- ── ros2_control 하드웨어 ─────────────────────────────────────
+       plugin=so101_hardware/SO101System. per-joint <param>=캘리브(온보딩 프로필).
+       ⚠️ zero_tick/direction 은 실물 펌웨어 캘리브 미검증 placeholder. 실측 후 교체. -->
+  <ros2_control name="SO101System" type="system">
+    <hardware>
+      <plugin>so101_hardware/SO101System</plugin>
+      <param name="bus">$(arg bus)</param>
+    </hardware>
+
+    <xacro:macro name="servo_joint" params="name sid">
+      <joint name="${name}">
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <param name="servo_id">${sid}</param>
+        <param name="zero_tick">2048</param>
+        <param name="ticks_per_rad">651.8986469044033</param> <!-- 4096/(2pi) -->
+        <param name="direction">1</param>
+        <param name="min_tick">0</param>
+        <param name="max_tick">4095</param>
+      </joint>
+    </xacro:macro>
+
+    <xacro:servo_joint name="shoulder_pan"  sid="1"/>
+    <xacro:servo_joint name="shoulder_lift" sid="2"/>
+    <xacro:servo_joint name="elbow_flex"    sid="3"/>
+    <xacro:servo_joint name="wrist_flex"    sid="4"/>
+    <xacro:servo_joint name="wrist_roll"    sid="6"/>
+    <xacro:servo_joint name="gripper"       sid="5"/>
+  </ros2_control>
+</robot>
