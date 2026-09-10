@@ -35,6 +35,32 @@ inline double tick_to_rad(int32_t tick, const JointCalib & c)
   return static_cast<double>(tick - c.zero_tick) / (c.ticks_per_rad * c.direction);
 }
 
+// 그리퍼 캘리브 — 팔과 달리 명령/상태 단위가 **미터(손가락 간격 width)** 다 (AI 계약).
+// closed_tick(닫힘)~open_tick(열림) tick 이 width 0~max_width_m 에 대응.
+struct GripperCalib
+{
+  int32_t closed_tick = 1720;   // width=0 (닫힘)
+  int32_t open_tick = 70;        // width=max_width_m (열림). 닫힘보다 작을 수 있음
+  int32_t min_tick = 0;
+  int32_t max_tick = 4095;
+  double max_width_m = 0.09;      // 완전 개방 간격
+};
+
+// ponytail: width↔tick 선형 근사. 실제 gap 은 so101.yaml gap_curve 로 비선형이나,
+// 파지 정밀도 필요해지면 gap_curve 보간으로 교체. 지금은 선형(팀원 방식)으로 충분.
+inline int32_t width_to_tick(double width_m, const GripperCalib & c)
+{
+  double raw = c.closed_tick +
+    (c.open_tick - c.closed_tick) * width_m / c.max_width_m;
+  return std::clamp(static_cast<int32_t>(std::lround(raw)), c.min_tick, c.max_tick);
+}
+
+inline double tick_to_width(int32_t tick, const GripperCalib & c)
+{
+  return static_cast<double>(tick - c.closed_tick) * c.max_width_m /
+         (c.open_tick - c.closed_tick);
+}
+
 }  // namespace so101_hardware
 
 #endif  // SO101_HARDWARE__CONVERSION_HPP_

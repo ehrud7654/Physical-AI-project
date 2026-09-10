@@ -2,8 +2,8 @@
 <!-- SO-101 ros2_control 최소 운동학 + 하드웨어 인터페이스.
      목적 = controller_manager 로딩 + FakeBus 30Hz 흐름 검증.
      ⚠️ mesh/충돌/정확한 링크 오프셋 없음 — 그건 MoveIt/RViz 붙일 때 ver1 URDF 재사용.
-     관절 순서·범위 = AI/configs/so101.yaml (단일 출처). gripper 는 서보 각(revolute),
-     prismatic gap 은 시각화용이라 여기 없음. -->
+     관절 순서·범위 = AI/configs/so101.yaml (단일 출처).
+     팔 5개 = 라디안(revolute), gripper = 미터(width, prismatic) — AI 계약(그리퍼만 미터). -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="so101">
 
   <!-- bus: fake(기본) | st3215(151 완료 후). launch 인자로 덮어씀. -->
@@ -44,11 +44,11 @@
     <origin xyz="0 0 0.05" rpy="0 0 0"/><axis xyz="0 0 1"/>
     <limit effort="10" velocity="10" lower="-2.7438472969992493" upper="2.841206309382605"/>
   </joint>
-  <!-- gripper = 서보 각(revolute), 하한=닫힘. gap(m) 아님. -->
-  <joint name="gripper" type="revolute">
+  <!-- gripper = 손가락 간격 width(미터), prismatic 0~0.09m. 명령/상태 단위 = 미터. -->
+  <joint name="gripper" type="prismatic">
     <parent link="wrist_roll_link"/><child link="gripper_link"/>
     <origin xyz="0 0 0.05" rpy="0 0 0"/><axis xyz="0 0 1"/>
-    <limit effort="30" velocity="3" lower="-0.17453297762778586" upper="1.7453291995659765"/>
+    <limit effort="30" velocity="0.04" lower="0.0" upper="0.09"/>
   </joint>
 
   <!-- ── ros2_control 하드웨어 ─────────────────────────────────────
@@ -78,6 +78,20 @@
     <xacro:servo_joint name="elbow_flex"    sid="3"/>
     <xacro:servo_joint name="wrist_flex"    sid="4"/>
     <xacro:servo_joint name="wrist_roll"    sid="6"/>
-    <xacro:servo_joint name="gripper"       sid="5"/>
+
+    <!-- gripper = 미터(width). 팔과 달리 closed/open_tick + max_width_m 로 변환.
+         ⚠️ 서보 ID: jetson_config=5(gripper)/6(wrist_roll). 팀원 코드는 반대(5/6 스왑).
+            실물 배선 실측으로 확정할 것. 여기선 jetson_config 기준(gripper=5).
+         ⚠️ closed/open_tick: jetson_config 값(closed 1720 검증, open 70 미검증). 실측 필요. -->
+    <joint name="gripper">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <param name="servo_id">5</param>
+      <param name="closed_tick">1720</param>
+      <param name="open_tick">70</param>
+      <param name="min_tick">70</param>
+      <param name="max_tick">1720</param>
+      <param name="max_width_m">0.09</param>
+    </joint>
   </ros2_control>
 </robot>

@@ -1,10 +1,11 @@
 // SO101System — ros2_control SystemInterface 플러그인.
-// 컨트롤러(라디안)와 서보(tick) 사이의 얇은 래퍼. IK 없음(AI가 이미 함).
-//   write: command[rad] → tick → bus
-//   read:  bus → tick → state[rad]
+// 컨트롤러(팔=rad, 그리퍼=미터)와 서보(tick) 사이 얇은 래퍼. IK 없음(정책 노드가 함).
+//   write: command → tick → IServoBus     read: IServoBus → tick → state
+// 서보 통신은 IServoBus 구현체(FakeBus=테스트 / St3215ServoBus=실물)로 갈아끼움.
 #ifndef SO101_HARDWARE__SO101_SYSTEM_HPP_
 #define SO101_HARDWARE__SO101_SYSTEM_HPP_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,7 +25,8 @@ class SO101System : public hardware_interface::SystemInterface
 public:
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareInfo & info) override;
-
+  hardware_interface::CallbackReturn on_configure(
+    const rclcpp_lifecycle::State & previous_state) override;
   hardware_interface::CallbackReturn on_activate(
     const rclcpp_lifecycle::State & previous_state) override;
   hardware_interface::CallbackReturn on_deactivate(
@@ -39,11 +41,27 @@ public:
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  // 관절 1개의 런타임 정보. 그리퍼는 단위가 미터라 별도 캘리브.
+  struct JointRuntime
+  {
+    std::string name;
+    std::uint8_t servo_id;
+    bool is_gripper;
+    JointCalib arm;       // is_gripper==false 일 때 유효 (rad↔tick)
+    GripperCalib grip;    // is_gripper==true  일 때 유효 (width[m]↔tick)
+  };
+
+  std::vector<JointRuntime> joints_;    // info_.joints 순서
+  std::vector<std::uint8_t> servo_ids_; // joints_ 순서의 서보 ID
+  std::vector<double> pos_state_;       // 상태: 팔=rad, 그리퍼=m
+  std::vector<double> pos_command_;     // 명령: 팔=rad, 그리퍼=m
+
+  std::string bus_type_{"fake"};        // fake | st3215
+  std::string port_{"/dev/ttyTHS1"};
+  int baudrate_{1000000};
+  std::uint16_t speed_{300};
+  std::uint8_t acceleration_{10};
   std::unique_ptr<IServoBus> bus_;
-  std::vector<uint8_t> servo_ids_;      // 관절 순서(0..5)의 서보 ID
-  std::vector<JointCalib> calib_;       // 관절별 캘리브(URDF param)
-  std::vector<double> pos_state_;       // 상태[rad]
-  std::vector<double> pos_command_;     // 명령[rad]
 };
 
 }  // namespace so101_hardware

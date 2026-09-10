@@ -1,7 +1,10 @@
 #include "so101_hardware/so101_system.hpp"
 
-#include <limits>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
@@ -9,6 +12,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "so101_hardware/fake_bus.hpp"
+#include "so101_hardware/st3215_servo_bus.hpp"
 
 namespace so101_hardware
 {
@@ -16,21 +20,22 @@ namespace so101_hardware
 namespace
 {
 auto LOGGER = rclcpp::get_logger("SO101System");
+using ParamMap = std::unordered_map<std::string, std::string>;
 
-// URDF param 헬퍼: 있으면 파싱, 없으면 기본값.
-template <typename T>
-T get_param(const std::unordered_map<std::string, std::string> & p,
-  const std::string & key, T fallback);
+std::string opt_param(const ParamMap & p, const std::string & k, const std::string & fb)
+{
+  auto it = p.find(k);
+  return it == p.end() ? fb : it->second;
+}
 
-template <>
-double get_param(const std::unordered_map<std::string, std::string> & p,
-  const std::string & key, double fb)
-{ auto it = p.find(key); return it == p.end() ? fb : std::stod(it->second); }
-
-template <>
-int get_param(const std::unordered_map<std::string, std::string> & p,
-  const std::string & key, int fb)
-{ auto it = p.find(key); return it == p.end() ? fb : std::stoi(it->second); }
+std::string req_param(const ParamMap & p, const std::string & joint, const std::string & k)
+{
+  auto it = p.find(k);
+  if (it == p.end()) {
+    throw std::invalid_argument(joint + ": missing param " + k);
+  }
+  return it->second;
+}
 }  // namespace
 
 hardware_interface::CallbackReturn SO101System::on_init(
@@ -40,52 +45,91 @@ hardware_interface::CallbackReturn SO101System::on_init(
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  const size_t n = info_.joints.size();
-  pos_state_.assign(n, 0.0);
-  pos_command_.assign(n, 0.0);
-  servo_ids_.resize(n);
-  calib_.resize(n);
-
-  for (size_t i = 0; i < n; ++i) {
-    const auto & jp = info_.joints[i].parameters;
-    servo_ids_[i] = static_cast<uint8_t>(get_param<int>(jp, "servo_id", static_cast<int>(i + 1)));
-    calib_[i].zero_tick = get_param<int>(jp, "zero_tick", 2048);
-    calib_[i].ticks_per_rad = get_param<double>(jp, "ticks_per_rad", 4096.0 / (2.0 * M_PI));
-    calib_[i].direction = static_cast<int8_t>(get_param<int>(jp, "direction", 1));
-    calib_[i].min_tick = get_param<int>(jp, "min_tick", 0);
-    calib_[i].max_tick = get_param<int>(jp, "max_tick", 4095);
-
-    // 관절당 position command/state 인터페이스 1개씩(라디안) 을 기대.
-    if (info_.joints[i].command_interfaces.size() != 1 ||
-      info_.joints[i].command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
-    {
-      RCLCPP_FATAL(LOGGER, "joint '%s' 는 position command 1개만 지원",
-        info_.joints[i].name.c_str());
-      return hardware_interface::CallbackReturn::ERROR;
+  try {
+    const auto & hp = info_.hardware_parameters;
+    bus_type_ = opt_param(hp, "bus", "fake");
+    port_ = opt_param(hp, "port", "/dev/ttyTHS1");
+    baudrate_ = std::stoi(opt_param(hp, "baudrate", "1000000"));
+    const int spd = std::stoi(opt_param(hp, "speed", "300"));
+    const int acc = std::stoi(opt_param(hp, "acceleration", "10"));
+    if (spd < 0 || spd > 32767 || acc < 0 || acc > 150) {
+      throw std::out_of_range("speed/acceleration outside ST3215 limits");
     }
-  }
+    speed_ = static_cast<std::uint16_t>(spd);
+    acceleration_ = static_cast<std::uint8_t>(acc);
 
-  // bus 선택. 지금은 fake 만 존재(st3215 는 151 완료 후 여기서 분기).
-  const auto & hp = info_.hardware_parameters;
-  std::string bus = hp.count("bus") ? hp.at("bus") : "fake";
-  if (bus == "fake") {
-    bus_ = std::make_unique<FakeBus>();
-  } else {
-    // ponytail: st3215 미구현. 151 완료 시 else if (bus=="st3215") 로 분기 추가.
-    RCLCPP_FATAL(LOGGER, "bus '%s' 미구현 (fake 만 가능, st3215 는 151 대기)", bus.c_str());
+    joints_.clear();
+    servo_ids_.clear();
+    for (const auto & j : info_.joints) {
+      // position command/state 1개씩 기대 (팔=rad, 그리퍼=m 이지만 인터페이스 이름은 동일).
+      if (j.command_interfaces.size() != 1 ||
+        j.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
+      {
+        throw std::invalid_argument(j.name + ": position command interface 1개 필요");
+      }
+      const int sid = std::stoi(req_param(j.parameters, j.name, "servo_id"));
+      if (sid < 0 || sid > 253) {
+        throw std::invalid_argument(j.name + ": servo_id 0..253");
+      }
+
+      JointRuntime rt;
+      rt.name = j.name;
+      rt.servo_id = static_cast<std::uint8_t>(sid);
+      rt.is_gripper = (j.name == "gripper");
+
+      if (rt.is_gripper) {
+        rt.grip.closed_tick = std::stoi(req_param(j.parameters, j.name, "closed_tick"));
+        rt.grip.open_tick = std::stoi(req_param(j.parameters, j.name, "open_tick"));
+        rt.grip.min_tick = std::stoi(opt_param(j.parameters, "min_tick", "0"));
+        rt.grip.max_tick = std::stoi(opt_param(j.parameters, "max_tick", "4095"));
+        rt.grip.max_width_m = std::stod(req_param(j.parameters, j.name, "max_width_m"));
+        const auto & g = rt.grip;
+        if (g.closed_tick == g.open_tick || g.min_tick < 0 || g.max_tick > 4095 ||
+          g.min_tick > std::min(g.closed_tick, g.open_tick) ||
+          g.max_tick < std::max(g.closed_tick, g.open_tick) || g.max_width_m <= 0.0)
+        {
+          throw std::invalid_argument(j.name + ": invalid gripper calibration");
+        }
+      } else {
+        rt.arm.zero_tick = std::stoi(req_param(j.parameters, j.name, "zero_tick"));
+        rt.arm.ticks_per_rad = std::stod(opt_param(
+            j.parameters, "ticks_per_rad", std::to_string(4096.0 / (2.0 * M_PI))));
+        rt.arm.direction = static_cast<int8_t>(std::stoi(
+            req_param(j.parameters, j.name, "direction")));
+        rt.arm.min_tick = std::stoi(opt_param(j.parameters, "min_tick", "0"));
+        rt.arm.max_tick = std::stoi(opt_param(j.parameters, "max_tick", "4095"));
+        const auto & a = rt.arm;
+        if (a.direction * a.direction != 1 || a.min_tick < 0 || a.max_tick > 4095 ||
+          a.min_tick > a.zero_tick || a.zero_tick > a.max_tick)
+        {
+          throw std::invalid_argument(j.name + ": invalid arm calibration");
+        }
+      }
+      joints_.push_back(rt);
+      servo_ids_.push_back(rt.servo_id);
+    }
+
+    auto sorted = servo_ids_;
+    std::sort(sorted.begin(), sorted.end());
+    if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) {
+      throw std::invalid_argument("servo_id 중복");
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_FATAL(LOGGER, "on_init 설정 오류: %s", e.what());
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  RCLCPP_INFO(LOGGER, "SO101System 초기화: %zu 관절, bus=%s", n, bus.c_str());
+  pos_state_.assign(joints_.size(), 0.0);
+  pos_command_.assign(joints_.size(), 0.0);
+  RCLCPP_INFO(LOGGER, "on_init: 관절 %zu개, bus=%s", joints_.size(), bus_type_.c_str());
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 std::vector<hardware_interface::StateInterface> SO101System::export_state_interfaces()
 {
   std::vector<hardware_interface::StateInterface> ifaces;
-  for (size_t i = 0; i < info_.joints.size(); ++i) {
-    ifaces.emplace_back(
-      info_.joints[i].name, hardware_interface::HW_IF_POSITION, &pos_state_[i]);
+  for (size_t i = 0; i < joints_.size(); ++i) {
+    ifaces.emplace_back(joints_[i].name, hardware_interface::HW_IF_POSITION, &pos_state_[i]);
   }
   return ifaces;
 }
@@ -93,41 +137,82 @@ std::vector<hardware_interface::StateInterface> SO101System::export_state_interf
 std::vector<hardware_interface::CommandInterface> SO101System::export_command_interfaces()
 {
   std::vector<hardware_interface::CommandInterface> ifaces;
-  for (size_t i = 0; i < info_.joints.size(); ++i) {
-    ifaces.emplace_back(
-      info_.joints[i].name, hardware_interface::HW_IF_POSITION, &pos_command_[i]);
+  for (size_t i = 0; i < joints_.size(); ++i) {
+    ifaces.emplace_back(joints_[i].name, hardware_interface::HW_IF_POSITION, &pos_command_[i]);
   }
   return ifaces;
 }
 
-hardware_interface::CallbackReturn SO101System::on_activate(
-  const rclcpp_lifecycle::State &)
+hardware_interface::CallbackReturn SO101System::on_configure(const rclcpp_lifecycle::State &)
 {
-  bus_->set_torque(servo_ids_, true);
-  // 현재 위치를 명령 초기값으로 → 활성화 순간 튀지 않음.
-  auto ticks = bus_->read_positions(servo_ids_);
-  for (size_t i = 0; i < ticks.size(); ++i) {
-    pos_state_[i] = tick_to_rad(ticks[i], calib_[i]);
-    pos_command_[i] = pos_state_[i];
+  try {
+    if (bus_type_ == "fake") {
+      bus_ = std::make_unique<FakeBus>();
+    } else if (bus_type_ == "st3215") {
+      bus_ = std::make_unique<St3215ServoBus>(port_, baudrate_, speed_, acceleration_);
+    } else {
+      RCLCPP_FATAL(LOGGER, "알 수 없는 bus: %s (fake|st3215)", bus_type_.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+    if (!bus_->ping(servo_ids_)) {
+      RCLCPP_FATAL(LOGGER, "서보 ping 실패 (bus=%s)", bus_type_.c_str());
+      bus_.reset();
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_FATAL(LOGGER, "on_configure 실패: %s", e.what());
+    bus_.reset();
+    return hardware_interface::CallbackReturn::ERROR;
   }
-  RCLCPP_INFO(LOGGER, "SO101System 활성화(torque on)");
+  RCLCPP_INFO(LOGGER, "on_configure: bus 연결·ping OK");
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-hardware_interface::CallbackReturn SO101System::on_deactivate(
-  const rclcpp_lifecycle::State &)
+hardware_interface::CallbackReturn SO101System::on_activate(const rclcpp_lifecycle::State &)
 {
-  bus_->set_torque(servo_ids_, false);
-  RCLCPP_INFO(LOGGER, "SO101System 비활성화(torque off)");
+  if (read(rclcpp::Time{}, rclcpp::Duration{0, 0}) != hardware_interface::return_type::OK) {
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  pos_command_ = pos_state_;   // 활성화 순간 튐 방지
+  try {
+    bus_->set_torque(servo_ids_, true);
+  } catch (const std::exception & e) {
+    RCLCPP_FATAL(LOGGER, "torque on 실패: %s", e.what());
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  RCLCPP_INFO(LOGGER, "on_activate: torque on");
+  return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+hardware_interface::CallbackReturn SO101System::on_deactivate(const rclcpp_lifecycle::State &)
+{
+  if (bus_) {
+    try {
+      bus_->set_torque(servo_ids_, false);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(LOGGER, "torque off 실패: %s", e.what());
+    }
+  }
+  RCLCPP_INFO(LOGGER, "on_deactivate: torque off");
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::return_type SO101System::read(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
-  auto ticks = bus_->read_positions(servo_ids_);
-  for (size_t i = 0; i < ticks.size(); ++i) {
-    pos_state_[i] = tick_to_rad(ticks[i], calib_[i]);
+  if (!bus_) {
+    return hardware_interface::return_type::ERROR;
+  }
+  try {
+    const auto ticks = bus_->read_positions(servo_ids_);
+    for (size_t i = 0; i < joints_.size(); ++i) {
+      pos_state_[i] = joints_[i].is_gripper
+        ? tick_to_width(ticks[i], joints_[i].grip)
+        : tick_to_rad(ticks[i], joints_[i].arm);
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(LOGGER, "read 실패: %s", e.what());
+    return hardware_interface::return_type::ERROR;
   }
   return hardware_interface::return_type::OK;
 }
@@ -135,11 +220,21 @@ hardware_interface::return_type SO101System::read(
 hardware_interface::return_type SO101System::write(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
-  std::vector<int32_t> ticks(pos_command_.size());
-  for (size_t i = 0; i < pos_command_.size(); ++i) {
-    ticks[i] = rad_to_tick(pos_command_[i], calib_[i]);  // clamp 은 conversion 내부
+  if (!bus_) {
+    return hardware_interface::return_type::ERROR;
   }
-  bus_->write_positions(servo_ids_, ticks);
+  try {
+    std::vector<int32_t> ticks(joints_.size());
+    for (size_t i = 0; i < joints_.size(); ++i) {
+      ticks[i] = joints_[i].is_gripper
+        ? width_to_tick(pos_command_[i], joints_[i].grip)   // clamp 은 conversion 내부
+        : rad_to_tick(pos_command_[i], joints_[i].arm);
+    }
+    bus_->write_positions(servo_ids_, ticks);
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(LOGGER, "write 실패: %s", e.what());
+    return hardware_interface::return_type::ERROR;
+  }
   return hardware_interface::return_type::OK;
 }
 

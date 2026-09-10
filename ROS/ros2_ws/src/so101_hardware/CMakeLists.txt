@@ -11,7 +11,9 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 
-add_library(so101_hardware SHARED src/so101_system.cpp)
+add_library(so101_hardware SHARED
+  src/so101_system.cpp
+  src/st3215_bus.cpp)
 target_include_directories(so101_hardware PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
