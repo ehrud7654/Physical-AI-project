@@ -31,11 +31,9 @@ install(DIRECTORY include/ DESTINATION include)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # 저작권·코드스타일 린터는 끈다 (내부 프로젝트, 워크스페이스 전체가 미사용).
-  # 기능 self-check(test_conversion)만 유지.
+  # copyright 만 끈다 (내부 프로젝트, 저작권 문구 불필요).
+  # cpplint/uncrustify(코드 스타일)는 유지.
   set(ament_cmake_copyright_FOUND TRUE)
-  set(ament_cmake_cpplint_FOUND TRUE)
-  set(ament_cmake_uncrustify_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 
   # 순수 변환 self-check (ROS 불필요).

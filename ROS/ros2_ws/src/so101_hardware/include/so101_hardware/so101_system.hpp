@@ -52,7 +52,7 @@ private:
   };
 
   std::vector<JointRuntime> joints_;    // info_.joints 순서
-  std::vector<std::uint8_t> servo_ids_; // joints_ 순서의 서보 ID
+  std::vector<std::uint8_t> servo_ids_;  // joints_ 순서의 서보 ID
   std::vector<double> pos_state_;       // 상태: 팔=rad, 그리퍼=m
   std::vector<double> pos_command_;     // 명령: 팔=rad, 그리퍼=m
 

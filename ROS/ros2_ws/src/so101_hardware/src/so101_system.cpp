@@ -92,7 +92,8 @@ hardware_interface::CallbackReturn SO101System::on_init(
         }
       } else {
         rt.arm.zero_tick = std::stoi(req_param(j.parameters, j.name, "zero_tick"));
-        rt.arm.ticks_per_rad = std::stod(opt_param(
+        rt.arm.ticks_per_rad = std::stod(
+          opt_param(
             j.parameters, "ticks_per_rad", std::to_string(4096.0 / (2.0 * M_PI))));
         rt.arm.direction = static_cast<int8_t>(std::stoi(
             req_param(j.parameters, j.name, "direction")));
@@ -206,9 +207,9 @@ hardware_interface::return_type SO101System::read(
   try {
     const auto ticks = bus_->read_positions(servo_ids_);
     for (size_t i = 0; i < joints_.size(); ++i) {
-      pos_state_[i] = joints_[i].is_gripper
-        ? tick_to_width(ticks[i], joints_[i].grip)
-        : tick_to_rad(ticks[i], joints_[i].arm);
+      pos_state_[i] = joints_[i].is_gripper ?
+        tick_to_width(ticks[i], joints_[i].grip) :
+        tick_to_rad(ticks[i], joints_[i].arm);
     }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(LOGGER, "read 실패: %s", e.what());
@@ -226,9 +227,9 @@ hardware_interface::return_type SO101System::write(
   try {
     std::vector<int32_t> ticks(joints_.size());
     for (size_t i = 0; i < joints_.size(); ++i) {
-      ticks[i] = joints_[i].is_gripper
-        ? width_to_tick(pos_command_[i], joints_[i].grip)   // clamp 은 conversion 내부
-        : rad_to_tick(pos_command_[i], joints_[i].arm);
+      ticks[i] = joints_[i].is_gripper ?
+        width_to_tick(pos_command_[i], joints_[i].grip) :   // clamp 은 conversion 내부
+        rad_to_tick(pos_command_[i], joints_[i].arm);
     }
     bus_->write_positions(servo_ids_, ticks);
   } catch (const std::exception & e) {

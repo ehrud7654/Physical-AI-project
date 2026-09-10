@@ -1,16 +1,17 @@
-// STS3215 UART 드라이버 구현 — 팀원(151) 코드. 원본: so101_direct_motor_pipeline/jetson/servo_control.py
+// STS3215 UART 드라이버 구현 — 팀원(151) 코드. servo_control.py 포팅.
 #include "so101_hardware/st3215_bus.hpp"
+
+#include <fcntl.h>
+#include <poll.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <chrono>
 #include <cstring>
-#include <fcntl.h>
 #include <numeric>
-#include <poll.h>
 #include <sstream>
-#include <termios.h>
 #include <thread>
-#include <unistd.h>
 
 namespace so101_hardware
 {
