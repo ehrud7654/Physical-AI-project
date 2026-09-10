@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 import math
 import xml.etree.ElementTree as ET
 
@@ -12,6 +13,12 @@ import numpy as np
 ARM_JOINTS = (
     "shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"
 )
+
+
+def canonical_file_sha256(path: Path) -> str:
+    """Hash text content with LF newlines, independent of Git checkout policy."""
+    content = Path(path).read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 @dataclass(frozen=True)
