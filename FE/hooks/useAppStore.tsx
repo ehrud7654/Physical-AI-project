@@ -206,11 +206,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     : trainings, [learningDraft, trainings]);
 
   const saveWorkflow = useCallback(async (work: SavedWork) => {
-    const next = await saveWork(work);
-    setSavedWorks(next);
-    const saved = work.id.startsWith('draft-')
-      ? next.find((item) => item.name === work.name)
-      : next.find((item) => item.id === work.id);
+    const result = await saveWork(work);
+    setSavedWorks(result.works);
+    const saved = result.works.find((item) => item.id === result.savedId);
     if (!saved) throw new Error('저장된 작업을 다시 조회하지 못했어요.');
     return saved;
   }, []);

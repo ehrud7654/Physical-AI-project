@@ -45,7 +45,9 @@ export async function fetchSavedWorks(): Promise<SavedWork[]> {
   return tasks.map((task) => toSavedWork(task, skillByVersionId));
 }
 
-export async function saveWork(work: SavedWork): Promise<SavedWork[]> {
+export interface SaveWorkResult { works: SavedWork[]; savedId: string; }
+
+export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {
   let taskId = work.id;
   if (work.id.startsWith('draft-')) {
     const created = await apiRequest<ApiTask>('/tasks', {
@@ -73,7 +75,7 @@ export async function saveWork(work: SavedWork): Promise<SavedWork[]> {
       })),
     }),
   });
-  return fetchSavedWorks();
+  return { works: await fetchSavedWorks(), savedId: taskId };
 }
 
 function flatten(blocks: WorkflowBlock[]): WorkflowBlock[] {

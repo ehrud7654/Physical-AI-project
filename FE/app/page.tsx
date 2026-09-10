@@ -86,6 +86,7 @@ function HomeInner() {
   const [deviceTab, setDeviceTab] = useState<DeviceType>('umi');
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
+  const [workEditorRevision, setWorkEditorRevision] = useState(0);
   const [suggestedSkillName, setSuggestedSkillName] = useState<string | null>(null);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, entered]);
   const [toast, setToast] = useState('');
@@ -122,11 +123,15 @@ function HomeInner() {
 
   const enterView = (target: View) => { setView(target); setEntered(true); };
   const navigateTo = (target: View) => {
-    if (target === 'work') setEditingWorkId(null);
+    if (target === 'work') {
+      setEditingWorkId(null);
+      setWorkEditorRevision((revision) => revision + 1);
+    }
     setView(target);
   };
   const editWork = (workId: string) => {
-    setEditingWorkId(workId);
+    setEditingWorkId(workId || null);
+    setWorkEditorRevision((revision) => revision + 1);
     setView('work');
   };
   const login = (target: View, user?: AuthenticatedUser) => {
@@ -161,7 +166,7 @@ function HomeInner() {
           {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'training' && <TrainingStatusView onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'learn' && <LearnView onNavigate={navigateTo} onToast={showToast} onGoWork={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} />}
-          {view === 'work' && <WorkView suggestedSkillName={suggestedSkillName} editingWorkId={editingWorkId} onNavigate={navigateTo} onToast={showToast} />}
+          {view === 'work' && <WorkView key={`${editingWorkId ?? 'new'}-${workEditorRevision}`} suggestedSkillName={suggestedSkillName} editingWorkId={editingWorkId} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'admin' && <AdminView onToast={showToast} />}
         </>}
       </section>
