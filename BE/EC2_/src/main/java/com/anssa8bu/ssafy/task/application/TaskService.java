@@ -13,15 +13,13 @@ import com.anssa8bu.ssafy.robot.entity.RobotConnectionStatus;
 import com.anssa8bu.ssafy.robot.repository.RobotRepository;
 import com.anssa8bu.ssafy.task.entity.Task;
 import com.anssa8bu.ssafy.task.entity.TaskStep;
+import com.anssa8bu.ssafy.task.entity.TaskStepType;
 import com.anssa8bu.ssafy.task.entity.TaskVersion;
 import com.anssa8bu.ssafy.task.repository.TaskRepository;
 import com.anssa8bu.ssafy.task.repository.TaskStepRepository;
 import com.anssa8bu.ssafy.task.repository.TaskVersionRepository;
 import java.time.Clock;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -29,6 +27,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TaskService {
+  private static final int MAX_NESTING_DEPTH = 3;
+  private static final int MAX_REPEAT_COUNT = 100;
+  private static final int MAX_EXPANDED_STEPS = 1_000;
+  private static final Map<String, double[]> MOTOR_RANGES = Map.of(
+      "J1", new double[] {-180, 180}, "J2", new double[] {-90, 90},
+      "J3", new double[] {-135, 135}, "J4", new double[] {-180, 180},
+      "J5", new double[] {-120, 120}, "J6", new double[] {-360, 360});
   private final TaskRepository tasks;
   private final TaskVersionRepository versions;
   private final TaskStepRepository steps;
@@ -112,14 +117,16 @@ public class TaskService {
     Robot robot = robots.findByIdAndOwnerId(robotId, ownerId)
         .orElseThrow(() -> new ResourceNotFoundException("Robot"));
     List<TaskStep> versionSteps = steps.findAllByTaskVersionIdOrderByStepOrder(versionId);
-    Map<UUID, SkillVersion> skillMap = skillVersions.findAllByIdIn(
-        versionSteps.stream().map(TaskStep::getSkillVersionId).collect(Collectors.toSet())).stream()
+    Set<UUID> referencedSkills = versionSteps.stream()
+        .filter(step -> step.getStepType() == TaskStepType.SKILL)
+        .map(TaskStep::getSkillVersionId).collect(Collectors.toSet());
+    Map<UUID, SkillVersion> skillMap = skillVersions.findAllByIdIn(referencedSkills).stream()
         .collect(Collectors.toMap(SkillVersion::getId, Function.identity()));
     var issues = new java.util.ArrayList<ValidationIssue>();
     if (versionSteps.isEmpty()) issues.add(issue("EMPTY_TASK", "실행할 동작이 없습니다.", "NONE"));
     if (robot.getConnectionStatus() != RobotConnectionStatus.ONLINE)
       issues.add(issue("ROBOT_OFFLINE", "로봇이 오프라인입니다.", "WAIT"));
-    if (skillMap.size() != versionSteps.stream().map(TaskStep::getSkillVersionId).distinct().count()
+    if (skillMap.size() != referencedSkills.size()
         || skillMap.values().stream().anyMatch(v -> v.getStatus() != SkillVersionStatus.READY || !v.isGatePassed()))
       issues.add(issue("SKILL_VERSION_NOT_READY", "배포할 수 없는 스킬 버전이 포함되어 있습니다.", "RETRY"));
     if (skillMap.values().stream().anyMatch(v -> !v.getRobotProfileId().equals(robot.getRobotProfileId())))
@@ -139,18 +146,76 @@ public class TaskService {
       throw new BusinessConflictException("INVALID_STEP_ORDER", "step order는 1부터 연속이어야 합니다.");
   }
   private VersionResponse publishVersion(Task task, List<StepRequest> requestedSteps) {
-    validateOrders(requestedSteps);
-    Map<UUID, SkillVersion> skillMap = skillVersions.findAllByIdIn(
-        requestedSteps.stream().map(StepRequest::skillVersionId).collect(Collectors.toSet()))
+    Set<UUID> requestedSkillIds = new HashSet<>();
+    int expandedSteps = validateSteps(requestedSteps, 1, requestedSkillIds);
+    if (expandedSteps > MAX_EXPANDED_STEPS)
+      throw new BusinessConflictException("TOO_MANY_EXPANDED_STEPS", "반복 전개 후 실행 단계는 1,000개 이하여야 합니다.");
+    Map<UUID, SkillVersion> skillMap = skillVersions.findAllByIdIn(requestedSkillIds)
         .stream().collect(Collectors.toMap(SkillVersion::getId, Function.identity()));
-    if (skillMap.size() != new HashSet<>(requestedSteps.stream().map(StepRequest::skillVersionId).toList()).size()
+    if (skillMap.size() != requestedSkillIds.size()
         || skillMap.values().stream().anyMatch(v -> v.getStatus() != SkillVersionStatus.READY))
       throw new BusinessConflictException("SKILL_VERSION_NOT_READY", "READY 상태가 아닌 스킬 버전이 포함되어 있습니다.");
     UUID versionId = UUID.randomUUID();
     TaskVersion version = versions.save(new TaskVersion(versionId, task.getId(), task.publishNextVersion()));
-    List<TaskStep> saved = steps.saveAll(requestedSteps.stream().map(s -> new TaskStep(
-        UUID.randomUUID(), versionId, s.skillVersionId(), s.order(), s.parameters(), s.timeoutSeconds())).toList());
+    List<TaskStep> saved = new ArrayList<>();
+    saveSteps(versionId, null, requestedSteps, saved);
     return versionResponse(version, saved);
+  }
+
+  private int validateSteps(List<StepRequest> requested, int depth, Set<UUID> skillIds) {
+    if (requested == null || requested.isEmpty())
+      throw new BusinessConflictException("EMPTY_TASK", "실행할 단계가 필요합니다.");
+    if (depth > MAX_NESTING_DEPTH)
+      throw new BusinessConflictException("REPEAT_NESTING_TOO_DEEP", "반복 블록은 3단계까지만 중첩할 수 있습니다.");
+    validateOrders(requested);
+    int expanded = 0;
+    for (StepRequest step : requested) {
+      TaskStepType type;
+      try { type = TaskStepType.valueOf(step.type().toUpperCase(Locale.ROOT)); }
+      catch (IllegalArgumentException exception) {
+        throw new BusinessConflictException("INVALID_STEP_TYPE", "지원하지 않는 작업 단계입니다.");
+      }
+      switch (type) {
+        case SKILL -> {
+          if (step.skillVersionId() == null)
+            throw new BusinessConflictException("SKILL_VERSION_REQUIRED", "스킬 단계에는 스킬 버전이 필요합니다.");
+          skillIds.add(step.skillVersionId());
+          expanded++;
+        }
+        case MOTOR -> {
+          validateMotor(step.parameters());
+          expanded++;
+        }
+        case REPEAT -> {
+          if (step.repeatCount() == null || step.repeatCount() > MAX_REPEAT_COUNT)
+            throw new BusinessConflictException("INVALID_REPEAT_COUNT", "반복 횟수는 1~100이어야 합니다.");
+          expanded += step.repeatCount() * validateSteps(step.children(), depth + 1, skillIds);
+        }
+      }
+    }
+    return expanded;
+  }
+
+  private void validateMotor(Map<String, Object> parameters) {
+    Object motorValue = parameters == null ? null : parameters.get("motor");
+    Object angleValue = parameters == null ? null : parameters.get("angle");
+    double[] range = motorValue instanceof String motor ? MOTOR_RANGES.get(motor) : null;
+    if (range == null || !(angleValue instanceof Number angle)
+        || angle.doubleValue() < range[0] || angle.doubleValue() > range[1])
+      throw new BusinessConflictException("INVALID_MOTOR_COMMAND", "모터 이름과 허용 각도를 확인해 주세요.");
+  }
+
+  private void saveSteps(UUID versionId, UUID parentId, List<StepRequest> requested,
+      List<TaskStep> saved) {
+    for (StepRequest request : requested) {
+      TaskStepType type = TaskStepType.valueOf(request.type().toUpperCase(Locale.ROOT));
+      UUID id = UUID.randomUUID();
+      TaskStep entity = steps.save(new TaskStep(id, versionId, parentId, type,
+          request.skillVersionId(), request.order(), request.parameters(),
+          request.timeoutSeconds(), request.repeatCount()));
+      saved.add(entity);
+      if (type == TaskStepType.REPEAT) saveSteps(versionId, id, request.children(), saved);
+    }
   }
   private TaskResponse taskResponse(Task task, boolean include) {
     VersionResponse latest = include ? versions.findFirstByTaskIdOrderByVersionDesc(task.getId())
@@ -162,8 +227,15 @@ public class TaskService {
     return versionResponse(version, steps.findAllByTaskVersionIdOrderByStepOrder(version.getId()));
   }
   private VersionResponse versionResponse(TaskVersion version, List<TaskStep> items) {
-    return new VersionResponse(version.getId(), version.getTaskId(), version.getVersion(), items.stream()
-        .map(s -> new StepResponse(s.getStepOrder(), s.getSkillVersionId(), s.getParameters(), s.getTimeoutSeconds())).toList(), version.getCreatedAt());
+    return new VersionResponse(version.getId(), version.getTaskId(), version.getVersion(),
+        stepResponses(items, null), version.getCreatedAt());
+  }
+  private List<StepResponse> stepResponses(List<TaskStep> items, UUID parentId) {
+    return items.stream().filter(step -> Objects.equals(step.getParentStepId(), parentId))
+        .sorted(Comparator.comparingInt(TaskStep::getStepOrder))
+        .map(step -> new StepResponse(step.getStepOrder(), step.getStepType().name(),
+            step.getSkillVersionId(), step.getParameters(), step.getTimeoutSeconds(),
+            step.getRepeatCount(), stepResponses(items, step.getId()))).toList();
   }
   private ValidationIssue issue(String c, String m, String a) { return new ValidationIssue(c, m, a); }
 }

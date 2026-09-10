@@ -9,6 +9,8 @@ import com.anssa8bu.ssafy.execution.repository.RobotExecutionRepository;
 import com.anssa8bu.ssafy.robot.entity.*;
 import com.anssa8bu.ssafy.robot.repository.RobotRepository;
 import com.anssa8bu.ssafy.task.repository.TaskStepRepository;
+import com.anssa8bu.ssafy.task.entity.TaskStep;
+import com.anssa8bu.ssafy.task.entity.TaskStepType;
 import java.time.Clock;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -30,7 +32,7 @@ public class ExecutionService {
     Deployment deployment=deployments.findByIdAndRobotId(request.deploymentId(),robotId).orElseThrow(()->new ResourceNotFoundException("Deployment"));
     if(deployment.getStatus()!=DeploymentStatus.SUCCEEDED || !deployment.getTaskVersionId().equals(request.taskVersionId()))
       throw new BusinessConflictException("DEPLOYMENT_NOT_READY","완료된 현재 배포가 아닙니다.");
-    int total=Math.toIntExact(steps.countByTaskVersionId(request.taskVersionId()));
+    int total=countExecutableSteps(steps.findAllByTaskVersionIdOrderByStepOrder(request.taskVersionId()),null);
     RobotExecution saved=executions.save(new RobotExecution(UUID.randomUUID(),owner,robotId,request.taskVersionId(),request.deploymentId(),total));
     idempotency.complete(owner,"POST",path,claim,202,"ROBOT_EXECUTION",saved.getId());
     return map(saved);
@@ -45,5 +47,15 @@ public class ExecutionService {
     idempotency.complete(owner,"POST",path,claim,202,"ROBOT_EXECUTION",e.getId());return map(e);}
   private void ownedRobot(UUID o,UUID r){robots.findByIdAndOwnerId(r,o).orElseThrow(()->new ResourceNotFoundException("Robot"));}
   private RobotExecution owned(UUID o,UUID r,UUID id){ownedRobot(o,r);return executions.findByIdAndRobotIdAndOwnerId(id,r,o).orElseThrow(()->new ResourceNotFoundException("RobotExecution"));}
+  private int countExecutableSteps(List<TaskStep> all, UUID parentId){
+    int total=0;
+    for(TaskStep step:all){
+      if(!Objects.equals(step.getParentStepId(),parentId))continue;
+      if(step.getStepType()==TaskStepType.REPEAT){
+        total+=step.getRepeatCount()*countExecutableSteps(all,step.getId());
+      }else total++;
+    }
+    return total;
+  }
   private ExecutionResponse map(RobotExecution e){return new ExecutionResponse(e.getId(),e.getOwnerId(),e.getRobotId(),e.getTaskVersionId(),e.getDeploymentId(),e.getStatus(),e.getCurrentStep(),e.getTotalSteps(),e.getProgressPercent(),e.getErrorCode()==null?null:new ErrorInfo(e.getErrorCode(),e.getErrorMessage(),e.getRecoveryAction()),e.getRequestedAt(),e.getStartedAt(),e.getFinishedAt(),e.getUpdatedAt());}
 }

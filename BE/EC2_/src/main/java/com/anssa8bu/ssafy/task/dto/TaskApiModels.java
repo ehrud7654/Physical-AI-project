@@ -27,14 +27,18 @@ public final class TaskApiModels {
 
   public record StepRequest(
       @Positive int order,
-      @NotNull UUID skillVersionId,
+      @NotNull String type,
+      UUID skillVersionId,
       Map<String, Object> parameters,
-      @Positive Integer timeoutSeconds) {}
+      @Positive Integer timeoutSeconds,
+      @Positive Integer repeatCount,
+      List<@Valid StepRequest> children) {}
 
   public record VersionCreateRequest(@NotEmpty List<@Valid StepRequest> steps) {}
 
   public record StepResponse(
-      int order, UUID skillVersionId, Map<String, Object> parameters, Integer timeoutSeconds) {}
+      int order, String type, UUID skillVersionId, Map<String, Object> parameters,
+      Integer timeoutSeconds, Integer repeatCount, List<StepResponse> children) {}
 
   public record VersionResponse(
       UUID id, UUID taskId, int version, List<StepResponse> steps, Instant createdAt) {}

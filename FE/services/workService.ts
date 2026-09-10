@@ -3,7 +3,15 @@ import { ApiError, apiRequest } from './client';
 
 interface ApiSkill { id: string; displayName: string; description: string | null; }
 interface ApiSkillVersion { id: string; skillId: string; version: number; }
-interface ApiTaskStep { order: number; skillVersionId: string; }
+interface ApiTaskStep {
+  order: number;
+  type: 'SKILL' | 'MOTOR' | 'REPEAT';
+  skillVersionId: string | null;
+  parameters: Record<string, unknown>;
+  timeoutSeconds: number | null;
+  repeatCount: number | null;
+  children: ApiTaskStep[];
+}
 interface ApiTaskVersion { id: string; taskId: string; version: number; steps: ApiTaskStep[]; createdAt: string; }
 interface ApiTask {
   id: string;
@@ -48,19 +56,10 @@ export async function fetchSavedWorks(): Promise<SavedWork[]> {
 export interface SaveWorkResult { works: SavedWork[]; savedId: string; }
 
 export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {
-  const skillBlocks = flatten(work.blocks);
-  if (!skillBlocks.length) {
+  if (!work.blocks.length) {
     throw new Error('작업에 학습된 동작을 하나 이상 추가해 주세요.');
   }
-  if (skillBlocks.some((block) => (block.kind !== 'umi' && block.kind !== 'vlm') || !block.skillId)) {
-    throw new Error('현재 API에서 지원하지 않는 블록이나 학습 버전 정보가 없는 동작이 있어요.');
-  }
-  const steps = skillBlocks.map((block, index) => ({
-    order: index + 1,
-    skillVersionId: block.skillId,
-    parameters: {},
-    timeoutSeconds: 30,
-  }));
+  const steps = toApiSteps(work.blocks);
 
   const created = await apiRequest<ApiTask>('/tasks', {
     method: 'POST',
@@ -75,21 +74,48 @@ export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {
   return { works: await fetchSavedWorks(), savedId: taskId };
 }
 
-function flatten(blocks: WorkflowBlock[]): WorkflowBlock[] {
-  return blocks.flatMap((block) => [block, ...flatten(block.children ?? [])]);
+function toApiSteps(blocks: WorkflowBlock[]): ApiTaskStep[] {
+  return blocks.map((block, index) => ({
+    order: index + 1,
+    type: block.kind === 'repeat' ? 'REPEAT' : block.kind === 'motor' ? 'MOTOR' : 'SKILL',
+    skillVersionId: block.skillId ?? null,
+    parameters: block.kind === 'motor'
+      ? { motor: block.motor, angle: block.angle }
+      : {},
+    timeoutSeconds: block.kind === 'repeat' ? null : block.kind === 'motor' ? 10 : 30,
+    repeatCount: block.kind === 'repeat' ? (block.repeat ?? 1) : null,
+    children: block.kind === 'repeat' ? toApiSteps(block.children ?? []) : [],
+  }));
 }
 
 function toSavedWork(task: ApiTask, skills: Map<string, LearnedSkill>): SavedWork {
   const version = task.latestVersionDetails;
-  const blocks = (version?.steps ?? []).map((step, index) => {
-    const skill = skills.get(step.skillVersionId);
+  let blockId = 1;
+  const toBlocks = (steps: ApiTaskStep[]): WorkflowBlock[] => steps.map((step) => {
+    const skill = step.skillVersionId ? skills.get(step.skillVersionId) : undefined;
+    const id = blockId++;
+    if (step.type === 'MOTOR') return {
+      id,
+      kind: 'motor' as const,
+      title: '모터 제어',
+      motor: typeof step.parameters.motor === 'string' ? step.parameters.motor : 'J1',
+      angle: typeof step.parameters.angle === 'number' ? step.parameters.angle : 0,
+    };
+    if (step.type === 'REPEAT') return {
+      id,
+      kind: 'repeat' as const,
+      title: '반복 수행',
+      repeat: step.repeatCount ?? 1,
+      children: toBlocks(step.children ?? []),
+    };
     return {
-      id: index + 1,
+      id,
       kind: 'umi' as const,
       title: skill?.name ?? '사용할 수 없는 학습 동작',
-      skillId: step.skillVersionId,
+      skillId: step.skillVersionId ?? undefined,
     };
   });
+  const blocks = toBlocks(version?.steps ?? []);
   return {
     id: task.id,
     taskKey: task.taskKey,

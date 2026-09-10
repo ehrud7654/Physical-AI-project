@@ -48,15 +48,18 @@ public class DeploymentService {
       throw new BusinessConflictException("ROBOT_BUSY", "진행 중인 배포가 있습니다.");
     List<TaskStep> taskSteps = steps.findAllByTaskVersionIdOrderByStepOrder(taskVersionId);
     if (taskSteps.isEmpty()) throw new BusinessConflictException("EMPTY_TASK", "배포할 단계가 없습니다.");
+    Set<UUID> referencedSkillIds = taskSteps.stream()
+        .filter(step -> step.getStepType() == TaskStepType.SKILL)
+        .map(TaskStep::getSkillVersionId).collect(Collectors.toSet());
     List<SkillVersion> skillVersions = skills.findAllByIdIn(
-        taskSteps.stream().map(TaskStep::getSkillVersionId).collect(Collectors.toSet()));
-    if (skillVersions.size() != taskSteps.stream().map(TaskStep::getSkillVersionId).distinct().count()
+        referencedSkillIds);
+    if (skillVersions.size() != referencedSkillIds.size()
         || skillVersions.stream().anyMatch(s -> s.getStatus()!=SkillVersionStatus.READY || !s.isGatePassed()))
       throw new BusinessConflictException("SKILL_VERSION_GATE_FAILED", "게이트를 통과하지 못한 스킬 버전이 있습니다.");
     if (skillVersions.stream().anyMatch(s -> !s.getRobotProfileId().equals(robot.getRobotProfileId())))
       throw new BusinessConflictException("MODEL_INCOMPATIBLE", "로봇 프로파일과 호환되지 않습니다.");
     Deployment deployment = deployments.save(new Deployment(UUID.randomUUID(), robotId, taskVersionId));
-    items.saveAll(taskSteps.stream().map(TaskStep::getSkillVersionId).distinct()
+    items.saveAll(referencedSkillIds.stream()
         .map(id -> new DeploymentItem(UUID.randomUUID(), deployment.getId(), id)).toList());
     idempotency.complete(ownerId, "POST", path, claim, 201, "DEPLOYMENT", deployment.getId());
     return map(deployment);

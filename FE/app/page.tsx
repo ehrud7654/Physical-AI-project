@@ -58,12 +58,11 @@ function getWorkflowIssues(work: SavedWork): string[] {
   if (!work.blocks.length) issues.push('실행할 블록이 없어요.');
   blocks.forEach((block) => {
     if (isSkillBlock(block) && !block.skillId) issues.push(`${block.title}에 학습 버전 정보가 없어요.`);
-    if (!isSkillBlock(block)) issues.push(`${block.title}은 현재 서버 작업 명세에서 지원하지 않아요.`);
     if (block.kind === 'motor') {
       const range = motorRanges[block.motor ?? ''];
       if (!range || block.angle === undefined || block.angle < range[0] || block.angle > range[1]) issues.push(`${block.title} 설정을 확인해 주세요.`);
     }
-    if (block.kind === 'repeat' && ((block.repeat ?? 0) < 1 || !block.children?.length)) issues.push('반복 블록 안에 실행할 동작이 필요해요.');
+    if (block.kind === 'repeat' && ((block.repeat ?? 0) < 1 || (block.repeat ?? 0) > 100 || !block.children?.length)) issues.push('반복 블록에는 실행할 동작과 1~100의 반복 횟수가 필요해요.');
   });
   return issues;
 }
