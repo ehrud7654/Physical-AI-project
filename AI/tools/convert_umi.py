@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import subprocess
 import sys
 from collections import Counter
@@ -45,6 +46,8 @@ from sim.mujoco.build_scene import build_model, load_config  # noqa: E402
 from tracking.exp_log import code_digest, file_digest, log_run  # noqa: E402
 from umi.convert import ConversionError, ConversionPolicy, convert  # noqa: E402
 from umi.raw import read_raw  # noqa: E402
+from umi.provenance import conversion_digest
+from umi.trajectory import TrajectoryLimits
 from tools.make_umi_synth import decode_frame  # noqa: E402
 from tools.umi_mujoco import MujocoIK  # noqa: E402
 
@@ -107,6 +110,8 @@ def main() -> int:
     ap.add_argument("--log", action="store_true", help="EXP_LOG.jsonl 에 한 줄 append")
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     ap.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
+    ap.add_argument('--trajectory-limits', type=Path,
+                    help='JSON: max_step, max_velocity, max_acceleration; 5 rad channels + gap m')
     args = ap.parse_args()
 
     raws = sorted(args.raw.glob("*.raw.npz"))
@@ -115,7 +120,7 @@ def main() -> int:
         return 1
     raw_path = str(args.raw.resolve())
     raw_sha = raw_bundle_digest(args.raw, raws)
-    tool_sha = code_digest()
+    tool_sha = conversion_digest()
     if args.out.exists() and sorted(args.out.glob("*.npz")):
         print(f"이미 에피소드가 있다: {args.out}\n"
               "  기존 이름을 재사용하지 않는다 — ckpt 까지 덮어쓴다. --out 에 다음 번호를 줘라")
@@ -130,7 +135,9 @@ def main() -> int:
         ik_kw["axis_tol_deg"] = args.axis_tol_deg
     ik = MujocoIK(model, cfg, **ik_kw)
     policy = ConversionPolicy(
-        max_pos_error_m=args.max_pos_error_mm / 1000.0, clamp_gap=args.clamp_gap
+        max_pos_error_m=args.max_pos_error_mm / 1000.0, clamp_gap=args.clamp_gap,
+        trajectory_limits=(TrajectoryLimits(**json.loads(args.trajectory_limits.read_text(encoding='utf-8')))
+                           if args.trajectory_limits else None)
     )
     rev = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True
