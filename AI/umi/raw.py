@@ -224,7 +224,7 @@ def validate_raw(ep: RawEpisode) -> list[str]:
     elif ep.gripper_status.dtype.kind not in ("U", "S"):
         problems.append(f"gripper_status.dtype must be a string kind, got {ep.gripper_status.dtype}")
     elif ep.gripper_gap_m.shape == (t,):
-        status = np.asarray(ep.gripper_status).astype("<U1")
+        status = np.asarray(ep.gripper_status).astype(str)
         bad = sorted(set(status.tolist()) - set("DMTX"))
         if bad:
             problems.append(f"gripper_status 에 알 수 없는 값 {bad} — SPEC 은 D/M/T/X 다")

@@ -88,6 +88,7 @@ class ConversionPolicy:
     변환만의 위치 예산. 재생 허용오차가 ±5mm 4/4, ±10mm 3/4 🟢 이므로 변환이
     절반을 써선 안 된다."""
 
+    trajectory_limits: object | None = None
     min_steps: int = 30
     """Shorter than a second at 30Hz is not a demonstration. 30Hz 에서 1초 미만은 시연이 아니다."""
 
@@ -293,13 +294,24 @@ def convert(
     """
     pol = policy or ConversionPolicy()
     require_convertible(raw)
+    if not np.isfinite(pol.max_pos_error_m) or pol.max_pos_error_m <= 0:
+        raise ConversionError('invalid position error budget')
+    if type(pol.min_steps) is not int or pol.min_steps < 2:
+        raise ConversionError('min_steps must be an integer >= 2')
+    if raw.meta.source in ('arcore', 'arcore_imu') and pol.trajectory_limits is None:
+        raise ConversionError('real recordings require explicit trajectory limits')
+    if pol.trajectory_limits is not None:
+        pol.trajectory_limits.arrays()
 
     ranges = np.asarray(ranges_rad, dtype=float)
-    if ranges.shape != (STATE_DIM, 2):
+    if (ranges.shape != (STATE_DIM, 2) or not np.isfinite(ranges).all()
+            or np.any(ranges[:, 0] >= ranges[:, 1])):
         raise ConversionError(f"ranges_rad 는 {(STATE_DIM, 2)} 여야 한다, got {ranges.shape}")
 
     t_in = raw.meta.n_steps
     rate = control_rate_hz if control_rate_hz is not None else raw.meta.pose_rate_hz
+    if not np.isfinite(rate) or rate <= 0:
+        raise ConversionError('invalid control rate')
 
     # --- IK, 스텝별 ---------------------------------------------------------
     solutions: list[IKSolution | None] = []
@@ -326,7 +338,17 @@ def convert(
             raw.eef_pos[i], raw.eef_quat[i], float(raw.gripper_gap_m[i]), q_init=q_prev
         )
         q = np.asarray(sol.q_rad, dtype=float).copy()
+        errors = np.array([sol.pos_error_m, sol.axis_error_deg, sol.roll_residual_deg])
+        if (q.shape != (STATE_DIM,) or not np.isfinite(q).all()
+                or not np.isfinite(errors).all() or np.any(errors < 0)):
+            rejects['invalid_ik_solution'] += 1
+            solutions.append(None)
+            continue
         q[STATE_DIM - 1] = grip_rad  # 그리퍼는 IK 대상이 아니다. 곡선 역변환값을 쓴다
+        if np.any(q < ranges[:, 0]) or np.any(q > ranges[:, 1]):
+            rejects[REJECT_LIMIT] += 1
+            solutions.append(None)
+            continue
         sol = IKSolution(
             q_rad=q,
             pos_error_m=sol.pos_error_m,
@@ -367,6 +389,13 @@ def convert(
         q_prev = q
 
     ok = np.array([s is not None for s in solutions], dtype=bool)
+    if pol.trajectory_limits is not None:
+        from umi.trajectory import continuous_mask
+        positions = np.array([s.q_rad[:5] if s is not None else np.full(5, np.nan)
+                              for s in solutions])
+        ok, dynamics_rejects = continuous_mask(positions, raw.gripper_gap_m,
+            raw.pose_timestamp, ok, pol.trajectory_limits)
+        rejects.update(dynamics_rejects)
     start, end = _longest_ok_run(ok)
     n_out = end - start
     if n_out < pol.min_steps:
@@ -454,6 +483,10 @@ def convert(
         notes={
             **raw.meta.notes,
             "converted_from": "umi_raw",
+            "trajectory_checked": pol.trajectory_limits is not None,
+            "trajectory_limits": ({name: list(getattr(pol.trajectory_limits, name))
+                for name in ('max_step', 'max_velocity', 'max_acceleration')}
+                if pol.trajectory_limits is not None else None),
             "raw_version": raw.meta.raw_version,
             "raw_frame": raw.meta.frame,
             "calibration_id": raw.meta.calibration_id,
