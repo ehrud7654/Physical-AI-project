@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { AdminUser, Dataset, LearnedSkill, Robot, SavedWork, Training, Umi, LearningDraft } from '@/types';
-import { initialLearnedSkills, initialPermissions, initialUsers } from '@/mocks';
+import { initialPermissions, initialUsers } from '@/mocks';
 import {
   addTraining,
   applyModel,
@@ -60,7 +60,7 @@ const DRAFT_KEY = 'ssafy-learning-draft-v1';
 const AppStoreContext = createContext<AppStore | null>(null);
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
-  const [skills, setSkills] = useState<LearnedSkill[]>(initialLearnedSkills);
+  const [skills, setSkills] = useState<LearnedSkill[]>([]);
   /* 초기값은 비워두고 서비스 계층에서 불러온다 — 로딩·오류 UI는 공통 게이트(S15P21A103-94)가 담당한다. */
   const [learningDraft, setLearningDraft] = useState<LearningDraft>(emptyDraft);
   const [draftReady, setDraftReady] = useState(false);
@@ -71,8 +71,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
       if (saved && typeof saved.skillKey === 'string' && Array.isArray(saved.selected) && saved.step >= 1 && saved.step <= 6) setLearningDraft({ ...emptyDraft, ...saved });
-      const savedSkills = JSON.parse(localStorage.getItem('ssafy-learned-skills-v1') || 'null');
-      if (Array.isArray(savedSkills) && savedSkills.every(item => item && typeof item.id === 'string' && typeof item.name === 'string')) setSkills(savedSkills);
     } catch { /* Invalid or unavailable storage starts a fresh draft. */ }
     setDraftReady(true);
   }, []);
@@ -165,42 +163,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const completeLearning = useCallback(async (input: { name: string; robot: string }) => {
     setTrainings(await addTraining(input));
-    setSkills((current) => {
-      const existing = current.find((skill) => skill.name === input.name);
-      const learned: LearnedSkill = {
-        id: existing?.id ?? `SKILL-${Date.now()}`,
-        name: input.name,
-        kind: 'umi',
-        description: 'UMI 데이터로 새로 학습한 동작',
-        mark: 'S',
-      };
-      const next = [learned, ...current.filter((skill) => skill.id !== learned.id)];
-      try { localStorage.setItem('ssafy-learned-skills-v1', JSON.stringify(next)); } catch { /* Learning remains available in memory. */ }
-      return next;
-    });
+    setSkills(await fetchLearnedSkills());
   }, []);
 
-  useEffect(() => {
-    if (!draftReady || learningDraft.step !== 5 || !learningDraft.startedAt) return;
-    let finishing = false;
-    const startedAt = learningDraft.startedAt;
-    const timer = window.setInterval(() => {
-      const progress = Math.min(100, 12 + Math.floor((Date.now() - startedAt) / 650) * 4);
-      if (progress < 100) { updateLearningDraft({ progress }); return; }
-      if (finishing) return;
-      finishing = true;
-      window.clearInterval(timer);
-      void completeLearning({ name: learningDraft.name, robot: learningDraft.umiId }).then(() => {
-        updateLearningDraft({ progress: 100, step: 6, error: undefined });
-      }).catch(() => {
-        updateLearningDraft({ error: '학습 결과를 저장하지 못했어요. 다시 시도해 주세요.', startedAt: null });
-      });
-    }, 650);
-    return () => window.clearInterval(timer);
-  }, [draftReady, learningDraft.step, learningDraft.startedAt, learningDraft.name, learningDraft.umiId, completeLearning, updateLearningDraft]);
-
-  const visibleTrainings = useMemo(() => learningDraft.step === 5 && learningDraft.name
-    ? [{ id: `draft-${learningDraft.startedAt ?? 'new'}`, skillKey: learningDraft.skillKey, umiDeviceId: '', inputMode: learningDraft.method === 'existing' ? 'EXISTING_EPISODES' as const : 'COLLECT_NEW' as const, expectedEpisodeCount: learningDraft.expectedEpisodes, name: learningDraft.name, robot: learningDraft.umiId, progress: learningDraft.progress, stage: learningDraft.error || (learningDraft.progress < 35 ? '데이터 준비' : learningDraft.progress < 75 ? '동작 학습' : '결과 확인'), status: learningDraft.error ? '실패' as const : '진행 중' as const, started: '방금 전' }, ...trainings]
+  const visibleTrainings = useMemo(() => learningDraft.step === 5 && learningDraft.name && learningDraft.trainingJobId
+    ? [{ id: learningDraft.trainingJobId, skillKey: learningDraft.skillKey, umiDeviceId: '', inputMode: learningDraft.method === 'existing' ? 'EXISTING_EPISODES' as const : 'COLLECT_NEW' as const, expectedEpisodeCount: learningDraft.expectedEpisodes, receivedEpisodeCount: 0, apiStatus: 'CREATED', name: learningDraft.name, robot: learningDraft.umiId, progress: learningDraft.progress, stage: learningDraft.error || (learningDraft.progress < 35 ? '데이터 준비' : learningDraft.progress < 75 ? '동작 학습' : '결과 확인'), status: learningDraft.error ? '실패' as const : '진행 중' as const, started: '방금 전' }, ...trainings.filter(item => item.id !== learningDraft.trainingJobId)]
     : trainings, [learningDraft, trainings]);
 
   const saveWorkflow = useCallback(async (work: SavedWork) => {

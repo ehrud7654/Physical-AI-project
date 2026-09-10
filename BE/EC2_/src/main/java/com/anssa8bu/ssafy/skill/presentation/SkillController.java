@@ -23,6 +23,20 @@ public class SkillController {
         skillId, SkillVersionStatus.READY).orElseThrow(() -> new ResourceNotFoundException("SkillVersion"));
     return ApiResponse.of(map(version));
   }
+  @GetMapping("/{skillId}/training-requirements")
+  public ApiResponse<TrainingRequirementsResponse> trainingRequirements(@PathVariable UUID skillId) {
+    Skill skill = skills.findById(skillId).orElseThrow(() -> new ResourceNotFoundException("Skill"));
+    int recommended = switch (skill.getSkillKey()) {
+      case "pick_place", "present_inspect" -> 10;
+      case "sort_two", "align_fixture" -> 15;
+      case "line_up" -> 20;
+      default -> 10;
+    };
+    int minimum = Math.max(1, recommended / 2);
+    return ApiResponse.of(new TrainingRequirementsResponse(skill.getId(), skill.getSkillKey(),
+        minimum, recommended, 100, List.of("REAL"), false,
+        "episode-archive-v1", true, 1));
+  }
   private SkillResponse map(Skill s) { return new SkillResponse(s.getId(),s.getSkillKey(),s.getTier(),s.getStatus(),
       s.getDisplayName(),s.getDescription(),s.getPersona(),s.getCreatedAt(),s.getUpdatedAt()); }
   private SkillVersionResponse map(SkillVersion v) { return new SkillVersionResponse(v.getId(),v.getSkillId(),v.getVersion(),

@@ -18,4 +18,7 @@ public final class TrainingJobApiModels {
       Instant createdAt, Instant startedAt, Instant finishedAt, Instant updatedAt) {}
   public record ErrorInfo(String code, String message, String recoveryAction) {}
   public record EpisodeInputResponse(UUID episodeId, int inputOrder) {}
+  public record InputPlanUpdateRequest(@NotNull @Positive Integer expectedEpisodeCount) {}
+  public record InputCompleteRequest(@NotNull @Positive Integer receivedEpisodeCount) {}
+  public record InputCompleteResponse(UUID trainingJobId, TrainingJobStatus status) {}
 }

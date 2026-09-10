@@ -9,4 +9,8 @@ public final class SkillResponses {
   public record SkillVersionResponse(UUID id, UUID skillId, int version, String status,
       long checkpointBytes, String checkpointSha256, UUID robotProfileId, String contractVersion,
       boolean gatePassed, Instant createdAt) {}
+  public record TrainingRequirementsResponse(UUID skillId, String skillKey,
+      int minimumEpisodeCount, int recommendedEpisodeCount, int maximumEpisodeCount,
+      java.util.List<String> allowedSources, boolean requiresSameUmiDevice,
+      String requiredContractVersion, boolean supported, int requirementsVersion) {}
 }

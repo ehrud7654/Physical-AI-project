@@ -1,11 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, Training, TrainingStatus, View, WorkflowBlock } from '@/types';
+import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, Training, TrainingRequirements, TrainingSkill, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { createEpisodePreviewSession, fetchDashboard, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, login as requestLogin, logout as clearAuthentication } from '@/services';
+import { completeTrainingInput, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -610,14 +610,6 @@ function DataView({ onNavigate }: { onNavigate: (view: View) => void }) {
   </>;
 }
 
-const skillOptions = [
-  { key: 'pick_place', name: '집어서 옮기기', description: '물체를 집어 지정한 위치로 옮겨요.', mark: 'P' },
-  { key: 'sort_two', name: '두 물체 분류', description: '두 종류의 물체를 구분해 배치해요.', mark: 'S' },
-  { key: 'align_fixture', name: '지그 정렬', description: '물체를 고정 장치에 맞춰 정렬해요.', mark: 'A' },
-  { key: 'present_inspect', name: '검사 위치 제시', description: '검사할 물체를 카메라 위치로 옮겨요.', mark: 'I' },
-  { key: 'line_up', name: '일렬 배치', description: '여러 물체를 기준선에 맞춰 놓아요.', mark: 'L' },
-];
-
 function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View) => void; onToast: (message: string) => void; onGoWork: (name: string) => void }) {
   const { umis, datasets, learningDraft, updateLearningDraft, draftReady, draftStored } = useAppStore();
   const { step, skillKey, method, umiId, expectedEpisodes, selected, progress } = learningDraft;
@@ -627,19 +619,92 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
   const setUmiId = (umiId: string) => updateLearningDraft({ umiId });
   const setExpectedEpisodes = (expectedEpisodes: number) => updateLearningDraft({ expectedEpisodes });
   const setSelected = (fn: (current: string[]) => string[]) => updateLearningDraft({ selected: fn(selected) });
-  const skill = skillOptions.find(item => item.key === skillKey) ?? skillOptions[0];
+  const [catalog, setCatalog] = useState<TrainingSkill[]>([]);
+  const [requirements, setRequirements] = useState<TrainingRequirements | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const serverSkill = catalog.find(item => item.skillKey === skillKey);
+  const displayedSkills = catalog.map((item, index) => ({
+    key: item.skillKey,
+    name: item.displayName,
+    description: item.description ?? '등록된 설명이 없습니다.',
+    mark: item.displayName.trim().charAt(0) || String(index + 1),
+  }));
+  const skill = displayedSkills.find(item => item.key === skillKey) ?? displayedSkills[0];
   const selectedUmi = umis.find(item => item.id === umiId);
   const availableData = datasets.filter(item => item.skillKey === skillKey);
   const readyData = availableData.filter(item => item.ready);
   const selectedData = availableData.filter(item => item.ready && selected.includes(item.id));
   const allReadySelected = readyData.length > 0 && readyData.every(item => selected.includes(item.id));
+  useEffect(() => {
+    void fetchTrainingSkills().then(setCatalog).catch(() => onToast('학습 동작 목록을 불러오지 못했어요.'));
+  }, [onToast]);
+  useEffect(() => {
+    if (catalog.length && !catalog.some(item => item.skillKey === skillKey)) {
+      setSkillKey(catalog[0].skillKey);
+    }
+  }, [catalog, skillKey]);
+  useEffect(() => {
+    if (!serverSkill) return;
+    void fetchTrainingRequirements(serverSkill.skillKey).then((next) => {
+      setRequirements(next);
+      if (expectedEpisodes < next.minimumEpisodeCount) setExpectedEpisodes(next.recommendedEpisodeCount);
+    }).catch(() => onToast('학습 입력 조건을 불러오지 못했어요.'));
+  }, [serverSkill?.id]);
+  useEffect(() => {
+    if (step !== 5 || !learningDraft.trainingJobId) return;
+    let active = true;
+    const refreshJob = async () => {
+      try {
+        const job = await fetchTrainingDetail(learningDraft.trainingJobId!);
+        if (!active) return;
+        updateLearningDraft({ progress: job.progress, error: job.status === '실패' ? job.stage : undefined });
+        if (job.status === '완료') updateLearningDraft({ step: 6, progress: 100, error: undefined });
+      } catch {
+        if (active) updateLearningDraft({ error: '학습 상태를 불러오지 못했어요.' });
+      }
+    };
+    void refreshJob();
+    const timer = window.setInterval(() => void refreshJob(), 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [step, learningDraft.trainingJobId, updateLearningDraft]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [step]);
   const toggleEpisode = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const toggleAllReady = () => setSelected(() => allReadySelected ? [] : readyData.map(item => item.id));
   const stage = progress < 35 ? '데이터 전처리' : progress < 75 ? '동작 패턴 학습' : '결과 확인';
   const canContinueData = method === 'new'
-    ? Boolean(selectedUmi?.status === '온라인' && Number.isInteger(expectedEpisodes) && expectedEpisodes >= 1)
+    ? Boolean(selectedUmi?.status === '온라인' && Number.isInteger(expectedEpisodes)
+        && expectedEpisodes >= (requirements?.minimumEpisodeCount ?? 1)
+        && expectedEpisodes <= (requirements?.maximumEpisodeCount ?? 100))
     : selectedData.length > 0;
+  const submitTraining = async () => {
+    const targetUmi = method === 'new' ? selectedUmi : umis.find(item => item.id === selectedData[0]?.umiId);
+    if (!method || !targetUmi) { onToast('학습에 사용할 UMI를 확인할 수 없어요.'); return; }
+    setSubmitting(true);
+    try {
+      const job = await createTrainingJob({
+        skillKey,
+        umiDeviceId: targetUmi.deviceId,
+        inputMode: method === 'new' ? 'COLLECT_NEW' : 'EXISTING_EPISODES',
+        expectedEpisodeCount: method === 'new' ? expectedEpisodes : undefined,
+        episodeIds: method === 'existing' ? selectedData.map(item => item.id) : undefined,
+      });
+      updateLearningDraft({ progress: job.progress, step: 5, startedAt: Date.now(), name: job.name, trainingJobId: job.id, error: undefined });
+      onToast('학습 작업을 생성했어요.');
+    } catch {
+      onToast('학습 작업을 생성하지 못했어요.');
+    } finally { setSubmitting(false); }
+  };
+  const finishCollection = async () => {
+    if (!learningDraft.trainingJobId) return;
+    setSubmitting(true);
+    try {
+      const job = await fetchTrainingDetail(learningDraft.trainingJobId);
+      await completeTrainingInput(job.id, job.receivedEpisodeCount);
+      onToast('입력 데이터 검증을 요청했어요.');
+    } catch {
+      onToast('입력 완료 요청을 처리하지 못했어요.');
+    } finally { setSubmitting(false); }
+  };
   const learningStepSummaries = [
     skill?.name ?? '',
     method === 'new' ? '새로 동작 보여주기' : method === 'existing' ? '기존 데이터 사용' : '',
@@ -654,15 +719,15 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
       {['동작 선택', '데이터 방식', '데이터 준비', '최종 확인', '학습 진행'].map((label, index) => <li key={label} className={step === index + 1 || (step === 6 && index === 4) ? 'current' : step > index + 1 ? 'done' : ''}><span>{step > index + 1 ? '✓' : index + 1}</span><div><strong>{label}</strong>{learningStepSummaries[index] && <small>{learningStepSummaries[index]}</small>}</div></li>)}
     </ol>
 
-    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택해 주세요</h2></div></div><div className="skill-choice-grid">{skillOptions.map((item) => <button key={item.key} className={skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{skillKey === item.key ? '✓' : ''}</i></button>)}</div><div className="wizard-actions"><span /><button className="primary-button" onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
+    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택해 주세요</h2></div></div><div className="skill-choice-grid">{displayedSkills.map((item) => <button key={item.key} className={skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{skillKey === item.key ? '✓' : ''}</i></button>)}<button type="button" onClick={() => onToast('새로운 동작 등록 API는 현재 명세에 포함되어 있지 않아요.')}><span>＋</span><div><strong>새로운 동작 학습하기</strong><p>새 학습 동작 등록 기능을 준비하고 있어요.</p></div><i>›</i></button></div><div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
 
     {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>2</span><div><h2>학습 데이터를 어떻게 준비할까요?</h2></div></div><div className="method-choice-grid"><button className={method === 'new' ? 'selected' : ''} onClick={() => setMethod('new')}><span className="method-icon">＋</span><strong>새로 동작 보여주기</strong><p>온라인 UMI를 선택하고 로봇에게 새로운 동작을 보여줍니다.</p><ul><li>새 환경이나 동작을 학습할 때</li><li>UMI로 동작을 직접 보여줄 수 있을 때</li></ul></button><button className={method === 'existing' ? 'selected' : ''} onClick={() => setMethod('existing')}><span className="method-icon">↻</span><strong>기존 데이터 사용</strong><p>준비된 기존 데이터를 선택해 바로 학습합니다.</p><ul><li>같은 동작을 다시 학습할 때</li><li>기존 데이터를 조합하고 싶을 때</li></ul></button></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(1)}>← 이전</button><button className="primary-button" disabled={!method} onClick={() => setStep(3)}>다음: 데이터 준비 →</button></div></section>}
 
     {step === 3 && <section className="card learning-wizard-card"><div className="wizard-title"><span>3</span><div><h2>{method === 'new' ? '동작을 보여줄 UMI를 선택해 주세요' : '학습에 사용할 데이터를 선택해 주세요'}</h2></div></div>{method === 'new' ? <><div className="umi-choice-list">{umis.map((item) => <button key={item.id} disabled={item.status !== '온라인'} className={umiId === item.id ? 'selected' : ''} onClick={() => setUmiId(item.id)}><span className="device-visual umi">U</span><div><strong>{item.id}</strong><p>{item.place} · 최근 사용 {item.collected}</p></div><span className={`status-pill status-${item.status}`}><i />{item.status}</span></button>)}</div><label className="episode-count">예상 동작 횟수<input type="number" min={1} value={expectedEpisodes} onChange={(event) => setExpectedEpisodes(Number(event.target.value))} /></label></> : <div className="episode-select-list"><div className="episode-selection-toolbar"><span>학습 가능 {readyData.length}개</span><button className="text-button" type="button" disabled={!readyData.length} onClick={toggleAllReady}>{allReadySelected ? '전체 선택 해제' : '학습 가능한 데이터 전체 선택'}</button></div>{availableData.map((item) => { const available = item.trainable; return <label key={item.id} className={`${selected.includes(item.id) ? 'selected' : ''}${!available ? ' disabled' : ''}`}><input type="checkbox" disabled={!available} checked={selected.includes(item.id)} onChange={() => toggleEpisode(item.id)} /><span><strong>데이터 {String(item.seq).padStart(3, '0')}</strong><small>{item.date} · {item.duration} · {item.umiId}</small></span><em>{available ? '확인 완료 · 학습 가능' : recoveryActionLabel[item.recoveryAction]}</em></label>; })}{!availableData.length && <p className="table-empty">이 동작의 데이터가 없어요. 이전 단계에서 새로 동작 보여주기를 선택해 주세요.</p>}<div className="episode-selection-summary" role="status"><strong>{selectedData.length}개 선택됨</strong><span>{selectedData.length > 0 ? '선택한 데이터로 진행할 수 있어요.' : '데이터를 선택해 주세요.'}</span></div></div>}<div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(2)}>← 이전</button><button className="primary-button" disabled={!canContinueData} onClick={() => setStep(4)}>다음: 최종 확인 →</button></div></section>}
 
-    {step === 4 && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>4</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.name}</dd></div><div><dt>데이터 방식</dt><dd>{method === 'new' ? '새 데이터 만들기' : '기존 데이터 사용'}</dd></div><div><dt>{method === 'new' ? '사용할 UMI' : '선택 데이터'}</dt><dd>{method === 'new' ? `${umiId} · ${expectedEpisodes}회 예정` : `${selected.length}개 데이터`}</dd></div></dl><div className="review-notice"><strong>생성하면 바로 데이터 준비를 시작합니다.</strong><p>{method === 'new' ? 'UMI로 동작을 보여주면 데이터 확인 후 학습이 시작돼요.' : '선택한 데이터 확인 후 학습이 시작돼요.'}</p></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(3)}>← 이전</button><button className="primary-button" onClick={() => { updateLearningDraft({ progress: 12, step: 5, startedAt: Date.now(), name: skill.name, error: undefined }); onToast('학습 작업을 생성했어요.'); }}>학습 작업 생성</button></div></section>}
+    {step === 4 && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>4</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.name}</dd></div><div><dt>데이터 방식</dt><dd>{method === 'new' ? '새 데이터 만들기' : '기존 데이터 사용'}</dd></div><div><dt>{method === 'new' ? '사용할 UMI' : '선택 데이터'}</dt><dd>{method === 'new' ? `${umiId} · ${expectedEpisodes}회 예정` : `${selected.length}개 데이터`}</dd></div></dl><div className="review-notice"><strong>생성하면 바로 데이터 준비를 시작합니다.</strong><p>{method === 'new' ? 'UMI로 동작을 보여주면 데이터 확인 후 학습이 시작돼요.' : '선택한 데이터 확인 후 학습이 시작돼요.'}</p></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(3)}>← 이전</button><button className="primary-button" disabled={submitting} onClick={() => void submitTraining()}>{submitting ? '생성 중...' : '학습 작업 생성'}</button></div></section>}
 
-    {step === 5 && <div className="progress-layout"><section className="card progress-card">{learningDraft.error && <div role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => updateLearningDraft({ error: undefined, startedAt: Date.now(), progress: 12 })}>다시 시도</button></div>}<button className="text-button" onClick={() => onNavigate('training')}>학습 목록에서 확인 →</button><div className="learning-orbit"><span>✦</span></div><p className="eyebrow">{method === 'new' && progress < 25 ? '데이터 준비 중' : '학습 진행 중'}</p><h2>{skill.name}</h2><p>다른 메뉴에서도 진행 상황을 확인할 수 있어요. 이 기기에서 다시 열면 진행 상태를 복원해요.</p><div className="progress-number">{progress}<small>%</small></div><div className="progress-track"><i style={{ width: `${progress}%` }} /></div><div className="progress-meta"><div><small>현재 단계</small><strong>{method === 'new' && progress < 25 ? '데이터 확인' : stage}</strong></div><div><small>예상 남은 시간</small><strong>약 {Math.max(1, Math.ceil((100 - progress) / 12))}분</strong></div><div><small>입력 방식</small><strong>{method === 'new' ? '새 데이터' : '기존 데이터'}</strong></div></div></section><section className="card log-card"><div className="log-heading"><div><h3>진행 기록</h3><p>서버에서 전달되는 상태를 보여드려요.</p></div><span>실시간</span></div><div className="log-list"><p><time>10:52:08</time><span className="log-ok">완료</span>학습 작업 생성</p><p><time>10:52:14</time><span className="log-ok">완료</span>입력 데이터 확인</p><p><time>10:53:02</time><span className="log-run">진행</span>{stage} 진행 중...</p></div></section></div>}
+    {step === 5 && <div className="progress-layout"><section className="card progress-card">{learningDraft.error && <div role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => updateLearningDraft({ error: undefined, startedAt: Date.now(), progress: 12 })}>다시 시도</button></div>}<button className="text-button" onClick={() => onNavigate('training')}>학습 목록에서 확인 →</button>{method === 'new' && <button className="secondary-button" disabled={submitting} onClick={() => void finishCollection()}>{submitting ? '요청 중...' : '데이터 수집 완료'}</button>}<div className="learning-orbit"><span>✦</span></div><p className="eyebrow">{method === 'new' && progress < 25 ? '데이터 준비 중' : '학습 진행 중'}</p><h2>{skill.name}</h2><p>다른 메뉴에서도 진행 상황을 확인할 수 있어요. 이 기기에서 다시 열면 진행 상태를 복원해요.</p><div className="progress-number">{progress}<small>%</small></div><div className="progress-track"><i style={{ width: `${progress}%` }} /></div><div className="progress-meta"><div><small>현재 단계</small><strong>{method === 'new' && progress < 25 ? '데이터 확인' : stage}</strong></div><div><small>예상 남은 시간</small><strong>약 {Math.max(1, Math.ceil((100 - progress) / 12))}분</strong></div><div><small>입력 방식</small><strong>{method === 'new' ? '새 데이터' : '기존 데이터'}</strong></div></div></section><section className="card log-card"><div className="log-heading"><div><h3>진행 기록</h3><p>서버에서 전달되는 상태를 보여드려요.</p></div><span>실시간</span></div><div className="log-list"><p><time>10:52:08</time><span className="log-ok">완료</span>학습 작업 생성</p><p><time>10:52:14</time><span className="log-ok">완료</span>입력 데이터 확인</p><p><time>10:53:02</time><span className="log-run">진행</span>{stage} 진행 중...</p></div></section></div>}
 
     {step === 6 && <div className="center-panel"><section className="card complete-card"><span className="complete-icon">✓</span><p className="eyebrow">학습 및 결과 확인 완료</p><h2>{skill.name} v1이 준비됐어요</h2><p>학습 결과가 준비됐어요. 확인을 마치면 작업에 사용할 수 있어요.</p><div className="complete-summary"><div><small>학습 동작</small><strong>{skill.name}</strong></div><div><small>학습 결과 버전</small><strong>v1</strong></div><div><small>입력 데이터</small><strong>{method === 'new' ? `${expectedEpisodes}회 동작 데이터` : `${selected.length}개 데이터`}</strong></div><div><small>확인 상태</small><strong>사용 준비 완료</strong></div></div><div className="complete-actions"><button className="secondary-button" onClick={() => { updateLearningDraft({ step: 1, progress: 12, method: null, selected: [], startedAt: null, name: '', error: undefined }); }}>학습 생성</button><button className="primary-button" onClick={() => onGoWork(skill.name)}>이 동작으로 작업 생성 →</button></div></section></div>}
   </>;
@@ -1100,3 +1165,5 @@ function AdminView({ onToast }: { onToast: (message: string) => void }) {
 
   return <><div className="page-heading"><div><p className="eyebrow">관리자 전용</p><h1>사용자별 로봇 접근 권한</h1><p>각 사용자가 작업 탭에서 선택할 수 있는 로봇을 관리하세요.</p></div><span className="admin-badge">관리자</span></div><div className="admin-layout"><aside className="card user-list"><div className="admin-section-heading"><h2>일반 사용자</h2><span>{users.length}명</span></div><input className="search-input" placeholder="이름 또는 아이디 검색" />{users.map((item) => <button key={item.id} className={userId === item.id ? 'selected' : ''} onClick={() => setUserId(item.id)}><span className="avatar">{item.name[0]}</span><div><strong>{item.name}</strong><small>{item.id} · {item.team}</small></div><em>›</em></button>)}</aside><section className="card permission-panel"><div className="permission-heading"><div><span className="avatar large">{user.name[0]}</span><div><p className="eyebrow">선택한 사용자</p><h2>{user.name} <small>{user.id}</small></h2><p>{user.team} · 현재 {allowed.length}대 접근 가능</p></div></div><button className="primary-button" onClick={() => onToast(`${user.name}님의 로봇 권한을 저장했어요.`)}>변경 사항 저장</button></div><div className="permission-note"><span>i</span>권한을 해제해도 서버에 등록된 로봇은 삭제되지 않아요.</div><div className="robot-list-heading"><div><h3>서버에 등록된 로봇</h3><p>사용자가 작업 탭에서 선택할 로봇을 체크하세요.</p></div><span>{allowed.length}/{robots.length}대 허용</span></div><div className="robot-permission-list">{robots.map((robot) => <label key={robot.id} className={allowed.includes(robot.id) ? 'allowed' : ''}><input type="checkbox" checked={allowed.includes(robot.id)} onChange={() => toggleRobot(robot.id)} /><span className="robot-tile">R</span><div><strong>{robot.name}</strong><p>{robot.location}</p></div><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span><em>{allowed.includes(robot.id) ? '접근 허용' : '접근 안 함'}</em></label>)}</div></section></div></>;
 }
+
+

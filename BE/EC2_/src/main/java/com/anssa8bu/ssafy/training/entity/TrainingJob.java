@@ -180,6 +180,25 @@ public class TrainingJob extends AuditableEntity {
     else throw new IllegalStateException("종료된 학습은 취소할 수 없습니다.");
   }
 
+  public void updateExpectedEpisodeCount(int expectedCount) {
+    if (inputMode != TrainingInputMode.COLLECT_NEW
+        || (status != TrainingJobStatus.CREATED && status != TrainingJobStatus.COLLECTING))
+      throw new IllegalStateException("입력 계획을 변경할 수 없는 상태입니다.");
+    if (expectedCount < 1) throw new IllegalArgumentException("expectedCount must be positive");
+    expectedEpisodeCount = expectedCount;
+  }
+
+  public void beginInputValidation(int confirmedCount) {
+    if (inputMode != TrainingInputMode.COLLECT_NEW)
+      throw new IllegalStateException("신규 수집 작업만 입력 완료를 요청할 수 있습니다.");
+    if (status != TrainingJobStatus.CREATED && status != TrainingJobStatus.COLLECTING)
+      throw new IllegalStateException("입력 완료를 요청할 수 없는 상태입니다.");
+    if (confirmedCount != receivedEpisodeCount)
+      throw new IllegalStateException("수신된 Episode 수와 확인한 수가 일치하지 않습니다.");
+    status = TrainingJobStatus.INPUT_VALIDATING;
+    progressStage = "입력 검증";
+  }
+
   public UUID getOwnerId() { return ownerId; }
   public UUID getSkillId() { return skillId; }
   public UUID getUmiDeviceId() { return umiDeviceId; }

@@ -85,6 +85,35 @@ public class TrainingJobService {
     return map(job,skill(job.getSkillId()));
   }
 
+  @Transactional
+  public JobResponse updateInputPlan(UUID owner, UUID id, InputPlanUpdateRequest request) {
+    TrainingJob job = owned(owner, id);
+    try { job.updateExpectedEpisodeCount(request.expectedEpisodeCount()); }
+    catch (IllegalStateException e) {
+      throw new BusinessConflictException("STATE_CONFLICT", e.getMessage());
+    }
+    return map(job, skill(job.getSkillId()));
+  }
+
+  @Transactional
+  public InputCompleteResponse completeInput(
+      UUID owner, UUID id, String key, InputCompleteRequest request) {
+    String path = "/api/v1/training-jobs/" + id + "/input-complete";
+    var claim = idempotency.claim(owner, "POST", path, key, request);
+    if (claim.existingResourceId() != null) {
+      TrainingJob existing = owned(owner, claim.existingResourceId());
+      return new InputCompleteResponse(existing.getId(), existing.getStatus());
+    }
+    TrainingJob job = owned(owner, id);
+    try { job.beginInputValidation(request.receivedEpisodeCount()); }
+    catch (IllegalStateException e) {
+      String code = e.getMessage().contains("일치") ? "INPUT_COUNT_MISMATCH" : "STATE_CONFLICT";
+      throw new BusinessConflictException(code, e.getMessage());
+    }
+    idempotency.complete(owner, "POST", path, claim, 202, "TRAINING_JOB", job.getId());
+    return new InputCompleteResponse(job.getId(), job.getStatus());
+  }
+
   @Transactional(readOnly=true)
   public List<EpisodeInputResponse> inputEpisodes(UUID owner, UUID id) {
     owned(owner,id);

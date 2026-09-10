@@ -156,6 +156,14 @@ export interface TrainingRequirements {
   requirementsVersion: number;
 }
 
+export interface TrainingSkill {
+  id: string;
+  skillKey: string;
+  displayName: string;
+  description: string | null;
+  status: string;
+}
+
 export type TaskReadiness = 'PREPARING' | 'READY' | 'BLOCKED' | 'UNKNOWN';
 export interface TaskReadinessResult {
   valid: boolean; readiness: TaskReadiness; robotId: string; taskVersionId: string;
@@ -176,6 +184,8 @@ export interface Training {
   umiDeviceId: string;
   inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
   expectedEpisodeCount: number;
+  receivedEpisodeCount: number;
+  apiStatus: string;
   name: string;
   robot: string;
   progress: number;
@@ -245,4 +255,5 @@ export interface LearningDraft {
   startedAt: number | null;
   name: string;
   error?: string;
+  trainingJobId?: string;
 }
