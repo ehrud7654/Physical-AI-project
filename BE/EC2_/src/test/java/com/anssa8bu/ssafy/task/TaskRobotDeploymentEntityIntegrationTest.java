@@ -1,0 +1,54 @@
+package com.anssa8bu.ssafy.task;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.anssa8bu.ssafy.deployment.entity.*;
+import com.anssa8bu.ssafy.device.entity.*;
+import com.anssa8bu.ssafy.model.entity.RobotProfile;
+import com.anssa8bu.ssafy.robot.entity.*;
+import com.anssa8bu.ssafy.support.IntegrationTestBase;
+import com.anssa8bu.ssafy.task.entity.*;
+import com.anssa8bu.ssafy.user.entity.*;
+import jakarta.persistence.EntityManager;
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.annotation.Rollback;
+import org.springframework.transaction.annotation.Transactional;
+
+class TaskRobotDeploymentEntityIntegrationTest extends IntegrationTestBase {
+  @Autowired EntityManager em;
+
+  @Test
+  @Transactional
+  @Rollback
+  void taskRobotDeploymentSurviveFlushClearAndRollback() {
+    UUID u = UUID.randomUUID(),
+        d = UUID.randomUUID(),
+        p = UUID.randomUUID(),
+        t = UUID.randomUUID(),
+        tv = UUID.randomUUID(),
+        r = UUID.randomUUID(),
+        dep = UUID.randomUUID();
+    em.persist(new User(u, "flow-" + u + "@test.local", "hash", "owner", UserStatus.ACTIVE));
+    em.persist(
+        new Device(
+            d, u, DeviceType.JETSON, "jetson-" + d, "jetson", DeviceConnectionStatus.OFFLINE));
+    em.persist(
+        new RobotProfile(
+            p, "profile-" + p, "1.0", "arm", "ros2", "humble", Map.of(), Map.of(), Map.of()));
+    em.persist(new Task(t, u, "task_" + t.toString().replace("-", ""), "task", null));
+    em.persist(new TaskVersion(tv, t, 1));
+    em.persist(new Robot(r, u, d, p, "robot", RobotConnectionStatus.OFFLINE));
+    em.persist(new Deployment(dep, r, tv));
+    em.flush();
+    em.clear();
+    assertThat(em.find(TaskVersion.class, tv).getVersion()).isOne();
+    assertThat(em.find(Robot.class, r).getConnectionStatus())
+        .isEqualTo(RobotConnectionStatus.OFFLINE);
+    Deployment loaded = em.find(Deployment.class, dep);
+    assertThat(loaded.getStatus()).isEqualTo(DeploymentStatus.PENDING);
+    assertThat(loaded.getProgressPercent()).isZero();
+    assertThat(loaded.getRowVersion()).isZero();
+  }
+}

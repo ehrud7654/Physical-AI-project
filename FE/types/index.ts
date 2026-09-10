@@ -8,13 +8,75 @@ export type TrainingStatus = '진행 중' | '취소 요청' | '취소됨' | '완
 
 export type DeviceType = 'robot' | 'umi';
 
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+  user: AuthenticatedUser;
+}
+
+export type DashboardRobotStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE';
+
+export interface DashboardData {
+  summary: {
+    umi: { totalCount: number; onlineCount: number };
+    robots: { totalCount: number; availableCount: number };
+    trainings: { runningCount: number; averageProgressPercent: number };
+    executions: {
+      completedTodayCount: number;
+      succeededTodayCount: number;
+      failedTodayCount: number;
+      successRatePercent: number;
+    };
+  };
+  robots: Array<{
+    id: string;
+    name: string;
+    status: DashboardRobotStatus;
+    lastSeenAt: string | null;
+    currentDeploymentId: string | null;
+  }>;
+  recentTrainings: Array<{
+    id: string;
+    skillId: string;
+    skillName: string;
+    umiDeviceId: string;
+    umiDeviceName: string;
+    status: string;
+    stage: string | null;
+    progressPercent: number;
+    startedAt: string | null;
+    updatedAt: string;
+  }>;
+  generatedAt: string;
+}
+
 export interface Robot {
   id: string;
+  jetsonDeviceId?: string;
   name: string;
   location: string;
   status: RobotStatus;
   /** 현재 배포된 Skill 모델 이름 */
   model: string;
+}
+
+export interface RobotDetail {
+  id: string;
+  jetsonDeviceId: string;
+  name: string;
+  status: RobotStatus;
+  currentDeploymentId: string | null;
+  currentTaskVersionId: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
 }
 
 export interface DeployedModel {
@@ -25,27 +87,47 @@ export interface DeployedModel {
 
 export interface Umi {
   id: string;
+  /** 서버 devices.id(UUID). 화면 표시용 핸들 번호인 id와 구분한다. */
+  deviceId: string;
   place: string;
   status: '온라인' | '오프라인';
   collected: string;
   data: number;
 }
 
+export type DatasetStatus = 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID' | 'DELETING' | 'DELETED' | 'DELETE_FAILED';
+
+/** EPISODE-01/02 응답을 데이터 탭 표시용으로 정리한 모델. id는 서버 Episode UUID다. */
 export interface Dataset {
-  id: number;
+  id: string;
+  /** 화면 표시용 순번(등록 오래된 순 1부터). 새로고침마다 다시 계산되므로 저장 키로 쓰지 않는다. */
+  seq: number;
+  /** 화면 표시 문자열 `YYYY. MM. DD  HH:mm` — 0을 채워 문자열 정렬이 시간순과 같다. */
   date: string;
+  startedAt: string;
   duration: string;
   size: string;
   tone: string;
   skillKey: string;
+  skillName: string;
   umiId: string;
   ready: boolean;
-  status: 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID';
+  status: DatasetStatus;
   validationErrors?: string[];
   retentionDays: number;
+  retentionExpiresAt: string;
   trainable: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
+}
+
+export interface RetentionPolicy {
+  name: string;
+  defaultRetentionDays: number;
+  postTrainingGraceDays: number;
+  maxRetentionDays: number;
+  allowManualExtension: boolean;
+  allowManualPurge: boolean;
 }
 
 export type RecoveryAction = 'WAIT' | 'RETRY_UPLOAD' | 'RECORD_AGAIN' | 'SET_LABEL' | 'EXTEND_RETENTION' | 'CREATE_DEPLOYMENT' | 'RETRY' | 'CONTACT_SUPPORT' | 'NONE';
@@ -74,6 +156,14 @@ export interface TrainingRequirements {
   requirementsVersion: number;
 }
 
+export interface TrainingSkill {
+  id: string;
+  skillKey: string;
+  displayName: string;
+  description: string | null;
+  status: string;
+}
+
 export type TaskReadiness = 'PREPARING' | 'READY' | 'BLOCKED' | 'UNKNOWN';
 export interface TaskReadinessResult {
   valid: boolean; readiness: TaskReadiness; robotId: string; taskVersionId: string;
@@ -89,6 +179,13 @@ export interface RobotExecution {
 }
 
 export interface Training {
+  id: string;
+  skillKey: string;
+  umiDeviceId: string;
+  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
+  expectedEpisodeCount: number;
+  receivedEpisodeCount: number;
+  apiStatus: string;
   name: string;
   robot: string;
   progress: number;
@@ -112,6 +209,7 @@ export interface WorkflowBlock {
 /** 학습이 완료되어 WORKFLOW에서 사용할 수 있는 단일 동작 */
 export interface LearnedSkill {
   id: string;
+  skillId?: string;
   name: string;
   kind: Extract<BlockKind, 'umi' | 'vlm'>;
   description: string;
@@ -121,6 +219,9 @@ export interface LearnedSkill {
 /** 여러 Skill과 제어 블록을 순서대로 조합한 저장 작업 */
 export interface SavedWork {
   id: string;
+  taskKey?: string;
+  taskVersionId?: string | null;
+  version?: number | null;
   name: string;
   /** 편집기에서 마지막으로 선택한 로봇. 실행 시 다른 로봇으로 변경할 수 있다. */
   robotId: string;
@@ -148,9 +249,11 @@ export interface LearningDraft {
   method: 'new' | 'existing' | null;
   umiId: string;
   expectedEpisodes: number;
-  selected: number[];
+  /** 선택한 Episode ID(UUID) */
+  selected: string[];
   progress: number;
   startedAt: number | null;
   name: string;
   error?: string;
+  trainingJobId?: string;
 }

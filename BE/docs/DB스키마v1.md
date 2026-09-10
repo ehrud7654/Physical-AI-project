@@ -163,7 +163,7 @@ INDEX (user_id, expires_at)
 |---|---|---|---|
 | `id` | uuid | 아니요 | PK |
 | `owner_id` | uuid | 아니요 | FK → `users.id` |
-| `device_type` | varchar(20) | 아니요 | `UMI_Camera`, `JETSON` |
+| `device_type` | varchar(20) | 아니요 | `UMI_CAMERA`, `JETSON` |
 | `handle_number` | varchar(100) | 아니요 | 외부 장치 식별자 |
 | `name` | varchar(100) | 아니요 | 사용자 표시 이름 |
 | `connection_status` | varchar(20) | 아니요 | `ONLINE`, `OFFLINE` |

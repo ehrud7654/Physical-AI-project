@@ -1,15 +1,16 @@
-const MOCK_AUTH_KEY = 'ssafy-mock-authenticated';
+import type { LoginResponse } from '@/types';
+import { apiRequest, clearAccessToken, setAccessToken } from './client';
 
-export function hasMockSession(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.sessionStorage.getItem(MOCK_AUTH_KEY) === 'true';
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  const result = await apiRequest<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  setAccessToken(result.accessToken);
+  return result;
 }
 
-export function startMockSession(): void {
-  window.sessionStorage.setItem(MOCK_AUTH_KEY, 'true');
-}
-
-export function clearMockSession(): void {
-  window.sessionStorage.removeItem(MOCK_AUTH_KEY);
+export function logout(): void {
+  clearAccessToken();
 }
 

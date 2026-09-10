@@ -13,7 +13,7 @@ export const deployedModels: DeployedModel[] = [
 ];
 
 export const initialUmis: Umi[] = [
-  { id: 'UMI-024', place: '실습실 A', status: '온라인', collected: '오늘 10:42', data: 18 },
-  { id: 'UMI-018', place: '실습실 B', status: '온라인', collected: '어제 15:08', data: 11 },
-  { id: 'UMI-031', place: '테스트실', status: '오프라인', collected: '3일 전', data: 7 },
+  { id: 'UMI-024', deviceId: 'mock-umi-device-024', place: '실습실 A', status: '온라인', collected: '오늘 10:42', data: 18 },
+  { id: 'UMI-018', deviceId: 'mock-umi-device-018', place: '실습실 B', status: '온라인', collected: '어제 15:08', data: 11 },
+  { id: 'UMI-031', deviceId: 'mock-umi-device-031', place: '테스트실', status: '오프라인', collected: '3일 전', data: 7 },
 ];

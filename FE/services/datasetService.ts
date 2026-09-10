@@ -1,25 +1,103 @@
-import type { Dataset, EpisodePreviewSession } from '@/types';
-import { initialDatasets } from '@/mocks';
-import { clone, delay } from './client';
+import type { BlockingReason, Dataset, DatasetStatus, EpisodePreviewSession, RecoveryAction, RetentionPolicy } from '@/types';
+import { apiRequest, delay } from './client';
 
-/** 장치별 데이터 목록을 조회한다. 실제 API 연결 시 이 함수의 구현만 교체한다. */
-export async function fetchDatasets(): Promise<Dataset[]> {
-  await delay();
-  return clone(initialDatasets);
+/** EPISODE-01/02 응답(API 명세 1.2.0 `Episode`) 중 데이터 탭이 쓰는 필드만 선언한다. */
+interface ApiEpisode {
+  id: string;
+  umiDeviceId: string;
+  umiDeviceHandleNumber: string | null;
+  skillId: string;
+  skillKey: string | null;
+  skillDisplayName: string | null;
+  status: 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID' | 'DELETING' | 'DELETED' | 'DELETE_FAILED';
+  startedAt: string;
+  endedAt: string;
+  retentionExpiresAt: string;
+  archive: { sizeBytes: number } | null;
+  trainable: boolean;
+  blockingReasons: BlockingReason[];
+  recoveryAction: RecoveryAction;
+  error: { code: string; message: string; recoveryAction: RecoveryAction } | null;
+  createdAt: string;
 }
 
-/** EPISODE-08: 미리보기 URL은 짧게 만료되므로 화면을 열 때마다 발급한다. */
-export async function createEpisodePreviewSession(episodeId: number): Promise<EpisodePreviewSession> {
+const TONES = ['orange', 'blue', 'green', 'purple'];
+
+/** EPISODE-01: 내 Episode 전체. 서버는 최신순으로 주므로 표시 순번은 오래된 순으로 매긴다. */
+export async function fetchDatasets(): Promise<Dataset[]> {
+  const episodes = await apiRequest<ApiEpisode[]>('/episodes');
+  const total = episodes.length;
+  return episodes.map((episode, index) => toDataset(episode, total - index));
+}
+
+/** EPISODE-02 */
+export async function fetchDataset(episodeId: string): Promise<Dataset> {
+  const episode = await apiRequest<ApiEpisode>(`/episodes/${episodeId}`);
+  return toDataset(episode, 0);
+}
+
+/** EPISODE-06 */
+export function fetchRetentionPolicy(): Promise<RetentionPolicy> {
+  return apiRequest<RetentionPolicy>('/episodes/retention-policy');
+}
+
+/** EPISODE-08은 아직 서버에 없다. 미리보기 URL은 짧게 만료되므로 화면을 열 때마다 발급하는 계약만 흉내 낸다. */
+export async function createEpisodePreviewSession(episodeId: string): Promise<EpisodePreviewSession> {
   await delay();
-  const episode = initialDatasets.find((item) => item.id === episodeId);
-  if (!episode || episode.status !== 'READY') throw new Error('미리보기를 준비할 수 없는 데이터예요.');
   return {
-    episodeId: `episode_${episodeId}`,
+    episodeId,
     status: 'READY',
     previewType: 'FRAME_SEQUENCE',
-    manifestUrl: `/api/v1/episode-previews/preview_${episodeId}/manifest`,
-    thumbnailUrl: `/api/v1/episode-previews/preview_${episodeId}/thumbnail`,
+    manifestUrl: `/api/v1/episode-previews/${episodeId}/manifest`,
+    thumbnailUrl: `/api/v1/episode-previews/${episodeId}/thumbnail`,
     expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
   };
 }
 
+function toDataset(episode: ApiEpisode, seq: number): Dataset {
+  const status: DatasetStatus = episode.status;
+  return {
+    id: episode.id,
+    seq,
+    date: formatDate(episode.startedAt),
+    startedAt: episode.startedAt,
+    duration: formatDuration(Date.parse(episode.endedAt) - Date.parse(episode.startedAt)),
+    size: episode.archive ? formatBytes(episode.archive.sizeBytes) : '크기 확인 중',
+    tone: TONES[Math.abs(hash(episode.id)) % TONES.length],
+    skillKey: episode.skillKey ?? '',
+    skillName: episode.skillDisplayName ?? episode.skillKey ?? '알 수 없는 동작',
+    umiId: episode.umiDeviceHandleNumber ?? episode.umiDeviceId,
+    ready: status === 'READY',
+    status,
+    validationErrors: status === 'INVALID' ? episode.blockingReasons.map((reason) => reason.message) : undefined,
+    retentionDays: Math.max(0, Math.ceil((Date.parse(episode.retentionExpiresAt) - Date.now()) / 86_400_000)),
+    retentionExpiresAt: episode.retentionExpiresAt,
+    trainable: episode.trainable,
+    blockingReasons: episode.blockingReasons,
+    recoveryAction: episode.recoveryAction,
+  };
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}. ${pad(d.getMonth() + 1)}. ${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+  if (bytes >= 1_048_576) return `${Math.round(bytes / 1_048_576)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function hash(value: string): number {
+  let h = 0;
+  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0;
+  return h;
+}

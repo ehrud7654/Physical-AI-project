@@ -15,3 +15,39 @@ export async function delay(ms = 350): Promise<void> {
 export function clone<T>(value: T): T {
   return structuredClone(value);
 }
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080/api/v1';
+let accessToken: string | null = null;
+
+export class ApiError extends Error {
+  constructor(public readonly status: number, public readonly code: string, message: string) {
+    super(message);
+  }
+}
+
+export function setAccessToken(token: string): void {
+  accessToken = token;
+}
+
+export function clearAccessToken(): void {
+  accessToken = null;
+}
+
+export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  const body = await response.json().catch(() => null) as { data?: T; code?: string; message?: string } | null;
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      body?.code ?? 'API_ERROR',
+      body?.message ?? '서버 요청을 처리하지 못했어요.',
+    );
+  }
+  if (!body || body.data === undefined) throw new ApiError(response.status, 'INVALID_RESPONSE', '서버 응답 형식이 올바르지 않아요.');
+  return body.data;
+}

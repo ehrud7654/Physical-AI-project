@@ -1,0 +1,1 @@
+package com.anssa8bu.ssafy.common.redis.dto; import java.time.Instant; import java.util.UUID; public record PurgeLeaseCache(int schemaVersion,UUID purgeJobId,int attempt,String workerId,String leaseTokenHash,Instant leaseExpiresAt){public PurgeLeaseCache{if(schemaVersion!=1||attempt<0)throw new IllegalArgumentException();}}

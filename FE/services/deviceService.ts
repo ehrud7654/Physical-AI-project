@@ -1,10 +1,31 @@
-import type { DeviceType, Robot, Umi } from '@/types';
-import { initialRobots, initialUmis } from '@/mocks';
-import { clone, delay } from './client';
+import type { DeviceType, Robot, RobotDetail, Umi } from '@/types';
+import { apiRequest } from './client';
 
-/** Mock 저장소 — 백엔드 연동 시 아래 함수 본문만 fetch로 교체한다. */
-let robots: Robot[] = clone(initialRobots);
-let umis: Umi[] = clone(initialUmis);
+type ApiDeviceType = 'UMI_CAMERA' | 'JETSON';
+
+interface ApiDevice {
+  id: string;
+  ownerId: string;
+  deviceType: ApiDeviceType;
+  handleNumber: string;
+  name: string;
+  location: string | null;
+  connectionStatus: 'ONLINE' | 'OFFLINE';
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+interface ApiRobot {
+  id: string;
+  jetsonDeviceId: string;
+  name: string;
+  connectionStatus: 'ONLINE' | 'OFFLINE';
+  busy: boolean;
+  currentDeploymentId: string | null;
+  currentTaskVersionId: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+}
 
 export interface RegisterDeviceInput {
   type: DeviceType;
@@ -14,40 +35,99 @@ export interface RegisterDeviceInput {
 }
 
 export async function fetchRobots(): Promise<Robot[]> {
-  await delay();
-  return clone(robots);
+  const [robots, devices] = await Promise.all([
+    apiRequest<ApiRobot[]>('/robots'),
+    apiRequest<ApiDevice[]>('/devices?deviceType=JETSON'),
+  ]);
+  const devicesById = new Map(devices.map((device) => [device.id, device]));
+  return robots.map((robot) => toRobot(robot, devicesById.get(robot.jetsonDeviceId)));
+}
+
+export async function fetchRobotDetail(robotId: string): Promise<RobotDetail> {
+  const robot = await apiRequest<ApiRobot>(`/robots/${robotId}`);
+  return {
+    id: robot.id,
+    jetsonDeviceId: robot.jetsonDeviceId,
+    name: robot.name,
+    status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    currentDeploymentId: robot.currentDeploymentId,
+    currentTaskVersionId: robot.currentTaskVersionId,
+    lastSeenAt: robot.lastSeenAt,
+    createdAt: robot.createdAt,
+  };
 }
 
 export async function fetchUmis(): Promise<Umi[]> {
-  await delay();
-  return clone(umis);
+  const devices = await apiRequest<ApiDevice[]>('/devices?deviceType=UMI_CAMERA');
+  return devices.map(toUmi);
 }
 
-/** 장치 등록. 중복 ID면 오류를 던진다. */
-export async function registerDevice(input: RegisterDeviceInput): Promise<{ robots: Robot[]; umis: Umi[] }> {
-  await delay();
-  const id = input.id.trim();
-  const duplicated = robots.some((robot) => robot.id === id) || umis.some((umi) => umi.id === id);
-  if (duplicated) throw new Error(`이미 등록된 ID예요: ${id}`);
-
-  if (input.type === 'robot') {
-    robots = [...robots, { id, name: input.name.trim(), location: input.location.trim(), status: '온라인', model: 'pick-block-v3' }];
-  } else {
-    umis = [...umis, { id, place: input.location.trim(), status: '온라인', collected: '방금 전', data: 0 }];
-  }
-  return { robots: clone(robots), umis: clone(umis) };
+export async function registerDevice(
+  input: RegisterDeviceInput,
+): Promise<{ robots: Robot[]; umis: Umi[] }> {
+  await apiRequest<ApiDevice>('/devices', {
+    method: 'POST',
+    body: JSON.stringify({
+      deviceType: toApiDeviceType(input.type),
+      handleNumber: input.id.trim(),
+      name: input.name.trim(),
+      location: input.location.trim(),
+    }),
+  });
+  const [robots, umis] = await Promise.all([fetchRobots(), fetchUmis()]);
+  return { robots, umis };
 }
 
-/** 배포된 모델을 로봇에 적용한다. */
+/** 모델 배포 API 연동 전까지 서버의 최신 로봇 목록을 유지한다. */
 export async function applyModel(robotId: string, model: string): Promise<Robot[]> {
-  await delay();
-  robots = robots.map((robot) => (robot.id === robotId ? { ...robot, model } : robot));
-  return clone(robots);
+  void robotId;
+  void model;
+  return fetchRobots();
 }
 
-/** 로봇 이름·설치 위치를 수정한다. */
-export async function updateRobot(robotId: string, patch: { name: string; location: string }): Promise<Robot[]> {
-  await delay();
-  robots = robots.map((robot) => (robot.id === robotId ? { ...robot, name: patch.name.trim(), location: patch.location.trim() } : robot));
-  return clone(robots);
+/** devices.id를 사용해 Jetson 장치의 이름과 설치 위치를 수정한다. */
+export async function updateRobot(
+  deviceId: string,
+  patch: { name: string; location: string },
+): Promise<Robot[]> {
+  await apiRequest<ApiDevice>(`/devices/${deviceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name: patch.name.trim(), location: patch.location.trim() }),
+  });
+  return fetchRobots();
+}
+
+function toApiDeviceType(type: DeviceType): ApiDeviceType {
+  return type === 'robot' ? 'JETSON' : 'UMI_CAMERA';
+}
+
+function toRobot(robot: ApiRobot, device?: ApiDevice): Robot {
+  return {
+    id: robot.id,
+    jetsonDeviceId: robot.jetsonDeviceId,
+    name: robot.name,
+    location: device?.location ?? '위치 미지정',
+    status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    model: 'API로 호출할 수 없습니다',
+  };
+}
+
+function toUmi(device: ApiDevice): Umi {
+  return {
+    id: device.handleNumber,
+    deviceId: device.id,
+    place: device.location ?? '위치 미지정',
+    status: device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    collected: device.lastSeenAt ? formatLastSeen(device.lastSeenAt) : '사용 기록 없음',
+    data: 0,
+  };
+}
+
+function formatLastSeen(value: string): string {
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }

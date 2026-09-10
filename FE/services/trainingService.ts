@@ -1,66 +1,184 @@
-import type { Training, TrainingRequirements, TrainingStatus } from '@/types';
-import { initialTrainings } from '@/mocks';
-import { clone, delay } from './client';
+import type { Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
+import { apiRequest } from './client';
 
-let trainings: Training[] = clone(initialTrainings);
+type ApiTrainingStatus =
+  | 'CREATED' | 'COLLECTING' | 'INPUT_VALIDATING' | 'INPUT_READY' | 'QUEUED'
+  | 'PREPARING' | 'RUNNING' | 'MODEL_UPLOADING' | 'MODEL_VALIDATING'
+  | 'CANCEL_REQUESTED' | 'CANCELED' | 'SUCCEEDED' | 'FAILED';
 
-const requirementBySkill: Record<string, Pick<TrainingRequirements, 'minimumEpisodeCount' | 'recommendedEpisodeCount' | 'maximumEpisodeCount'>> = {
-  pick_place: { minimumEpisodeCount: 5, recommendedEpisodeCount: 10, maximumEpisodeCount: 100 },
-  sort_two: { minimumEpisodeCount: 8, recommendedEpisodeCount: 15, maximumEpisodeCount: 100 },
-  align_fixture: { minimumEpisodeCount: 8, recommendedEpisodeCount: 15, maximumEpisodeCount: 100 },
-  present_inspect: { minimumEpisodeCount: 5, recommendedEpisodeCount: 10, maximumEpisodeCount: 100 },
-  line_up: { minimumEpisodeCount: 10, recommendedEpisodeCount: 20, maximumEpisodeCount: 100 },
-};
+interface ApiTrainingJob {
+  id: string;
+  skillKey: string;
+  skillDisplayName: string;
+  umiDeviceId: string;
+  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
+  status: ApiTrainingStatus;
+  progressStage: string | null;
+  progressPercent: number;
+  expectedEpisodeCount: number;
+  receivedEpisodeCount: number;
+  receivedBytes: number;
+  episodeCount: number;
+  resultSkillVersionId: string | null;
+  error: { code: string; message: string; recoveryAction: string } | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
+}
 
-/** SKILL-09: 프리셋이 아닌 학습 입력 조건을 조회한다. */
+interface ApiDevice {
+  id: string;
+  handleNumber: string;
+  name: string;
+}
+
+interface ApiEpisodeInput {
+  episodeId: string;
+  inputOrder: number;
+}
+
+interface ApiSkill {
+  id: string;
+  skillKey: string;
+  displayName: string;
+  description: string | null;
+  status: string;
+}
+
+/** SKILL-09: 선택한 스킬의 학습 입력 조건을 조회한다. */
 export async function fetchTrainingRequirements(skillKey: string): Promise<TrainingRequirements> {
-  await delay();
-  const counts = requirementBySkill[skillKey] ?? requirementBySkill.pick_place;
-  return { skillId: `skill_${skillKey}`, skillKey, ...counts, allowedSources: ['REAL'], requiresSameUmiDevice: false, requiredContractVersion: 'umi-policy-v1', supported: true, requirementsVersion: 1 };
+  const skills = await apiRequest<ApiSkill[]>('/skills');
+  const skill = skills.find((item) => item.skillKey === skillKey);
+  if (!skill) throw new Error('학습할 스킬을 찾을 수 없습니다.');
+  return apiRequest<TrainingRequirements>(`/skills/${skill.id}/training-requirements`);
+}
+
+export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
+  return apiRequest<ApiSkill[]>('/skills');
+}
+
+export async function createTrainingJob(input: {
+  skillKey: string;
+  umiDeviceId: string;
+  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
+  expectedEpisodeCount?: number;
+  episodeIds?: string[];
+}): Promise<Training> {
+  const job = await apiRequest<ApiTrainingJob>('/training-jobs', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify(input),
+  });
+  return toTraining(job);
+}
+
+export async function updateTrainingInputPlan(
+  trainingJobId: string,
+  expectedEpisodeCount: number,
+): Promise<Training> {
+  const job = await apiRequest<ApiTrainingJob>(`/training-jobs/${trainingJobId}/input-plan`, {
+    method: 'PATCH',
+    body: JSON.stringify({ expectedEpisodeCount }),
+  });
+  return toTraining(job);
+}
+
+export async function completeTrainingInput(
+  trainingJobId: string,
+  receivedEpisodeCount: number,
+): Promise<void> {
+  await apiRequest<{ trainingJobId: string; status: ApiTrainingStatus }>(
+    `/training-jobs/${trainingJobId}/input-complete`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({ receivedEpisodeCount }),
+    },
+  );
 }
 
 export async function fetchTrainings(status?: TrainingStatus | 'all'): Promise<Training[]> {
-  await delay();
-  try {
-    const stored = JSON.parse(localStorage.getItem('ssafy-trainings-v1') || 'null');
-    if (Array.isArray(stored)) trainings = stored;
-  } catch { /* Use initial mock data if storage is unavailable. */ }
-  if (!status || status === 'all') return clone(trainings);
-  return clone(trainings.filter((item) => item.status === status));
+  const [jobs, devices] = await Promise.all([
+    apiRequest<ApiTrainingJob[]>('/training-jobs'),
+    apiRequest<ApiDevice[]>('/devices?deviceType=UMI_CAMERA'),
+  ]);
+  const deviceNames = new Map(devices.map((device) => [device.id, device.name || device.handleNumber]));
+  const trainings = jobs.map((job) => toTraining(job, deviceNames.get(job.umiDeviceId)));
+  return !status || status === 'all' ? trainings : trainings.filter((item) => item.status === status);
 }
 
-/** TRAIN-07: 실행 중인 학습은 취소 요청으로 표시하고 서버 확인 후에만 취소 완료로 바뀐다. */
-export async function cancelTraining(name: string): Promise<Training[]> {
-  await delay();
-  trainings = trainings.map((item) =>
-    item.name === name && item.status === '진행 중'
-      ? { ...item, status: '취소 요청' as const, stage: '취소 확인 중' }
-      : item,
-  );
-  window.setTimeout(() => {
-    trainings = trainings.map((item) => item.name === name && item.status === '취소 요청' ? { ...item, status: '취소됨' as const, stage: '취소 완료' } : item);
-  }, 1200);
-  return clone(trainings);
+export async function fetchTrainingDetail(trainingJobId: string): Promise<Training> {
+  const job = await apiRequest<ApiTrainingJob>(`/training-jobs/${trainingJobId}`);
+  const device = await apiRequest<ApiDevice>(`/devices/${job.umiDeviceId}`);
+  return toTraining(job, device.name || device.handleNumber);
 }
 
-/** 실패한 학습을 재시도한다. 진행 중 상태로 되돌아간다. */
-export async function retryTraining(name: string): Promise<Training[]> {
-  await delay();
-  trainings = trainings.map((item) =>
-    item.name === name && item.status === '실패'
-      ? { ...item, status: '진행 중' as const, stage: '데이터 전처리', progress: 5, started: '방금 전' }
-      : item,
-  );
-  return clone(trainings);
+export async function cancelTraining(trainingJobId: string): Promise<Training[]> {
+  await apiRequest<ApiTrainingJob>(`/training-jobs/${trainingJobId}/cancel`, { method: 'POST' });
+  return fetchTrainings();
 }
 
-/** 새 학습을 등록한다(새 학습 완료 시 목록 반영용). */
-export async function addTraining(input: { name: string; robot: string }): Promise<Training[]> {
-  await delay();
-  trainings = [
-    { name: input.name, robot: input.robot, progress: 100, stage: '모델 검증 완료', status: '완료', started: '방금 전' },
-    ...trainings.filter((item) => item.name !== input.name),
-  ];
-  try { localStorage.setItem('ssafy-trainings-v1', JSON.stringify(trainings)); } catch { /* Keep the in-memory result. */ }
-  return clone(trainings);
+/** 별도 retry API 대신 기존 Episode를 입력으로 새 TrainingJob을 생성한다. */
+export async function retryTraining(training: Training): Promise<Training[]> {
+  const episodes = await apiRequest<ApiEpisodeInput[]>(`/training-jobs/${training.id}/episodes`);
+  const hasEpisodes = episodes.length > 0;
+  await apiRequest<ApiTrainingJob>('/training-jobs', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      skillKey: training.skillKey,
+      umiDeviceId: training.umiDeviceId,
+      inputMode: hasEpisodes ? 'EXISTING_EPISODES' : 'COLLECT_NEW',
+      expectedEpisodeCount: hasEpisodes ? undefined : training.expectedEpisodeCount,
+      episodeIds: hasEpisodes ? episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId) : undefined,
+    }),
+  });
+  return fetchTrainings();
+}
+
+/** 학습 생성 화면의 실제 생성 연동 전까지 완료 후 서버 목록만 다시 읽는다. */
+export async function addTraining(_input: { name: string; robot: string }): Promise<Training[]> {
+  return fetchTrainings();
+}
+
+function toTraining(job: ApiTrainingJob, deviceName?: string): Training {
+  return {
+    id: job.id,
+    skillKey: job.skillKey,
+    umiDeviceId: job.umiDeviceId,
+    inputMode: job.inputMode,
+    expectedEpisodeCount: job.expectedEpisodeCount,
+    receivedEpisodeCount: job.receivedEpisodeCount,
+    apiStatus: job.status,
+    name: job.skillDisplayName,
+    robot: deviceName ?? job.umiDeviceId,
+    progress: Math.round(Number(job.progressPercent)),
+    stage: job.progressStage ?? stageFor(job.status),
+    status: statusFor(job.status),
+    started: formatDateTime(job.startedAt ?? job.createdAt),
+  };
+}
+
+function statusFor(status: ApiTrainingStatus): TrainingStatus {
+  if (status === 'SUCCEEDED') return '완료';
+  if (status === 'FAILED') return '실패';
+  if (status === 'CANCEL_REQUESTED') return '취소 요청';
+  if (status === 'CANCELED') return '취소됨';
+  return '진행 중';
+}
+
+function stageFor(status: ApiTrainingStatus): string {
+  const labels: Record<ApiTrainingStatus, string> = {
+    CREATED: '학습 생성', COLLECTING: '데이터 수집', INPUT_VALIDATING: '입력 검증', INPUT_READY: '입력 준비 완료',
+    QUEUED: '학습 대기', PREPARING: '학습 준비', RUNNING: '모델 학습', MODEL_UPLOADING: '모델 업로드',
+    MODEL_VALIDATING: '모델 검증', CANCEL_REQUESTED: '취소 확인 중', CANCELED: '취소 완료', SUCCEEDED: '학습 완료', FAILED: '학습 실패',
+  };
+  return labels[status];
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).format(new Date(value));
 }

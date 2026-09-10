@@ -1,14 +1,23 @@
-# UMI 로봇팔 스킬 학습·배포 플랫폼 API 명세서 v1
+# UMI 로봇팔 스킬 학습·배포 플랫폼 API 명세서
 
 > Episode ZIP·고정 TrainingProfile·학습 큐·게이트·Jetson 계약을 정의하며, EC2 Spring Boot와 GPU Spring Boot 및 FastAPI 사이의 역할과 실행 계약을 포함한다.
 
-- 문서 버전: 1.0.0
-- 작성일: 2026-09-04
+- 문서 버전: 1.1.0
+- 작성일: 2026-09-08
 - 기준 경로: `/api/v1`; GPU 데이터 수집 경로는 `/ingest/v1`
 - 범위: 웹 클라이언트, EC2 백엔드, UMI, GPU 워커, S3, Jetson 간 인터페이스
 - ERD 기준: [DB 스키마 v1](./DB스키마v1.md)
 - 주요 리소스: `TrainingProfile`, `EpisodeArchive`, `SkillVersion`, `VlmModelVersion`, `RobotSkillDeployment`
 - 이 문서는 제안 명세다. 실제 GPU 주소, 로컬 보관 기간과 용량 정책, S3 버킷, 토큰 만료 시간, CKPT 내부 포맷은 구현 전에 확정해야 한다.
+
+## 1.1.0 변경 요약
+
+- Episode에 학습 가능 여부·차단 사유·복구 행동을 추가하고, 만료형 미리보기 세션 API를 정의했다.
+- TrainingJob의 수집 진행 집계를 상세 조회와 SSE에서 동일한 구조로 제공한다.
+- 고정 TrainingProfile은 유지하고, FE 안내용 스킬별 학습 데이터 요구사항 조회만 추가했다.
+- TaskVersion의 로봇 준비 상태 응답을 구체화하고 RobotExecution 생성·조회·취소·Jetson 보고 계약을 추가했다.
+- 목록 응답의 전체 건수와 RobotExecution SSE를 추가해 새로고침·재연결 후 상태를 복구할 수 있게 했다.
+- 이 버전은 별도 CaptureSession, 사용자 학습 프리셋, 튜토리얼 API를 추가하지 않는다. 신규 수집의 묶음은 `COLLECT_NEW` TrainingJob으로 관리한다.
 
 ## 1. 설계 가정과 범위
 
@@ -33,7 +42,7 @@
 | 다운로드 | EC2는 DB의 S3 경로를 그대로 노출하지 않고, 권한 확인 후 제한 시간 다운로드 URL을 발급한다. |
 | 인증 | 사용자, UMI, GPU, Jetson을 별도 주체로 인증한다. 핸들 번호는 식별자이지 인증 수단이 아니다. |
 | 상태 기준 | 학습 완료, CKPT 검증 완료, Jetson 적용 완료를 서로 다른 상태로 관리한다. |
-| 평가 | 별도 EvaluationRun/Trial 도메인은 두지 않고 SkillVersion에 배포 게이트 집계 결과만 저장한다. 상세 실행 이력이 필요하면 후속 테이블로 확장한다. |
+| 평가 | 별도 EvaluationRun/Trial 도메인은 두지 않고 SkillVersion에 배포 게이트 집계 결과만 저장한다. 사용자가 요청한 실제 로봇 작업의 상태와 결과는 RobotExecution으로 추적한다. |
 | 재학습 | 보관 중인 READY Episode로 새 TrainingJob을 만들 수 있다. 기존 TrainingJob 자체를 되돌리거나 덮어쓰지는 않는다. |
 
 ### 1.1 주요 흐름
@@ -67,7 +76,7 @@ Jetson → 자신의 pending Deployment manifest 요청
 
 ### 1.2 범위 밖
 
-- 브라우저에서 Episode ZIP 또는 내부 원본 재생 및 다운로드
+- 브라우저에서 Episode ZIP 또는 내부 원본 다운로드. 사용자 확인용 만료형 미리보기는 별도 preview session으로만 제공한다.
 - 로컬 보관 기한을 넘는 Episode ZIP 장기 보관과 백업 보장
 - DatasetVersion 및 데이터 라벨링·가공 파이프라인
 - 서로 다른 StorageNode에 저장된 Episode의 자동 복제·전송
@@ -122,12 +131,14 @@ Jetson → 자신의 pending Deployment manifest 요청
   "data": [],
   "page": {
     "nextCursor": null,
-    "hasNext": false
+    "hasNext": false,
+    "totalCount": 0
   }
 }
 ```
 
 - 목록 공통 쿼리: `cursor?: string`, `limit?: integer`이며 기본 20, 범위 1~100이다.
+- `totalCount`는 현재 필터 조건에 해당하는 전체 건수이며 현재 페이지의 배열 길이로 대체하지 않는다.
 - 기본 정렬은 `createdAt DESC, id DESC`다.
 - 모든 EC2 응답에 `X-Request-Id`를 반환한다.
 - `204` 응답에는 본문이 없다.
@@ -142,6 +153,7 @@ Jetson → 자신의 pending Deployment manifest 요청
   - CKPT 업로드 세션 생성 및 완료
   - TaskVersion 생성
   - Deployment 생성
+  - RobotExecution 생성
 - 동일 키·동일 본문은 최초 응답을 재사용한다.
 - 동일 키·다른 본문은 `409 IDEMPOTENCY_KEY_REUSED`다.
 - 학습 이벤트는 `(trainingJobId, attempt, eventId)`로 중복 제거한다.
@@ -170,10 +182,14 @@ Jetson → 자신의 pending Deployment manifest 요청
         "reason": "skill_ver_33 is VALIDATING"
       }
     ],
-    "requestId": "req_001"
+    "requestId": "req_001",
+    "recoveryAction": "WAIT"
   }
 }
 ```
+
+- `recoveryAction`은 사용자가 취할 수 있는 행동이 명확한 경우에만 반환하는 선택 필드다.
+- 허용 값은 `WAIT`, `RETRY_UPLOAD`, `RECORD_AGAIN`, `SET_LABEL`, `EXTEND_RETENTION`, `CREATE_DEPLOYMENT`, `RETRY`, `CONTACT_SUPPORT`, `NONE`이다.
 
 | HTTP | 대표 오류 코드 | 의미 |
 |---|---|---|
@@ -280,8 +296,34 @@ type Episode = {
   captureMetadata: Record<string, unknown>;
   qualitySummary: Record<string, unknown>;
   archive: EpisodeArchive;
-  error: { code: string; message: string } | null;
+  trainable: boolean;
+  blockingReasons: BlockingReason[];
+  recoveryAction: RecoveryAction;
+  error: ApiResourceError | null;
   createdAt: string;
+};
+
+type RecoveryAction =
+  | 'WAIT'
+  | 'RETRY_UPLOAD'
+  | 'RECORD_AGAIN'
+  | 'SET_LABEL'
+  | 'EXTEND_RETENTION'
+  | 'CREATE_DEPLOYMENT'
+  | 'RETRY'
+  | 'CONTACT_SUPPORT'
+  | 'NONE';
+
+type BlockingReason = {
+  code: string;
+  message: string;
+  recoveryAction: RecoveryAction;
+};
+
+type ApiResourceError = {
+  code: string;
+  message: string;
+  recoveryAction: RecoveryAction;
 };
 
 type RetentionPolicy = {
@@ -321,7 +363,9 @@ type Robot = {
   robotProfileId: string;
   name: string;
   connectionStatus: 'ONLINE' | 'OFFLINE';
+  busy: boolean;
   currentDeploymentId: string | null;
+  currentTaskVersionId: string | null;
   lastSeenAt: string | null;
   createdAt: string;
 };
@@ -344,6 +388,19 @@ type Skill = {
   persona: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type TrainingRequirements = {
+  skillId: string;
+  skillKey: SkillKey;
+  minimumEpisodeCount: number;
+  recommendedEpisodeCount: number;
+  maximumEpisodeCount: number;
+  allowedSources: Array<'SIM' | 'REAL'>;
+  requiresSameUmiDevice: boolean;
+  requiredContractVersion: string;
+  supported: boolean;
+  requirementsVersion: number;
 };
 
 type TrainingProfileSnapshot = {
@@ -393,6 +450,15 @@ type TrainingJob = {
   receivedEpisodeCount: number;
   receivedBytes: number;
   episodeCount: number;
+  collection: {
+    expectedCount: number;
+    uploadedCount: number;
+    validatingCount: number;
+    readyCount: number;
+    warningCount: number;
+    invalidCount: number;
+    receivedBytes: number;
+  };
   inputSnapshotSha256: string | null;
   progress: {
     stage: string;
@@ -402,7 +468,7 @@ type TrainingJob = {
   };
   attempt: number;
   resultSkillVersionId: string | null;
-  error: { code: string; message: string } | null;
+  error: ApiResourceError | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -560,6 +626,31 @@ type RobotSkillDeployment = {
   status: 'ACTIVE' | 'RETIRED';
   deployedAt: string;
   retiredAt: string | null;
+};
+
+type RobotExecution = {
+  id: string;
+  ownerId: string;
+  robotId: string;
+  taskVersionId: string;
+  deploymentId: string;
+  status:
+    | 'REQUESTED'
+    | 'STARTING'
+    | 'RUNNING'
+    | 'CANCEL_REQUESTED'
+    | 'CANCELED'
+    | 'SUCCEEDED'
+    | 'FAILED'
+    | 'STATUS_UNKNOWN';
+  currentStep: number | null;
+  totalSteps: number;
+  progressPercent: number;
+  error: ApiResourceError | null;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
 };
 ```
 
@@ -835,6 +926,32 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 이미 같은 라벨이면 멱등 성공, 다른 확정 라벨을 덮어쓰려면 별도 관리자 정정 절차를 사용한다.
 - 성공 `200`: 갱신된 `Episode`.
 - 실패: `409 EPISODE_IN_USE`, `409 LABEL_ALREADY_FINALIZED`, `409 STATE_CONFLICT`.
+
+### EPISODE-08 Episode 미리보기 세션 발급
+
+- `POST /episodes/{episodeId}/preview-session` · 사용자
+- 요청 본문 없음.
+- 사용자 소유 Episode이며 archive가 `AVAILABLE`이고 실제 로컬 ZIP이 존재할 때만 발급한다.
+- EC2는 소유권과 상태를 검증하고, GPU StorageNode가 제공하는 미리보기 전용 URL에 짧은 TTL의 토큰을 부여한다. 로컬 절대 경로와 내부 `storageKey`는 노출하지 않는다.
+- 성공 `201`:
+
+```json
+{
+  "data": {
+    "episodeId": "episode_100",
+    "status": "READY",
+    "previewType": "FRAME_SEQUENCE",
+    "manifestUrl": "/api/v1/episode-previews/preview_01/manifest",
+    "thumbnailUrl": "/api/v1/episode-previews/preview_01/thumbnail",
+    "expiresAt": "2026-09-08T06:15:00Z"
+  }
+}
+```
+
+- 미리보기 세션은 짧은 TTL로 만료되며 만료 후 재발급할 수 있다.
+- MVP는 ZIP의 JPEG 목록을 제공하는 `FRAME_SEQUENCE`를 사용한다. 임시 MP4 생성이 확정되면 `VIDEO`를 추가한다.
+
+
 
 ## 7. 스킬 API
 
@@ -2206,6 +2323,7 @@ data: {"trainingJobId":"job_31","skillId":"skill_12","status":"RUNNING","percent
 | `episode.purge-updated` | `{ episodeId, purgeJobId, status, error, occurredAt }` |
 | `skill-version.updated` | `{ skillId, skillKey, skillVersionId, version, status, gatePassed, occurredAt }` |
 | `deployment.updated` | `{ robotId, deploymentId, status, progressPercent, occurredAt }` |
+| `execution.updated` | `{ executionId, robotId, taskVersionId, deploymentId, status, currentStep, totalSteps, progressPercent, error, occurredAt }` |
 | `robot-skill.updated` | `{ robotId, skillId, skillKey, skillVersionId, status, occurredAt }` |
 | `vlm.inference-completed` | `{ robotId, inferenceResultId, skillKey, destination, confidence, abstain, motionAllowed, occurredAt }` |
 | `device.connection` | `{ deviceId, connectionStatus, occurredAt }` |
@@ -2948,3 +3066,53 @@ RUN-05 요청 예시:
   }
 }
 ```
+
+
+
+
+## 23. 웹 클라이언트 보완 API (1.1.0)
+
+이 절은 1.1.0에서 추가된 계약이며 앞 절과 충돌하면 이 절을 적용한다.
+
+### SKILL-09 학습 입력 조건 조회
+
+GET /api/v1/skills/{skillId}/training-requirements · 사용자. 성공 200은 TrainingRequirements를 반환한다. 프리셋 선택 API가 아니며 고정 TrainingProfile 정책을 유지한다. TRAIN-01과 TRAIN-06에서 같은 조건을 다시 검증한다.
+
+### 수집 진행 계약
+
+COLLECT_NEW TrainingJob 자체를 수집 묶음으로 사용하며 CaptureSession은 추가하지 않는다. CREATED, COLLECTING, INPUT_VALIDATING은 데이터 준비 단계이고 QUEUED 이후가 학습 단계다. TRAIN-03과 training.input-progress SSE는 collection의 expectedCount, uploadedCount, validatingCount, readyCount, warningCount, invalidCount, receivedBytes를 동일하게 반환한다.
+
+### TASK-08 준비 상태 보완
+
+응답에 valid, readiness, robotId, taskVersionId, deploymentId, observedAt, blockingReasons, warnings를 반환한다. readiness는 PREPARING, READY, BLOCKED, UNKNOWN이다. 실행 생성 시 상태를 다시 검증한다.
+
+### EXEC-01 실행 생성
+
+POST /api/v1/robots/{robotId}/executions · 사용자 · Idempotency-Key 필수. 요청은 taskVersionId와 deploymentId를 포함한다. 서버는 소유권, Robot busy 및 연결 상태, Deployment SUCCEEDED, 현재 TaskVersion, 모델 호환성과 gate를 다시 검증한다. 성공 202는 RobotExecution을 반환한다.
+
+### EXEC-02 실행 목록
+
+GET /api/v1/robots/{robotId}/executions · 사용자. taskVersionId, status, startedFrom, startedTo와 공통 페이지네이션을 지원한다.
+
+### EXEC-03 실행 상세
+
+GET /api/v1/robots/{robotId}/executions/{executionId} · 사용자. 성공 200은 RobotExecution을 반환한다.
+
+### EXEC-04 실행 취소
+
+POST /api/v1/robots/{robotId}/executions/{executionId}/cancel · 사용자 · Idempotency-Key 필수. REQUESTED는 즉시 CANCELED가 될 수 있다. STARTING 또는 RUNNING은 202와 CANCEL_REQUESTED를 반환하며 Jetson 확인 전 CANCELED로 표시하지 않는다. 종료 상태는 409 STATE_CONFLICT다.
+
+### JETSON-06 실행 상태 보고
+
+PATCH /api/v1/robots/me/executions/{executionId} · Jetson. 요청은 reportId, sequence, status, currentStep, totalSteps, progressPercent, error를 포함한다. reportId와 sequence로 중복 및 역순 보고를 차단한다. FAILED에는 error가 필수다.
+
+
+RobotExecution 상태는 REQUESTED, STARTING, RUNNING, CANCEL_REQUESTED, CANCELED, SUCCEEDED, FAILED, STATUS_UNKNOWN이다. 현재 DB 스키마에는 영속 구조가 없으므로 구현 전에 robot_executions 테이블, 상태 CHECK, FK, 멱등성 및 로봇별 활성 실행 UNIQUE 제약을 Flyway migration으로 추가한다.
+
+### SSE 실행 이벤트
+
+| `execution.updated` | `{ executionId, robotId, taskVersionId, deploymentId, status, currentStep, totalSteps, progressPercent, error, occurredAt }` |
+
+### 범위 제외
+
+CaptureSession, 사용자 학습 preset, 튜토리얼 이수, 알림 센터, 관리자 권한 및 원격 모터 제어 API는 1.1.0 범위에 포함하지 않는다.

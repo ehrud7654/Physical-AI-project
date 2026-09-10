@@ -1,17 +1,130 @@
-import type { SavedWork } from '@/types';
-import { initialSavedWorks } from '@/mocks';
-import { clone, delay } from './client';
+import type { LearnedSkill, SavedWork, WorkflowBlock } from '@/types';
+import { ApiError, apiRequest } from './client';
 
-let savedWorks: SavedWork[] = clone(initialSavedWorks);
-
-export async function fetchSavedWorks(): Promise<SavedWork[]> {
-  await delay();
-  return clone(savedWorks);
+interface ApiSkill { id: string; displayName: string; description: string | null; }
+interface ApiSkillVersion { id: string; skillId: string; version: number; }
+interface ApiTaskStep {
+  order: number;
+  type: 'SKILL' | 'MOTOR' | 'REPEAT';
+  skillVersionId: string | null;
+  parameters: Record<string, unknown>;
+  timeoutSeconds: number | null;
+  repeatCount: number | null;
+  children: ApiTaskStep[];
+}
+interface ApiTaskVersion { id: string; taskId: string; version: number; steps: ApiTaskStep[]; createdAt: string; }
+interface ApiTask {
+  id: string;
+  taskKey: string;
+  displayName: string;
+  description: string | null;
+  latestVersion: number | null;
+  latestVersionDetails: ApiTaskVersion | null;
+  updatedAt: string;
 }
 
-/** 작업 저장. 같은 ID가 있으면 수정본으로 교체한다. */
-export async function saveWork(work: SavedWork): Promise<SavedWork[]> {
-  await delay();
-  savedWorks = [clone(work), ...savedWorks.filter((item) => item.id !== work.id)];
-  return clone(savedWorks);
+export async function fetchLearnedSkills(): Promise<LearnedSkill[]> {
+  const skills = await apiRequest<ApiSkill[]>('/skills');
+  const resolved = await Promise.all(skills.map(async (skill): Promise<LearnedSkill | null> => {
+    try {
+      const version = await apiRequest<ApiSkillVersion>(`/skills/${skill.id}/versions/latest`);
+      return {
+        id: version.id,
+        skillId: skill.id,
+        name: skill.displayName,
+        kind: 'umi' as const,
+        description: skill.description ?? '',
+        mark: 'S',
+      };
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) return null;
+      throw cause;
+    }
+  }));
+  return resolved.filter((skill): skill is LearnedSkill => skill !== null);
+}
+
+export async function fetchSavedWorks(): Promise<SavedWork[]> {
+  const [tasks, skills] = await Promise.all([
+    apiRequest<ApiTask[]>('/tasks?includeLatestVersion=true'),
+    fetchLearnedSkills(),
+  ]);
+  const skillByVersionId = new Map(skills.map((skill) => [skill.id, skill]));
+  return tasks.map((task) => toSavedWork(task, skillByVersionId));
+}
+
+export interface SaveWorkResult { works: SavedWork[]; savedId: string; }
+
+export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {
+  if (!work.blocks.length) {
+    throw new Error('작업에 학습된 동작을 하나 이상 추가해 주세요.');
+  }
+  const steps = toApiSteps(work.blocks);
+
+  const created = await apiRequest<ApiTask>('/tasks', {
+    method: 'POST',
+    body: JSON.stringify({
+      taskKey: `web_${crypto.randomUUID()}`,
+      displayName: work.name,
+      description: null,
+      steps,
+    }),
+  });
+  const taskId = created.id;
+  return { works: await fetchSavedWorks(), savedId: taskId };
+}
+
+function toApiSteps(blocks: WorkflowBlock[]): ApiTaskStep[] {
+  return blocks.map((block, index) => ({
+    order: index + 1,
+    type: block.kind === 'repeat' ? 'REPEAT' : block.kind === 'motor' ? 'MOTOR' : 'SKILL',
+    skillVersionId: block.skillId ?? null,
+    parameters: block.kind === 'motor'
+      ? { motor: block.motor, angle: block.angle }
+      : {},
+    timeoutSeconds: block.kind === 'repeat' ? null : block.kind === 'motor' ? 10 : 30,
+    repeatCount: block.kind === 'repeat' ? (block.repeat ?? 1) : null,
+    children: block.kind === 'repeat' ? toApiSteps(block.children ?? []) : [],
+  }));
+}
+
+function toSavedWork(task: ApiTask, skills: Map<string, LearnedSkill>): SavedWork {
+  const version = task.latestVersionDetails;
+  let blockId = 1;
+  const toBlocks = (steps: ApiTaskStep[]): WorkflowBlock[] => steps.map((step) => {
+    const skill = step.skillVersionId ? skills.get(step.skillVersionId) : undefined;
+    const id = blockId++;
+    if (step.type === 'MOTOR') return {
+      id,
+      kind: 'motor' as const,
+      title: '모터 제어',
+      motor: typeof step.parameters.motor === 'string' ? step.parameters.motor : 'J1',
+      angle: typeof step.parameters.angle === 'number' ? step.parameters.angle : 0,
+    };
+    if (step.type === 'REPEAT') return {
+      id,
+      kind: 'repeat' as const,
+      title: '반복 수행',
+      repeat: step.repeatCount ?? 1,
+      children: toBlocks(step.children ?? []),
+    };
+    return {
+      id,
+      kind: 'umi' as const,
+      title: skill?.name ?? '사용할 수 없는 학습 동작',
+      skillId: step.skillVersionId ?? undefined,
+    };
+  });
+  const blocks = toBlocks(version?.steps ?? []);
+  return {
+    id: task.id,
+    taskKey: task.taskKey,
+    taskVersionId: version?.id ?? null,
+    version: version?.version ?? task.latestVersion,
+    name: task.displayName,
+    robotId: '',
+    blocks,
+    estimatedSeconds: blocks.length * 25,
+    updatedAt: task.updatedAt,
+  };
 }

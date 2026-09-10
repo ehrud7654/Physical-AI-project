@@ -1,51 +1,99 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import type { SavedWork, TaskReadinessResult } from '@/types';
-import { delay } from '@/services/client';
+import { useCallback, useEffect, useState } from 'react';
+import type { RobotExecution, SavedWork, TaskReadinessResult } from '@/types';
+import {
+  cancelRobotExecution,
+  createDeployment,
+  createRobotExecution,
+  fetchDeployment,
+  fetchDeployments,
+  fetchTaskReadiness,
+  type Deployment,
+} from '@/services/executionService';
 
-interface Deployment { signature: string; robotId: string; version: number; }
-const KEY = 'ssafy-task-deployments-v1';
-
-/** Local mock deployment: a version fixes the exact saved block configuration. */
 export function useTaskDeployment(work: SavedWork | undefined, robotId: string) {
-  const signature = work ? JSON.stringify([work.id, work.name, work.blocks]) : '';
   const [record, setRecord] = useState<Deployment | null>(null);
+  const [readiness, setReadiness] = useState<TaskReadinessResult | null>(null);
+  const [execution, setExecution] = useState<RobotExecution | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  /* eslint-disable react-hooks/set-state-in-effect -- hydrate the selected deployment */
-  useEffect(() => {
-    setError('');
+  const taskVersionId = work?.taskVersionId ?? '';
+
+  const refresh = useCallback(async () => {
+    if (!work || !robotId || !taskVersionId) {
+      setRecord(null);
+      setReadiness(null);
+      return;
+    }
     try {
-      const records: Deployment[] = JSON.parse(localStorage.getItem(KEY) || '[]');
-      setRecord(records.find(item => item.signature === signature && item.robotId === robotId) ?? null);
-    } catch { setRecord(null); }
-  }, [signature, robotId]);
+      const [validation, deployments] = await Promise.all([
+        fetchTaskReadiness(work.id, taskVersionId, robotId),
+        fetchDeployments(robotId),
+      ]);
+      setReadiness(validation);
+      setRecord(deployments.find((item) => item.taskVersionId === taskVersionId &&
+        ['PENDING', 'DOWNLOADING', 'VERIFYING', 'APPLYING', 'SUCCEEDED'].includes(item.status)) ?? null);
+      setError('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '실행 준비 상태를 확인하지 못했어요.');
+    }
+  }, [work, robotId, taskVersionId]);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- API 상태를 선택된 작업/로봇과 동기화한다. */
+  useEffect(() => { void refresh(); }, [refresh]);
   /* eslint-enable react-hooks/set-state-in-effect */
-  const ready = !!record && record.signature === signature && record.robotId === robotId;
-  const readiness: TaskReadinessResult = {
-    valid: Boolean(work?.blocks.length),
-    readiness: !work?.blocks.length ? 'BLOCKED' : pending || !ready ? 'PREPARING' : 'READY',
-    robotId,
-    taskVersionId: work ? `${work.id}-current` : '',
-    deploymentId: ready ? `${work?.id}-${record?.version}` : null,
-    observedAt: new Date().toISOString(),
-    blockingReasons: !work?.blocks.length ? [{ code: 'EMPTY_TASK', message: '실행할 동작이 없어요.', recoveryAction: 'NONE' }] : [],
-    warnings: [],
-  };
+
+  useEffect(() => {
+    if (!record || record.status === 'SUCCEEDED' || record.status === 'FAILED' || record.status === 'CANCELED') return;
+    const timer = window.setInterval(() => {
+      void fetchDeployment(robotId, record.id).then(setRecord).catch(() => setError('배포 상태를 확인하지 못했어요.'));
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [record, robotId]);
+
   const deploy = async () => {
-    if (!work || pending) return;
+    if (!work || !taskVersionId || pending) return;
     setPending(true);
     setError('');
     try {
-      await delay(1000);
-      const records: Deployment[] = JSON.parse(localStorage.getItem(KEY) || '[]');
-      const previous = records.find(item => item.signature === signature);
-      const next = { signature, robotId, version: previous?.version ?? Math.max(0, ...records.map(item => item.version)) + 1 };
-      localStorage.setItem(KEY, JSON.stringify([...records.filter(item => !(item.signature === signature && item.robotId === robotId)), next]));
-      setRecord(next);
-    } catch { setError('배포하지 못했어요. 연결 상태를 확인하고 다시 시도해 주세요.'); }
-    finally { setPending(false); }
+      const validation = await fetchTaskReadiness(work.id, taskVersionId, robotId);
+      setReadiness(validation);
+      if (!validation.valid) throw new Error(validation.blockingReasons[0]?.message ?? '배포할 수 없는 작업입니다.');
+      setRecord(await createDeployment(robotId, taskVersionId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '배포하지 못했어요.');
+    } finally {
+      setPending(false);
+    }
   };
-  return { ready, pending, error, version: ready ? record?.version : undefined, readiness, deploy };
+
+  const execute = async () => {
+    if (!record || record.status !== 'SUCCEEDED' || !taskVersionId) throw new Error('완료된 배포가 필요합니다.');
+    const created = await createRobotExecution({ robotId, taskVersionId, deploymentId: record.id });
+    setExecution(created);
+    return created;
+  };
+
+  const cancel = async () => {
+    if (!execution) return null;
+    const canceled = await cancelRobotExecution(robotId, execution.id);
+    setExecution(canceled);
+    return canceled;
+  };
+
+  const ready = record?.status === 'SUCCEEDED' && readiness?.valid === true;
+  return {
+    ready,
+    pending: pending || !!record && record.status !== 'SUCCEEDED' && record.status !== 'FAILED' && record.status !== 'CANCELED',
+    error: record?.error?.message ?? error,
+    version: work?.version,
+    readiness,
+    deploymentId: record?.id ?? null,
+    execution,
+    deploy,
+    execute,
+    cancel,
+    refresh,
+  };
 }
