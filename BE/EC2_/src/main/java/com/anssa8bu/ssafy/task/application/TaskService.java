@@ -50,8 +50,10 @@ public class TaskService {
     String key = request.taskKey().trim();
     if (tasks.existsByOwnerIdAndTaskKey(ownerId, key))
       throw new BusinessConflictException("TASK_KEY_ALREADY_EXISTS", "이미 사용 중인 taskKey입니다.");
-    return taskResponse(tasks.save(new Task(UUID.randomUUID(), ownerId, key,
-        request.displayName().trim(), request.description())), false);
+    Task task = tasks.save(new Task(UUID.randomUUID(), ownerId, key,
+        request.displayName().trim(), request.description()));
+    if (request.steps() != null) publishVersion(task, request.steps());
+    return taskResponse(task, request.steps() != null);
   }
 
   @Transactional(readOnly = true)
@@ -72,7 +74,8 @@ public class TaskService {
     Task task = tasks.findOwnedForUpdate(taskId, ownerId)
         .orElseThrow(() -> new ResourceNotFoundException("Task"));
     task.update(request.displayName(), request.description());
-    return taskResponse(task, false);
+    if (request.steps() != null) publishVersion(task, request.steps());
+    return taskResponse(task, request.steps() != null);
   }
 
   @Transactional
@@ -85,19 +88,9 @@ public class TaskService {
     }
     Task task = tasks.findOwnedForUpdate(taskId, ownerId)
         .orElseThrow(() -> new ResourceNotFoundException("Task"));
-    validateOrders(request.steps());
-    Map<UUID, SkillVersion> skillMap = skillVersions.findAllByIdIn(
-        request.steps().stream().map(StepRequest::skillVersionId).collect(Collectors.toSet()))
-        .stream().collect(Collectors.toMap(SkillVersion::getId, Function.identity()));
-    if (skillMap.size() != new HashSet<>(request.steps().stream().map(StepRequest::skillVersionId).toList()).size()
-        || skillMap.values().stream().anyMatch(v -> v.getStatus() != SkillVersionStatus.READY))
-      throw new BusinessConflictException("SKILL_VERSION_NOT_READY", "READY 상태가 아닌 스킬 버전이 포함되어 있습니다.");
-    UUID versionId = UUID.randomUUID();
-    TaskVersion version = versions.save(new TaskVersion(versionId, taskId, task.publishNextVersion()));
-    List<TaskStep> saved = steps.saveAll(request.steps().stream().map(s -> new TaskStep(
-        UUID.randomUUID(), versionId, s.skillVersionId(), s.order(), s.parameters(), s.timeoutSeconds())).toList());
-    idempotency.complete(ownerId, "POST", path, claim, 201, "TASK_VERSION", versionId);
-    return versionResponse(version, saved);
+    VersionResponse result = publishVersion(task, request.steps());
+    idempotency.complete(ownerId, "POST", path, claim, 201, "TASK_VERSION", result.id());
+    return result;
   }
 
   @Transactional(readOnly = true)
@@ -144,6 +137,20 @@ public class TaskService {
   private void validateOrders(List<StepRequest> items) {
     for (int i = 0; i < items.size(); i++) if (items.get(i).order() != i + 1)
       throw new BusinessConflictException("INVALID_STEP_ORDER", "step order는 1부터 연속이어야 합니다.");
+  }
+  private VersionResponse publishVersion(Task task, List<StepRequest> requestedSteps) {
+    validateOrders(requestedSteps);
+    Map<UUID, SkillVersion> skillMap = skillVersions.findAllByIdIn(
+        requestedSteps.stream().map(StepRequest::skillVersionId).collect(Collectors.toSet()))
+        .stream().collect(Collectors.toMap(SkillVersion::getId, Function.identity()));
+    if (skillMap.size() != new HashSet<>(requestedSteps.stream().map(StepRequest::skillVersionId).toList()).size()
+        || skillMap.values().stream().anyMatch(v -> v.getStatus() != SkillVersionStatus.READY))
+      throw new BusinessConflictException("SKILL_VERSION_NOT_READY", "READY 상태가 아닌 스킬 버전이 포함되어 있습니다.");
+    UUID versionId = UUID.randomUUID();
+    TaskVersion version = versions.save(new TaskVersion(versionId, task.getId(), task.publishNextVersion()));
+    List<TaskStep> saved = steps.saveAll(requestedSteps.stream().map(s -> new TaskStep(
+        UUID.randomUUID(), versionId, s.skillVersionId(), s.order(), s.parameters(), s.timeoutSeconds())).toList());
+    return versionResponse(version, saved);
   }
   private TaskResponse taskResponse(Task task, boolean include) {
     VersionResponse latest = include ? versions.findFirstByTaskIdOrderByVersionDesc(task.getId())

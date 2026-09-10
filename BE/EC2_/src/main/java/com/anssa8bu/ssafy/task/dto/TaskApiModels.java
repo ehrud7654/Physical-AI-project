@@ -17,9 +17,13 @@ public final class TaskApiModels {
   public record CreateRequest(
       @NotBlank @Size(max = 100) String taskKey,
       @NotBlank @Size(max = 150) String displayName,
-      String description) {}
+      String description,
+      @Size(min = 1) List<@Valid StepRequest> steps) {}
 
-  public record UpdateRequest(@Size(max = 150) String displayName, String description) {}
+  public record UpdateRequest(
+      @Size(max = 150) String displayName,
+      String description,
+      @Size(min = 1) List<@Valid StepRequest> steps) {}
 
   public record StepRequest(
       @Positive int order,

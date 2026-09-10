@@ -48,33 +48,30 @@ export async function fetchSavedWorks(): Promise<SavedWork[]> {
 export interface SaveWorkResult { works: SavedWork[]; savedId: string; }
 
 export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {
-  let taskId = work.id;
-  if (work.id.startsWith('draft-')) {
-    const created = await apiRequest<ApiTask>('/tasks', {
-      method: 'POST',
-      body: JSON.stringify({ taskKey: `web_${Date.now()}`, displayName: work.name, description: null }),
-    });
-    taskId = created.id;
-  } else {
-    await apiRequest<ApiTask>(`/tasks/${taskId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ displayName: work.name, description: null }),
-    });
-  }
-
   const skillBlocks = flatten(work.blocks);
-  await apiRequest<ApiTaskVersion>(`/tasks/${taskId}/versions`, {
+  if (!skillBlocks.length) {
+    throw new Error('작업에 학습된 동작을 하나 이상 추가해 주세요.');
+  }
+  if (skillBlocks.some((block) => (block.kind !== 'umi' && block.kind !== 'vlm') || !block.skillId)) {
+    throw new Error('현재 API에서 지원하지 않는 블록이나 학습 버전 정보가 없는 동작이 있어요.');
+  }
+  const steps = skillBlocks.map((block, index) => ({
+    order: index + 1,
+    skillVersionId: block.skillId,
+    parameters: {},
+    timeoutSeconds: 30,
+  }));
+
+  const created = await apiRequest<ApiTask>('/tasks', {
     method: 'POST',
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
-      steps: skillBlocks.map((block, index) => ({
-        order: index + 1,
-        skillVersionId: block.skillId,
-        parameters: {},
-        timeoutSeconds: 30,
-      })),
+      taskKey: `web_${crypto.randomUUID()}`,
+      displayName: work.name,
+      description: null,
+      steps,
     }),
   });
+  const taskId = created.id;
   return { works: await fetchSavedWorks(), savedId: taskId };
 }
 

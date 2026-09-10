@@ -68,6 +68,20 @@ function getWorkflowIssues(work: SavedWork): string[] {
   return issues;
 }
 
+function workflowContentEquals(left: WorkflowBlock[], right: WorkflowBlock[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((block, index) => {
+    const other = right[index];
+    return block.kind === other.kind
+      && block.title === other.title
+      && block.skillId === other.skillId
+      && block.motor === other.motor
+      && block.angle === other.angle
+      && block.repeat === other.repeat
+      && workflowContentEquals(block.children ?? [], other.children ?? []);
+  });
+}
+
 export default function Home() {
   return (
     <AppStoreProvider>
@@ -832,7 +846,7 @@ function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { 
       : skills.slice(0, 1).map(makeSkillBlock)),
   ));
   const [runningIndex, setRunningIndex] = useState(-1);
-  const [workName, setWorkName] = useState(editingWork?.name ?? '빨간 블록 정리 작업');
+  const [workName, setWorkName] = useState(editingWork?.name ?? '');
   const [selectedWorkId, setSelectedWorkId] = useState(editingWork?.id ?? '');
   const [nameError, setNameError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -845,21 +859,31 @@ function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { 
   const workflowIssues = [...getWorkflowIssues(workForValidation), ...unavailableSkills.map((block) => `‘${block.title}’ 학습 동작을 사용할 수 없어요.`)];
   const robotReady = selectedRobot?.status === '온라인';
   const savedSnapshot = savedWorks.find(work => work.id === selectedWorkId);
-  const isSaved = !!savedSnapshot && savedSnapshot.name === workName && JSON.stringify(savedSnapshot.blocks) === JSON.stringify(blocks);
+  const isSaved = !!savedSnapshot
+    && savedSnapshot.name === workName.trim()
+    && workflowContentEquals(savedSnapshot.blocks, blocks);
   const deployment = useTaskDeployment(workForValidation, robotId);
   const canStartRun = isSaved && robotReady && !workflowIssues.length && deployment.ready;
 
   const save = async () => {
     if (!workName.trim()) { setNameError('작업 이름을 입력해 주세요.'); return false; }
+    const normalizedName = workName.trim().toLocaleLowerCase('ko-KR');
+    if (savedWorks.some((work) => work.name.trim().toLocaleLowerCase('ko-KR') === normalizedName)) {
+      setNameError('이미 저장된 작업 이름입니다. 다른 이름을 입력해 주세요.');
+      return false;
+    }
+    if (workflowIssues.length) { setNameError(workflowIssues[0]); return false; }
     setNameError('');
     setSaving(true);
-    const workId = selectedWorkId || `draft-${Date.now()}`;
     try {
-      const saved = await saveWorkflow({ id: workId, name: workName.trim(), robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: new Date().toISOString() });
+      const saved = await saveWorkflow({ id: `draft-${crypto.randomUUID()}`, name: workName.trim(), robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: new Date().toISOString() });
       setSelectedWorkId(saved.id);
       onToast(`‘${workName.trim()}’ 작업을 저장했어요.`);
       return true;
-    } catch { setNameError('저장하지 못했어요. 다시 시도해 주세요.'); return false; }
+    } catch (cause) {
+      setNameError(cause instanceof Error ? cause.message : '저장하지 못했어요. 다시 시도해 주세요.');
+      return false;
+    }
     finally { setSaving(false); }
   };
 
@@ -973,7 +997,7 @@ function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { 
           </div>
         </section>
         </div>
-        <div className="work-stage-actions"><button className="text-button" onClick={() => onNavigate('library')}>← 작업 목록</button><button className="primary-button" disabled={saving || !workName.trim() || !!workflowIssues.length} onClick={async () => { if (await save()) { setWorkStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); } }}>{saving ? '저장 중...' : '저장 후 실행 준비 →'}</button></div>
+        <div className="work-stage-actions"><button className="text-button" onClick={() => onNavigate('library')}>← 작업 목록</button><button className="primary-button" disabled={saving || !workName.trim() || !!workflowIssues.length} onClick={async () => { if (isSaved || await save()) { setWorkStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); } }}>{saving ? '저장 중...' : '저장 후 실행 준비 →'}</button></div>
       </>}
 
       {workStep === 2 && <section className="card work-stage-card">
