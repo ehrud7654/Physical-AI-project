@@ -230,9 +230,10 @@ type User = {
 type Device = {
   id: string;
   ownerId: string;
-  deviceType: 'UMI' | 'JETSON';
+  deviceType: 'UMI_CAMERA' | 'JETSON';
   handleNumber: string;
   name: string;
+  location: string | null;
   connectionStatus: 'ONLINE' | 'OFFLINE';
   lastSeenAt: string | null;
   createdAt: string;
@@ -534,6 +535,7 @@ type Task = {
   displayName: string;
   description: string | null;
   latestVersion: number | null;
+  latestVersionDetails: TaskVersion | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -697,20 +699,22 @@ type RobotExecution = {
 
 ```json
 {
+  "deviceType": "UMI_CAMERA",
   "handleNumber": "UMI-0001",
-  "registrationCode": "...",
-  "name": "1번 UMI"
+  "name": "1번 UMI",
+  "location": "801호"
 }
 ```
 
 - 성공 `201`: `Device`.
-- 장치 유형은 사전 프로비저닝 정보로 결정하며 사용자가 지정하지 않는다.
-- 실패: `409 DEVICE_ALREADY_REGISTERED`, `422 INVALID_REGISTRATION_CODE`.
+- `deviceType`은 사용자가 웹 화면에서 `UMI_CAMERA` 또는 `JETSON` 중 선택한다.
+- 등록 직후 연결 상태는 `OFFLINE`이며 heartbeat 수신 후 갱신한다.
+- 실패: `409 DEVICE_ALREADY_REGISTERED`, `422 VALIDATION_ERROR`.
 
 ### DEVICE-02 내 장치 목록
 
 - `GET /devices` · 사용자
-- 쿼리: `deviceType?: UMI | JETSON`, 공통 페이지네이션.
+- 쿼리: `deviceType?: UMI_CAMERA | JETSON`, 공통 페이지네이션.
 - 성공 `200`: `Device[]`.
 
 ### DEVICE-03 장치 상세
@@ -721,7 +725,7 @@ type RobotExecution = {
 ### DEVICE-04 장치 이름 수정
 
 - `PATCH /devices/{deviceId}` · 사용자
-- 요청: `name: string`.
+- 요청: `name: string`, `location?: string | null`.
 - 성공 `200`: 수정된 `Device`.
 - 핸들 번호·장치 유형·소유자는 변경하지 않는다.
 
@@ -745,7 +749,7 @@ type RobotExecution = {
     "accessToken": "...",
     "tokenType": "Bearer",
     "expiresIn": 900,
-    "deviceType": "UMI"
+    "deviceType": "UMI_CAMERA"
   }
 }
 ```
@@ -1898,12 +1902,17 @@ Lifecycle scheduler는 보관 기한이 지난 Episode를 직접 삭제하지 �
 ### TASK-02 Task 목록
 
 - `GET /tasks` · 사용자
-- 쿼리: `q?: string`, 공통 페이지네이션.
+- 쿼리: `q?: string`, `includeLatestVersion?: boolean`(기본 `false`), 공통 페이지네이션.
 - 성공 `200`: `Task[]`.
+- 작업 탭의 최신 구성 미리보기가 필요한 경우 `includeLatestVersion=true`로 요청한다. 이때 각 Task의
+  `latestVersionDetails`에 최신 `TaskVersion`과 정렬된 `steps`가 포함되며, 버전이 없으면 `null`이다.
+  기본값에서는 `latestVersionDetails`가 `null`이므로 단순 목록 조회 비용을 늘리지 않는다.
 
 ### TASK-03 Task 상세
 
 - `GET /tasks/{taskId}` · 사용자
+- 쿼리: `includeLatestVersion?: boolean`(기본 `false`). `true`이면 최신 버전 및 단계 구성을
+  `latestVersionDetails`로 함께 반환한다.
 - 성공 `200`: `Task`.
 
 ### TASK-04 Task 정보 수정

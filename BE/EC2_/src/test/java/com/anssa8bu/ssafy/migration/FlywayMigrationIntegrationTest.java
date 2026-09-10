@@ -15,11 +15,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Spring 컨텍스트 없이 별도의 빈 database에서 Flyway를 직접 실행한다. IntegrationTestBase는 컨텍스트 기동 시 이미
- * migration을 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
+ * Spring 컨텍스트 없이 별도의 빈 database에서 Flyway를 직접 실행한다. IntegrationTestBase는 컨텍스트 기동 시 이미 migration을
+ * 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
  */
 class FlywayMigrationIntegrationTest {
-  static final int MIGRATION_COUNT = 8;
+  static final int MIGRATION_COUNT = 12;
   static final int TABLE_COUNT = 28;
   static final List<String> PARTIAL_UNIQUE_INDEXES =
       List.of(
@@ -85,10 +85,11 @@ class FlywayMigrationIntegrationTest {
           .isOne();
     }
     // seed: 중복 없이 정확히 1회만 적용
-    assertThat(count(url, "select count(*) from skills")).isEqualTo(5);
+    assertThat(count(url, "select count(*) from skills")).isEqualTo(7);
     assertThat(
             count(
-                url, "select count(*) from training_profiles where profile_key = 'umi-act-default'"))
+                url,
+                "select count(*) from training_profiles where profile_key = 'umi-act-default'"))
         .isOne();
     assertThat(
             count(
@@ -109,6 +110,37 @@ class FlywayMigrationIntegrationTest {
                 "select count(*) from information_schema.columns where table_name = 'skills'"
                     + " and column_name = 'needs_vlm'"))
         .isZero();
+    // V9: FE 연동용 사용자 하위 Robot, 학습 결과와 Task 구성이 정확히 연결된다
+    assertThat(
+            count(
+                url,
+                "select count(*) from users where id ="
+                    + " '50000000-0000-4000-8000-000000000001'::uuid"
+                    + " and email = 'admin01@ssafy.local' and status = 'ACTIVE'"))
+        .isOne();
+    assertThat(
+            count(
+                url,
+                "select count(*) from robots where owner_id ="
+                    + " '50000000-0000-4000-8000-000000000001'::uuid"))
+        .isOne();
+    assertThat(
+            count(
+                url,
+                "select count(*) from training_jobs tj"
+                    + " join skill_versions sv on sv.id = tj.result_skill_version_id"
+                    + " where tj.owner_id = '50000000-0000-4000-8000-000000000001'::uuid"
+                    + " and tj.status = 'SUCCEEDED' and sv.status = 'READY' and sv.gate_passed"))
+        .isEqualTo(2);
+    assertThat(
+            count(
+                url,
+                "select count(*) from tasks t"
+                    + " join task_versions tv on tv.task_id = t.id"
+                    + " join task_steps ts on ts.task_version_id = tv.id"
+                    + " where t.owner_id = '50000000-0000-4000-8000-000000000001'::uuid"
+                    + " and t.task_key = 'raise_blue_flag'"))
+        .isEqualTo(2);
     // V2/V4가 제거한 잘못된 config_sha256 CHECK는 정규식 CHECK 하나만 남는다
     assertThat(
             count(

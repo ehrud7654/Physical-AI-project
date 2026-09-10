@@ -32,6 +32,9 @@ public class Device extends AuditableEntity {
   @Column(name = "name", nullable = false, length = 100)
   private String name;
 
+  @Column(name = "location", length = 200)
+  private String location;
+
   @Enumerated(EnumType.STRING)
   @Column(name = "connection_status", nullable = false, length = 20)
   private DeviceConnectionStatus connectionStatus;
@@ -74,6 +77,10 @@ public class Device extends AuditableEntity {
     this.name = requireText(name, "name");
   }
 
+  public void changeLocation(String location) {
+    this.location = location == null || location.isBlank() ? null : location.trim();
+  }
+
   public void reportHeartbeat(
       DeviceConnectionStatus connectionStatus,
       String firmwareVersion,
@@ -104,6 +111,10 @@ public class Device extends AuditableEntity {
 
   public String getName() {
     return name;
+  }
+
+  public String getLocation() {
+    return location;
   }
 
   public DeviceConnectionStatus getConnectionStatus() {

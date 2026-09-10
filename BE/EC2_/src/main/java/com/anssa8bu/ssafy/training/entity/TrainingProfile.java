@@ -80,4 +80,7 @@ public class TrainingProfile extends CreatedEntity {
   public TrainingProfileStatus getStatus() {
     return status;
   }
+  public String getProfileKey() { return profileKey; }
+  public int getVersion() { return version; }
+  public String getConfigSha256() { return configSha256; }
 }

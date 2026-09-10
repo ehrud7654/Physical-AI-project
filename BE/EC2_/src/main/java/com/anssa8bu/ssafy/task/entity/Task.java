@@ -38,7 +38,25 @@ public class Task extends AuditableEntity {
     return id;
   }
 
+  public UUID getOwnerId() { return ownerId; }
+  public String getTaskKey() { return taskKey; }
+  public String getDisplayName() { return displayName; }
+  public String getDescription() { return description; }
+
   public Integer getLatestVersion() {
+    return latestVersion;
+  }
+
+  public void update(String name, String description) {
+    if (name != null) {
+      if (name.isBlank()) throw new IllegalArgumentException("displayName must not be blank");
+      displayName = name.trim();
+    }
+    this.description = description;
+  }
+
+  public int publishNextVersion() {
+    latestVersion = latestVersion == null ? 1 : latestVersion + 1;
     return latestVersion;
   }
 }

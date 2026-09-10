@@ -40,7 +40,8 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
     UUID executionId = UUID.randomUUID();
 
     entityManager.persist(
-        new User(ownerId, "execution-" + ownerId + "@test.local", "hash", "owner", UserStatus.ACTIVE));
+        new User(
+            ownerId, "execution-" + ownerId + "@test.local", "hash", "owner", UserStatus.ACTIVE));
     entityManager.persist(
         new Device(
             deviceId,
@@ -64,17 +65,14 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
         new Task(taskId, ownerId, "execution_" + taskId.toString().replace("-", ""), "task", null));
     entityManager.persist(new TaskVersion(taskVersionId, taskId, 1));
     entityManager.persist(
-        new Robot(
-            robotId,
-            ownerId,
-            deviceId,
-            profileId,
-            "robot",
-            RobotConnectionStatus.OFFLINE));
+        new Robot(robotId, ownerId, deviceId, profileId, "robot", RobotConnectionStatus.OFFLINE));
     entityManager.persist(new Deployment(deploymentId, robotId, taskVersionId));
 
     RobotExecution execution =
         new RobotExecution(executionId, ownerId, robotId, taskVersionId, deploymentId, 3);
+    repository.save(execution);
+    entityManager.flush();
+
     Instant startedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     execution.acceptReport(
         "report-1",
@@ -84,7 +82,6 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
         1,
         new BigDecimal("10.00"),
         startedAt);
-    repository.save(execution);
     entityManager.flush();
     entityManager.clear();
 
@@ -98,6 +95,6 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
     assertThat(loaded.getLastReportHash()).isEqualTo("a".repeat(64));
     assertThat(loaded.getRequestedAt()).isNotNull();
     assertThat(loaded.getUpdatedAt()).isNotNull();
-    assertThat(loaded.getRowVersion()).isZero();
+    assertThat(loaded.getRowVersion()).isOne();
   }
 }

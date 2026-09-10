@@ -28,6 +28,8 @@ public class TaskVersion extends CreatedEntity {
     return id;
   }
 
+  public UUID getTaskId() { return taskId; }
+
   public int getVersion() {
     return version;
   }

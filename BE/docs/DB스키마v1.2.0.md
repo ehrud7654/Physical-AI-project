@@ -166,6 +166,7 @@ INDEX (user_id, expires_at)
 | `device_type` | varchar(20) | 아니요 | `UMI_CAMERA`, `JETSON` |
 | `handle_number` | varchar(100) | 아니요 | 외부 장치 식별자 |
 | `name` | varchar(100) | 아니요 | 사용자 표시 이름 |
+| `location` | varchar(200) | 예 | 장치 설치 위치. 기존 등록 장치는 `801호`로 초기화 |
 | `connection_status` | varchar(20) | 아니요 | `ONLINE`, `OFFLINE` |
 | `firmware_version` | varchar(100) | 예 | 마지막 heartbeat 값 |
 | `runtime_version` | varchar(100) | 예 | 마지막 heartbeat 값 |
@@ -1330,6 +1331,9 @@ Robot, TaskVersion, Deployment는 개별 FK로 보호하고, Deployment가 같�
 
 REQUESTED, STARTING, RUNNING, CANCEL_REQUESTED, STATUS_UNKNOWN은 활성 상태다. 다음 부분 UNIQUE 인덱스로 Robot별 활성 실행을 하나만 허용한다.
 
+`REQUESTED` 상태에서 사용자가 즉시 취소하면 Jetson이 시작을 확인하기 전 `CANCELED`가 될 수 있으므로,
+이 두 상태에서는 `started_at`이 NULL일 수 있다. 그 밖의 상태는 `started_at`이 반드시 존재한다.
+
 ```sql
 CREATE UNIQUE INDEX uq_robot_active_execution
 ON robot_executions (robot_id)
@@ -1346,7 +1350,7 @@ JETSON-06은 대상 행을 잠근 뒤 sequence를 비교한다. 같은 report_id
 
 ### 16.5 Flyway
 
-V6__add_robot_executions.sql에서 deployments 복합 식별 UNIQUE, robot_executions 테이블, FK, CHECK 및 부분 UNIQUE 인덱스를 생성한다. V7__align_robot_execution_report_hash.sql은 Hibernate 매핑과 맞게 report hash를 varchar(64)로 정규화한다. 기존 V1~V5 파일은 수정하지 않는다.
+V6__add_robot_executions.sql에서 deployments 복합 식별 UNIQUE, robot_executions 테이블, FK, CHECK 및 부분 UNIQUE 인덱스를 생성한다. V7__align_robot_execution_report_hash.sql은 Hibernate 매핑과 맞게 report hash를 varchar(64)로 정규화한다. V11__allow_cancel_before_execution_start.sql은 Jetson 시작 확인 전 실행 취소를 허용하도록 started_at CHECK를 보정한다. 기존 migration 파일은 수정하지 않는다.
 
 ## 17. VLM 도메인 제외 (1.2.0)
 

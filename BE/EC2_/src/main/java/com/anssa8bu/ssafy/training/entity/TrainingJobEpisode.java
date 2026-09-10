@@ -65,4 +65,5 @@ public class TrainingJobEpisode {
   public TrainingJobEpisodeId getId() {
     return id;
   }
+  public int getInputOrder() { return inputOrder; }
 }

@@ -312,4 +312,63 @@ public class Episode extends AuditableEntity {
   public Long getRowVersion() {
     return rowVersion;
   }
+  public String getContractVersion() {
+    return contractVersion;
+  }
+
+  public String getMetaSchemaVersion() {
+    return metaSchemaVersion;
+  }
+
+  public String getSummarySchemaVersion() {
+    return summarySchemaVersion;
+  }
+
+  public long getStartMonotonicNs() {
+    return startMonotonicNs;
+  }
+
+  public TimestampTimebase getTimestampTimebase() {
+    return timestampTimebase;
+  }
+
+  public long getFirstTimestampNs() {
+    return firstTimestampNs;
+  }
+
+  public long getLastTimestampNs() {
+    return lastTimestampNs;
+  }
+
+  public int getFrameCount() {
+    return frameCount;
+  }
+
+  public int getPoseSampleCount() {
+    return poseSampleCount;
+  }
+
+  public int getImuSampleCount() {
+    return imuSampleCount;
+  }
+
+  public int getGripperSampleCount() {
+    return gripperSampleCount;
+  }
+
+  public int getMissingFrameCount() {
+    return missingFrameCount;
+  }
+
+  public int getTrackingGapCount() {
+    return trackingGapCount;
+  }
+
+  public long getTrackingLostDurationNs() {
+    return trackingLostDurationNs;
+  }
+
+  public Instant getRetentionExpiresAt() {
+    return retentionExpiresAt;
+  }
 }
