@@ -5,10 +5,10 @@
   "status": "planned",
   "policy": {
     "kind": "learned",
-    "contract_version": "0.1.0-provisional",
+    "contract_version": "0.3.0-provisional",
     "ckpt_uri": "",
     "trained_on": "",
-    "action_space": "joint_delta",
+    "action_space": "next_joint_position_and_gap",
     "gate": null
   },
   "post_actions": [

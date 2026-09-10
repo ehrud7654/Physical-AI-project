@@ -86,7 +86,7 @@ def draft_entries(cfg: dict) -> list[SkillEntry]:
                     kind="learned",
                     ckpt_uri="",
                     trained_on="",
-                    action_space="joint_delta",
+                    action_space="next_joint_position_and_gap",
                     gate=None,
                 ),
                 post_actions=[

@@ -38,14 +38,15 @@ joints:
     range_rad: [-0.17453297762778586, 1.7453291995659765]   # 하한 = 닫힘
 
 # 정규화 규칙 — 데이터 계약(S15P21A103-27)의 일부. 양 트랙 공용.
-# 그리퍼를 특별 취급하지 않는다. 6축 전부 동일 규칙으로 [-1,1] 선형 매핑.
-# 이렇게 하면 LeRobot 의 gripper 0~100 관례와 충돌할 일이 없다(저장 포맷이 다를 뿐).
+# J1~J5는 rad 범위, 6번째 채널은 전체 접촉면 gap 0~0.09m를 각각 [-1,1]로 매핑한다.
 normalization:
   rule: linear_to_unit_range
-  formula: "x_norm = 2 * (x_rad - lo) / (hi - lo) - 1"
-  inverse: "x_rad = (x_norm + 1) / 2 * (hi - lo) + lo"
+  arm_formula: "x_norm = 2 * (x_rad - lo) / (hi - lo) - 1"
+  arm_inverse: "x_rad = (x_norm + 1) / 2 * (hi - lo) + lo"
+  gripper_formula: "gap_norm = 2 * gap_m / 0.09 - 1"
+  gripper_inverse: "gap_m = (gap_norm + 1) * 0.045"
   output_range: [-1.0, 1.0]
-  gripper_closed_norm: -1.0     # range_rad 하한이 닫힘이므로
+  gripper_closed_norm: -1.0
 
 actuator:
   type: position
@@ -66,14 +67,7 @@ cameras:
   #    바꾼 뒤에는 기존 체크포인트와의 수치 비교가 유효하지 않다.
   offsamples: 0
   resolution: [224, 224]        # 데이터 규격 image (3,224,224)
-  count: 2
-  cam_front:
-    kind: fixed
-    parent: world
-    # 작업공간 대각 3인칭. 휴식자세 TCP=(0.391,0,0.226), 로봇 x범위 [-0.03,0.34] 실측 후 배치
-    pos: [0.55, -0.45, 0.40]
-    xyaxes: [0.7894, 0.6139, 0.0, -0.3004, 0.3863, 0.8719]
-    fovy: 50
+  count: 1
   cam_wrist:
     kind: attached
     parent_body: gripper        # 공식 MJCF 의 body 이름

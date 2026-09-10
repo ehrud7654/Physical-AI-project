@@ -1,5 +1,5 @@
-"""Can a degree-based control API violate the [-1, 1] data contract?
-degree 기반 제어 API 가 [-1,1] 데이터 계약을 깰 수 있는가?
+"""Check the five arm-angle and physical gripper-gap contract boundaries.
+팔 5축 각도와 물리 gripper gap 계약 경계를 각각 검사한다.
 
 Why this check exists.
 왜 이 검사가 있는가.
@@ -41,7 +41,7 @@ import mujoco
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from contract.episode import RANGE_TOLERANCE, STATE_RANGE  # noqa: E402
+from contract.episode import GRIPPER_GAP_RANGE_M, RANGE_TOLERANCE, STATE_RANGE  # noqa: E402
 from sim.mujoco.build_scene import DEFAULT_CONFIG, build_model, load_config  # noqa: E402
 from tracking.exp_log import file_digest, log_run  # noqa: E402
 
@@ -71,8 +71,7 @@ class AxisReport:
 
 
 def _normalize(x_rad: float, lo: float, hi: float) -> float:
-    """Contract normalisation. Must match configs/so101.yaml `formula`.
-    계약 정규화. configs/so101.yaml 의 `formula` 와 같아야 한다."""
+    """Arm contract normalisation. Must match `normalization.arm_formula`."""
     return 2.0 * (x_rad - lo) / (hi - lo) - 1.0
 
 
@@ -116,7 +115,9 @@ def check(
     limits = limits_from_model(model, source)
     reports: list[AxisReport] = []
 
-    for spec in cfg["joints"]:
+    # Channel 6 is not the MuJoCo hinge in contract 0.3. Only J1~J5 cross the
+    # degree-based arm API; physical gap is checked independently below.
+    for spec in cfg["joints"][:5]:
         name = str(spec["name"])
         cfg_lo, cfg_hi = (float(v) for v in spec["range_rad"])
         if name not in limits:
@@ -156,6 +157,13 @@ def worst_overshoot(reports: list[AxisReport]) -> float:
     return max((r.overshoot for r in reports), default=0.0)
 
 
+def gap_contract_samples() -> list[tuple[float, float]]:
+    """Physical full gap metres and their contract-normalised values."""
+    lo, hi = GRIPPER_GAP_RANGE_M
+    return [(gap, 2.0 * (gap - lo) / (hi - lo) - 1.0)
+            for gap in (lo, (lo + hi) / 2.0, hi)]
+
+
 def format_table(reports: list[AxisReport]) -> str:
     """The table that goes into the MEASURE document verbatim.
     MEASURE 문서에 그대로 들어갈 표."""
@@ -192,9 +200,18 @@ def main() -> int:
     model = build_model(cfg)
     reports = check(model, cfg, decimals=args.decimals, source=args.source)
     worst = worst_overshoot(reports)
-    passed = worst < RANGE_TOLERANCE
+    gap_samples = gap_contract_samples()
+    expected_gap_norm = (-1.0, 0.0, 1.0)
+    gap_passed = all(abs(actual[1] - expected) < RANGE_TOLERANCE
+                     for actual, expected in zip(gap_samples, expected_gap_norm))
+    passed = worst < RANGE_TOLERANCE and gap_passed
 
     print(format_table(reports))
+    print()
+    print("gripper_gap (full contact-surface width; MuJoCo hinge와 분리)")
+    for gap_m, norm in gap_samples:
+        print(f"  {gap_m:.3f} m -> {norm:+.1f}")
+    print(f"  판정: {'통과' if gap_passed else '위반'}")
     print()
     print(
         f"[-1,1] 초과 최대치 {worst:.3e}  ·  계약 허용오차 {RANGE_TOLERANCE:.0e}  →  "
@@ -220,6 +237,8 @@ def main() -> int:
             },
             result={
                 "worst_overshoot": worst,
+                "gap_samples": gap_samples,
+                "gap_passed": gap_passed,
                 "passed": passed,
                 "axes": [asdict(r) for r in reports],
             },

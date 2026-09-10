@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
 
-from contract.episode import IMAGE_SHAPE, validate  # noqa: E402
+from contract.episode import CONTRACT_VERSION, IMAGE_SHAPE, validate  # noqa: E402
 from umi.convert import (  # noqa: E402
     ConversionError,
     ConversionPolicy,
@@ -29,6 +29,7 @@ from umi.convert import (  # noqa: E402
     denormalize_joints,
     invert_gap_curve,
     normalize_joints,
+    normalize_gap,
 )
 from umi.ik import (  # noqa: E402
     IKSolution,
@@ -130,7 +131,7 @@ def make_raw(
     h, w = image_hw
     imgs = {
         cam: rng.integers(0, 256, size=(nf, h, w, 3), dtype=np.uint8)
-        for cam in ("cam_front", "cam_wrist")
+        for cam in ("cam_wrist",)
     }
     return RawEpisode(
         meta=RawMeta(
@@ -140,7 +141,7 @@ def make_raw(
             frame=frame,
             n_steps=n,
             pose_rate_hz=RATE,
-            cameras=["cam_front", "cam_wrist"],
+            cameras=["cam_wrist"],
             notes={"task": "합성 관통 검증", "success": True},
         ),
         eef_pos=pos,
@@ -213,20 +214,34 @@ def main() -> int:
     ep, rep = convert(raw, ik, RANGES, GAP_CURVE, control_rate_hz=RATE, collected_by="check")
     problems = validate(ep)
     check("계약 위반 0", problems == [], str(problems))
-    check("전 스텝 채택", rep.n_steps_out == n, f"{rep.n_steps_out}/{n}")
+    check("가능한 전 transition 채택", rep.n_steps_out == n - 1, f"{rep.n_steps_out}/{n - 1}")
     check("수용률 1.0", abs(rep.acceptance_rate - 1.0) < 1e-12)
 
     print("== 6. action = q[t+1], 타임스탬프 동일 ==")
     check("action[:-1] == state[1:]", np.array_equal(ep.action[:-1], ep.state[1:]))
-    check("action[-1] == state[-1] (유지)", np.array_equal(ep.action[-1], ep.state[-1]))
+    check("마지막 action은 마지막 raw 상태 목표", not np.array_equal(ep.action[-1], ep.state[-1]))
+    check("마지막 raw tick 학습 행 삭제", ep.meta.n_steps == n - 1)
     check("state_ts == action_ts", np.array_equal(ep.state_timestamp, ep.action_timestamp))
     resid = float(np.abs(ep.action - ep.state).mean())
     check("action-state 잔차가 0 이 아니다", resid > 1e-4, f"mean|Δ| = {resid:.5f}")
     check("identity_mse 리포트됨", rep.identity_residual["identity_mse"] > 0,
           f"{rep.identity_residual['identity_mse']:.3e}")
+    check("gap 0/45/90mm 정규화", np.array_equal(
+        normalize_gap(np.array([0.0, 0.045, 0.09])), np.array([-1.0, 0.0, 1.0])))
+    current = ep.meta.contract_version
+    ep.meta.contract_version = "0.2.0-provisional"
+    check("구 계약은 신규 학습 검증에서 거부", any("contract_version" in p for p in validate(ep)))
+    ep.meta.contract_version = current
+    check("현행 계약 버전 상승", CONTRACT_VERSION == "0.3.0-provisional", CONTRACT_VERSION)
+    wrist = ep.images["cam_wrist"]
+    ep.images["cam_front"] = wrist
+    ep.meta.cameras = ["cam_front", "cam_wrist"]
+    check("구 2카메라 계약 거부", any("cameras must" in p for p in validate(ep)))
+    del ep.images["cam_front"]
+    ep.meta.cameras = ["cam_wrist"]
 
     print("== 7. 이미지 최근접 정렬 ==")
-    check("이미지 CHW uint8", all(v.shape == (n, *IMAGE_SHAPE) and v.dtype == np.uint8 for v in ep.images.values()))
+    check("이미지 CHW uint8", all(v.shape == (n - 1, *IMAGE_SHAPE) and v.dtype == np.uint8 for v in ep.images.values()))
     off = rep.image_sync_offset_ms["cam_wrist"]
     check("동기 오차가 notes 에 기록됨", "image_sync_offset_ms" in ep.meta.notes)
     # 상한은 pose 주기의 반이 아니라 **이미지 주기의 반**이다. 이미지 스트림이
@@ -252,7 +267,7 @@ def main() -> int:
     ik2 = StubIK(q_trajectory(n), fail_at={40})
     ep2, rep2 = convert(raw2, ik2, RANGES, GAP_CURVE, control_rate_hz=RATE)
     check("계약 위반 0 (자른 뒤에도)", validate(ep2) == [], str(validate(ep2)))
-    check("최장 구간을 골랐다", rep2.n_steps_out == n - 41, f"{rep2.n_steps_out} (span {rep2.kept_span})")
+    check("최장 구간을 골랐다", rep2.n_steps_out == n - 42, f"{rep2.n_steps_out} (span {rep2.kept_span})")
     check("폐기 이유가 기록됨", rep2.rejects.get("ik_pos_error_over_budget") == 1, str(rep2.rejects))
     dt = np.diff(ep2.state_timestamp)
     check("제어 주기에 구멍 없음", float(np.abs(dt - 1.0 / RATE).max()) < 1e-9, f"최대편차 {np.abs(dt - 1/RATE).max():.2e}s")
@@ -263,7 +278,7 @@ def main() -> int:
     epx, repx = convert(rawx, StubIK(q_trajectory(n)), RANGES, GAP_CURVE, control_rate_hz=RATE)
     check("계약 위반 0", validate(epx) == [], str(validate(epx)))
     check("X 프레임이 폐기됨", repx.rejects.get("gripper_gap_missing") == 2, str(repx.rejects))
-    check("최장 구간을 골랐다", repx.n_steps_out == n - 7, f"{repx.n_steps_out} (span {repx.kept_span})")
+    check("최장 구간을 골랐다", repx.n_steps_out == n - 8, f"{repx.n_steps_out} (span {repx.kept_span})")
     bad_status = make_raw(n)
     bad_status.gripper_status[3] = "Z"
     check("알 수 없는 상태값은 거부", any("D/M/T/X" in m for m in validate_raw(bad_status)),
@@ -297,14 +312,10 @@ def main() -> int:
 
     print("== 10. q_init 연속성 ==")
     check("2번째 이후 q_init 이 전달됨", ik.q_init_seen[0] is None and ik.q_init_seen[1] is not None)
-    # 팔 5축만 비교한다. q_prev 의 그리퍼 원소는 IK 해가 아니라 gap 곡선
-    # 역변환값으로 교체돼 있다 — 그리퍼는 IK 대상이 아니고(N_REACH=5)
-    # 파지점 FK 에도 영향이 없으므로 의도된 동작이다.
+    # 팔 5축만 비교한다. 그리퍼는 IK 대상이 아니며 계약에서 물리 gap으로 분리된다.
     check("q_init 팔 5축이 직전 해와 같다",
           np.allclose(ik.q_init_seen[5][:5], ik.q_seq[4][:5], atol=1e-12))
-    check("q_init 그리퍼는 gap 곡선값으로 교체됨",
-          not np.isclose(ik.q_init_seen[5][5], ik.q_seq[4][5], atol=1e-9),
-          f"{ik.q_init_seen[5][5]:.4f} vs IK 해 {ik.q_seq[4][5]:.4f}")
+    check("q_init 그리퍼 hinge는 사용하지 않음", ik.q_init_seen[5][5] == 0.0)
 
     print()
     if FAILURES:

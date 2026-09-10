@@ -143,7 +143,7 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
                 'source_usable_segments':usable_segments, 'source_clock_origin_ns':stamps[0],
                 'warmup_s':warmup_s, 'summary_original':summary, 'source_files_sha256':hashes,
                 't_base_world':base_world.tolist(), 't_camera_pinch':camera_pinch.tolist(),
-                'cam_front_unavailable':True}), np.array(xyzs),np.array(quats),np.array(gaps),
+                'logical_camera':'cam_wrist'}), np.array(xyzs),np.array(quats),np.array(gaps),
             np.array(statuses,dtype='<U1'),times,{'cam_wrist':np.stack(images)},{'cam_wrist':times.copy()})
         problems = validate_raw(result)
         if problems:
