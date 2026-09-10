@@ -7,6 +7,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -52,16 +53,31 @@ object Uploader {
     fun deviceId(ctx: Context): String =
         Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
 
-    /** 녹화 폴더를 zip 으로 묶는다. 이미 있으면 다시 만들지 않는다. */
+    /**
+     * 녹화 폴더를 zip 으로 묶는다. 이미 있으면 다시 만들지 않는다.
+     *
+     * 압축률 0(STORED). 프레임이 이미 JPEG 라 재압축은 CPU·시간만 먹고 크기 이득이 없고,
+     * STORED 는 받는 쪽이 압축 해제 없이 바이트를 바로 읽을 수 있다(서버 계약).
+     * STORED 는 엔트리마다 size·crc 를 미리 채워야 하므로 파일을 한 번 읽어 계산한다.
+     */
     fun zipEpisode(dir: File, outDir: File): File {
         val zip = File(outDir, "${dir.name}.zip")
         if (zip.exists() && zip.length() > 0) return zip
         val tmp = File(outDir, "${dir.name}.zip.part")
         ZipOutputStream(BufferedOutputStream(tmp.outputStream(), 1 shl 16)).use { zos ->
+            zos.setMethod(ZipOutputStream.STORED)
             dir.walkTopDown().filter { it.isFile }.forEach { f ->
                 val rel = f.relativeTo(dir).path.replace(File.separatorChar, '/')
-                zos.putNextEntry(ZipEntry(rel))
-                f.inputStream().use { it.copyTo(zos) }
+                val bytes = f.readBytes()
+                val crc = CRC32().apply { update(bytes) }.value
+                val entry = ZipEntry(rel).apply {
+                    method = ZipEntry.STORED
+                    size = bytes.size.toLong()
+                    compressedSize = bytes.size.toLong()
+                    this.crc = crc
+                }
+                zos.putNextEntry(entry)
+                zos.write(bytes)
                 zos.closeEntry()
             }
         }

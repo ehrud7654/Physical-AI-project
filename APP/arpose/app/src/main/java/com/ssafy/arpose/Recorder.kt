@@ -5,6 +5,8 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import android.media.Image
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileOutputStream
@@ -84,6 +86,7 @@ class Recorder(private val baseDir: File) {
     private var startMs = 0L
     private var firstTsNs = 0L
     private var lastTsNs = 0L
+    private var lastMeta = ""   // start() 로 받은 meta 원문. stop() 에서 episode.json 에 담는다.
 
     private var freeMbStart = 0L
 
@@ -110,6 +113,7 @@ class Recorder(private val baseDir: File) {
         fd.mkdirs()
         currentDir = dir
         framesDir = fd
+        lastMeta = metaText
 
         File(dir, "meta.txt").writeText(metaText)
 
@@ -283,9 +287,13 @@ class Recorder(private val baseDir: File) {
             } else blocked.add(b)
         }
 
+        val segList = ArrayList<DoubleArray>()   // episode.json 용 사용가능 구간 [from,to]
+        val verdict: String
         if (blocked.isEmpty()) {
-            sb.append("verdict=OK - 전체 구간 사용 가능\n")
+            verdict = "OK - 전체 구간 사용 가능"
+            sb.append("verdict=$verdict\n")
             sb.append("usable_segments=0.00~${String.format(Locale.US, "%.2f", durSec)}\n")
+            segList.add(doubleArrayOf(0.0, durSec))
         } else {
             val reason = when {
                 jumps.isNotEmpty() && pausedSpans.isNotEmpty() ->
@@ -293,6 +301,7 @@ class Recorder(private val baseDir: File) {
                 jumps.isNotEmpty() -> "점프 ${jumpCount}회"
                 else -> "추적상실 ${pausedSpans.size}구간"
             }
+            verdict = "$reason - 분할 사용"
             sb.append("verdict=$reason - 아래 구간으로 분할해서 사용\n")
 
             if (jumps.isNotEmpty()) {
@@ -321,11 +330,13 @@ class Recorder(private val baseDir: File) {
             for (b in blocked) {
                 if (b[0] - from >= MIN_SEGMENT_SEC) {
                     sb.append("  ${String.format(Locale.US, "%.2f~%.2f", from, b[0])}\n"); n++
+                    segList.add(doubleArrayOf(from, b[0]))
                 }
                 if (b[1] > from) from = b[1]
             }
             if (durSec - from >= MIN_SEGMENT_SEC) {
                 sb.append("  ${String.format(Locale.US, "%.2f~%.2f", from, durSec)}\n"); n++
+                segList.add(doubleArrayOf(from, durSec))
             }
             if (n == 0) sb.append("  (없음 - 전체 폐기 권장)\n")
         }
@@ -336,9 +347,110 @@ class Recorder(private val baseDir: File) {
         val summary = sb.toString()
         try { dir?.let { File(it, "summary.txt").writeText(summary) } } catch (_: Exception) {}
 
+        // 학습 계약 + 요약을 기계가 바로 읽는 episode.json 으로도 내보낸다 (서버 없이 파일 직수령용).
+        try { dir?.let { writeEpisodeJson(it, durSec, hz, verdict, segList) } }
+        catch (e: Exception) { Log.e(TAG, "episode.json 쓰기 실패", e) }
+
         Log.i(TAG, "녹화 종료: ${dir?.absolutePath}\n$summary")
         return dir
     }
+
+    /**
+     * episode.json — 학습팀 데이터 계약을 기계가 바로 읽게 정리한 매니페스트.
+     * meta.txt(사람용) 의 key=value 를 구조화하고, 좌표/쿼터니언/클럭/단위 규약과
+     * 요약(사용가능 구간)·파일 위치를 한 파일에 담는다.
+     */
+    private fun writeEpisodeJson(
+        dir: File, durSec: Double, hz: Double, verdict: String, segList: List<DoubleArray>
+    ) {
+        // meta.txt 를 최상위 key=value 로 파싱 (값 안의 '=' 는 그대로 둔다)
+        val m = JSONObject()
+        for (line in lastMeta.split("\n")) {
+            val i = line.indexOf('=')
+            if (i > 0) m.put(line.substring(0, i), line.substring(i + 1))
+        }
+
+        // 학습팀과 합의한 규약 (좌표계·순서·클럭·단위·이미지·그리퍼)
+        val contract = JSONObject()
+            .put("pose_frame", "T_world_camera")
+            .put("up_axis", "Y")
+            .put("quaternion_order", "xyzw")          // scalar-last (qx,qy,qz,qw)
+            .put("world_origin", "per_episode_relative")
+            .put("translation_units", "m")
+            .put("clock", "elapsedRealtimeNanos")     // pose·frame·imu 공통
+            .put("image_format", "jpeg")
+            .put("gripper_width_units", "m")
+            .put("gripper_width_source", "postprocess: tools/gripper_gap.py")
+
+        // intrinsics 문자열("w=.. h=.. fx=.. fy=.. cx=.. cy=..") → 수치
+        val intr = JSONObject()
+        for (tok in m.optString("intrinsics").split(" ")) {
+            val kv = tok.split("=")
+            if (kv.size == 2) kv[1].toDoubleOrNull()?.let { intr.put(kv[0], it) }
+        }
+        if (intr.has("w") && intr.has("h")) {
+            contract.put("image_size", JSONArray().put(intr.getDouble("w").toInt()).put(intr.getDouble("h").toInt()))
+        }
+
+        val segs = JSONArray()
+        for (s in segList) {
+            segs.put(JSONArray().put(round2(s[0])).put(round2(s[1])))
+        }
+
+        val summary = JSONObject()
+            .put("frames_total", frameIndex).put("frames_saved", savedFrames)
+            .put("frames_dropped", droppedFrames).put("frames_write_failed", writeFailedFrames)
+            .put("pose_rows_failed", csvFailedRows)
+            .put("duration_sec", round2(durSec)).put("rate_hz", round2(hz))
+            .put("tracking_jumps", jumpCount).put("max_jump_mm", round2(maxJumpMm))
+            .put("paused_frames", pausedFrames).put("low_space", lowSpace)
+            .put("verdict", verdict).put("usable_segments", segs)
+
+        val poses = JSONObject()
+            .put("file", "poses.csv")
+            .put("columns", JSONArray(listOf(
+                "index", "timestamp_ns", "tracking", "x", "y", "z",
+                "qx", "qy", "qz", "qw", "jump_mm", "jump_deg", "image"
+            )))
+        val files = JSONObject()
+            .put("frames", JSONObject().put("dir", "frames").put("pattern", "%06d.jpg"))
+            .put("poses", poses)
+            .put("imu", JSONObject().put("file", "imu.csv"))
+            .put("meta_txt", "meta.txt").put("summary_txt", "summary.txt")
+
+        val session = JSONObject()
+            .put("server_url", m.optString("server_url"))
+            .put("user_id", m.optString("user_id"))
+            .put("session_id", m.optString("session_id"))
+            .put("skill_id", m.optString("skill_id"))
+
+        val camera = JSONObject()
+            .put("intrinsics", intr)
+            .put("config", m.optString("camera_config"))
+            .put("modes", m.optString("camera_modes"))
+            .put("focus_mode", m.optString("focus_mode"))
+            .put("ae_lock", m.optString("ae_lock"))
+
+        val root = JSONObject()
+            .put("schema", "arpose.episode/1")
+            .put("episode", dir.name)
+            .put("recorded_at_ms", startMs)
+            .put("contract", contract)
+            .put("session", session)
+            .put("device", m.optString("device"))
+            .put("android", m.optString("android"))
+            .put("camera", camera)
+            .put("clock_ref", JSONObject()
+                .put("start_wallclock_ms", m.optString("start_wallclock_ms"))
+                .put("start_elapsed_realtime_ns", m.optString("start_elapsed_realtime_ns")))
+            .put("files", files)
+            .put("summary", summary)
+            .put("meta_raw", m)   // 원본 전체 (누락 대비)
+
+        File(dir, "episode.json").writeText(root.toString(2))
+    }
+
+    private fun round2(v: Double) = Math.round(v * 100.0) / 100.0
 
     private fun name(i: Int) = String.format(Locale.US, "%06d.jpg", i)
     private fun fmt(v: Float) = String.format(Locale.US, "%.6f", v)
