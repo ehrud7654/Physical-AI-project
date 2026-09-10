@@ -12,10 +12,16 @@ JOINTS = [
 ]
 
 
+GRIPPER_MAX_M = 0.09   # 그리퍼 width 상한(미터)
+
+
 def test_within_range():
     for k in range(600):          # 20초, 30Hz 스윕
         t = k / 30.0
         cmd = dummy_command(t, JOINTS)
         assert len(cmd) == len(JOINTS)
-        for val, (_n, lo, hi) in zip(cmd, JOINTS):
-            assert lo <= val <= hi, f"범위 이탈: {val} ∉ [{lo},{hi}]"
+        for val, (name, lo, hi) in zip(cmd, JOINTS):
+            if name == "gripper":                          # 미터, [0, max]
+                assert 0.0 <= val <= GRIPPER_MAX_M, f"그리퍼 width 이탈: {val}"
+            else:                                          # 라디안, [lo, hi]
+                assert lo <= val <= hi, f"범위 이탈: {val} ∉ [{lo},{hi}]"

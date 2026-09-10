@@ -77,16 +77,15 @@
     <xacro:servo_joint name="shoulder_lift" sid="2"/>
     <xacro:servo_joint name="elbow_flex"    sid="3"/>
     <xacro:servo_joint name="wrist_flex"    sid="4"/>
-    <xacro:servo_joint name="wrist_roll"    sid="6"/>
+    <xacro:servo_joint name="wrist_roll"    sid="5"/>
 
     <!-- gripper = 미터(width). 팔과 달리 closed/open_tick + max_width_m 로 변환.
-         ⚠️ 서보 ID: jetson_config=5(gripper)/6(wrist_roll). 팀원 코드는 반대(5/6 스왑).
-            실물 배선 실측으로 확정할 것. 여기선 jetson_config 기준(gripper=5).
+         서보 ID = 6 (실물 확정: gripper=6, wrist_roll=5).
          ⚠️ closed/open_tick: jetson_config 값(closed 1720 검증, open 70 미검증). 실측 필요. -->
     <joint name="gripper">
       <command_interface name="position"/>
       <state_interface name="position"/>
-      <param name="servo_id">5</param>
+      <param name="servo_id">6</param>
       <param name="closed_tick">1720</param>
       <param name="open_tick">70</param>
       <param name="min_tick">70</param>
