@@ -7,6 +7,8 @@ import {
   addTraining,
   applyModel,
   cancelTraining,
+  deleteTrainings,
+  deleteWorks,
   fetchRobots,
   fetchDatasets,
   fetchSavedWorks,
@@ -24,6 +26,7 @@ import {
 interface AppStore {
   learningDraft: LearningDraft;
   updateLearningDraft: (patch: Partial<LearningDraft>) => void;
+  resetLearningDraft: () => void;
   draftReady: boolean;
   draftStored: boolean;
   /** 초기 데이터를 불러오는 동안 true */
@@ -49,6 +52,8 @@ interface AppStore {
   applyModelToRobot: (robotId: string, model: string) => Promise<void>;
   updateRobotInfo: (robotId: string, patch: { name: string; location: string }) => Promise<void>;
   cancelTrainingById: (trainingJobId: string) => Promise<void>;
+  deleteTrainingsById: (trainingJobIds: string[]) => Promise<void>;
+  deleteWorksById: (workIds: string[]) => Promise<void>;
   retryTraining: (training: Training) => Promise<void>;
   completeLearning: (input: { name: string; robot: string }) => Promise<void>;
   saveWorkflow: (work: SavedWork) => Promise<SavedWork>;
@@ -66,17 +71,29 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [draftReady, setDraftReady] = useState(false);
   const [draftStored, setDraftStored] = useState(false);
   const updateLearningDraft = useCallback((patch: Partial<LearningDraft>) => setLearningDraft(current => ({ ...current, ...patch })), []);
+  const resetLearningDraft = useCallback(() => setLearningDraft({ ...emptyDraft }), []);
   /* eslint-disable react-hooks/set-state-in-effect -- restore browser-local draft after hydration */
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
-      if (saved && typeof saved.skillKey === 'string' && Array.isArray(saved.selected) && saved.step >= 1 && saved.step <= 6) setLearningDraft({ ...emptyDraft, ...saved });
+      if (saved && typeof saved.skillKey === 'string' && Array.isArray(saved.selected)
+          && saved.step >= 5 && saved.step <= 6 && typeof saved.trainingJobId === 'string') {
+        setLearningDraft({ ...emptyDraft, ...saved });
+      }
     } catch { /* Invalid or unavailable storage starts a fresh draft. */ }
     setDraftReady(true);
   }, []);
   useEffect(() => {
     if (!draftReady) return;
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(learningDraft)); setDraftStored(true); }
+    try {
+      if (learningDraft.step >= 5 && learningDraft.trainingJobId) {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(learningDraft));
+        setDraftStored(true);
+      } else {
+        localStorage.removeItem(DRAFT_KEY);
+        setDraftStored(false);
+      }
+    }
     catch { setDraftStored(false); }
   }, [learningDraft, draftReady]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -157,6 +174,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setTrainings(await cancelTraining(trainingJobId));
   }, []);
 
+  const deleteTrainingsById = useCallback(async (trainingJobIds: string[]) => {
+    setTrainings(await deleteTrainings(trainingJobIds));
+  }, []);
+
+  const deleteWorksById = useCallback(async (workIds: string[]) => {
+    setSavedWorks(await deleteWorks(workIds));
+  }, []);
+
   const retryFailedTraining = useCallback(async (training: Training) => {
     setTrainings(await retryTraining(training));
   }, []);
@@ -194,7 +219,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       trainingRefreshError,
       trainingUpdatedAt,
       refreshTrainings,
-      learningDraft, updateLearningDraft, draftReady, draftStored,
+      learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored,
       skills,
       savedWorks,
       users: initialUsers,
@@ -204,12 +229,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       applyModelToRobot,
       updateRobotInfo,
       cancelTrainingById,
+      deleteTrainingsById,
+      deleteWorksById,
       retryTraining: retryFailedTraining,
       completeLearning,
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, datasets, visibleTrainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, visibleTrainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

@@ -53,6 +53,12 @@ export async function fetchSavedWorks(): Promise<SavedWork[]> {
   return tasks.map((task) => toSavedWork(task, skillByVersionId));
 }
 
+/** 백엔드 DELETE 계약이 추가되면 선택 삭제에 사용한다. */
+export async function deleteWorks(taskIds: string[]): Promise<SavedWork[]> {
+  await Promise.all(taskIds.map((id) => apiRequest<void>(`/tasks/${id}`, { method: 'DELETE' })));
+  return fetchSavedWorks();
+}
+
 export interface SaveWorkResult { works: SavedWork[]; savedId: string; }
 
 export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {

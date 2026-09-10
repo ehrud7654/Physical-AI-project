@@ -1199,6 +1199,9 @@ select:focus,input:focus{border-color:rgba(89,105,216,.7);box-shadow:0 0 0 4px r
   .compact-training-list>button{grid-template-columns:minmax(0,1fr) auto}
   .compact-training-list .tiny-progress{grid-column:1;grid-row:2;max-width:none}
   .compact-training-list>button>em{grid-column:2;grid-row:2}
+  .new-skill-entry{grid-template-columns:40px minmax(0,1fr);padding:14px;gap:10px}
+  .new-skill-entry>span{width:40px;height:40px}
+  .new-skill-input-row{grid-template-columns:1fr}
 }
 
 /* Keep one compact page title and place the first content group close to it. */
@@ -1591,6 +1594,78 @@ select:focus,input:focus{border-color:#7c8aa8;box-shadow:0 0 0 3px rgba(70,86,12
   background:var(--product-accent-soft);
   box-shadow:inset 0 0 0 1px rgba(70,86,127,.08);
 }
+.new-skill-entry{
+  display:grid;
+  grid-template-columns:42px minmax(0,1fr);
+  gap:12px;
+  align-items:center;
+  padding:14px 18px;
+  border:1px solid var(--product-line);
+  border-radius:12px;
+  background:#fff;
+}
+.new-skill-entry.selected{
+  border-color:#8d9ab5;
+  background:var(--product-accent-soft);
+  box-shadow:inset 0 0 0 1px rgba(70,86,127,.08);
+}
+.new-skill-entry>span{
+  width:42px;
+  height:42px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  color:#5267d8;
+  background:#eef1ff;
+  font-size:20px;
+  font-weight:850;
+}
+.new-skill-entry label{display:block;margin-bottom:4px;font-size:14px;line-height:1.2;font-weight:800}
+.new-skill-input-row{display:grid;grid-template-columns:minmax(0,1fr)}
+.new-skill-input-row input{min-width:0;height:32px;padding:0 10px;border:1px solid var(--product-line-strong);font-size:13px}
+.progress-card-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  min-height:42px;
+  margin-bottom:32px;
+  gap:12px;
+}
+.progress-card-actions button{flex:0 0 auto;white-space:nowrap}
+.progress-card-actions .danger-button{width:auto;margin:0;padding:0 18px}
+.log-error{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;padding:11px 12px;border:1px solid #f1c7c2;border-radius:9px;background:#fff7f6}
+.log-error p{margin:0;color:#9f2f24;font-size:10px;font-weight:700;line-height:1.45}
+.log-error .secondary-button{flex:0 0 auto;width:auto;height:34px;margin:0;padding:0 11px;white-space:nowrap;font-size:10px}
+.progress-layout .log-card .log-heading h3{font-size:18px}
+.progress-layout .log-card .log-heading>span{padding:6px 10px;font-size:11px}
+.progress-layout .log-card .log-list{gap:17px}
+.progress-layout .log-card .log-list p{grid-template-columns:66px 42px 1fr;gap:10px;font-size:13px;line-height:1.45}
+.progress-layout .log-card .log-list time{font-size:12px}
+.progress-layout .log-card .log-list span{font-size:11px}
+.progress-layout .log-card .log-error p{font-size:12px}
+.progress-layout .log-card .log-error .secondary-button{font-size:11px}
+.training-save-actions{margin-top:24px;padding-top:20px;border-top:1px solid var(--product-line)}
+.training-save-actions .primary-button{width:100%}
+.training-save-actions small{display:block;margin-top:9px;color:var(--product-muted);font-size:12px;text-align:center}
+.confirm-modal .card-actions{justify-content:flex-end;gap:10px}
+.confirm-modal .card-actions .secondary-button,
+.confirm-modal .card-actions .danger-button{flex:0 0 auto;width:auto;min-width:96px;margin:0;padding:0 18px;white-space:nowrap}
+.list-delete-button{width:auto!important;margin:0!important;white-space:nowrap}
+.workflow-library-toolbar>.list-delete-button{box-sizing:border-box;width:auto!important;height:32px!important;min-height:32px!important;align-self:flex-start;padding:0 11px!important;border-radius:8px;font-size:12px;line-height:1}
+.training-controls>button{box-sizing:border-box;width:auto!important;height:32px!important;min-height:32px!important;margin:0!important;padding:0 11px!important;border-radius:8px;font-size:12px;line-height:1;white-space:nowrap}
+.list-select-checkbox{flex:0 0 auto;width:18px;height:18px;margin:0;accent-color:var(--product-accent);cursor:pointer}
+.selection-summary{display:flex;align-items:center;gap:10px}
+.workflow-library-toolbar>.list-select-checkbox{margin-right:2px}
+.training-table article:has(>.list-select-checkbox){grid-template-columns:28px 1.3fr .8fr 1fr 90px}
+.saved-work-select-row{display:flex;align-items:center;border-bottom:1px solid var(--product-line)}
+.saved-work-select-row>.list-select-checkbox{margin-left:18px}
+.saved-work-select-row>.saved-work-row{flex:1;border-bottom:0}
+@media(max-width:680px){
+  .progress-card-actions{align-items:stretch;flex-direction:column;margin-bottom:28px}
+  .progress-card-actions button,.progress-card-actions .danger-button{width:100%;justify-content:center}
+  .log-error{align-items:stretch;flex-direction:column;text-align:center}
+  .log-error .secondary-button{width:100%}
+}
 .wizard-title>span,.work-stage-steps li.current span{
   background:var(--product-accent)!important;
   box-shadow:none;
@@ -1901,6 +1976,11 @@ body,.app-shell>.content{
   box-shadow:none!important;
 }
 .workflow-library-toolbar .workflow-search{max-width:430px}
+.workflow-library-toolbar .workflow-search input,
+.workflow-library-toolbar .page-create-button{
+  height:32px!important;
+  min-height:32px!important;
+}
 .saved-work-columns,
 .saved-work-row{
   grid-template-columns:minmax(260px,1fr) 110px 110px 72px;
@@ -2312,4 +2392,37 @@ body{
   }
   .compact-training-list>button>.tiny-progress{grid-column:1;grid-row:2}
   .compact-training-list>button>em{grid-column:2;grid-row:2}
+}
+
+/* Keep list selection controls usable without introducing horizontal overflow. */
+@media(max-width:680px){
+  .training-table-head{align-items:stretch}
+  .training-table-head .selection-summary{width:100%;justify-content:flex-end}
+  .training-table-head .training-controls{
+    display:grid;
+    width:100%;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    margin-top:0;
+  }
+  .training-table-head .training-controls>button,
+  .training-table-head .training-controls .refresh-button,
+  .training-table-head .training-controls select{
+    width:100%!important;
+    min-width:0;
+  }
+  .training-table article:has(>.list-select-checkbox){
+    grid-template-columns:22px minmax(0,1fr) auto!important;
+    column-gap:9px;
+  }
+  .training-table article:has(>.list-select-checkbox)>.list-select-checkbox{grid-column:1;grid-row:1}
+  .training-table article:has(>.list-select-checkbox)>.training-main{display:flex!important;grid-column:2;grid-row:1;min-width:0}
+  .training-table article:has(>.list-select-checkbox)>div:nth-of-type(2){display:none}
+  .training-table article:has(>.list-select-checkbox)>.training-badge{grid-column:3;grid-row:1}
+  .training-main>div{min-width:0}
+  .training-title-button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .saved-work-select-row{align-items:flex-start;min-width:0}
+  .saved-work-select-row>.list-select-checkbox{margin:20px 0 0 14px}
+  .saved-work-select-row>.saved-work-row{min-width:0;padding-left:12px}
+  .workflow-library-toolbar>.selection-summary{justify-content:flex-start;color:var(--product-muted);font-size:12px}
 }

@@ -5,7 +5,7 @@ import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus,
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { completeTrainingInput, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication } from '@/services';
+import { createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -90,7 +90,7 @@ export default function Home() {
 }
 
 function HomeInner() {
-  const { loading, loadError, refresh } = useAppStore();
+  const { loading, loadError, refresh, learningDraft, resetLearningDraft } = useAppStore();
   const [entered, setEntered] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('admin01');
@@ -136,6 +136,9 @@ function HomeInner() {
 
   const enterView = (target: View) => { setView(target); setEntered(true); };
   const navigateTo = (target: View) => {
+    if (view === 'learn' && target !== 'learn' && learningDraft.step < 5) {
+      resetLearningDraft();
+    }
     if (target === 'work') {
       setEditingWorkId(null);
       setWorkEditorRevision((revision) => revision + 1);
@@ -157,6 +160,7 @@ function HomeInner() {
     void refresh();
   };
   const logout = () => {
+    if (view === 'learn' && learningDraft.step < 5) resetLearningDraft();
     clearAuthentication();
     setCurrentUser(null);
     setAuthenticated(false);
@@ -166,19 +170,19 @@ function HomeInner() {
 
   return (
     <main className="app-shell">
-      <GlobalHeader variant="sidebar" authenticated={authenticated} userId={currentUserId} activeView={view} onHome={() => setEntered(false)} onNavigate={navigateTo} onAuth={logout} />
+      <GlobalHeader variant="sidebar" authenticated={authenticated} userId={currentUserId} activeView={view} onHome={() => { if (view === 'learn' && learningDraft.step < 5) resetLearningDraft(); setEntered(false); }} onNavigate={navigateTo} onAuth={logout} />
 
       <section className="content">
         {loading && <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>데이터를 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>}
         {!loading && loadError && <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>데이터를 불러오지 못했어요</h2><p>네트워크 상태를 확인한 뒤 다시 시도해 주세요.</p><button className="primary-button" onClick={() => void refresh()}>다시 시도</button></section></div>}
         {!loading && !loadError && <>
           {view === 'dashboard' && <DashboardView onNavigate={navigateTo} onOpenDevices={(tab) => { setDeviceTab(tab); setView('devices'); }} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} />}
-          {view === 'data' && <DataView onNavigate={navigateTo} />}
+          {view === 'data' && <DataView />}
           {view === 'library' && <WorkflowLibraryView onEdit={editWork} onToast={showToast} />}
           {view === 'devices' && <DevicesView initialTab={deviceTab} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} onToast={showToast} />}
           {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'training' && <TrainingStatusView onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
-          {view === 'learn' && <LearnView onNavigate={navigateTo} onToast={showToast} onGoWork={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} />}
+          {view === 'learn' && <LearnView onNavigate={navigateTo} onToast={showToast} />}
           {view === 'work' && <WorkView key={`${editingWorkId ?? 'new'}-${workEditorRevision}`} suggestedSkillName={suggestedSkillName} editingWorkId={editingWorkId} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'admin' && <AdminView onToast={showToast} />}
         </>}
@@ -508,11 +512,14 @@ function RobotSettingsModal({ robot, onClose, onSave }: { robot: { id: string; n
 }
 
 function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: (view: View) => void; onToast: (message: string) => void; onUseResult: (name: string) => void }) {
-  const { skills, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, cancelTrainingById, retryTraining } = useAppStore();
+  const { skills, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, cancelTrainingById, deleteTrainingsById, retryTraining } = useAppStore();
   const [statusFilter, setStatusFilter] = useState<'all' | TrainingStatus>('all');
   const [detail, setDetail] = useState<Training | null>(null);
   const [confirmFor, setConfirmFor] = useState<Training | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const countOf = (status: TrainingStatus) => trainings.filter((item) => item.status === status).length;
   const filtered = statusFilter === 'all' ? trainings : trainings.filter((item) => item.status === statusFilter);
   const openDetail = async (item: Training) => {
@@ -538,6 +545,18 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
     const refreshed = await refreshTrainings();
     onToast(refreshed ? '학습 상태를 최신 정보로 갱신했어요.' : '학습 상태를 불러오지 못했어요. 다시 시도해 주세요.');
   };
+  const deletable = filtered.filter((item) => item.status !== '진행 중' && item.status !== '취소 요청');
+  const deleteSelected = async () => {
+    setBusy(true);
+    try {
+      await deleteTrainingsById(selectedIds);
+      onToast(`${selectedIds.length}개 학습을 삭제했어요.`);
+      setSelectedIds([]);
+      setSelecting(false);
+      setDeleteOpen(false);
+    } catch { onToast('삭제 API가 아직 연결되지 않았거나 삭제에 실패했어요.'); }
+    finally { setBusy(false); }
+  };
   const updatedLabel = trainingUpdatedAt
     ? new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(trainingUpdatedAt)
     : '확인 중';
@@ -546,8 +565,9 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
     <div className="page-heading list-page-heading title-divider"><div><h1>학습 목록</h1></div><button className="primary-button page-create-button" onClick={() => onNavigate('learn')}>새 학습 생성 <span aria-hidden="true">›</span></button></div>
     <div className="training-summary" aria-label="학습 상태별 보기"><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}><small>전체</small><strong>{trainings.length}</strong></button><button className={statusFilter === '진행 중' ? 'active' : ''} onClick={() => setStatusFilter('진행 중')}><small>진행 중</small><strong>{countOf('진행 중')}</strong></button><button className={statusFilter === '완료' ? 'active' : ''} onClick={() => setStatusFilter('완료')}><small>완료</small><strong>{countOf('완료')}</strong></button><button className={statusFilter === '실패' ? 'active' : ''} onClick={() => setStatusFilter('실패')}><small>확인 필요</small><strong>{countOf('실패')}</strong></button></div>
     <section className="card training-table">
-      <div className="training-table-head"><p className={`refresh-status ${trainingRefreshError ? 'failed' : ''}`} role="status">{trainingRefreshError ? '마지막 갱신에 실패했어요.' : `마지막 갱신 ${updatedLabel}`}</p><div className="training-controls"><button className="secondary-button refresh-button" disabled={trainingRefreshing} onClick={() => void refreshStatus()}>{trainingRefreshing ? '갱신 중...' : '↻ 새로고침'}</button><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | TrainingStatus)} aria-label="학습 상태 필터"><option value="all">전체 상태</option><option value="진행 중">진행 중</option><option value="취소 요청">취소 요청</option><option value="취소됨">취소됨</option><option value="완료">완료</option><option value="실패">실패</option></select></div></div>
+      <div className="training-table-head"><div className="selection-summary">{selecting && <input className="list-select-checkbox" type="checkbox" aria-label="삭제 가능한 학습 전체 선택" disabled={!deletable.length} checked={deletable.length > 0 && selectedIds.length === deletable.length} onChange={() => setSelectedIds(selectedIds.length === deletable.length ? [] : deletable.map(item => item.id))} />}<p className={`refresh-status ${trainingRefreshError ? 'failed' : ''}`} role="status">{selecting ? `${selectedIds.length}개 선택됨` : trainingRefreshError ? '마지막 갱신에 실패했어요.' : `마지막 갱신 ${updatedLabel}`}</p></div><div className="training-controls"><button className={selecting ? 'danger-button list-delete-button' : 'secondary-button'} onClick={() => { if (!selecting) setSelecting(true); else if (selectedIds.length) setDeleteOpen(true); else setSelecting(false); }}>삭제</button><button className="secondary-button refresh-button" disabled={trainingRefreshing} onClick={() => void refreshStatus()}>{trainingRefreshing ? '갱신 중...' : '↻ 새로고침'}</button><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | TrainingStatus)} aria-label="학습 상태 필터"><option value="all">전체 상태</option><option value="진행 중">진행 중</option><option value="취소 요청">취소 요청</option><option value="취소됨">취소됨</option><option value="완료">완료</option><option value="실패">실패</option></select></div></div>
       {filtered.map(item => <article key={item.id}>
+        {selecting && <input className="list-select-checkbox" type="checkbox" aria-label={`${item.name} 선택`} disabled={item.status === '진행 중' || item.status === '취소 요청'} checked={selectedIds.includes(item.id)} onChange={() => setSelectedIds(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])} />}
         <div className="training-main"><span className="learning-symbol">✦</span><div><button className="training-title-button" onClick={() => void openDetail(item)}>{item.name}</button><small>{item.robot} · {item.started}</small></div></div>
         <div><small>현재 단계</small><strong>{item.stage}</strong></div>
         <div className="training-progress"><div><i style={{width: `${item.progress}%`}} /></div><strong>{item.progress}%</strong></div>
@@ -557,6 +577,7 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
     </section>
     {detail && <div className="modal-backdrop" onMouseDown={() => setDetail(null)}><section className="register-modal data-detail-modal training-detail-modal" role="dialog" aria-modal="true" aria-label="학습 상세 정보" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading data-modal-heading"><div><p>학습 상세</p><div className="data-modal-title"><h2>{detail.name}</h2><span className={`training-badge ${detail.status === '실패' ? 'failed' : detail.status === '완료' ? 'complete' : ''}`}>{detail.status}</span></div></div><button className="close-button" onClick={() => setDetail(null)} aria-label="닫기">×</button></div><dl className="data-detail-grid"><div><dt>현재 단계</dt><dd>{detail.stage}</dd></div><div><dt>대상 로봇</dt><dd>{detail.robot}</dd></div><div><dt>시작 시각</dt><dd>{detail.started}</dd></div><div><dt>진행률</dt><dd>{detail.progress}%</dd></div></dl><div className="training-modal-progress"><div className="training-progress"><div><i style={{width: `${detail.progress}%`}} /></div><strong>{detail.progress}%</strong></div></div>{(['완료', '진행 중', '실패'] as TrainingStatus[]).includes(detail.status) && <div className="data-modal-footer training-modal-footer"><div>{detail.status === '완료' && !skills.some(skill => skill.name === detail.name) && <p className="modal-note">이 학습 결과의 동작 연결 정보가 아직 없어요.</p>}</div>{detail.status === '완료' && <button className="primary-button" disabled={!skills.some(skill => skill.name === detail.name)} onClick={() => onUseResult(detail.name)}>이 동작으로 작업 생성</button>}{detail.status === '진행 중' && <button className="danger-button" onClick={() => { setDetail(null); setConfirmFor(detail); }}>학습 취소</button>}{detail.status === '실패' && <button className="primary-button" onClick={() => void retry(detail)}>다시 시도</button>}</div>}</section></div>}
     {confirmFor && <div className="modal-backdrop" onMouseDown={() => !busy && setConfirmFor(null)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="학습 취소 확인" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>학습을 취소할까요?</h2><p>취소 요청 후 서버가 중단을 확인하면 취소 완료로 표시돼요.</p></div><button className="close-button" onClick={() => setConfirmFor(null)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={busy} onClick={() => setConfirmFor(null)}>계속 진행</button><button className="danger-button" disabled={busy} onClick={cancelConfirmed}>{busy ? '요청 중...' : '취소 요청'}</button></div></section></div>}
+    {deleteOpen && <div className="modal-backdrop" onMouseDown={() => !busy && setDeleteOpen(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="학습 선택 삭제 확인" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>선택한 학습을 삭제할까요?</h2><p>{selectedIds.length}개 학습이 삭제됩니다.</p></div><button className="close-button" onClick={() => setDeleteOpen(false)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={busy} onClick={() => setDeleteOpen(false)}>돌아가기</button><button className="danger-button" disabled={busy} onClick={() => void deleteSelected()}>{busy ? '삭제 중...' : '삭제'}</button></div></section></div>}
   </>;
 }
 
@@ -577,7 +598,7 @@ const recoveryActionLabel: Record<Dataset['recoveryAction'], string> = {
   RETRY: '잠시 후 다시 시도해 주세요.', CONTACT_SUPPORT: '관리자에게 문의해 주세요.', NONE: '',
 };
 
-function DataView({ onNavigate }: { onNavigate: (view: View) => void }) {
+function DataView() {
   const { datasets } = useAppStore();
   const [sortMode, setSortMode] = useState<'latest' | 'oldest' | 'retention'>('latest');
   const [statusFilter, setStatusFilter] = useState('');
@@ -603,18 +624,22 @@ function DataView({ onNavigate }: { onNavigate: (view: View) => void }) {
       <div className="episode-table" role="table">
         <div className="episode-row header" role="row"><span>데이터 번호</span><span>학습 동작</span><span>사용 장치</span><span>확인 결과</span><span>보관 기간</span><span>학습 가능 여부</span></div>
         {filtered.map(item => { const status = datasetStatusMeta[item.status]; return <div className="episode-row" role="row" key={item.id}><span data-label="데이터 번호"><button className="text-button" onClick={() => setDetail(item)}>데이터 {String(item.seq).padStart(3, '0')} →</button><small>{item.date}</small></span><span data-label="학습 동작">{item.skillName}</span><span data-label="사용 장치">{item.umiId}</span><span data-label="확인 결과"><span className={`dataset-status ${status.className}`}><i />{status.label}</span></span><span data-label="보관 기간">{item.retentionDays}일 남음</span><span data-label="학습 가능 여부">{item.status === 'READY' ? '선택 가능' : item.status === 'INVALID' ? '재수집 필요' : '처리 완료 후 가능'}</span></div>; })}
-        {!filtered.length && <div className="table-empty empty-with-action"><p>{datasets.length ? '조건에 맞는 데이터가 없어요.' : '아직 등록된 데이터가 없어요.'}</p><button className="secondary-button" onClick={() => { if (datasets.length) setStatusFilter(''); else onNavigate('learn'); }}>{datasets.length ? '전체 상태 보기' : '새 데이터 준비하기'}</button></div>}
+        {!filtered.length && <div className="table-empty empty-with-action"><p>{datasets.length ? '조건에 맞는 데이터가 없어요.' : '아직 등록된 데이터가 없어요.'}</p>{datasets.length > 0 && <button className="secondary-button" onClick={() => setStatusFilter('')}>전체 상태 보기</button>}</div>}
       </div>
     </section>
     {detail && <div className="modal-backdrop" onMouseDown={() => { setDetail(null); setPreview(null); }}><section className="register-modal data-detail-modal" role="dialog" aria-modal="true" aria-label="데이터 상세" onMouseDown={e => e.stopPropagation()}><div className="modal-heading data-modal-heading"><div><p>데이터 상세</p><div className="data-modal-title"><h2>데이터 {String(detail.seq).padStart(3, '0')}</h2><span className={`dataset-status ${datasetStatusMeta[detail.status].className}`}><i />{datasetStatusMeta[detail.status].label}</span></div></div><button className="close-button" aria-label="닫기" onClick={() => { setDetail(null); setPreview(null); }}>×</button></div><dl className="data-detail-grid"><div><dt>학습 동작</dt><dd>{detail.skillName}</dd></div><div><dt>사용 장치</dt><dd>{detail.umiId}</dd></div><div><dt>촬영 정보</dt><dd>{detail.duration}<small>{detail.size}</small></dd></div><div><dt>학습 사용</dt><dd>{detail.trainable ? '사용 가능' : '사용할 수 없음'}</dd></div></dl>{detail.blockingReasons.length > 0 && <div className="validation-error" role="alert"><strong>확인이 필요한 이유</strong><ul>{detail.blockingReasons.map(reason => <li key={reason.code}>{reason.message}</li>)}</ul><p>{recoveryActionLabel[detail.recoveryAction]}</p></div>}{detail.status !== 'READY' && !detail.blockingReasons.length && <p className="validation-progress" role="status">상태가 바뀌면 이 화면에 자동으로 반영됩니다.</p>}{preview && <div className={`video-stage ${detail.tone}`} role="img" aria-label="데이터 프레임 미리보기"><span className="big-play">▦</span><p>프레임 미리보기 준비 완료</p></div>}{previewError && <p className="form-error" role="alert">{previewError}</p>}{(preview || (detail.status === 'READY' && !preview)) && <div className="data-modal-footer"><p className="modal-note">{preview ? `미리보기는 ${new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(preview.expiresAt))}까지 열 수 있어요.` : ''}</p>{detail.status === 'READY' && !preview && <button className="secondary-button" disabled={previewLoading} onClick={() => void openPreview()}>{previewLoading ? '준비 중...' : '데이터 미리보기'}</button>}</div>}</section></div>}
   </>;
 }
 
-function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View) => void; onToast: (message: string) => void; onGoWork: (name: string) => void }) {
-  const { umis, datasets, learningDraft, updateLearningDraft, draftReady, draftStored } = useAppStore();
-  const { step, skillKey, method, umiId, expectedEpisodes, selected, progress } = learningDraft;
+function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; onToast: (message: string) => void }) {
+  const { umis, datasets, learningDraft, updateLearningDraft, resetLearningDraft, cancelTrainingById, completeLearning, draftReady, draftStored } = useAppStore();
+  const { step, skillKey, method, umiId, expectedEpisodes, selected, progress, name } = learningDraft;
   const setStep = (step: number) => updateLearningDraft({ step });
-  const setSkillKey = (skillKey: string) => updateLearningDraft({ skillKey, selected: [] });
+  const [newSkillActive, setNewSkillActive] = useState(Boolean(name.trim()));
+  const setSkillKey = (skillKey: string) => {
+    setNewSkillActive(false);
+    updateLearningDraft({ skillKey, selected: [], name: '' });
+  };
   const setMethod = (method: 'new' | 'existing' | null) => updateLearningDraft({ method });
   const setUmiId = (umiId: string) => updateLearningDraft({ umiId });
   const setExpectedEpisodes = (expectedEpisodes: number) => updateLearningDraft({ expectedEpisodes });
@@ -622,6 +647,9 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
   const [catalog, setCatalog] = useState<TrainingSkill[]>([]);
   const [requirements, setRequirements] = useState<TrainingRequirements | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const [savingResult, setSavingResult] = useState(false);
   const serverSkill = catalog.find(item => item.skillKey === skillKey);
   const displayedSkills = catalog.map((item, index) => ({
     key: item.skillKey,
@@ -629,7 +657,9 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
     description: item.description ?? '등록된 설명이 없습니다.',
     mark: item.displayName.trim().charAt(0) || String(index + 1),
   }));
-  const skill = displayedSkills.find(item => item.key === skillKey) ?? displayedSkills[0];
+  const catalogSkill = displayedSkills.find(item => item.key === skillKey) ?? displayedSkills[0];
+  const customName = name.trim();
+  const skill = newSkillActive ? (customName ? { ...catalogSkill, name: customName } : undefined) : catalogSkill;
   const selectedUmi = umis.find(item => item.id === umiId);
   const availableData = datasets.filter(item => item.skillKey === skillKey);
   const readyData = availableData.filter(item => item.ready);
@@ -657,7 +687,11 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
       try {
         const job = await fetchTrainingDetail(learningDraft.trainingJobId!);
         if (!active) return;
-        updateLearningDraft({ progress: job.progress, error: job.status === '실패' ? job.stage : undefined });
+        updateLearningDraft({
+          progress: job.progress,
+          method: job.inputMode === 'COLLECT_NEW' ? 'new' : 'existing',
+          error: job.status === '실패' ? job.stage : undefined,
+        });
         if (job.status === '완료') updateLearningDraft({ step: 6, progress: 100, error: undefined });
       } catch {
         if (active) updateLearningDraft({ error: '학습 상태를 불러오지 못했어요.' });
@@ -688,22 +722,48 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
         expectedEpisodeCount: method === 'new' ? expectedEpisodes : undefined,
         episodeIds: method === 'existing' ? selectedData.map(item => item.id) : undefined,
       });
-      updateLearningDraft({ progress: job.progress, step: 5, startedAt: Date.now(), name: job.name, trainingJobId: job.id, error: undefined });
+      updateLearningDraft({
+        progress: job.progress,
+        step: 5,
+        method: job.inputMode === 'COLLECT_NEW' ? 'new' : 'existing',
+        startedAt: null,
+        name: customName || job.name,
+        trainingJobId: job.id,
+        error: undefined,
+      });
       onToast('학습 작업을 생성했어요.');
     } catch {
       onToast('학습 작업을 생성하지 못했어요.');
     } finally { setSubmitting(false); }
   };
-  const finishCollection = async () => {
+  const cancelCurrentTraining = async () => {
     if (!learningDraft.trainingJobId) return;
-    setSubmitting(true);
+    setCanceling(true);
     try {
-      const job = await fetchTrainingDetail(learningDraft.trainingJobId);
-      await completeTrainingInput(job.id, job.receivedEpisodeCount);
-      onToast('입력 데이터 검증을 요청했어요.');
+      await cancelTrainingById(learningDraft.trainingJobId);
+      resetLearningDraft();
+      setCancelOpen(false);
+      onToast('학습 취소를 요청했어요.');
+      onNavigate('training');
     } catch {
-      onToast('입력 완료 요청을 처리하지 못했어요.');
-    } finally { setSubmitting(false); }
+      onToast('학습을 취소하지 못했어요. 다시 시도해 주세요.');
+    } finally {
+      setCanceling(false);
+    }
+  };
+  const saveCompletedTraining = async () => {
+    if (!learningDraft.trainingJobId || step !== 6 || !skill) return;
+    setSavingResult(true);
+    try {
+      await completeLearning({ name: skill.name, robot: umiId });
+      resetLearningDraft();
+      onToast('완료된 학습을 저장했어요.');
+      onNavigate('training');
+    } catch {
+      onToast('학습 결과를 저장하지 못했어요. 다시 시도해 주세요.');
+    } finally {
+      setSavingResult(false);
+    }
   };
   const learningStepSummaries = [
     skill?.name ?? '',
@@ -719,7 +779,7 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
       {['동작 선택', '데이터 방식', '데이터 준비', '최종 확인', '학습 진행'].map((label, index) => <li key={label} className={step === index + 1 || (step === 6 && index === 4) ? 'current' : step > index + 1 ? 'done' : ''}><span>{step > index + 1 ? '✓' : index + 1}</span><div><strong>{label}</strong>{learningStepSummaries[index] && <small>{learningStepSummaries[index]}</small>}</div></li>)}
     </ol>
 
-    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택해 주세요</h2></div></div><div className="skill-choice-grid">{displayedSkills.map((item) => <button key={item.key} className={skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{skillKey === item.key ? '✓' : ''}</i></button>)}<button type="button" onClick={() => onToast('새로운 동작 등록 API는 현재 명세에 포함되어 있지 않아요.')}><span>＋</span><div><strong>새로운 동작 학습하기</strong><p>새 학습 동작 등록 기능을 준비하고 있어요.</p></div><i>›</i></button></div><div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
+    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택하거나 새 이름을 입력해 주세요</h2></div></div><div className="skill-choice-grid">{displayedSkills.map((item) => <button key={item.key} className={!newSkillActive && skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{!newSkillActive && skillKey === item.key ? '✓' : ''}</i></button>)}<div className={`new-skill-entry${newSkillActive ? ' selected' : ''}`}><span aria-hidden="true">＋</span><div><label htmlFor="new-skill-name">새로운 동작 학습하기</label><div className="new-skill-input-row"><input id="new-skill-name" maxLength={40} value={name} onFocus={() => setNewSkillActive(true)} onChange={(event) => { setNewSkillActive(true); updateLearningDraft({ name: event.target.value, selected: [] }); }} placeholder="학습 이름을 입력해 주세요" autoComplete="off" /></div></div></div></div><div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
 
     {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>2</span><div><h2>학습 데이터를 어떻게 준비할까요?</h2></div></div><div className="method-choice-grid"><button className={method === 'new' ? 'selected' : ''} onClick={() => setMethod('new')}><span className="method-icon">＋</span><strong>새로 동작 보여주기</strong><p>온라인 UMI를 선택하고 로봇에게 새로운 동작을 보여줍니다.</p><ul><li>새 환경이나 동작을 학습할 때</li><li>UMI로 동작을 직접 보여줄 수 있을 때</li></ul></button><button className={method === 'existing' ? 'selected' : ''} onClick={() => setMethod('existing')}><span className="method-icon">↻</span><strong>기존 데이터 사용</strong><p>준비된 기존 데이터를 선택해 바로 학습합니다.</p><ul><li>같은 동작을 다시 학습할 때</li><li>기존 데이터를 조합하고 싶을 때</li></ul></button></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(1)}>← 이전</button><button className="primary-button" disabled={!method} onClick={() => setStep(3)}>다음: 데이터 준비 →</button></div></section>}
 
@@ -727,9 +787,25 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
 
     {step === 4 && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>4</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.name}</dd></div><div><dt>데이터 방식</dt><dd>{method === 'new' ? '새 데이터 만들기' : '기존 데이터 사용'}</dd></div><div><dt>{method === 'new' ? '사용할 UMI' : '선택 데이터'}</dt><dd>{method === 'new' ? `${umiId} · ${expectedEpisodes}회 예정` : `${selected.length}개 데이터`}</dd></div></dl><div className="review-notice"><strong>생성하면 바로 데이터 준비를 시작합니다.</strong><p>{method === 'new' ? 'UMI로 동작을 보여주면 데이터 확인 후 학습이 시작돼요.' : '선택한 데이터 확인 후 학습이 시작돼요.'}</p></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(3)}>← 이전</button><button className="primary-button" disabled={submitting} onClick={() => void submitTraining()}>{submitting ? '생성 중...' : '학습 작업 생성'}</button></div></section>}
 
-    {step === 5 && <div className="progress-layout"><section className="card progress-card">{learningDraft.error && <div role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => updateLearningDraft({ error: undefined, startedAt: Date.now(), progress: 12 })}>다시 시도</button></div>}<button className="text-button" onClick={() => onNavigate('training')}>학습 목록에서 확인 →</button>{method === 'new' && <button className="secondary-button" disabled={submitting} onClick={() => void finishCollection()}>{submitting ? '요청 중...' : '데이터 수집 완료'}</button>}<div className="learning-orbit"><span>✦</span></div><p className="eyebrow">{method === 'new' && progress < 25 ? '데이터 준비 중' : '학습 진행 중'}</p><h2>{skill.name}</h2><p>다른 메뉴에서도 진행 상황을 확인할 수 있어요. 이 기기에서 다시 열면 진행 상태를 복원해요.</p><div className="progress-number">{progress}<small>%</small></div><div className="progress-track"><i style={{ width: `${progress}%` }} /></div><div className="progress-meta"><div><small>현재 단계</small><strong>{method === 'new' && progress < 25 ? '데이터 확인' : stage}</strong></div><div><small>예상 남은 시간</small><strong>약 {Math.max(1, Math.ceil((100 - progress) / 12))}분</strong></div><div><small>입력 방식</small><strong>{method === 'new' ? '새 데이터' : '기존 데이터'}</strong></div></div></section><section className="card log-card"><div className="log-heading"><div><h3>진행 기록</h3><p>서버에서 전달되는 상태를 보여드려요.</p></div><span>실시간</span></div><div className="log-list"><p><time>10:52:08</time><span className="log-ok">완료</span>학습 작업 생성</p><p><time>10:52:14</time><span className="log-ok">완료</span>입력 데이터 확인</p><p><time>10:53:02</time><span className="log-run">진행</span>{stage} 진행 중...</p></div></section></div>}
-
-    {step === 6 && <div className="center-panel"><section className="card complete-card"><span className="complete-icon">✓</span><p className="eyebrow">학습 및 결과 확인 완료</p><h2>{skill.name} v1이 준비됐어요</h2><p>학습 결과가 준비됐어요. 확인을 마치면 작업에 사용할 수 있어요.</p><div className="complete-summary"><div><small>학습 동작</small><strong>{skill.name}</strong></div><div><small>학습 결과 버전</small><strong>v1</strong></div><div><small>입력 데이터</small><strong>{method === 'new' ? `${expectedEpisodes}회 동작 데이터` : `${selected.length}개 데이터`}</strong></div><div><small>확인 상태</small><strong>사용 준비 완료</strong></div></div><div className="complete-actions"><button className="secondary-button" onClick={() => { updateLearningDraft({ step: 1, progress: 12, method: null, selected: [], startedAt: null, name: '', error: undefined }); }}>학습 생성</button><button className="primary-button" onClick={() => onGoWork(skill.name)}>이 동작으로 작업 생성 →</button></div></section></div>}
+    {(step === 5 || step === 6) && <div className="progress-layout">
+      <section className="card progress-card">
+        <div className="progress-card-actions">{step === 5 && <button className="danger-button" disabled={canceling} onClick={() => setCancelOpen(true)}>학습 취소</button>}</div>
+        <div className="learning-orbit"><span>{step === 6 ? '✓' : '✦'}</span></div>
+        <p className="eyebrow">{step === 6 ? '학습 완료' : method === 'new' && progress < 25 ? '데이터 준비 중' : '학습 진행 중'}</p>
+        <h2>{skill.name}</h2>
+        {step === 6 && <p>학습 결과가 준비됐어요. 오른쪽의 학습 저장 버튼으로 결과를 등록해 주세요.</p>}
+        <div className="progress-number">{step === 6 ? 100 : progress}<small>%</small></div>
+        <div className="progress-track"><i style={{ width: `${step === 6 ? 100 : progress}%` }} /></div>
+        <div className="progress-meta"><div><small>현재 단계</small><strong>{step === 6 ? '학습 완료' : method === 'new' && progress < 25 ? '데이터 확인' : stage}</strong></div><div><small>예상 남은 시간</small><strong>{step === 6 ? '완료' : `약 ${Math.max(1, Math.ceil((100 - progress) / 12))}분`}</strong></div><div><small>입력 방식</small><strong>{method === 'new' ? '새 데이터' : '기존 데이터'}</strong></div></div>
+      </section>
+      <section className="card log-card">
+        <div className="log-heading"><div><h3>진행 기록</h3></div><span>{step === 6 ? '완료' : '실시간'}</span></div>
+        {learningDraft.error && <div className="log-error" role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => updateLearningDraft({ error: undefined, startedAt: Date.now(), progress: 12 })}>다시 시도</button></div>}
+        <div className="log-list"><p><time>10:52:08</time><span className="log-ok">완료</span>학습 작업 생성</p><p><time>10:52:14</time><span className="log-ok">완료</span>입력 데이터 확인</p>{step === 6 ? <p><time>완료</time><span className="log-ok">완료</span>학습 및 결과 확인 완료</p> : <p><time>10:53:02</time><span className="log-run">진행</span>{stage} 진행 중...</p>}</div>
+        <div className="training-save-actions"><button className="primary-button" disabled={step !== 6 || savingResult} onClick={() => void saveCompletedTraining()}>{savingResult ? '저장 중...' : '학습 저장'}</button>{step !== 6 && <small>학습이 완료되면 저장할 수 있어요.</small>}</div>
+      </section>
+    </div>}
+    {cancelOpen && <div className="modal-backdrop" onMouseDown={() => !canceling && setCancelOpen(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="학습 취소 확인" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><h2>학습을 취소할까요?</h2></div><button className="close-button" disabled={canceling} onClick={() => setCancelOpen(false)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={canceling} onClick={() => setCancelOpen(false)}>계속 진행</button><button className="danger-button" disabled={canceling} onClick={() => void cancelCurrentTraining()}>{canceling ? '취소 중...' : '취소'}</button></div></section></div>}
   </>;
 }
 
@@ -843,13 +919,17 @@ export function LegacyLearnView({ onToast, onGoWork }: { onToast: (message: stri
 }
 
 function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => void; onToast: (message: string) => void }) {
-  const { robots, savedWorks } = useAppStore();
+  const { robots, savedWorks, deleteWorksById } = useAppStore();
   const [mobileDetail, setMobileDetail] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedWorkId, setSelectedWorkId] = useState(savedWorks[0]?.id ?? '');
   const initialWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
   const [robotId, setRobotId] = useState(initialWork?.robotId || robots[0]?.id || '');
   const [executing, setExecuting] = useState(false);
+  const [selectingWorks, setSelectingWorks] = useState(false);
+  const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
+  const [deleteWorksOpen, setDeleteWorksOpen] = useState(false);
+  const [deletingWorks, setDeletingWorks] = useState(false);
 
   const filteredWorks = savedWorks.filter((work) => {
     const blocks = flattenWorkflowBlocks(work.blocks);
@@ -885,6 +965,15 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
       onToast(cause instanceof Error ? cause.message : '작업을 시작하지 못했어요.');
     }
   };
+  const deleteSelectedWorks = async () => {
+    setDeletingWorks(true);
+    try {
+      await deleteWorksById(selectedWorkIds);
+      onToast(`${selectedWorkIds.length}개 작업을 삭제했어요.`);
+      setSelectedWorkIds([]); setSelectingWorks(false); setDeleteWorksOpen(false);
+    } catch { onToast('삭제 API가 아직 연결되지 않았거나 삭제에 실패했어요.'); }
+    finally { setDeletingWorks(false); }
+  };
 
   if (!selectedWork) {
     return <div className="center-panel"><section className="card state-card"><span className="state-icon">i</span><h2>저장된 작업이 없어요</h2><p>첫 작업을 만들어 로봇이 할 일을 구성해 보세요.</p><button className="primary-button" onClick={() => onEdit('')}>작업 생성하기</button></section></div>;
@@ -894,7 +983,9 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
     <div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div></div>
 
     <section className="workflow-library-toolbar" aria-label="작업 검색">
+      {selectingWorks && <div className="selection-summary"><input className="list-select-checkbox" type="checkbox" aria-label="작업 전체 선택" disabled={!filteredWorks.length} checked={filteredWorks.length > 0 && selectedWorkIds.length === filteredWorks.length} onChange={() => setSelectedWorkIds(selectedWorkIds.length === filteredWorks.length ? [] : filteredWorks.map(work => work.id))} /><span>{selectedWorkIds.length}개 선택됨</span></div>}
       <label className="workflow-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="작업명 또는 포함된 블록 검색" aria-label="저장된 작업 검색" /></label>
+      <button className={`${selectingWorks ? 'danger-button' : 'secondary-button'} list-delete-button`} onClick={() => { if (!selectingWorks) setSelectingWorks(true); else if (selectedWorkIds.length) setDeleteWorksOpen(true); else setSelectingWorks(false); }}>삭제</button>
       <button className="primary-button page-create-button" onClick={() => onEdit('')}>새 작업 생성 <span aria-hidden="true">›</span></button>
     </section>
 
@@ -905,12 +996,12 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
           const workBlocks = flattenWorkflowBlocks(work.blocks);
           const workSkills = workBlocks.filter(isSkillBlock).length;
           const workControls = workBlocks.length - workSkills;
-          return <button key={work.id} className="saved-work-row" onClick={() => selectWork(work)}>
+          return <div key={work.id} className="saved-work-select-row">{selectingWorks && <input className="list-select-checkbox" type="checkbox" aria-label={`${work.name} 선택`} checked={selectedWorkIds.includes(work.id)} onChange={() => setSelectedWorkIds(current => current.includes(work.id) ? current.filter(id => id !== work.id) : [...current, work.id])} />}<button className="saved-work-row" onClick={() => selectingWorks ? setSelectedWorkIds(current => current.includes(work.id) ? current.filter(id => id !== work.id) : [...current, work.id]) : selectWork(work)}>
             <span className="saved-work-main"><i>W</i><span><strong>{work.name}</strong><small>{workSkills ? `학습 동작 ${workSkills}개` : '학습 동작 없음'} · 제어 블록 {workControls}개</small><em>{workBlocks.slice(0, 3).map((block) => block.title).join(' · ')}{workBlocks.length > 3 ? ` 외 ${workBlocks.length - 3}개` : ''}</em></span></span>
             <span className="saved-work-duration">{formatWorkDuration(work.estimatedSeconds)}</span>
             <span className="saved-work-updated">{formatUpdatedAt(work.updatedAt)}</span>
             <span className="saved-work-chevron">›</span>
-          </button>;
+          </button></div>;
         }) : <div className="library-empty"><strong>검색 결과가 없어요</strong><p>다른 작업명이나 동작을 검색해 보세요.</p></div>}
       </section>
 
@@ -931,6 +1022,7 @@ function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => 
         </section>
       </aside>
     </div>
+    {deleteWorksOpen && <div className="modal-backdrop" onMouseDown={() => !deletingWorks && setDeleteWorksOpen(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="작업 선택 삭제 확인" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>선택한 작업을 삭제할까요?</h2><p>{selectedWorkIds.length}개 작업이 삭제됩니다.</p></div><button className="close-button" onClick={() => setDeleteWorksOpen(false)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={deletingWorks} onClick={() => setDeleteWorksOpen(false)}>돌아가기</button><button className="danger-button" disabled={deletingWorks} onClick={() => void deleteSelectedWorks()}>{deletingWorks ? '삭제 중...' : '삭제'}</button></div></section></div>}
   </>;
 }
 

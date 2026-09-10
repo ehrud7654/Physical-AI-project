@@ -48,6 +48,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
       body?.message ?? '서버 요청을 처리하지 못했어요.',
     );
   }
+  if (response.status === 204) return undefined as T;
   if (!body || body.data === undefined) throw new ApiError(response.status, 'INVALID_RESPONSE', '서버 응답 형식이 올바르지 않아요.');
   return body.data;
 }
