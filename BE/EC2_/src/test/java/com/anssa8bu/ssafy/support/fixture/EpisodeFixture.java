@@ -109,7 +109,7 @@ public final class EpisodeFixture {
             EpisodeQualityStatus.VALID,
             new CaptureMetadata(Map.of(), Map.of(), Map.of(), Map.of()),
             new QualitySummary(Map.of()),
-            ended.plusSeconds(86_400));
+            Instant.now().plusSeconds(86_400));
     em.persist(episode);
     return episode;
   }

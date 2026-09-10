@@ -68,6 +68,17 @@ export interface Robot {
   model: string;
 }
 
+export interface RobotDetail {
+  id: string;
+  jetsonDeviceId: string;
+  name: string;
+  status: RobotStatus;
+  currentDeploymentId: string | null;
+  currentTaskVersionId: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
 export interface DeployedModel {
   version: string;
   name: string;
@@ -76,27 +87,47 @@ export interface DeployedModel {
 
 export interface Umi {
   id: string;
+  /** 서버 devices.id(UUID). 화면 표시용 핸들 번호인 id와 구분한다. */
+  deviceId: string;
   place: string;
   status: '온라인' | '오프라인';
   collected: string;
   data: number;
 }
 
+export type DatasetStatus = 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID' | 'DELETING' | 'DELETED' | 'DELETE_FAILED';
+
+/** EPISODE-01/02 응답을 데이터 탭 표시용으로 정리한 모델. id는 서버 Episode UUID다. */
 export interface Dataset {
-  id: number;
+  id: string;
+  /** 화면 표시용 순번(등록 오래된 순 1부터). 새로고침마다 다시 계산되므로 저장 키로 쓰지 않는다. */
+  seq: number;
+  /** 화면 표시 문자열 `YYYY. MM. DD  HH:mm` — 0을 채워 문자열 정렬이 시간순과 같다. */
   date: string;
+  startedAt: string;
   duration: string;
   size: string;
   tone: string;
   skillKey: string;
+  skillName: string;
   umiId: string;
   ready: boolean;
-  status: 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID';
+  status: DatasetStatus;
   validationErrors?: string[];
   retentionDays: number;
+  retentionExpiresAt: string;
   trainable: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
+}
+
+export interface RetentionPolicy {
+  name: string;
+  defaultRetentionDays: number;
+  postTrainingGraceDays: number;
+  maxRetentionDays: number;
+  allowManualExtension: boolean;
+  allowManualPurge: boolean;
 }
 
 export type RecoveryAction = 'WAIT' | 'RETRY_UPLOAD' | 'RECORD_AGAIN' | 'SET_LABEL' | 'EXTEND_RETENTION' | 'CREATE_DEPLOYMENT' | 'RETRY' | 'CONTACT_SUPPORT' | 'NONE';
@@ -140,6 +171,11 @@ export interface RobotExecution {
 }
 
 export interface Training {
+  id: string;
+  skillKey: string;
+  umiDeviceId: string;
+  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
+  expectedEpisodeCount: number;
   name: string;
   robot: string;
   progress: number;
@@ -203,7 +239,8 @@ export interface LearningDraft {
   method: 'new' | 'existing' | null;
   umiId: string;
   expectedEpisodes: number;
-  selected: number[];
+  /** 선택한 Episode ID(UUID) */
+  selected: string[];
   progress: number;
   startedAt: number | null;
   name: string;

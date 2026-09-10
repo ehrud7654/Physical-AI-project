@@ -25,7 +25,7 @@ interface ApiTask {
 
 export async function fetchLearnedSkills(): Promise<LearnedSkill[]> {
   const skills = await apiRequest<ApiSkill[]>('/skills');
-  const resolved = await Promise.all(skills.map(async (skill) => {
+  const resolved = await Promise.all(skills.map(async (skill): Promise<LearnedSkill | null> => {
     try {
       const version = await apiRequest<ApiSkillVersion>(`/skills/${skill.id}/versions/latest`);
       return {

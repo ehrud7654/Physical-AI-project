@@ -1,4 +1,4 @@
-import type { DeviceType, Robot, Umi } from '@/types';
+import type { DeviceType, Robot, RobotDetail, Umi } from '@/types';
 import { apiRequest } from './client';
 
 type ApiDeviceType = 'UMI_CAMERA' | 'JETSON';
@@ -21,6 +21,10 @@ interface ApiRobot {
   name: string;
   connectionStatus: 'ONLINE' | 'OFFLINE';
   busy: boolean;
+  currentDeploymentId: string | null;
+  currentTaskVersionId: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
 }
 
 export interface RegisterDeviceInput {
@@ -37,6 +41,20 @@ export async function fetchRobots(): Promise<Robot[]> {
   ]);
   const devicesById = new Map(devices.map((device) => [device.id, device]));
   return robots.map((robot) => toRobot(robot, devicesById.get(robot.jetsonDeviceId)));
+}
+
+export async function fetchRobotDetail(robotId: string): Promise<RobotDetail> {
+  const robot = await apiRequest<ApiRobot>(`/robots/${robotId}`);
+  return {
+    id: robot.id,
+    jetsonDeviceId: robot.jetsonDeviceId,
+    name: robot.name,
+    status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    currentDeploymentId: robot.currentDeploymentId,
+    currentTaskVersionId: robot.currentTaskVersionId,
+    lastSeenAt: robot.lastSeenAt,
+    createdAt: robot.createdAt,
+  };
 }
 
 export async function fetchUmis(): Promise<Umi[]> {
@@ -90,13 +108,14 @@ function toRobot(robot: ApiRobot, device?: ApiDevice): Robot {
     name: robot.name,
     location: device?.location ?? '위치 미지정',
     status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
-    model: '배포 정보 없음',
+    model: 'API로 호출할 수 없습니다',
   };
 }
 
 function toUmi(device: ApiDevice): Umi {
   return {
     id: device.handleNumber,
+    deviceId: device.id,
     place: device.location ?? '위치 미지정',
     status: device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     collected: device.lastSeenAt ? formatLastSeen(device.lastSeenAt) : '사용 기록 없음',

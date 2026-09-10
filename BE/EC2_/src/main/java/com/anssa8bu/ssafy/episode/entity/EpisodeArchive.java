@@ -154,4 +154,39 @@ public class EpisodeArchive extends AuditableEntity {
   public EpisodeArchiveStatus getStatus() {
     return status;
   }
+  public String getArchiveFormatVersion() {
+    return archiveFormatVersion;
+  }
+
+  public long getSizeBytes() {
+    return sizeBytes;
+  }
+
+  public long getUncompressedSizeBytes() {
+    return uncompressedSizeBytes;
+  }
+
+  public int getEntryCount() {
+    return entryCount;
+  }
+
+  public Instant getStoredAt() {
+    return storedAt;
+  }
+
+  public Instant getValidatedAt() {
+    return validatedAt;
+  }
+
+  public Instant getDeletedAt() {
+    return deletedAt;
+  }
+
+  public String getErrorCode() {
+    return errorCode;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
 }
