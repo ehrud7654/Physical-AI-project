@@ -62,6 +62,10 @@ private:
   std::uint16_t speed_{300};
   std::uint8_t acceleration_{10};
   std::unique_ptr<IServoBus> bus_;
+
+  // 일시적 UART 글리치 견딤 — 한 번 실패는 이전 상태 유지, 연속 실패만 ERROR.
+  int read_fail_count_{0};
+  int write_fail_count_{0};
 };
 
 }  // namespace so101_hardware

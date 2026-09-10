@@ -22,6 +22,10 @@ namespace
 auto LOGGER = rclcpp::get_logger("SO101System");
 using ParamMap = std::unordered_map<std::string, std::string>;
 
+// read/write 를 이만큼 "연속" 실패해야 진짜 고장으로 보고 정지. 그 전엔 이전 상태 유지.
+// 30Hz 라 10회 ≈ 0.33초 — 순간 UART 글리치는 넘기고, 서보 탈락은 잡음.
+constexpr int MAX_CONSECUTIVE_FAILS = 10;
+
 std::string opt_param(const ParamMap & p, const std::string & k, const std::string & fb)
 {
   auto it = p.find(k);
@@ -211,9 +215,15 @@ hardware_interface::return_type SO101System::read(
         tick_to_width(ticks[i], joints_[i].grip) :
         tick_to_rad(ticks[i], joints_[i].arm);
     }
+    read_fail_count_ = 0;
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(LOGGER, "read 실패: %s", e.what());
-    return hardware_interface::return_type::ERROR;
+    // 일시 글리치는 이전 pos_state_ 유지하고 넘어감. 연속 다수일 때만 정지.
+    if (++read_fail_count_ >= MAX_CONSECUTIVE_FAILS) {
+      RCLCPP_ERROR(LOGGER, "read 연속 %d회 실패, 정지: %s", read_fail_count_, e.what());
+      return hardware_interface::return_type::ERROR;
+    }
+    RCLCPP_WARN(LOGGER, "read 일시 실패(%d/%d), 이전 상태 유지: %s",
+      read_fail_count_, MAX_CONSECUTIVE_FAILS, e.what());
   }
   return hardware_interface::return_type::OK;
 }
@@ -232,9 +242,15 @@ hardware_interface::return_type SO101System::write(
         rad_to_tick(pos_command_[i], joints_[i].arm);
     }
     bus_->write_positions(servo_ids_, ticks);
+    write_fail_count_ = 0;
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(LOGGER, "write 실패: %s", e.what());
-    return hardware_interface::return_type::ERROR;
+    // 일시 글리치는 넘어감(서보가 마지막 목표 유지). 연속 다수일 때만 정지.
+    if (++write_fail_count_ >= MAX_CONSECUTIVE_FAILS) {
+      RCLCPP_ERROR(LOGGER, "write 연속 %d회 실패, 정지: %s", write_fail_count_, e.what());
+      return hardware_interface::return_type::ERROR;
+    }
+    RCLCPP_WARN(LOGGER, "write 일시 실패(%d/%d): %s",
+      write_fail_count_, MAX_CONSECUTIVE_FAILS, e.what());
   }
   return hardware_interface::return_type::OK;
 }
