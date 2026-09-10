@@ -1,5 +1,4 @@
 """Regression checks for the confirmed SO-101 URDF and JointState contract."""
-import hashlib
 import json
 import sys
 import unittest
@@ -10,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
-from umi.real_fk import ARM_JOINTS, SO101UrdfFK, snapshot_from_joint_state
+from umi.real_fk import (ARM_JOINTS, SO101UrdfFK, canonical_file_sha256,
+                         snapshot_from_joint_state)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +25,7 @@ class Tests(unittest.TestCase):
         cls.fk = SO101UrdfFK(cls.urdf, cls.config["base_frame"], cls.config["tcp_frame"])
 
     def test_release_hash_and_limits_match_config(self):
-        digest = hashlib.sha256(self.urdf.read_bytes()).hexdigest()
+        digest = canonical_file_sha256(self.urdf)
         self.assertEqual(digest, self.config["urdf_sha256"])
         expected = np.array([self.config["limits_rad"][name] for name in ARM_JOINTS])
         np.testing.assert_allclose(self.fk.limits_rad, expected, atol=1e-11)

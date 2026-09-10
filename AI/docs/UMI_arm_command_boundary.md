@@ -73,3 +73,13 @@ clock으로 가장하지 않는다. 순차 READ의 관절 간 skew와 발행 지
 시뮬 정본을 변조하지 않고 실물 preflight에서 더 좁은 real config를 적용한다.
 그리퍼도 시뮬 hinge 각도와 실물 전체 폭을 별도 경계로 유지한다. 실물 endpoint는
 아직 자 실측 전이므로 `gripper_endpoint_measured=false`다.
+
+## ROS 메시지 adapter (S15P21A103-155)
+
+`umi.ros_adapter.joint_state_to_runtime_snapshot`는 메시지 수신 시점의 ROS Time과
+monotonic clock을 함께 받아 전송 지연을 계산하고 런타임에는 monotonic timestamp만
+넘긴다. 미래 timestamp와 freshness 한계를 넘은 상태는 명령 생성 전에 거부한다.
+출력은 `/arm_controller/joint_trajectory`의 J1~J5 rad 한 점과
+`/gripper_controller/commands`의 전체 gap(m) 한 값으로 분리한다. 실제 ROS 메시지
+인스턴스를 채우는 것까지 AI adapter가 담당하고, publish, watchdog, action cancel과
+E-stop은 상위 ROS 노드가 소유한다.

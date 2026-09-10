@@ -6,6 +6,13 @@
   "urdf_source_sha256": "78e20d4e2a998bef46a9d242889229144ca89ce73407c247f9e6b4abc82efc18",
   "base_frame": "base_link",
   "tcp_frame": "gripper_tcp",
+  "ros_interfaces": {
+    "joint_state_topic": "/joint_states",
+    "arm_stream_topic": "/arm_controller/joint_trajectory",
+    "arm_stream_type": "trajectory_msgs/msg/JointTrajectory",
+    "gripper_topic": "/gripper_controller/commands",
+    "gripper_type": "std_msgs/msg/Float64MultiArray"
+  },
   "tcp_fixed_from_custom_hand": {
     "xyz_m": [0.0, -0.0780187530518, 0.0270000119209],
     "rpy_rad": [1.5707963267948966, 0.0, 0.0]
