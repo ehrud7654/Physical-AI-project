@@ -53,31 +53,33 @@
 
   <!-- ── ros2_control 하드웨어 ─────────────────────────────────────
        plugin=so101_hardware/SO101System. per-joint <param>=캘리브(온보딩 프로필).
-       ⚠️ zero_tick/direction 은 실물 펌웨어 캘리브 미검증 placeholder. 실측 후 교체. -->
+       zero_tick=실측 캘리브. direction 은 1로 두고 실물 첫 이동에서 부호 확인. -->
   <ros2_control name="SO101System" type="system">
     <hardware>
       <plugin>so101_hardware/SO101System</plugin>
       <param name="bus">$(arg bus)</param>
     </hardware>
 
-    <xacro:macro name="servo_joint" params="name sid">
+    <xacro:macro name="servo_joint" params="name sid zero dir:=1">
       <joint name="${name}">
         <command_interface name="position"/>
         <state_interface name="position"/>
         <param name="servo_id">${sid}</param>
-        <param name="zero_tick">2048</param>
+        <param name="zero_tick">${zero}</param>
         <param name="ticks_per_rad">651.8986469044033</param> <!-- 4096/(2pi) -->
-        <param name="direction">1</param>
+        <param name="direction">${dir}</param>
         <param name="min_tick">0</param>
         <param name="max_tick">4095</param>
       </joint>
     </xacro:macro>
 
-    <xacro:servo_joint name="shoulder_pan"  sid="1"/>
-    <xacro:servo_joint name="shoulder_lift" sid="2"/>
-    <xacro:servo_joint name="elbow_flex"    sid="3"/>
-    <xacro:servo_joint name="wrist_flex"    sid="4"/>
-    <xacro:servo_joint name="wrist_roll"    sid="5"/>
+    <!-- zero_tick = 실측 캘리브(jetson_config/팀원, elbow=2048 정정).
+         ⚠️ direction 전부 1 — 실물 첫 이동 때 관절별 부호 확인(반대면 반대로 돔). -->
+    <xacro:servo_joint name="shoulder_pan"  sid="1" zero="1990"/>
+    <xacro:servo_joint name="shoulder_lift" sid="2" zero="2048"/>
+    <xacro:servo_joint name="elbow_flex"    sid="3" zero="2048"/>
+    <xacro:servo_joint name="wrist_flex"    sid="4" zero="2048"/>
+    <xacro:servo_joint name="wrist_roll"    sid="5" zero="2126"/>
 
     <!-- gripper = 미터(width). 팔과 달리 closed/open_tick + max_width_m 로 변환.
          서보 ID = 6 (실물 확정: gripper=6, wrist_roll=5).
