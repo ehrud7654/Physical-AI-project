@@ -37,7 +37,7 @@ def main():
     raw.meta.notes['tool_sha']=conversion_digest()
     print(json.dumps({'steps':raw.meta.n_steps,'cameras':raw.meta.cameras,
         'source_pose_rows':raw.meta.notes['source_pose_rows'],
-        'training_ready':False,'reason':'cam_front and shared training contract still require integration'},
+        'training_ready':False,'reason':'raw ingestion complete; IK conversion and contract validation still required'},
         ensure_ascii=False))
     if args.out is not None:
         print(write_raw(raw,args.out))

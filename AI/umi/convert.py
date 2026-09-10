@@ -17,10 +17,9 @@ ARCore recording without either dragging the other's dependencies in.
 잘라 쓰고, 얼마나 버렸는지 보고한다.
 
 **2. `action[t] = q[t+1]`, 타임스탬프는 `state` 와 같다.**
-시뮬은 같은 틱에서 `state=qpos`, `action=ctrl` 을 찍는다 — 즉 계약의 `action[t]` 은
-"시각 t 에 낸 명령"이고 상태보다 앞서 있다. UMI 의 대응물은 다음 스텝의 관절
-배치다. 타임스탬프를 t+1 로 두면 33ms 차이가 나서 계약의 10ms 게이트를 위반한다.
-명령을 낸 시각은 t 다.
+계약 0.3의 `action[t]`은 출처와 무관하게 다음 스텝의 관절 배치다. 타임스탬프를
+t+1로 두면 33ms 차이가 나서 계약의 10ms 게이트를 위반한다.
+명령을 낸 시각은 t 다. 마지막 raw 상태에는 다음 목표가 없으므로 학습 행에서 삭제한다.
 
 `action[t] = q[t]` 로 두면 `action - state` 가 전부 0 이 되어 정책이 "가만히 있기"를
 배운다. 손실은 잘 떨어지고 로봇은 안 움직인다.
@@ -134,8 +133,9 @@ class ConversionReport:
 
     @property
     def acceptance_rate(self) -> float:
-        """Fraction of input steps that survived. 입력 스텝 중 살아남은 비율."""
-        return self.n_steps_out / self.n_steps_in if self.n_steps_in else 0.0
+        """Fraction of possible next-tick transitions that survived."""
+        possible = max(0, self.n_steps_in - 1)
+        return self.n_steps_out / possible if possible else 0.0
 
 
 def normalize_joints(
@@ -173,6 +173,12 @@ def normalize_joints(
     if clip:
         x = np.clip(x, -1.0, 1.0)
     return x.astype(np.float32)
+
+
+def normalize_gap(gap_m: np.ndarray | float) -> np.ndarray:
+    """Full contact-surface gap 0..0.09 m to the contract's [-1, 1]."""
+    gap = np.asarray(gap_m, dtype=float)
+    return 2.0 * gap / 0.09 - 1.0
 
 
 def denormalize_joints(x_norm: np.ndarray, ranges_rad: np.ndarray) -> np.ndarray:
@@ -287,10 +293,10 @@ def convert(
     raw 기록 하나를 계약 에피소드 하나로 변환하고, 대가를 보고한다.
 
     `ranges_rad` is (6, 2) of [lo, hi] from `configs/so101.yaml` `joints[].range_rad`.
-    `gap_curve` is `grasp.gap_curve`. Both are passed in rather than read here so
-    that `umi/` never needs to know where configs live.
-    `ranges_rad` 는 (6,2) [lo,hi], `gap_curve` 는 `grasp.gap_curve` 다. 여기서
-    읽지 않고 받는 이유는 `umi/` 가 config 위치를 알 필요가 없게 하려는 것이다.
+    `gap_curve` remains an API-compatibility argument for older callers; contract
+    0.3 never maps physical gap through a hinge representation.
+    `ranges_rad` 는 (6,2) [lo,hi]다. `gap_curve` 인자는 이전 호출자 호환용으로
+    유지하지만 계약 0.3에서는 물리 gap을 hinge 표현으로 변환하지 않는다.
     """
     pol = policy or ConversionPolicy()
     require_convertible(raw)
@@ -325,11 +331,8 @@ def convert(
             rejects[REJECT_GRIPPER_MISSING] += 1
             solutions.append(None)
             continue
-        try:
-            grip_rad = invert_gap_curve(
-                float(raw.gripper_gap_m[i]), gap_curve, clamp=pol.clamp_gap
-            )
-        except ConversionError:
+        gap_m = float(raw.gripper_gap_m[i])
+        if not np.isfinite(gap_m) or not 0.0 <= gap_m <= 0.09:
             rejects[REJECT_GAP_OUT_OF_RANGE] += 1
             solutions.append(None)
             continue
@@ -344,8 +347,10 @@ def convert(
             rejects['invalid_ik_solution'] += 1
             solutions.append(None)
             continue
-        q[STATE_DIM - 1] = grip_rad  # 그리퍼는 IK 대상이 아니다. 곡선 역변환값을 쓴다
-        if np.any(q < ranges[:, 0]) or np.any(q > ranges[:, 1]):
+        # SO-101 pose IK is J1~J5. Channel 6 remains physical gap and must not
+        # pass through the legacy MuJoCo hinge representation.
+        q[STATE_DIM - 1] = 0.0
+        if np.any(q[:5] < ranges[:5, 0]) or np.any(q[:5] > ranges[:5, 1]):
             rejects[REJECT_LIMIT] += 1
             solutions.append(None)
             continue
@@ -397,25 +402,29 @@ def convert(
             raw.pose_timestamp, ok, pol.trajectory_limits)
         rejects.update(dynamics_rejects)
     start, end = _longest_ok_run(ok)
-    n_out = end - start
+    n_raw_kept = end - start
+    n_out = n_raw_kept - 1
     if n_out < pol.min_steps:
         raise ConversionError(
-            f"{raw.meta.recording_id}: 성공 스텝의 최장 연속 구간이 {n_out} 로 "
+            f"{raw.meta.recording_id}: 다음-tick 목표가 있는 학습 행이 {n_out} 로 "
             f"최소 {pol.min_steps} 미만이다. 폐기 내역 {dict(rejects)}\n"
             "  중간 스텝을 버리고 이어붙이지 않는다 — 제어 주기 표류로 계약 위반이 된다"
         )
 
     kept = [s for s in solutions[start:end] if s is not None]
-    q_seq = np.stack([np.asarray(s.q_rad, dtype=float) for s in kept])  # (n_out, 6)
+    q_seq = np.stack([np.asarray(s.q_rad, dtype=float) for s in kept])
 
     # --- 계약 배열 -----------------------------------------------------------
-    state = np.stack([normalize_joints(q, ranges) for q in q_seq]).astype(np.float32)
-    # action[t] = q[t+1]; 마지막은 유지. 타임스탬프는 state 와 같다 (위 판단 2)
-    action = np.empty_like(state)
-    action[:-1] = state[1:]
-    action[-1] = state[-1]
+    arm = np.stack([normalize_joints(q, ranges)[:5] for q in q_seq])
+    gap = normalize_gap(np.asarray(raw.gripper_gap_m[start:end]))[:, None]
+    normalized = np.concatenate([arm, gap], axis=1).astype(np.float32)
+    # Each row is a transition. The final raw state has no q[t+1], so it is not
+    # repeated or masked into the training contract.
+    state = normalized[:-1]
+    action = normalized[1:]
 
-    ts = np.asarray(raw.pose_timestamp[start:end], dtype=np.float64)
+    raw_ts = np.asarray(raw.pose_timestamp[start:end], dtype=np.float64)
+    ts = raw_ts[:-1]
     state_ts = ts.copy()
     action_ts = ts.copy()
 
@@ -491,6 +500,7 @@ def convert(
             "raw_frame": raw.meta.frame,
             "calibration_id": raw.meta.calibration_id,
             "kept_span": [start, end],
+            "final_raw_tick_rule": "drop_no_next_target",
             "n_steps_in": t_in,
             "rejects": dict(rejects),
             # 계약에 필드가 없는 계측값. S15P21A103-30 이 이 값을 본다.

@@ -59,7 +59,7 @@ class StubEnv:
     def camera_names(self) -> list[str]:
         """Cameras present in the observation.
         관측에 들어오는 카메라."""
-        return ["cam_front", "cam_wrist"]
+        return ["cam_wrist"]
 
     def reset(self, seed: int | None = None) -> Observation:
         """Return the first observation of a fresh episode.

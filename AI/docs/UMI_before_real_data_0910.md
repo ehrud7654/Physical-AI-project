@@ -69,9 +69,11 @@ max_step/max_velocity/max_acceleration 각각 6개 양수 값이 필요하다.
 
 - 실제 번들로 컬럼·tracking enum·summary 구간 의미·카메라 설정의 일치 확인.
 - 두 캘리브레이션의 측정값. 로봇 URDF TCP 값만으로 핸드헬드 캘리브레이션을 대체할 수 없다.
-- cam_front 대응 영상: 파서는 cam_wrist만 생성한다. 이미지를 복제해 두 번째 카메라로 가장하지 않는다.
-  현행 학습 계약에 바로 투입할 수 없으므로 CLI가 training_ready=false를 출력한다.
-- 공유 gap/action 계약 버전 및 마지막 tick 규칙. 이번에는 공용 계약을 바꾸지 않았다.
+- 카메라 계약은 `cam_wrist` 단일 논리 채널이다. 같은 실제 카메라 장치를 UMI 시연 후
+  로봇으로 옮겨 사용하며 `cam_front`는 UMI 학습·배포 계약에 포함하지 않는다.
+- 공유 계약은 `0.3.0-provisional`로 상승했다. 6번째 채널은 전체 gap `0~0.09m`의
+  선형 정규화값이며 `action[t]=state[t+1]`이다. 다음 상태가 없는 마지막 raw tick은
+  학습 행에서 삭제한다. 구 hinge 계약은 진단용 읽기만 가능하고 신규 학습 검증은 실패한다.
 - 실물 solver, 최종 명령 한계 강제, 상태 clock jump 관리, controller/QoS 및
   watchdog/E-stop은 별도 ROS/sim2real 통합 항목이다. 이번 데이터 파서 완료와 구분한다.
 

@@ -75,7 +75,7 @@ class HandoverEdges(unittest.TestCase):
         raw = make_raw(70, n_frames=1, gripper_x_at={35})
         raw.gripper_status[35] = 'T'
         ep, report = self.converted(raw, StubIK(np.zeros((70, 6))))
-        self.assertEqual(report.n_steps_out, 35)
+        self.assertEqual(report.n_steps_out, 34)
         self.assertEqual(report.rejects['gripper_gap_missing'], 1)
         np.testing.assert_allclose(np.diff(ep.state_timestamp), 1 / RATE)
 

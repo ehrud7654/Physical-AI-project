@@ -54,7 +54,6 @@ class EpisodeRecorder:
         ]
         self.images: dict[str, list[np.ndarray]] = {c: [] for c in self.cameras}
         self.state: list[np.ndarray] = []
-        self.action: list[np.ndarray] = []
         self.state_ts: list[float] = []
         self.action_ts: list[float] = []
 
@@ -65,8 +64,9 @@ class EpisodeRecorder:
             self.renderer.update_scene(data, camera=cam)
             frame = self.renderer.render()  # HWC uint8
             self.images[cam].append(np.transpose(frame, (2, 0, 1)).copy())  # -> CHW
-        self.state.append(normalize(data.qpos[:6].copy(), self.cfg))
-        self.action.append(normalize(data.ctrl[:6].copy(), self.cfg))
+        # Keep physical qpos until build(): contract 0.3 derives both sides of a
+        # transition from measured states and maps the gripper through physical gap.
+        self.state.append(data.qpos[:6].copy())
         # In sim both stamps are the same clock. On hardware they will not be —
         # the fields exist so S15P21A103-30 can measure the difference.
         # 시뮬에서는 두 타임스탬프가 같은 시계다. 실물은 아니다 —
@@ -77,15 +77,23 @@ class EpisodeRecorder:
     def build(self, meta: EpisodeMeta) -> Episode:
         """Assemble the recorded buffers into a contract Episode.
         기록한 버퍼를 계약 Episode 로 조립한다."""
-        meta.n_steps = len(self.state)
+        if len(self.state) < 2:
+            raise ValueError("at least two raw states are required for action[t] = state[t+1]")
+        physical = np.stack(self.state)
+        normalized = np.stack([normalize(q, self.cfg) for q in physical])
+        curve = np.asarray(self.cfg["grasp"]["gap_curve"], dtype=float)
+        gap_m = np.interp(physical[:, 5], curve[:, 0], curve[:, 1]) / 100.0
+        normalized[:, 5] = 2.0 * gap_m / 0.09 - 1.0
+        n = len(physical) - 1
+        meta.n_steps = n
         meta.cameras = list(self.cameras)
         return Episode(
             meta=meta,
-            images={c: np.stack(v).astype(np.uint8) for c, v in self.images.items()},
-            state=np.stack(self.state).astype(np.float32),
-            state_timestamp=np.asarray(self.state_ts, dtype=np.float64),
-            action=np.stack(self.action).astype(np.float32),
-            action_timestamp=np.asarray(self.action_ts, dtype=np.float64),
+            images={c: np.stack(v[:-1]).astype(np.uint8) for c, v in self.images.items()},
+            state=normalized[:-1].astype(np.float32),
+            state_timestamp=np.asarray(self.state_ts[:-1], dtype=np.float64),
+            action=normalized[1:].astype(np.float32),
+            action_timestamp=np.asarray(self.action_ts[:-1], dtype=np.float64),
         )
 
 

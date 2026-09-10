@@ -76,7 +76,9 @@ def verify_image_index(episode, raw, kept_span: tuple[int, int]) -> tuple[int, i
     Returns (frame index mismatches, camera code mismatches).
     반환 (프레임 번호 불일치 수, 카메라 코드 불일치 수)."""
     start, end = kept_span
-    pose_ts = np.asarray(raw.pose_timestamp[start:end], dtype=np.float64)
+    # The final raw state is only the target of the preceding action and has no
+    # image-bearing training row of its own.
+    pose_ts = np.asarray(raw.pose_timestamp[start:end - 1], dtype=np.float64)
     codes = raw.meta.notes.get("camera_codes", {})
     bad_idx = bad_cam = 0
     for cam, frames in episode.images.items():
