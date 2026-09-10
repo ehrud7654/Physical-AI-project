@@ -15,7 +15,7 @@ namespace so101_hardware
 class FakeBus : public IServoBus
 {
 public:
-  bool ping(const std::vector<uint8_t> &) override { return true; }
+  bool ping(const std::vector<uint8_t> &) override {return true;}
 
   std::vector<int32_t> read_positions(const std::vector<uint8_t> & ids) override
   {

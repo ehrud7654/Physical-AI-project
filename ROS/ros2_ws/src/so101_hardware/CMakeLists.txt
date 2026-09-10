@@ -11,7 +11,9 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 
-add_library(so101_hardware SHARED src/so101_system.cpp)
+add_library(so101_hardware SHARED
+  src/so101_system.cpp
+  src/st3215_bus.cpp)
 target_include_directories(so101_hardware PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
@@ -29,6 +31,9 @@ install(DIRECTORY include/ DESTINATION include)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  # copyright 만 끈다 (내부 프로젝트, 저작권 문구 불필요).
+  # cpplint/uncrustify(코드 스타일)는 유지.
+  set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 
   # 순수 변환 self-check (ROS 불필요).
