@@ -8,6 +8,28 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from tools.run_umi_regression import is_shared_gpu_server
 
 
+def pilot_summary(raw):
+    import numpy as np
+    statuses = [str(value) for value in raw.gripper_status]
+    counts = {key: statuses.count(key) for key in 'DMTX'}
+    longest_missing, current = 0, 0
+    for status in statuses:
+        current = current + 1 if status in ('T', 'X') else 0
+        longest_missing = max(longest_missing, current)
+    finite = raw.gripper_gap_m[np.isfinite(raw.gripper_gap_m)]
+    duration = float(raw.pose_timestamp[-1] - raw.pose_timestamp[0]) if raw.meta.n_steps > 1 else 0.0
+    return {
+        'status_counts': counts,
+        'longest_tx_run': longest_missing,
+        'gap_min_m': float(finite.min()) if finite.size else None,
+        'gap_max_m': float(finite.max()) if finite.size else None,
+        'usable_duration_s': duration,
+        'pilot_duration_20s_pass': duration >= 20.0,
+        'effective_start_s': raw.meta.notes.get('effective_start_s'),
+        'gripper_producer_recorded': raw.meta.notes.get('gripper_producer') is not None,
+    }
+
+
 def main():
     if is_shared_gpu_server():
         raise SystemExit('Shared GPU server is training-only')
@@ -16,7 +38,7 @@ def main():
     parser.add_argument('--calibration',type=Path,required=True,
                         help='JSON calibration_id, t_cam_to_pinch, t_arcore_world_to_base')
     parser.add_argument('--quality',type=Path,required=True,
-                        help='JSON tracking_valid_values, warmup_s, usable_segments, frames_dropped')
+                        help='JSON tracking_valid_values, warmup_s, usable_segments, frames_dropped; optional stabilized_at_s/demo_start_s')
     parser.add_argument('--skill-id')
     parser.add_argument('--out',type=Path,help='New output directory; omit for validation only')
     args=parser.parse_args()
@@ -37,6 +59,7 @@ def main():
     raw.meta.notes['tool_sha']=conversion_digest()
     print(json.dumps({'steps':raw.meta.n_steps,'cameras':raw.meta.cameras,
         'source_pose_rows':raw.meta.notes['source_pose_rows'],
+        'pilot':pilot_summary(raw),
         'training_ready':False,'reason':'raw ingestion complete; IK conversion and contract validation still required'},
         ensure_ascii=False))
     if args.out is not None:

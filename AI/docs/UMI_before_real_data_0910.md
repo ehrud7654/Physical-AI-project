@@ -36,6 +36,8 @@ python tools/umi_ingest_arcore.py --help
 ```
 
 파서 CLI 기본값은 검증만 수행한다. 저장하려면 존재하지 않는 새 디렉터리를 지정한다.
+검증 출력의 `pilot`에는 D/M/T/X 개수, 최장 연속 T/X, 유효 gap 범위,
+유효 구간 시간, 20초 파일럿 기준 통과 여부와 gripper 생산 도구 기록 여부가 포함된다.
 
 ```bash
 python tools/umi_ingest_arcore.py --bundle /path/recording.zip \
@@ -52,13 +54,29 @@ quality JSON 필드:
 
 - tracking_valid_values: recorder에서 확인한 정상 tracking 문자열 목록
 - warmup_s: 최초 pose부터 제외할 초기 시간. 최소 3초; 현장 프로토콜에서 선택
+- stabilized_at_s: 선택. 자동 감지한 안정화 완료 시점(최초 pose 기준 초)
+- demo_start_s: 선택. `시연 시작` 버튼으로 기록한 시작 시점(최초 pose 기준 초)
 - usable_segments: 원본 poses.csv 데이터 행의 [start,end) 정수 구간 목록
 - frames_dropped: pose에 대응 이미지가 없는 실제 개수
+
+실제 후보 시작점은 `warmup_s`, `stabilized_at_s`, `demo_start_s` 중 가장 늦은
+시점이다. `usable_segments`는 안정화 시간을 뜻하지 않고 tracking jump와 PAUSED를
+제외한 구간이다.
 
 summary.txt 문법은 샘플 확인 전 자동 파싱하지 않는다. 위 구간·drop 수를 명시적으로
 입력받고 원문은 보존한다. 디렉터리/ZIP 루트에 episode.json 및 SPEC 파일이 있어야 한다.
 이미지 없는 pose, PAUSED, 사용 불가 구간을 넘어 행을 이어붙이지 않는다.
 현재는 최장 연속 구간 하나를 반환하며 원본 행 번호·캘리브레이션·소비한 파일 SHA를 기록한다.
+
+새 실물 파일럿에서는 `episode.json.gripper.producer`에 `name`, `version`, 64자리
+`sha256`을 기록하고, 생성한 `gripper.csv`를 같은 ZIP에 포함한다. 소비 측은 번들 내부
+파일별 SHA, `raw_sha`, AI 변환기의 `tool_sha`를 이미 기록하므로 L70을 다시 구현할
+필요는 없다. 생산 도구 정보는 외부 marker→gap 후처리 코드까지 추적하기 위한 보강이다.
+
+대량 수집 전 1편만 먼저 처리한다. UMI 그리퍼·16mm 마커·1.5~2.5cm 물체 조건으로
+촬영한 뒤 즉시 D/M/T/X 분포, 연속 T/X, gap 범위·급변, 행 정합성과 유효 구간을
+확인한다. 안정화와 시연 시작 이후 20초 이상은 파일럿 수용 기준이며 raw 스키마의
+보편적인 최소 길이로 해석하지 않는다.
 
 `convert_umi.py --trajectory-limits /path/budgets.json`의 JSON에는
 max_step/max_velocity/max_acceleration 각각 6개 양수 값이 필요하다.
@@ -68,6 +86,7 @@ max_step/max_velocity/max_acceleration 각각 6개 양수 값이 필요하다.
 ## 남은 외부 입력과 별도 통합
 
 - 실제 번들로 컬럼·tracking enum·summary 구간 의미·카메라 설정의 일치 확인.
+- 실물 marker→gap 생산 도구의 소유자·실행 위치·D/M/T/X 판정 기준·버전 확인.
 - 두 캘리브레이션의 측정값. 로봇 URDF TCP 값만으로 핸드헬드 캘리브레이션을 대체할 수 없다.
 - 카메라 계약은 `cam_wrist` 단일 논리 채널이다. 같은 실제 카메라 장치를 UMI 시연 후
   로봇으로 옮겨 사용하며 `cam_front`는 UMI 학습·배포 계약에 포함하지 않는다.

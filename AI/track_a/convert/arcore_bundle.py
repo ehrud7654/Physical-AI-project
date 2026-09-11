@@ -22,7 +22,8 @@ def rigid(value):
 
 def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
                   recording_id, skill_id, tracking_valid_values, warmup_s,
-                  usable_segments, frames_dropped, image_decoder):
+                  usable_segments, frames_dropped, image_decoder,
+                  stabilized_at_s=None, demo_start_s=None):
     camera_pinch, base_world = rigid(t_camera_pinch), rigid(t_base_world)
     if not isinstance(calibration_id, str) or not calibration_id.strip():
         raise ValueError('calibration_id required')
@@ -31,6 +32,14 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
             or usable_segments is None or type(frames_dropped) is not int or frames_dropped < 0
             or not callable(image_decoder)):
         raise ValueError('explicit tracking, warmup >=3s, pose-row segments, drop count and RGB decoder required')
+    for name, value in (('stabilized_at_s', stabilized_at_s), ('demo_start_s', demo_start_s)):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
+                                  or not np.isfinite(value) or value < 0):
+            raise ValueError(f'{name} must be a non-negative offset in seconds')
+    start_offsets = [float(warmup_s)]
+    start_offsets.extend(float(value) for value in (stabilized_at_s, demo_start_s)
+                         if value is not None)
+    effective_start_s = max(start_offsets)
     bundle = Path(bundle)
     archive = None if bundle.is_dir() else zipfile.ZipFile(bundle)
     hashes = {}
@@ -70,6 +79,15 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
         for k, v in dict(ois='off', vdis='off', focus_mode='fixed', ae='locked', awb='locked').items():
             if cam.get(k) != v:
                 raise ValueError('camera contract mismatch')
+        gripper_meta = meta.get('gripper', {})
+        producer = gripper_meta.get('producer')
+        if producer is not None:
+            if (not isinstance(producer, dict)
+                    or not all(isinstance(producer.get(k), str) and producer[k].strip()
+                               for k in ('name', 'version', 'sha256'))
+                    or len(producer['sha256']) != 64
+                    or any(c not in '0123456789abcdefABCDEF' for c in producer['sha256'])):
+                raise ValueError('invalid gripper producer provenance')
         summary = read('summary.txt').decode('utf-8-sig')
         read('imu.csv')  # provenance only; no IMU fusion
         poses = rows('poses.csv', 'index,timestamp_ns,tracking,x,y,z,qx,qy,qz,qw')
@@ -106,7 +124,7 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
             allowed[a:b] = True
             segment_ids[a:b] = segment_id
         candidates = [i for i,p in enumerate(poses) if allowed[i] and
-            (stamps[i]-stamps[0])/1e9 >= warmup_s and
+            (stamps[i]-stamps[0])/1e9 >= effective_start_s and
             p['tracking'] in tracking_valid_values and stamps[i] in by_time]
         runs = []
         for i in candidates:
@@ -141,7 +159,10 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
             calibration_id=calibration_id, bundle_schema=meta['schema'], frames_dropped=frames_dropped,
             usable_segments=[[0,len(chosen)]], notes={'source_pose_rows':chosen,
                 'source_usable_segments':usable_segments, 'source_clock_origin_ns':stamps[0],
-                'warmup_s':warmup_s, 'summary_original':summary, 'source_files_sha256':hashes,
+                'warmup_s':warmup_s, 'stabilized_at_s':stabilized_at_s,
+                'demo_start_s':demo_start_s, 'effective_start_s':effective_start_s,
+                'gripper_producer':producer, 'summary_original':summary,
+                'source_files_sha256':hashes,
                 't_base_world':base_world.tolist(), 't_camera_pinch':camera_pinch.tolist(),
                 'logical_camera':'cam_wrist'}), np.array(xyzs),np.array(quats),np.array(gaps),
             np.array(statuses,dtype='<U1'),times,{'cam_wrist':np.stack(images)},{'cam_wrist':times.copy()})
