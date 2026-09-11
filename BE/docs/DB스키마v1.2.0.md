@@ -22,7 +22,7 @@
 8. 상태 변경과 외부 이벤트 발행은 Outbox 패턴으로 연결한다.
 9. Redis 데이터가 유실돼도 PostgreSQL만으로 현재 상태를 복구할 수 있어야 한다.
 10. API ID는 외부에서 불투명하게 다루며 DB에서는 UUID 사용을 권장한다.
-11. 스킬은 회원별 자유 문자열이 아니라 시스템 공통 카탈로그로 관리하고, `skill_key`를 FE·BE·AI 간 계약 ID로 사용한다.
+11. 스킬은 시스템 공통 카탈로그와 사용자 소유 커스텀 스킬로 관리하고, `skill_key`를 FE·BE·AI 간 계약 ID로 사용한다. 시스템 공통 스킬의 `owner_id`는 NULL이며 커스텀 스킬은 생성 사용자를 참조한다.
 12. 학습에 실제 사용한 Episode 목록과 데이터 선택 조건을 모두 보존해 CKPT 생성 과정을 재현할 수 있어야 한다.
 13. 배포 게이트를 통과하지 않은 SkillVersion은 DB 제약으로 DeploymentItem에 등록할 수 없게 한다.
 14. Episode 하나는 `<session_id>.zip` 하나와 1:1 대응한다. ZIP은 `STORE` 방식이며 `meta.json`, `summary.json`, `frames.csv`, `pose.csv`, `imu.csv`, `gripper.csv`, `frames/*.jpg`를 포함한다.
@@ -31,7 +31,7 @@
 17. 사용자는 학습 하이퍼파라미터를 입력하지 않는다. 백엔드는 활성 TrainingProfile을 선택해 TrainingJob에 불변 snapshot과 SHA-256을 저장한다.
 18. TrainingProfile 변경은 기존 행 수정이 아니라 새 version 생성과 활성 전환으로 처리하며 이미 생성된 TrainingJob에는 영향을 주지 않는다.
 19. GPU가 실제 사용한 학습 설정과 TrainingJob·CKPT manifest의 설정 SHA-256이 모두 일치해야 SkillVersion을 READY로 확정한다.
-20. Episode ZIP의 상대 key는 `episodes/{owner_id}/{수집완료UTC}/{episode_archive_id}/archive.zip`으로 서버가 생성한다.
+20. Episode ZIP의 S3 object key는 `episodes/{owner UUID 소문자}/{yyyyMMdd'T'HHmmss'Z'}/{session UUID v4 소문자}.zip`으로 서버가 생성한다.
 21. CKPT S3 key는 `ckpt/{owner_id}/{skill_key}/v{version}/{skill_key}_{학습완료UTC}.ckpt`로 생성하고 덮어쓰지 않는다.
 22. 사용자가 요청한 실제 로봇 실행은 `RobotExecution`으로 추적하고, 로봇별 활성 실행은 하나만 허용한다.
 23. Jetson 실행 보고는 `report_id`, 단조 증가 `sequence`, canonical payload SHA-256으로 중복·역순·변조 재전송을 판별한다.
@@ -43,6 +43,7 @@
 erDiagram
     USERS ||--o{ REFRESH_SESSIONS : has
     USERS ||--o{ DEVICES : owns
+    USERS ||--o{ SKILLS : owns_custom
     DEVICES ||--o| DEVICE_CREDENTIALS : authenticates
 
     USERS ||--o{ EPISODES : owns
@@ -362,7 +363,7 @@ Episode archive의 위치·무결성·삭제 상태를 나타낸다. Episode와 
 | `id` | uuid | 아니요 | PK |
 | `episode_id` | uuid | 아니요 | FK → `episodes.id`, UNIQUE |
 | `storage_node_id` | uuid | 아니요 | FK → `storage_nodes.id` |
-| `storage_key` | varchar(500) | 아니요 | 서버 생성 상대 key, `episodes/{owner_id}/{수집완료UTC}/{archive_id}/archive.zip` |
+| `storage_key` | varchar(500) | 아니요 | 서버 생성 S3 object key, `episodes/{owner UUID 소문자}/{yyyyMMdd'T'HHmmss'Z'}/{session UUID v4 소문자}.zip` |
 | `original_filename` | varchar(255) | 아니요 | 감사용 `<session_id>.zip`, 경로 계산에 사용하지 않음 |
 | `content_type` | varchar(150) | 아니요 | 고정 `application/zip` |
 | `archive_format_version` | varchar(100) | 아니요 | 예: `umi-episode-zip-v1` |
@@ -405,9 +406,9 @@ INDEX (storage_node_id, status)
 INDEX (sha256)
 ```
 
-`storage_key`는 `episodes/{owner_id}/{YYYYMMDD}T{HHMMSS}Z/{episode_archive_id}/archive.zip` 형식으로 서버가 생성한다. `{owner_id}`는 검증된 ingest token에서 결정한 `episodes.owner_id`, 시간은 검증된 `episodes.ended_at`의 UTC 수집 완료 시각, `{episode_archive_id}`는 서버가 생성한 archive UUID다. 예시는 `episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260904T153012Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip`이다.
+`storage_key`는 `episodes/{owner UUID 소문자}/{yyyyMMdd'T'HHmmss'Z'}/{session UUID v4 소문자}.zip` 형식으로 서버가 생성한다. owner UUID는 인증된 장치 토큰에서 결정한 `episodes.owner_id`, 시간은 검증된 `episodes.ended_at`을 UTC 초 단위로 변환한 값, session UUID는 검증된 `episodes.session_id`다. 예시는 `episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260904T153012Z/550e8400-e29b-41d4-a716-446655440000.zip`이다.
 
-동일 Episode 업로드 재시도는 `UNIQUE (owner_id, umi_device_id, session_id)`로 기존 Episode와 archive를 찾고 최초 `ended_at`, archive ID, `storage_key`를 재사용한다. 물리 경로는 worker 설정의 허용 root와 이 상대 key를 결합해 계산한다. 삭제 이후에도 감사·학습 재현을 위해 key와 해시를 유지하되 사용자 API와 일반 로그에는 노출하지 않는다.
+동일 Episode 업로드 재시도는 `UNIQUE (owner_id, umi_device_id, session_id)`로 기존 Episode와 archive를 찾고 최초 `ended_at`, archive ID, `storage_key`를 재사용한다. S3 object key에는 클라이언트가 보낸 파일명이나 경로를 직접 사용하지 않는다. 삭제 이후에도 감사·학습 재현을 위해 key와 해시를 유지하되 사용자 API와 일반 로그에는 노출하지 않는다.
 
 `manifest_summary`에는 `meta.json`, `frames.csv`, `pose.csv`, `imu.csv`, `gripper.csv`의 SHA-256과 `frames/` entry 개수 같은 집계만 둔다. `summary.json` 자신의 해시를 자기 내용에 넣지 않으며 수천 개 이미지의 목록이나 해시를 DB JSONB에 복제하지 않는다.
 
@@ -446,8 +447,9 @@ retentionExpiresAt = MAX(
 | 컬럼 | 타입 | NULL | 제약·설명 |
 |---|---|---|---|
 | `id` | uuid | 아니요 | PK |
+| `owner_id` | uuid | 예 | FK → `users.id`; NULL이면 시스템 공통 스킬, 값이 있으면 사용자 소유 커스텀 스킬 |
 | `skill_key` | varchar(100) | 아니요 | FE·BE·AI 공통의 전역 불변 key |
-| `tier` | varchar(20) | 아니요 | `TUTORIAL`, `DEMO` |
+| `tier` | varchar(20) | 아니요 | `TUTORIAL`, `DEMO`, `CUSTOM` |
 | `status` | varchar(30) | 아니요 | 스킬 카탈로그 수명주기 상태 |
 | `display_name` | varchar(150) | 아니요 | 표시 이름 |
 | `description` | text | 예 | 설명 |
@@ -457,14 +459,18 @@ retentionExpiresAt = MAX(
 
 ```sql
 UNIQUE (skill_key)
-CHECK (tier IN ('TUTORIAL', 'DEMO'))
+FK (owner_id) REFERENCES users(id) ON DELETE RESTRICT
+CHECK (tier IN ('TUTORIAL', 'DEMO', 'CUSTOM'))
+CHECK ((owner_id IS NULL AND tier IN ('TUTORIAL', 'DEMO')) OR (owner_id IS NOT NULL AND tier = 'CUSTOM'))
 CHECK (status IN ('PLANNED', 'COLLECTING', 'TRAINING', 'GATE_FAILED', 'DEPLOYED'))
 CHECK (tier <> 'DEMO' OR persona IS NOT NULL)
 CHECK (skill_key ~ '^[a-z0-9][a-z0-9_-]{0,99}$')
+UNIQUE INDEX (owner_id, lower(display_name)) WHERE owner_id IS NOT NULL
+INDEX (owner_id, created_at DESC) WHERE owner_id IS NOT NULL
 INDEX (tier, status)
 ```
 
-`skills`는 회원 소유 리소스가 아니라 시스템 공통 카탈로그다. 내부 FK는 UUID `id`를 사용하고 외부 계약에서는 `skill_key`를 사용해 기존 UUID 기반 FK 구조를 유지하면서도 자유 문자열 생성을 차단한다. 특정 사용자에게 스킬을 노출하거나 권한을 부여해야 한다면 `skills.owner_id`를 다시 두지 않고 별도의 `user_skills(user_id, skill_id, ...)` 관계를 추가한다.
+`skills.owner_id IS NULL`인 행은 모든 사용자에게 노출하는 시스템 공통 카탈로그다. `owner_id`가 있는 행은 해당 사용자에게만 노출하는 커스텀 스킬이며 `tier=CUSTOM`을 사용한다. 커스텀 스킬의 동일 사용자 내 표시 이름은 대소문자를 무시하고 중복될 수 없다. `skill_key`는 표시 이름에서 직접 만들지 않고 서버가 영문 소문자 기반의 전역 고유 값으로 생성한다.
 
 초기 seed:
 
@@ -564,6 +570,7 @@ WHERE status = 'ACTIVE';
 | `started_at` | timestamptz | 예 | 시작 시각 |
 | `model_completed_at` | timestamptz | 예 | FastAPI의 최초 학습 완료 통지 발신 UTC 시각, GPU Spring Boot를 거쳐 전달 |
 | `finished_at` | timestamptz | 예 | 종료 시각 |
+| `deleted_at` | timestamptz | 예 | 사용자 목록에서 제외된 soft delete 시각 |
 | `updated_at` | timestamptz | 아니요 | 수정 시각 |
 | `row_version` | bigint | 아니요 | 상태 전이 낙관적 잠금 |
 
@@ -840,6 +847,7 @@ INDEX (data_purge_job_id, reported_at)
 | `display_name` | varchar(150) | 아니요 | 표시 이름 |
 | `description` | text | 예 | 설명 |
 | `latest_version` | integer | 예 | 목록 표시용 캐시 값 |
+| `deleted_at` | timestamptz | 예 | 사용자 목록에서 제외된 soft delete 시각 |
 | `created_at` | timestamptz | 아니요 | 생성 시각 |
 | `updated_at` | timestamptz | 아니요 | 수정 시각 |
 
@@ -1286,7 +1294,7 @@ GPU-05의 metadata·크기·hash는 최초 예약값과 같아야 한다. 불일
 API 명세서의 경로 형식을 기준으로 사용한다.
 
 - CKPT: ckpt/{owner_id}/{skill_key}/v{version}/{skill_key}_{YYYYMMDD}T{HHMMSS}Z.ckpt
-- Episode: episodes/{owner_id}/{YYYYMMDD}T{HHMMSS}Z/{episode_archive_id}/archive.zip
+- Episode: episodes/{owner UUID 소문자}/{yyyyMMdd'T'HHmmss'Z'}/{session UUID v4 소문자}.zip
 - CKPT 시각: FastAPI가 학습·파일 생성 완료 후 GPU Spring Boot에 최초 완료 통지를 발신하기 직전 기록한 modelCompletedAt. 재전송·업로드 재시도에서 변경하지 않는다.
 - Episode 시각: 검증된 episodes.ended_at. 원본 전송 파일명은 {session_id}.zip이다.
 
