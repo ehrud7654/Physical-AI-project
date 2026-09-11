@@ -547,8 +547,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         }
         Log.i(TAG, "저장 완료: ${dir?.absolutePath} 프레임=$saved 드롭=$dropped 점프=$jumps AF=${focusName()}")
 
-        // 업로드 예약. 실패하든 말든 촬영 흐름은 여기서 끝난다.
-        UploadQueue.enqueue(this)
+        // 자동 전송 안 함(검토 후 전송). 사용자가 기록에서 골라 [전송]해야 큐에 들어간다.
         pendingUploads = UploadQueue.pendingCount(this)
 
         // 촬영 직후 마커 검출률을 백그라운드(~1초)로 계산해 폴더에 저장한다.

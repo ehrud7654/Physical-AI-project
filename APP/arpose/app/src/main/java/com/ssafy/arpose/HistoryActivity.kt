@@ -7,8 +7,10 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import java.io.File
 
 /**
@@ -17,11 +19,56 @@ import java.io.File
  */
 class HistoryActivity : Activity() {
 
+    private val selected = HashSet<String>()   // 선택된 rec 폴더명
+
+    // BE(SKILL-01/TRAIN-02) 연동 전 스텁 학습 목록 (촬영 화면과 동일).
+    private val stubCatalog = listOf(
+        Triple("job_pick_place", "pick_place", "집기·놓기"),
+        Triple("job_sort_two", "sort_two", "둘 분류"),
+        Triple("job_align_fixture", "align_fixture", "지그 정렬"),
+        Triple("job_present_inspect", "present_inspect", "검사 제시"),
+        Triple("job_line_up", "line_up", "줄 세우기")
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_history)
         findViewById<Button>(R.id.backBtn).setOnClickListener { finish() }
+        findViewById<Button>(R.id.sendBtn).setOnClickListener { sendSelected() }
         populate()
+    }
+
+    /** 선택 → 목적지(학습) 확인 → .queued 마킹 후 업로드 큐. 실제 전송은 UploadWorker(3-step). */
+    private fun sendSelected() {
+        if (selected.isEmpty()) { Toast.makeText(this, "전송할 촬영을 선택하세요", Toast.LENGTH_SHORT).show(); return }
+        val names = stubCatalog.map { it.third }.toTypedArray()
+        val activeName = Prefs.activeSkillName(this)
+        AlertDialog.Builder(this)
+            .setTitle("${selected.size}편 전송 → 학습 선택" + if (activeName.isNotBlank()) " (현재: $activeName)" else "")
+            .setItems(names) { _, i ->
+                val (jobId, _, _) = stubCatalog[i]
+                val root = getExternalFilesDir(null)
+                selected.forEach { name ->
+                    val dir = File(root, name)
+                    if (dir.isDirectory) {
+                        File(dir, ".upload_job").writeText(jobId)   // 목적지 job (meta training_job_id 덮어씀)
+                        File(dir, ".queued").writeText("1")          // 전송 대기 표시
+                    }
+                }
+                UploadQueue.enqueue(this)
+                Toast.makeText(this, "${selected.size}편 전송 대기 → ${stubCatalog[i].third}", Toast.LENGTH_SHORT).show()
+                selected.clear()
+                populate()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    /** 전송 상태: 완료(.uploaded) / 대기(.queued) / 미전송. */
+    private fun uploadStatus(dir: File): Triple<String, Int, Boolean> = when {
+        File(dir, ".uploaded").exists() -> Triple("완료", 0xFF3FBF87.toInt(), false)
+        File(dir, ".queued").exists() -> Triple("대기", 0xFFE0A44E.toInt(), false)
+        else -> Triple("미전송", 0xFF9AA2B8.toInt(), true)
     }
 
     private fun populate() {
@@ -73,11 +120,25 @@ class HistoryActivity : Activity() {
             textSize = 14f
         }
 
+        val check = CheckBox(this).apply {
+            isChecked = selected.contains(dir.name)
+            setPadding(0, 0, 12, 0)
+            setOnCheckedChangeListener { _, c -> if (c) selected.add(dir.name) else selected.remove(dir.name) }
+        }
+
         val statusDot = TextView(this).apply {
             text = icon
             setTextColor(color)
             textSize = 22f
             setPadding(0, 0, 20, 0)
+        }
+
+        val (stText, stColor, _) = uploadStatus(dir)
+        val sendBadge = TextView(this).apply {
+            text = stText
+            setTextColor(stColor)
+            textSize = 13f
+            setPadding(0, 0, 16, 0)
         }
 
         val del = Button(this).apply {
@@ -97,8 +158,10 @@ class HistoryActivity : Activity() {
             }
         }
 
+        card.addView(check)
         card.addView(statusDot)
         card.addView(info)
+        card.addView(sendBadge)
         card.addView(del)
         return card
     }
