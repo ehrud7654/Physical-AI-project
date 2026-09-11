@@ -26,15 +26,15 @@ MAGENTA_LO = np.array([140, 90, 90])
 MAGENTA_HI = np.array([175, 255, 255])
 BLOB_MIN_A = 150.0      # 블롭 최소 면적(px^2, 1080p 기준). 너무 작은 반사·노이즈 제거.
 
-# --- 개폐폭 캘리브레이션 ---
+# --- 개폐폭 캘리브레이션 (마젠타 원 15mm, rec_20260911_165325 개폐 스윕 실측) ---
 # 마커는 지름 MARKER_MM 의 원. 이미지 속 마커 지름(px)과의 비로 그 프레임 거리를 보정한다.
-# ponytail: 마젠타 원 마커·그리퍼로 개폐 스윕 1회 재촬영해 아래 4개 값을 다시 잡을 것.
-#           (지금 값은 옛 16mm 사각 마커 기준 — 마젠타 원 크기·그리퍼에 맞게 재측정 필요)
-MARKER_MM = 16.0
-MARKER_GAP_CLOSED_MM = 38.0   # 완전폐쇄에서 마커 중심간 거리(mm, 거리보정 후)
-MARKER_GAP_OPEN_MM = 81.0     # 완전개방에서
-FINGERTIP_CLOSED_MM = 0.0     # 그 두 극단의 손가락 끝 폭(mm)
-FINGERTIP_OPEN_MM = 90.0
+# 마커 중심간 거리(거리보정 mm) ↔ 손가락 접촉면 gap(mm) 2점 선형(affine) 매핑.
+# ponytail: 그리퍼/마커 바꾸면 개폐 스윕 재촬영해 아래 4개 값 재측정. 중간값 1개 있으면 선형성 검증 가능.
+MARKER_MM = 15.0
+MARKER_GAP_CLOSED_MM = 37.6   # 완전폐쇄 마커 중심간 거리(mm) — 스윕 실측 344px
+MARKER_GAP_OPEN_MM = 134.0    # 완전개방(7cm, 레일유격 반영 실효최대) — 스윕 실측 1239px
+FINGERTIP_CLOSED_MM = 0.0     # 완전폐쇄 손가락 gap(mm)
+FINGERTIP_OPEN_MM = 70.0      # 완전개방 손가락 gap(mm) = 7cm (기구 최대 8cm은 손으로만, 미사용)
 
 
 def fingertip_m(marker_gap_mm):
@@ -123,7 +123,7 @@ def main():
         print(f"  gap 범위 {np.nanmin(gap):.0f}~{np.nanmax(gap):.0f}px")
     if np.isfinite(gap_m).any():
         print(f"  손가락폭 gap_m {np.nanmin(gap_m)*1000:.0f}~{np.nanmax(gap_m)*1000:.0f}mm "
-              f"(D 프레임 {np.isfinite(gap_m).sum()}개)  ※ 캘리브 상수 재측정 필요")
+              f"(D 프레임 {np.isfinite(gap_m).sum()}개, 완전개방 70mm=7cm 기준)")
 
     if do_plot:
         import matplotlib
