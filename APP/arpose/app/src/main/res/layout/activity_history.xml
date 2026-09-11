@@ -10,19 +10,39 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <Button
-            android:id="@+id/backBtn"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="← 뒤로"
-            android:textColor="@color/silver"
-            android:background="@color/navy700" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <Button
+                android:id="@+id/backBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="← 뒤로"
+                android:textColor="@color/silver"
+                android:background="@color/navy700" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <Button
+                android:id="@+id/sendBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="전송"
+                android:textColor="@color/silver"
+                android:background="@color/stIndigo" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="기록"
+            android:text="기록 (선택 후 전송)"
             android:textColor="#FFFFFF"
             android:textSize="24sp" />
 

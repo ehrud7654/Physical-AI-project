@@ -49,7 +49,9 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
             .also { File(dir, "session_id.txt").writeText(it) }
 
         val meta = File(dir, "meta.txt").let { if (it.exists()) it.readText() else "" }
-        val jobId = metaVal(meta, "training_job_id").ifBlank { "job_test" }   // 학습 미선택 폴백(검증용)
+        // 전송 시 History 에서 고른 목적지(.upload_job) 우선, 없으면 촬영 때 stamp(meta), 그도 없으면 폴백.
+        val jobId = File(dir, ".upload_job").let { if (it.exists()) it.readText().trim() else "" }
+            .ifBlank { metaVal(meta, "training_job_id") }.ifBlank { "job_test" }
         val endedAt = rfc3339Now()   // 근사(검증용). 실계약은 meta.json.ended_at 와 일치해야 함.
 
         val zip = EpisodePackager.buildContractZip(dir, sessionId, zipDir) ?: return false

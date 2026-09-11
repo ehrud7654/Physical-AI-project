@@ -39,11 +39,17 @@ object UploadQueue {
         return if (local) NetworkType.NOT_REQUIRED else NetworkType.UNMETERED
     }
 
-    /** 전송 대기 중인 녹화 폴더. 녹화가 끝나지 않은 폴더(summary.txt 없음)는 제외한다. */
+    /**
+     * 전송 대기 = 사용자가 기록에서 [전송]으로 표시(.queued)했고 아직 안 올라간(!.uploaded) 폴더.
+     * 촬영만으로 자동 전송하지 않는다(검토 후 전송, S15P21A103-165).
+     */
     fun pending(ctx: Context): List<File> {
         val base = ctx.getExternalFilesDir(null) ?: return emptyList()
         return base.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }
-            ?.filter { File(it, "summary.txt").exists() }
+            ?.filter {
+                File(it, "summary.txt").exists() &&
+                    File(it, ".queued").exists() && !File(it, ".uploaded").exists()
+            }
             ?.sortedBy { it.name }
             ?: emptyList()
     }
