@@ -53,8 +53,9 @@ object UploadQueue {
     /**
      * 업로드를 예약한다. 촬영은 이 호출을 기다리지 않는다.
      *
-     * 이미 예약된 작업이 있으면 그대로 둔다(KEEP). 매 녹화마다 새 작업을 쌓지 않고,
-     * 하나의 작업이 대기열을 통째로 훑는 구조다.
+     * REPLACE: 매 호출마다 대기열을 새로 훑는 작업으로 교체한다. 워커가 멱등이라
+     * (.uploaded 마커·폴더별 멱등키·이어올리기) 진행 중 교체돼도 안전하고, 이전 실패가
+     * 백오프로 물려 새 작업이 안 도는 문제(KEEP)를 피한다.
      */
     fun enqueue(ctx: Context) {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
@@ -66,6 +67,6 @@ object UploadQueue {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(ctx)
-            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, req)
+            .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, req)
     }
 }
