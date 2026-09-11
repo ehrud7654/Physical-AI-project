@@ -3,6 +3,7 @@ package com.ssafy.arpose
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
@@ -143,6 +144,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private lateinit var aeBadge: TextView
     private lateinit var dropWarn: TextView
     private lateinit var recTimer: TextView
+    private lateinit var learnBadge: TextView
     @Volatile private var trackingOk = false   // REC 가드용: TRACKING 여부
     private var recStartMs = 0L
 
@@ -194,6 +196,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         findViewById<Button>(R.id.detailBtn).setOnClickListener {
             poseText.visibility = if (poseText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
+        learnBadge = findViewById(R.id.learnBadge)
+        learnBadge.setOnClickListener { showLearningPicker() }
 
         glView.preserveEGLContextOnPause = true
         glView.setEGLContextClientVersion(2)
@@ -205,6 +209,44 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private fun focusName() = if (autoFocus) "AUTO" else "FIXED"
 
     private fun aeName() = if (aeLock) "LOCK" else "AUTO"
+
+    // BE(SKILL-01/TRAIN-02) 연동 전 스텁 학습 목록. 라이브 붙으면 이 목록만 교체.
+    private val stubCatalog = listOf(
+        Triple("job_pick_place", "pick_place", "집기·놓기"),
+        Triple("job_sort_two", "sort_two", "둘 분류"),
+        Triple("job_align_fixture", "align_fixture", "지그 정렬"),
+        Triple("job_present_inspect", "present_inspect", "검사 제시"),
+        Triple("job_line_up", "line_up", "줄 세우기")
+    )
+
+    /** 배지 텍스트 = 활성 학습 + 해당 학습으로 찍은 편수(오배정 조기 인지용). */
+    private fun updateLearnBadge() {
+        if (!::learnBadge.isInitialized) return
+        val name = Prefs.activeSkillName(this)
+        learnBadge.text = if (name.isBlank()) "학습: 미선택 ▾"
+            else "학습: $name · ${episodeCount(Prefs.activeJobId(this))}편 ▾"
+    }
+
+    private fun episodeCount(jobId: String): Int {
+        if (jobId.isBlank()) return 0
+        val base = getExternalFilesDir(null) ?: return 0
+        return base.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }
+            ?.count { d ->
+                File(d, "meta.txt").let { it.exists() && it.readText().contains("training_job_id=$jobId") }
+            } ?: 0
+    }
+
+    private fun showLearningPicker() {
+        val labels = (stubCatalog.map { it.third } + "학습 없이 촬영").toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("학습 선택 (BE 연동 전 스텁)")
+            .setItems(labels) { _, i ->
+                if (i < stubCatalog.size) stubCatalog[i].let { Prefs.setActiveLearning(this, it.first, it.second, it.third) }
+                else Prefs.setActiveLearning(this, "", "", "")
+                updateLearnBadge()
+            }
+            .show()
+    }
 
     private fun applyConfig(s: Session) {
         s.configure(Config(s).apply {
@@ -231,6 +273,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         autoFocus = Prefs.afAuto(this)
         aeLock = Prefs.aeLock(this)
         if (afChanged) intrinsicsLine = "unknown"   // 초점 바뀌면 내부 파라미터 다시 읽기
+        updateLearnBadge()   // 학습 배지·편수 갱신
 
         if (session == null) {
             try {
@@ -461,6 +504,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             append("user_id=${Prefs.userId(this@MainActivity)}\n")
             append("session_id=${Prefs.sessionId(this@MainActivity)}\n")
             append("skill_id=${Prefs.skillId(this@MainActivity)}\n")
+            append("training_job_id=${Prefs.activeJobId(this@MainActivity)}\n")
+            append("active_skill_key=${Prefs.activeSkillKey(this@MainActivity)}\n")
             append("focus_mode=${focusName()}\n")
             append("ae_lock=${aeName()}\n")
             append("camera_modes=$camModesLine\n")

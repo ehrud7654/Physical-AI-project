@@ -69,13 +69,29 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- 활성 학습 배지 (탭 → 학습 선택). 항상 보여 오배정 예방 -->
+    <TextView
+        android:id="@+id/learnBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="52dp"
+        android:layout_marginStart="16dp"
+        android:background="@color/chrome"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
+        android:text="학습: 미선택 ▾"
+        android:textColor="@color/stIndigo"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
     <!-- 상세(개발용 원시값). 기본 숨김, ⓘ 토글로 표시 -->
     <TextView
         android:id="@+id/poseText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_marginTop="52dp"
+        android:layout_marginTop="100dp"
         android:background="#AA000000"
         android:padding="10dp"
         android:textColor="#00FF66"
