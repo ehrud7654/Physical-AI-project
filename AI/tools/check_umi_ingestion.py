@@ -88,12 +88,32 @@ class Tests(unittest.TestCase):
             self.decode(self.fixture(),demo_start_s='5')
 
     def test_pilot_summary_reports_status_gap_and_duration(self):
-        report=pilot_summary(self.decode(self.fixture()))
+        raw=self.decode(self.fixture()); report=pilot_summary(raw)
         self.assertEqual(report['status_counts'],{'D':4,'M':0,'T':0,'X':1})
         self.assertEqual(report['longest_tx_run'],1)
         self.assertEqual(report['gap_min_m'],.04)
         self.assertFalse(report['pilot_duration_20s_pass'])
         self.assertTrue(report['gripper_producer_recorded'])
+        self.assertEqual(report['pilot_issues'],['usable_duration_under_20s'])
+        self.assertFalse(report['pilot_pass'])
+
+        raw.pose_timestamp=np.linspace(0,20,raw.meta.n_steps)
+        report=pilot_summary(raw)
+        self.assertTrue(report['pilot_duration_20s_pass'])
+        self.assertTrue(report['pilot_pass'])
+
+        raw.gripper_status[:]='X'; raw.gripper_gap_m[:]=np.nan
+        report=pilot_summary(raw)
+        self.assertIn('no_valid_gripper_gap',report['pilot_issues'])
+        self.assertFalse(report['pilot_pass'])
+
+    def test_pilot_summary_flags_missing_gripper_producer(self):
+        members=self.fixture(); meta=json.loads(members['episode.json'])
+        del meta['gripper']['producer']; members['episode.json']=json.dumps(meta)
+        report=pilot_summary(self.decode(members))
+        self.assertFalse(report['gripper_producer_recorded'])
+        self.assertIn('gripper_producer_missing',report['pilot_issues'])
+        self.assertFalse(report['pilot_pass'])
 
     def test_duplicate_timestamp_and_nonunit_quaternion(self):
         members=self.fixture()

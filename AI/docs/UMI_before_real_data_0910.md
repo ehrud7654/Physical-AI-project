@@ -38,6 +38,9 @@ python tools/umi_ingest_arcore.py --help
 파서 CLI 기본값은 검증만 수행한다. 저장하려면 존재하지 않는 새 디렉터리를 지정한다.
 검증 출력의 `pilot`에는 D/M/T/X 개수, 최장 연속 T/X, 유효 gap 범위,
 유효 구간 시간, 20초 파일럿 기준 통과 여부와 gripper 생산 도구 기록 여부가 포함된다.
+`pilot_pass=false`이면 `pilot_issues`에 `usable_duration_under_20s`,
+`no_valid_gripper_gap`, `gripper_producer_missing` 중 해당 사유를 기록한다. T/X 비율의
+허용 임계값은 첫 실데이터 분포를 보기 전에는 임의로 정하지 않는다.
 
 ```bash
 python tools/umi_ingest_arcore.py --bundle /path/recording.zip \
