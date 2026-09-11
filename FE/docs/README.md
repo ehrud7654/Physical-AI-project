@@ -6,6 +6,7 @@
 |---|---|
 | [UI·UX 명세](DESIGN_SPEC.md) | 화면 구조, 상호작용, 디자인 토큰, 반응형·접근성 기준 |
 | [팀 개발 안내](TEAM_SETUP.md) | 실행 환경, 명령어, Mock 동작, 폴더와 브랜치 규칙 |
+| [백엔드 API 전달사항](BACKEND_API_HANDOFF.md) | 학습·작업 선택 삭제에 필요한 API 계약과 권장 정책 |
 
 프로젝트 개요와 빠른 실행 방법은 상위 [README](../README.md)를 확인하세요.
 

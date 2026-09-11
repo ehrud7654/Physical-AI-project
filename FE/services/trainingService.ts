@@ -119,6 +119,12 @@ export async function cancelTraining(trainingJobId: string): Promise<Training[]>
   return fetchTrainings();
 }
 
+/** 백엔드 DELETE 계약이 추가되면 선택 삭제에 사용한다. */
+export async function deleteTrainings(trainingJobIds: string[]): Promise<Training[]> {
+  await Promise.all(trainingJobIds.map((id) => apiRequest<void>(`/training-jobs/${id}`, { method: 'DELETE' })));
+  return fetchTrainings();
+}
+
 /** 별도 retry API 대신 기존 Episode를 입력으로 새 TrainingJob을 생성한다. */
 export async function retryTraining(training: Training): Promise<Training[]> {
   const episodes = await apiRequest<ApiEpisodeInput[]>(`/training-jobs/${training.id}/episodes`);
