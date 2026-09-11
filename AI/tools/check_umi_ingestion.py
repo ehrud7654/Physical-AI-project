@@ -13,6 +13,7 @@ from track_a.convert.arcore import to_raw
 from umi.provenance import conversion_digest
 from umi.trajectory import TrajectoryLimits, continuous_mask
 from tools.run_umi_regression import is_shared_gpu_server
+from tools.umi_ingest_arcore import pilot_summary
 
 
 class Tests(unittest.TestCase):
@@ -21,7 +22,9 @@ class Tests(unittest.TestCase):
             pose=dict(pose_is='T_world_camera',frame='arcore_world',handedness='right',
                       units='m',quaternion_order='xyzw'),
             clock=dict(source='elapsedRealtimeNanos',all_streams_same_clock=True),
-            camera=dict(width=8,height=6,ois='off',vdis='off',focus_mode='fixed',ae='locked',awb='locked'))
+            camera=dict(width=8,height=6,ois='off',vdis='off',focus_mode='fixed',ae='locked',awb='locked'),
+            gripper=dict(method='marker_scale',marker_mm=16,
+                         producer=dict(name='fixture-gap',version='1.0.0',sha256='a'*64)))
         members = {'episode.json':json.dumps(meta), 'summary.txt':'grammar not assumed', 'imu.csv':'timestamp_ns,sensor,x,y,z\n'}
         poses=['index,timestamp_ns,tracking,x,y,z,qx,qy,qz,qw']
         frames=['frame_index,timestamp_ns,image']; gaps=['frame_index,gap_m,status']
@@ -70,6 +73,27 @@ class Tests(unittest.TestCase):
     def test_adjacent_reviewed_segments_do_not_merge(self):
         raw=self.decode(self.fixture(),usable_segments=[[0,5],[5,8]])
         self.assertEqual(raw.meta.notes['source_pose_rows'],[5,6,7])
+
+    def test_stabilization_demo_start_and_gripper_provenance(self):
+        raw=self.decode(self.fixture(),stabilized_at_s=4.,demo_start_s=5.)
+        self.assertEqual(raw.meta.notes['source_pose_rows'],[5,6,7])
+        self.assertEqual(raw.meta.notes['effective_start_s'],5.)
+        self.assertEqual(raw.meta.notes['gripper_producer']['sha256'],'a'*64)
+        with self.assertRaises(ValueError):
+            self.decode(self.fixture(),demo_start_s=-1.)
+        members=self.fixture(); meta=json.loads(members['episode.json'])
+        meta['gripper']['producer']['sha256']='not-a-sha'; members['episode.json']=json.dumps(meta)
+        with self.assertRaises(ValueError): self.decode(members)
+        with self.assertRaises(ValueError):
+            self.decode(self.fixture(),demo_start_s='5')
+
+    def test_pilot_summary_reports_status_gap_and_duration(self):
+        report=pilot_summary(self.decode(self.fixture()))
+        self.assertEqual(report['status_counts'],{'D':4,'M':0,'T':0,'X':1})
+        self.assertEqual(report['longest_tx_run'],1)
+        self.assertEqual(report['gap_min_m'],.04)
+        self.assertFalse(report['pilot_duration_20s_pass'])
+        self.assertTrue(report['gripper_producer_recorded'])
 
     def test_duplicate_timestamp_and_nonunit_quaternion(self):
         members=self.fixture()
