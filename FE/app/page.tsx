@@ -620,6 +620,8 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
   const setExpectedEpisodes = (expectedEpisodes: number) => updateLearningDraft({ expectedEpisodes });
   const setSelected = (fn: (current: string[]) => string[]) => updateLearningDraft({ selected: fn(selected) });
   const [catalog, setCatalog] = useState<TrainingSkill[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
   const [requirements, setRequirements] = useState<TrainingRequirements | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const serverSkill = catalog.find(item => item.skillKey === skillKey);
@@ -636,13 +638,38 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
   const selectedData = availableData.filter(item => item.ready && selected.includes(item.id));
   const allReadySelected = readyData.length > 0 && readyData.every(item => selected.includes(item.id));
   useEffect(() => {
-    void fetchTrainingSkills().then(setCatalog).catch(() => onToast('학습 동작 목록을 불러오지 못했어요.'));
+    setCatalogLoading(true);
+    setCatalogError(false);
+    void fetchTrainingSkills()
+      .then(setCatalog)
+      .catch(() => {
+        setCatalogError(true);
+        onToast('학습 동작 목록을 불러오지 못했어요.');
+      })
+      .finally(() => setCatalogLoading(false));
   }, [onToast]);
   useEffect(() => {
     if (catalog.length && !catalog.some(item => item.skillKey === skillKey)) {
-      setSkillKey(catalog[0].skillKey);
+      updateLearningDraft({
+        step: 1,
+        skillKey: catalog[0].skillKey,
+        method: null,
+        selected: [],
+        trainingJobId: undefined,
+        name: '',
+        error: undefined,
+      });
+    } else if (!catalogLoading && !catalog.length && step !== 1) {
+      updateLearningDraft({
+        step: 1,
+        method: null,
+        selected: [],
+        trainingJobId: undefined,
+        name: '',
+        error: undefined,
+      });
     }
-  }, [catalog, skillKey]);
+  }, [catalog, catalogLoading, skillKey, step, updateLearningDraft]);
   useEffect(() => {
     if (!serverSkill) return;
     void fetchTrainingRequirements(serverSkill.skillKey).then((next) => {
@@ -712,6 +739,14 @@ function LearnView({ onNavigate, onToast, onGoWork }: { onNavigate: (view: View)
     step > 4 ? '확인 완료' : '',
     '',
   ];
+
+  if (catalogLoading) {
+    return <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>학습 동작을 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>;
+  }
+
+  if (catalogError) {
+    return <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>학습 동작을 불러오지 못했어요</h2><p>페이지를 새로고침해 다시 시도해 주세요.</p></section></div>;
+  }
 
   return <>
     <div className="page-heading learning-heading title-divider"><div><h1>학습 생성</h1></div><span className="draft-label">{draftReady && draftStored ? '이 기기에 임시 저장됨' : '현재 화면에 보관 중'}</span></div>
