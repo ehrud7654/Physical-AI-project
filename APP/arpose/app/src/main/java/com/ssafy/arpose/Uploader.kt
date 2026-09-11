@@ -7,9 +7,11 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.json.JSONObject
 
 /**
  * 녹화 폴더 하나를 zip 으로 묶어 서버에 올린다.
@@ -118,5 +120,94 @@ object Uploader {
         } finally {
             conn.disconnect()
         }
+    }
+
+    // ---------------- presigned S3 3-step (EPISODE-UPLOAD-01/02) ----------------
+
+    /** C(장치 인증) 붙기 전 스텁 토큰. 목 서버는 검증 안 함. 로그엔 안 남긴다. */
+    private fun bearer(ctx: Context) = "Bearer stub-${deviceId(ctx)}"
+
+    /** ZIP 전체 SHA-256 (소문자 hex 64). 스트리밍. */
+    fun sha256Hex(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { ins ->
+            val buf = ByteArray(1 shl 16); var n: Int
+            while (ins.read(buf).also { n = it } > 0) md.update(buf, 0, n)
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    data class Session(val uploadSessionId: String, val uploadUrl: String, val contentType: String)
+
+    /** ① 업로드 세션 발급. */
+    fun requestSession(
+        ctx: Context, jobId: String, sessionId: String, endedAt: String,
+        sizeBytes: Long, sha256: String, idemKey: String
+    ): Session? {
+        val body = JSONObject()
+            .put("sessionId", sessionId).put("contentType", "application/zip")
+            .put("sizeBytes", sizeBytes).put("sha256", sha256)
+            .put("metadata", JSONObject().put("endedAt", endedAt)).toString()
+        val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", bearer(ctx))
+            setRequestProperty("Idempotency-Key", idemKey)
+        }
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            if (code !in 200..299) { Log.w(TAG, "session 발급 HTTP $code"); return null }
+            val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
+            val ct = d.optJSONObject("requiredHeaders")?.optString("Content-Type", "application/zip")
+                ?: "application/zip"
+            Session(d.getString("uploadSessionId"), d.getString("uploadUrl"), ct)
+        } catch (e: Exception) { Log.w(TAG, "session 발급 실패: ${e.message}"); null }
+        finally { conn.disconnect() }
+    }
+
+    /** ② S3 presigned PUT. 성공 시 ETag. */
+    fun putS3(uploadUrl: String, zip: File, contentType: String): String? {
+        val conn = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"; doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Content-Type", contentType)
+            setFixedLengthStreamingMode(zip.length())
+        }
+        return try {
+            BufferedOutputStream(conn.outputStream, 1 shl 16).use { out ->
+                zip.inputStream().use { it.copyTo(out) }
+            }
+            val code = conn.responseCode
+            if (code !in 200..299) { Log.w(TAG, "S3 PUT HTTP $code"); return null }
+            conn.getHeaderField("ETag") ?: "no-etag"
+        } catch (e: Exception) { Log.w(TAG, "S3 PUT 실패: ${e.message}"); null }
+        finally { conn.disconnect() }
+    }
+
+    /** ③ 완료 통지. 202/200 이면 true. */
+    fun complete(
+        ctx: Context, jobId: String, uploadSessionId: String, sessionId: String,
+        endedAt: String, sizeBytes: Long, sha256: String, idemKey: String
+    ): Boolean {
+        val body = JSONObject().put("sessionId", sessionId).put("endedAt", endedAt)
+            .put("sizeBytes", sizeBytes).put("sha256", sha256).toString()
+        val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions/$uploadSessionId/complete")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", bearer(ctx))
+            setRequestProperty("Idempotency-Key", idemKey)
+        }
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            Log.i(TAG, "complete HTTP $code")
+            code in 200..299
+        } catch (e: Exception) { Log.w(TAG, "complete 실패: ${e.message}"); false }
+        finally { conn.disconnect() }
     }
 }
