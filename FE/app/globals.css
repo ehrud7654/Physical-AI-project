@@ -2426,3 +2426,47 @@ body{
   .saved-work-select-row>.saved-work-row{min-width:0;padding-left:12px}
   .workflow-library-toolbar>.selection-summary{justify-content:flex-start;color:var(--product-muted);font-size:12px}
 }
+
+/* UMI registration QR handoff. The placeholder is replaced with a real QR
+   when the one-time registration-code API becomes available. */
+.umi-qr-modal{width:min(500px,100%);padding:26px}
+.umi-qr-modal .modal-heading h2{margin-top:4px;font-size:20px}
+.umi-qr-modal .modal-heading .eyebrow{color:var(--product-primary);font-weight:700}
+.umi-qr-content{display:flex;align-items:center;justify-content:center;gap:28px;margin:28px 0 20px;padding:24px;border:1px solid var(--line);border-radius:16px;background:#f7f8fb}
+.umi-qr-placeholder{position:relative;display:grid;flex:0 0 164px;width:164px;height:164px;place-items:center;border:10px solid #fff;border-radius:12px;background:repeating-linear-gradient(45deg,#e4e7ee 0 8px,#f7f8fb 8px 16px);box-shadow:0 4px 18px rgb(37 48 82 / 10%);color:#737d99;font-size:18px;font-weight:800;letter-spacing:.12em}
+.umi-qr-placeholder::after{position:absolute;inset:0;background:rgb(255 255 255 / 52%);content:""}
+.umi-qr-placeholder>span,.umi-qr-placeholder>.qr-corner{z-index:1}
+.qr-corner{position:absolute;width:34px;height:34px;border:7px solid #65708f;background:white}
+.qr-corner-top-left{top:10px;left:10px}.qr-corner-top-right{top:10px;right:10px}.qr-corner-bottom-left{bottom:10px;left:10px}
+.umi-qr-state{display:flex;min-width:0;flex-direction:column;align-items:flex-start}
+.umi-qr-state>span{margin-bottom:10px;padding:5px 9px;border-radius:999px;background:#e9edf5;color:#586482;font-size:11px;font-weight:700}
+.umi-qr-state>strong{max-width:100%;overflow:hidden;color:var(--product-ink);font-size:18px;text-overflow:ellipsis;white-space:nowrap}
+.umi-qr-state>p{margin:5px 0 0;color:var(--product-muted);font-size:13px}
+.umi-qr-guide{padding:14px 16px;border-radius:12px;background:#f1f3f7;color:var(--product-muted)}
+.umi-qr-guide strong{display:block;margin-bottom:4px;color:#535f7c;font-size:12px}.umi-qr-guide p{margin:0;font-size:11px;line-height:1.6}
+.umi-qr-actions{justify-content:flex-end;gap:10px}.umi-qr-actions button{width:auto;min-width:106px}
+@media(max-width:560px){.umi-qr-content{flex-direction:column;gap:18px}.umi-qr-state{align-items:center}.umi-qr-modal{padding:20px}}
+
+/* Device multi-select follows the same compact delete pattern as other lists. */
+.device-toolbar-actions{display:flex;align-items:center;gap:10px;margin-left:auto;padding-bottom:9px}
+.device-toolbar-actions .device-sort{margin-left:0;padding-bottom:0}
+.device-toolbar-actions .device-sort select,.device-toolbar-actions .device-register-action,.device-delete-action{height:34px!important;min-height:34px!important}
+.device-toolbar-actions .device-register-action{margin-bottom:0}
+.device-delete-action{width:auto!important;height:34px!important;margin:0!important;padding:0 14px!important;border-radius:9px!important}
+.device-select-all{display:flex;align-items:center;gap:8px;color:var(--product-muted);font-size:12px;white-space:nowrap}
+.device-card{position:relative}
+.device-card.selecting{border-color:#c8cfdf!important}
+.device-card-checkbox{position:absolute;z-index:2;top:18px;left:18px}
+.device-card-content{display:block;width:100%;padding:0;border:0;color:inherit;background:transparent;text-align:left}
+button.device-card-content{cursor:pointer}
+.device-card.selecting .device-card-content{cursor:pointer}
+.device-card.selecting .device-card-head{padding-left:28px}
+@media(max-width:900px){
+  .device-toolbar-actions{width:100%;flex-wrap:wrap;margin-left:0;padding-bottom:0}
+  .device-toolbar-actions .device-register-action{margin-left:auto}
+}
+@media(max-width:560px){
+  .device-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .device-select-all{grid-column:1/-1}
+  .device-toolbar-actions .device-sort,.device-toolbar-actions .device-register-action,.device-delete-action{width:100%!important;margin:0!important}
+}

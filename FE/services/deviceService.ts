@@ -94,6 +94,14 @@ export async function registerDevice(
   return { robots, umis };
 }
 
+export async function deleteDevices(
+  deviceIds: string[],
+): Promise<{ robots: Robot[]; umis: Umi[] }> {
+  await Promise.all(deviceIds.map((id) => apiRequest<void>(`/devices/${id}`, { method: 'DELETE' })));
+  const [robots, umis] = await Promise.all([fetchRobots(), fetchUmis()]);
+  return { robots, umis };
+}
+
 /** 모델 배포 API 연동 전까지 서버의 최신 로봇 목록을 유지한다. */
 export async function applyModel(robotId: string, model: string): Promise<Robot[]> {
   void robotId;
