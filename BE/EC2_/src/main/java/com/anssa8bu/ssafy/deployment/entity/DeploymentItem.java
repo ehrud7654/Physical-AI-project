@@ -45,13 +45,39 @@ public class DeploymentItem extends AuditableEntity {
     this.status = DeploymentItemStatus.PENDING;
   }
 
-  public UUID getId() { return id; }
-  public UUID getDeploymentId() { return deploymentId; }
-  public UUID getSkillVersionId() { return skillVersionId; }
-  public boolean isGatePassed() { return gatePassed; }
-  public DeploymentItemStatus getStatus() { return status; }
-  public Instant getDownloadedAt() { return downloadedAt; }
-  public Instant getVerifiedAt() { return verifiedAt; }
-  public String getErrorCode() { return errorCode; }
-  public String getErrorMessage() { return errorMessage; }
+  public UUID getId() {
+    return id;
+  }
+
+  public UUID getDeploymentId() {
+    return deploymentId;
+  }
+
+  public UUID getSkillVersionId() {
+    return skillVersionId;
+  }
+
+  public boolean isGatePassed() {
+    return gatePassed;
+  }
+
+  public DeploymentItemStatus getStatus() {
+    return status;
+  }
+
+  public Instant getDownloadedAt() {
+    return downloadedAt;
+  }
+
+  public Instant getVerifiedAt() {
+    return verifiedAt;
+  }
+
+  public String getErrorCode() {
+    return errorCode;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
 }

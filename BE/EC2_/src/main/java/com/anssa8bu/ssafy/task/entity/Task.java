@@ -2,6 +2,7 @@ package com.anssa8bu.ssafy.task.entity;
 
 import com.anssa8bu.ssafy.common.entity.AuditableEntity;
 import jakarta.persistence.*;
+import java.time.Instant;
 import java.util.*;
 
 @Entity
@@ -24,6 +25,9 @@ public class Task extends AuditableEntity {
   @Column(name = "latest_version")
   private Integer latestVersion;
 
+  @Column(name = "deleted_at")
+  private Instant deletedAt;
+
   protected Task() {}
 
   public Task(UUID id, UUID owner, String key, String name, String desc) {
@@ -38,13 +42,36 @@ public class Task extends AuditableEntity {
     return id;
   }
 
-  public UUID getOwnerId() { return ownerId; }
-  public String getTaskKey() { return taskKey; }
-  public String getDisplayName() { return displayName; }
-  public String getDescription() { return description; }
+  public UUID getOwnerId() {
+    return ownerId;
+  }
+
+  public String getTaskKey() {
+    return taskKey;
+  }
+
+  public String getDisplayName() {
+    return displayName;
+  }
+
+  public String getDescription() {
+    return description;
+  }
 
   public Integer getLatestVersion() {
     return latestVersion;
+  }
+
+  public Instant getDeletedAt() {
+    return deletedAt;
+  }
+
+  public boolean isDeleted() {
+    return deletedAt != null;
+  }
+
+  public void softDelete(Instant deletedAt) {
+    if (this.deletedAt == null) this.deletedAt = Objects.requireNonNull(deletedAt);
   }
 
   public void update(String name, String description) {

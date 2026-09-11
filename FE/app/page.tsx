@@ -446,6 +446,7 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
 function RobotDetailView({ robotId, onBack, onNavigate, onToast }: { robotId: string; onBack: () => void; onNavigate: (view: View) => void; onToast: (message: string) => void }) {
   const { robots, savedWorks, updateRobotInfo } = useAppStore();
   const listedRobot = robots.find(item => item.id === robotId) ?? robots[0];
+  const detailRobotId = listedRobot?.robotId;
   const [detail, setDetail] = useState<RobotDetail | null>(null);
   const [executionHistory, setExecutionHistory] = useState<RobotExecution[] | null>(null);
   const [detailError, setDetailError] = useState(false);
@@ -455,14 +456,15 @@ function RobotDetailView({ robotId, onBack, onNavigate, onToast }: { robotId: st
     setDetail(null);
     setExecutionHistory(null);
     setDetailError(false);
-    Promise.allSettled([fetchRobotDetail(robotId), fetchRobotExecutions(robotId)]).then(([robotResult, executionResult]) => {
+    if (!detailRobotId) return () => { active = false; };
+    Promise.allSettled([fetchRobotDetail(detailRobotId), fetchRobotExecutions(detailRobotId)]).then(([robotResult, executionResult]) => {
       if (!active) return;
       if (robotResult.status === 'fulfilled') setDetail(robotResult.value);
       else setDetailError(true);
       if (executionResult.status === 'fulfilled') setExecutionHistory(executionResult.value.data);
     });
     return () => { active = false; };
-  }, [robotId]);
+  }, [detailRobotId]);
   const robot = listedRobot && detail ? { ...listedRobot, name: detail.name, status: detail.status } : listedRobot;
   if (!robot) return <div className="center-panel"><section className="card state-card"><span className="state-icon">R</span><h2>등록된 로봇이 없어요</h2><p>장치 관리에서 로봇을 먼저 등록해 주세요.</p><button className="primary-button" onClick={onBack}>장치 관리로 이동</button></section></div>;
 
@@ -652,7 +654,7 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [savingResult, setSavingResult] = useState(false);
-  const serverSkill = catalog.find(item => item.skillKey === skillKey);
+  const serverSkill = newSkillActive ? undefined : catalog.find(item => item.skillKey === skillKey);
   const displayedSkills = catalog.map((item, index) => ({
     key: item.skillKey,
     name: item.displayName,
@@ -663,7 +665,7 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
   const customName = name.trim();
   const skill = newSkillActive ? (customName ? { ...catalogSkill, name: customName } : undefined) : catalogSkill;
   const selectedUmi = umis.find(item => item.id === umiId);
-  const availableData = datasets.filter(item => item.skillKey === skillKey);
+  const availableData = newSkillActive ? [] : datasets.filter(item => item.skillKey === skillKey);
   const readyData = availableData.filter(item => item.ready);
   const selectedData = availableData.filter(item => item.ready && selected.includes(item.id));
   const allReadySelected = readyData.length > 0 && readyData.every(item => selected.includes(item.id));
@@ -734,8 +736,8 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
   const stage = progress < 35 ? '데이터 전처리' : progress < 75 ? '동작 패턴 학습' : '결과 확인';
   const canContinueData = method === 'new'
     ? Boolean(selectedUmi?.status === '온라인' && Number.isInteger(expectedEpisodes)
-        && expectedEpisodes >= (requirements?.minimumEpisodeCount ?? 1)
-        && expectedEpisodes <= (requirements?.maximumEpisodeCount ?? 100))
+        && expectedEpisodes >= (newSkillActive ? 1 : (requirements?.minimumEpisodeCount ?? 1))
+        && expectedEpisodes <= (newSkillActive ? 100 : (requirements?.maximumEpisodeCount ?? 100)))
     : selectedData.length > 0;
   const submitTraining = async () => {
     const targetUmi = method === 'new' ? selectedUmi : umis.find(item => item.id === selectedData[0]?.umiId);
@@ -743,13 +745,16 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
     setSubmitting(true);
     try {
       const job = await createTrainingJob({
-        skillKey,
+        ...(newSkillActive
+          ? { newSkill: { displayName: customName } }
+          : { skillKey }),
         umiDeviceId: targetUmi.deviceId,
         inputMode: method === 'new' ? 'COLLECT_NEW' : 'EXISTING_EPISODES',
         expectedEpisodeCount: method === 'new' ? expectedEpisodes : undefined,
         episodeIds: method === 'existing' ? selectedData.map(item => item.id) : undefined,
       });
       updateLearningDraft({
+        skillKey: job.skillKey,
         progress: job.progress,
         step: 5,
         method: job.inputMode === 'COLLECT_NEW' ? 'new' : 'existing',
@@ -814,9 +819,9 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
       {['동작 선택', '데이터 방식', '데이터 준비', '최종 확인', '학습 진행'].map((label, index) => <li key={label} className={step === index + 1 || (step === 6 && index === 4) ? 'current' : step > index + 1 ? 'done' : ''}><span>{step > index + 1 ? '✓' : index + 1}</span><div><strong>{label}</strong>{learningStepSummaries[index] && <small>{learningStepSummaries[index]}</small>}</div></li>)}
     </ol>
 
-    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택하거나 새 이름을 입력해 주세요</h2></div></div><div className="skill-choice-grid">{displayedSkills.map((item) => <button key={item.key} className={!newSkillActive && skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{!newSkillActive && skillKey === item.key ? '✓' : ''}</i></button>)}<div className={`new-skill-entry${newSkillActive ? ' selected' : ''}`}><span aria-hidden="true">＋</span><div><label htmlFor="new-skill-name">새로운 동작 학습하기</label><div className="new-skill-input-row"><input id="new-skill-name" maxLength={40} value={name} onFocus={() => setNewSkillActive(true)} onChange={(event) => { setNewSkillActive(true); updateLearningDraft({ name: event.target.value, selected: [] }); }} placeholder="학습 이름을 입력해 주세요" autoComplete="off" /></div></div></div></div><div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
+    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택하거나 새 이름을 입력해 주세요</h2></div></div><div className="skill-choice-grid">{displayedSkills.map((item) => <button key={item.key} className={!newSkillActive && skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{!newSkillActive && skillKey === item.key ? '✓' : ''}</i></button>)}<div className={`new-skill-entry${newSkillActive ? ' selected' : ''}`}><span aria-hidden="true">＋</span><div><label htmlFor="new-skill-name">새로운 동작 학습하기</label><div className="new-skill-input-row"><input id="new-skill-name" maxLength={40} value={name} onFocus={() => { setNewSkillActive(true); setMethod('new'); }} onChange={(event) => { setNewSkillActive(true); updateLearningDraft({ name: event.target.value, method: 'new', selected: [] }); }} placeholder="학습 이름을 입력해 주세요" autoComplete="off" /></div></div></div></div><div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
 
-    {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>2</span><div><h2>학습 데이터를 어떻게 준비할까요?</h2></div></div><div className="method-choice-grid"><button className={method === 'new' ? 'selected' : ''} onClick={() => setMethod('new')}><span className="method-icon">＋</span><strong>새로 동작 보여주기</strong><p>온라인 UMI를 선택하고 로봇에게 새로운 동작을 보여줍니다.</p><ul><li>새 환경이나 동작을 학습할 때</li><li>UMI로 동작을 직접 보여줄 수 있을 때</li></ul></button><button className={method === 'existing' ? 'selected' : ''} onClick={() => setMethod('existing')}><span className="method-icon">↻</span><strong>기존 데이터 사용</strong><p>준비된 기존 데이터를 선택해 바로 학습합니다.</p><ul><li>같은 동작을 다시 학습할 때</li><li>기존 데이터를 조합하고 싶을 때</li></ul></button></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(1)}>← 이전</button><button className="primary-button" disabled={!method} onClick={() => setStep(3)}>다음: 데이터 준비 →</button></div></section>}
+    {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>2</span><div><h2>학습 데이터를 어떻게 준비할까요?</h2></div></div><div className="method-choice-grid"><button className={method === 'new' ? 'selected' : ''} onClick={() => setMethod('new')}><span className="method-icon">＋</span><strong>새로 동작 보여주기</strong><p>온라인 UMI를 선택하고 로봇에게 새로운 동작을 보여줍니다.</p><ul><li>새 환경이나 동작을 학습할 때</li><li>UMI로 동작을 직접 보여줄 수 있을 때</li></ul></button><button disabled={newSkillActive} className={method === 'existing' ? 'selected' : ''} onClick={() => setMethod('existing')}><span className="method-icon">↻</span><strong>기존 데이터 사용</strong><p>{newSkillActive ? '새로운 동작은 먼저 데이터를 수집해야 합니다.' : '준비된 기존 데이터를 선택해 바로 학습합니다.'}</p><ul><li>같은 동작을 다시 학습할 때</li><li>기존 데이터를 조합하고 싶을 때</li></ul></button></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(1)}>← 이전</button><button className="primary-button" disabled={!method} onClick={() => setStep(3)}>다음: 데이터 준비 →</button></div></section>}
 
     {step === 3 && <section className="card learning-wizard-card"><div className="wizard-title"><span>3</span><div><h2>{method === 'new' ? '동작을 보여줄 UMI를 선택해 주세요' : '학습에 사용할 데이터를 선택해 주세요'}</h2></div></div>{method === 'new' ? <><div className="umi-choice-list">{umis.map((item) => <button key={item.id} disabled={item.status !== '온라인'} className={umiId === item.id ? 'selected' : ''} onClick={() => setUmiId(item.id)}><span className="device-visual umi">U</span><div><strong>{item.id}</strong><p>{item.place} · 최근 사용 {item.collected}</p></div><span className={`status-pill status-${item.status}`}><i />{item.status}</span></button>)}</div><label className="episode-count">예상 동작 횟수<input type="number" min={1} value={expectedEpisodes} onChange={(event) => setExpectedEpisodes(Number(event.target.value))} /></label></> : <div className="episode-select-list"><div className="episode-selection-toolbar"><span>학습 가능 {readyData.length}개</span><button className="text-button" type="button" disabled={!readyData.length} onClick={toggleAllReady}>{allReadySelected ? '전체 선택 해제' : '학습 가능한 데이터 전체 선택'}</button></div>{availableData.map((item) => { const available = item.trainable; return <label key={item.id} className={`${selected.includes(item.id) ? 'selected' : ''}${!available ? ' disabled' : ''}`}><input type="checkbox" disabled={!available} checked={selected.includes(item.id)} onChange={() => toggleEpisode(item.id)} /><span><strong>데이터 {String(item.seq).padStart(3, '0')}</strong><small>{item.date} · {item.duration} · {item.umiId}</small></span><em>{available ? '확인 완료 · 학습 가능' : recoveryActionLabel[item.recoveryAction]}</em></label>; })}{!availableData.length && <p className="table-empty">이 동작의 데이터가 없어요. 이전 단계에서 새로 동작 보여주기를 선택해 주세요.</p>}<div className="episode-selection-summary" role="status"><strong>{selectedData.length}개 선택됨</strong><span>{selectedData.length > 0 ? '선택한 데이터로 진행할 수 있어요.' : '데이터를 선택해 주세요.'}</span></div></div>}<div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(2)}>← 이전</button><button className="primary-button" disabled={!canContinueData} onClick={() => setStep(4)}>다음: 최종 확인 →</button></div></section>}
 
@@ -835,7 +840,7 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
       </section>
       <section className="card log-card">
         <div className="log-heading"><div><h3>진행 기록</h3></div><span>{step === 6 ? '완료' : '실시간'}</span></div>
-        {learningDraft.error && <div className="log-error" role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => updateLearningDraft({ error: undefined, startedAt: Date.now(), progress: 12 })}>다시 시도</button></div>}
+        {learningDraft.error && <div className="log-error" role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => onNavigate('training')}>학습 목록에서 다시 시도</button></div>}
         <div className="log-list"><p><time>10:52:08</time><span className="log-ok">완료</span>학습 작업 생성</p><p><time>10:52:14</time><span className="log-ok">완료</span>입력 데이터 확인</p>{step === 6 ? <p><time>완료</time><span className="log-ok">완료</span>학습 및 결과 확인 완료</p> : <p><time>10:53:02</time><span className="log-run">진행</span>{stage} 진행 중...</p>}</div>
         <div className="training-save-actions"><button className="primary-button" disabled={step !== 6 || savingResult} onClick={() => void saveCompletedTraining()}>{savingResult ? '저장 중...' : '학습 저장'}</button>{step !== 6 && <small>학습이 완료되면 저장할 수 있어요.</small>}</div>
       </section>

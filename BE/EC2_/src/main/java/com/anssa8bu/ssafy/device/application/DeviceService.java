@@ -1,5 +1,6 @@
 package com.anssa8bu.ssafy.device.application;
 
+import com.anssa8bu.ssafy.common.exception.BusinessConflictException;
 import com.anssa8bu.ssafy.device.dto.DeviceCreateRequest;
 import com.anssa8bu.ssafy.device.dto.DeviceResponse;
 import com.anssa8bu.ssafy.device.dto.DeviceUpdateRequest;
@@ -9,6 +10,10 @@ import com.anssa8bu.ssafy.device.entity.DeviceType;
 import com.anssa8bu.ssafy.device.exception.DeviceAlreadyRegisteredException;
 import com.anssa8bu.ssafy.device.exception.DeviceNotFoundException;
 import com.anssa8bu.ssafy.device.repository.DeviceRepository;
+import com.anssa8bu.ssafy.model.repository.RobotProfileRepository;
+import com.anssa8bu.ssafy.robot.entity.Robot;
+import com.anssa8bu.ssafy.robot.entity.RobotConnectionStatus;
+import com.anssa8bu.ssafy.robot.repository.RobotRepository;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -18,9 +23,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class DeviceService {
 
   private final DeviceRepository deviceRepository;
+  private final RobotRepository robotRepository;
+  private final RobotProfileRepository robotProfileRepository;
 
-  public DeviceService(DeviceRepository deviceRepository) {
+  public DeviceService(
+      DeviceRepository deviceRepository,
+      RobotRepository robotRepository,
+      RobotProfileRepository robotProfileRepository) {
     this.deviceRepository = deviceRepository;
+    this.robotRepository = robotRepository;
+    this.robotProfileRepository = robotProfileRepository;
   }
 
   @Transactional
@@ -39,7 +51,28 @@ public class DeviceService {
             request.name().trim(),
             DeviceConnectionStatus.OFFLINE);
     device.changeLocation(request.location());
-    return DeviceResponse.from(deviceRepository.save(device));
+    Device savedDevice = deviceRepository.save(device);
+
+    if (request.deviceType() == DeviceType.JETSON) {
+      UUID profileId =
+          robotProfileRepository
+              .findFirstByOrderByCreatedAtAsc()
+              .orElseThrow(
+                  () ->
+                      new BusinessConflictException(
+                          "ROBOT_PROFILE_NOT_CONFIGURED", "등록에 사용할 로봇 프로필이 없습니다."))
+              .getId();
+      robotRepository.save(
+          new Robot(
+              UUID.randomUUID(),
+              ownerId,
+              savedDevice.getId(),
+              profileId,
+              savedDevice.getName(),
+              RobotConnectionStatus.OFFLINE));
+    }
+
+    return DeviceResponse.from(savedDevice);
   }
 
   @Transactional(readOnly = true)

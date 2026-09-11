@@ -7,5 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TaskStepRepository extends JpaRepository<TaskStep, UUID> {
   List<TaskStep> findAllByTaskVersionIdOrderByStepOrder(UUID taskVersionId);
+
   long countByTaskVersionId(UUID taskVersionId);
 }

@@ -60,6 +60,8 @@ export interface DashboardData {
 
 export interface Robot {
   id: string;
+  /** robots.id. 과거 등록 데이터처럼 Robot 행이 없는 경우에는 존재하지 않는다. */
+  robotId?: string;
   jetsonDeviceId?: string;
   name: string;
   location: string;

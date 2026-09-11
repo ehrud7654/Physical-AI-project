@@ -312,6 +312,7 @@ public class Episode extends AuditableEntity {
   public Long getRowVersion() {
     return rowVersion;
   }
+
   public String getContractVersion() {
     return contractVersion;
   }

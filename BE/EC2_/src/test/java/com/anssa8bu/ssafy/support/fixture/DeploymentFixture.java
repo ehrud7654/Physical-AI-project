@@ -20,7 +20,8 @@ public final class DeploymentFixture {
     this.users = new UserDeviceFixture(em);
   }
 
-  public record Graph(UUID userId, UUID jetsonId, UUID robotProfileId, UUID robotId, UUID taskVersionId) {}
+  public record Graph(
+      UUID userId, UUID jetsonId, UUID robotProfileId, UUID robotId, UUID taskVersionId) {}
 
   public Graph graph() {
     UUID user = users.user().getId();

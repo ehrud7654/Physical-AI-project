@@ -54,14 +54,30 @@ public class Deployment extends AuditableEntity {
     return id;
   }
 
-  public UUID getRobotId() { return robotId; }
-  public UUID getTaskVersionId() { return taskVersionId; }
-  public String getErrorCode() { return errorCode; }
-  public String getErrorMessage() { return errorMessage; }
-  public Instant getAppliedAt() { return appliedAt; }
+  public UUID getRobotId() {
+    return robotId;
+  }
+
+  public UUID getTaskVersionId() {
+    return taskVersionId;
+  }
+
+  public String getErrorCode() {
+    return errorCode;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
+
+  public Instant getAppliedAt() {
+    return appliedAt;
+  }
 
   public void cancel() {
-    if (status == DeploymentStatus.SUCCEEDED || status == DeploymentStatus.FAILED || status == DeploymentStatus.CANCELED) {
+    if (status == DeploymentStatus.SUCCEEDED
+        || status == DeploymentStatus.FAILED
+        || status == DeploymentStatus.CANCELED) {
       throw new IllegalStateException("deployment is already terminal");
     }
     status = DeploymentStatus.CANCELED;

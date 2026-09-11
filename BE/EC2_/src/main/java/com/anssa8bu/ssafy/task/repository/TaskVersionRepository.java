@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TaskVersionRepository extends JpaRepository<TaskVersion, UUID> {
   List<TaskVersion> findAllByTaskIdOrderByVersionDesc(UUID taskId);
+
   Optional<TaskVersion> findByIdAndTaskId(UUID id, UUID taskId);
+
   Optional<TaskVersion> findFirstByTaskIdOrderByVersionDesc(UUID taskId);
 }

@@ -26,29 +26,58 @@ public class IdempotencyGuard {
 
   public Claim claim(UUID actorId, String method, String path, String key, Object request) {
     if (key == null || key.isBlank() || key.length() > 200) {
-      throw new IllegalArgumentException("Idempotency-Key is required and must not exceed 200 characters");
+      throw new IllegalArgumentException(
+          "Idempotency-Key is required and must not exceed 200 characters");
     }
     String lockKey = actorId + ":" + method + ":" + path + ":" + key;
     jdbc.query("select pg_advisory_xact_lock(hashtext(?))", rs -> null, lockKey);
     String requestHash = sha256(request);
-    Optional<Existing> existing = jdbc.query(
-        "select request_hash, resource_id from idempotency_keys where actor_type='USER' and actor_id=? and http_method=? and request_path=? and idempotency_key=? and expires_at>now()",
-        (ResultSet rs) -> rs.next() ? Optional.of(new Existing(rs.getString(1), rs.getString(2))) : Optional.empty(),
-        actorId.toString(), method, path, key);
+    Optional<Existing> existing =
+        jdbc.query(
+            "select request_hash, resource_id from idempotency_keys where actor_type='USER' and actor_id=? and http_method=? and request_path=? and idempotency_key=? and expires_at>now()",
+            (ResultSet rs) ->
+                rs.next()
+                    ? Optional.of(new Existing(rs.getString(1), rs.getString(2)))
+                    : Optional.empty(),
+            actorId.toString(),
+            method,
+            path,
+            key);
     if (existing.isPresent()) {
       if (!existing.get().requestHash().equals(requestHash)) {
-        throw new BusinessConflictException("IDEMPOTENCY_KEY_REUSED", "같은 멱등성 키에 다른 요청 본문을 사용할 수 없습니다.");
+        throw new BusinessConflictException(
+            "IDEMPOTENCY_KEY_REUSED", "같은 멱등성 키에 다른 요청 본문을 사용할 수 없습니다.");
       }
-      return new Claim(key, requestHash, existing.get().resourceId() == null ? null : UUID.fromString(existing.get().resourceId()));
+      return new Claim(
+          key,
+          requestHash,
+          existing.get().resourceId() == null
+              ? null
+              : UUID.fromString(existing.get().resourceId()));
     }
     return new Claim(key, requestHash, null);
   }
 
-  public void complete(UUID actorId, String method, String path, Claim claim, int responseStatus,
-      String resourceType, UUID resourceId) {
-    jdbc.update("insert into idempotency_keys(id,actor_type,actor_id,http_method,request_path,idempotency_key,request_hash,response_status,response_body,resource_type,resource_id,expires_at) values (?,'USER',?,?,?,?,?,?,'{}'::jsonb,?,?,?)",
-        UUID.randomUUID(), actorId.toString(), method, path, claim.key(), claim.requestHash(), responseStatus,
-        resourceType, resourceId.toString(), Timestamp.from(Instant.now().plus(RETENTION)));
+  public void complete(
+      UUID actorId,
+      String method,
+      String path,
+      Claim claim,
+      int responseStatus,
+      String resourceType,
+      UUID resourceId) {
+    jdbc.update(
+        "insert into idempotency_keys(id,actor_type,actor_id,http_method,request_path,idempotency_key,request_hash,response_status,response_body,resource_type,resource_id,expires_at) values (?,'USER',?,?,?,?,?,?,'{}'::jsonb,?,?,?)",
+        UUID.randomUUID(),
+        actorId.toString(),
+        method,
+        path,
+        claim.key(),
+        claim.requestHash(),
+        responseStatus,
+        resourceType,
+        resourceId.toString(),
+        Timestamp.from(Instant.now().plus(RETENTION)));
   }
 
   private String sha256(Object request) {
@@ -61,5 +90,6 @@ public class IdempotencyGuard {
   }
 
   public record Claim(String key, String requestHash, UUID existingResourceId) {}
+
   private record Existing(String requestHash, String resourceId) {}
 }

@@ -42,8 +42,7 @@ public class DeviceController {
 
   @GetMapping
   public ApiResponse<List<DeviceResponse>> findAll(
-      @AuthenticationPrincipal Jwt jwt,
-      @RequestParam(required = false) DeviceType deviceType) {
+      @AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) DeviceType deviceType) {
     return ApiResponse.of(deviceService.findAll(ownerId(jwt), deviceType));
   }
 

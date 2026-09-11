@@ -17,7 +17,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/robots/{robotId}/executions")
 public class ExecutionController {
   private final ExecutionService service;
-  public ExecutionController(ExecutionService service) { this.service = service; }
+
+  public ExecutionController(ExecutionService service) {
+    this.service = service;
+  }
 
   @PostMapping
   public ResponseEntity<ApiResponse<ExecutionResponse>> create(
@@ -25,7 +28,8 @@ public class ExecutionController {
       @PathVariable UUID robotId,
       @RequestHeader("Idempotency-Key") String idempotencyKey,
       @Valid @RequestBody CreateRequest request) {
-    return ResponseEntity.accepted().body(ApiResponse.of(service.create(owner(jwt), robotId, idempotencyKey, request)));
+    return ResponseEntity.accepted()
+        .body(ApiResponse.of(service.create(owner(jwt), robotId, idempotencyKey, request)));
   }
 
   @GetMapping
@@ -36,7 +40,9 @@ public class ExecutionController {
 
   @GetMapping("/{executionId}")
   public ApiResponse<ExecutionResponse> get(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID robotId, @PathVariable UUID executionId) {
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID robotId,
+      @PathVariable UUID executionId) {
     return ApiResponse.of(service.get(owner(jwt), robotId, executionId));
   }
 
@@ -46,8 +52,11 @@ public class ExecutionController {
       @PathVariable UUID robotId,
       @PathVariable UUID executionId,
       @RequestHeader("Idempotency-Key") String idempotencyKey) {
-    return ResponseEntity.accepted().body(ApiResponse.of(service.cancel(owner(jwt), robotId, executionId, idempotencyKey)));
+    return ResponseEntity.accepted()
+        .body(ApiResponse.of(service.cancel(owner(jwt), robotId, executionId, idempotencyKey)));
   }
 
-  private UUID owner(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
+  private UUID owner(Jwt jwt) {
+    return UUID.fromString(jwt.getSubject());
+  }
 }

@@ -1,1 +1,37 @@
-package com.anssa8bu.ssafy.common.redis.observability; import io.micrometer.core.instrument.*; import org.slf4j.*; import org.springframework.stereotype.Component; import java.util.Optional; import java.util.function.Supplier; @Component public class ObservedRedisOperations {private static final Logger log=LoggerFactory.getLogger(ObservedRedisOperations.class);private final Counter hits,misses,errors,fallbacks;public ObservedRedisOperations(MeterRegistry m){hits=m.counter("app.redis.cache","result","hit");misses=m.counter("app.redis.cache","result","miss");errors=m.counter("app.redis.operations","result","error");fallbacks=m.counter("app.redis.operations","result","fallback");}public <T>Optional<T> read(Supplier<Optional<T>> op){try{Optional<T> v=op.get();(v.isPresent()?hits:misses).increment();return v;}catch(RuntimeException e){errors.increment();log.warn("Redis operation failed; sensitive values omitted");return Optional.empty();}}public <T>T fallback(Supplier<T> db){fallbacks.increment();return db.get();}}
+package com.anssa8bu.ssafy.common.redis.observability;
+
+import io.micrometer.core.instrument.*;
+import java.util.Optional;
+import java.util.function.Supplier;
+import org.slf4j.*;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ObservedRedisOperations {
+  private static final Logger log = LoggerFactory.getLogger(ObservedRedisOperations.class);
+  private final Counter hits, misses, errors, fallbacks;
+
+  public ObservedRedisOperations(MeterRegistry m) {
+    hits = m.counter("app.redis.cache", "result", "hit");
+    misses = m.counter("app.redis.cache", "result", "miss");
+    errors = m.counter("app.redis.operations", "result", "error");
+    fallbacks = m.counter("app.redis.operations", "result", "fallback");
+  }
+
+  public <T> Optional<T> read(Supplier<Optional<T>> op) {
+    try {
+      Optional<T> v = op.get();
+      (v.isPresent() ? hits : misses).increment();
+      return v;
+    } catch (RuntimeException e) {
+      errors.increment();
+      log.warn("Redis operation failed; sensitive values omitted");
+      return Optional.empty();
+    }
+  }
+
+  public <T> T fallback(Supplier<T> db) {
+    fallbacks.increment();
+    return db.get();
+  }
+}

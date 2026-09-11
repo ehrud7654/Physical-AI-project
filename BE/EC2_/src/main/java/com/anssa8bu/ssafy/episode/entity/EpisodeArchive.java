@@ -154,6 +154,7 @@ public class EpisodeArchive extends AuditableEntity {
   public EpisodeArchiveStatus getStatus() {
     return status;
   }
+
   public String getArchiveFormatVersion() {
     return archiveFormatVersion;
   }

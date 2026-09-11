@@ -39,8 +39,13 @@ export async function fetchRobots(): Promise<Robot[]> {
     apiRequest<ApiRobot[]>('/robots'),
     apiRequest<ApiDevice[]>('/devices?deviceType=JETSON'),
   ]);
-  const devicesById = new Map(devices.map((device) => [device.id, device]));
-  return robots.map((robot) => toRobot(robot, devicesById.get(robot.jetsonDeviceId)));
+  const robotsByDeviceId = new Map(robots.map((robot) => [robot.jetsonDeviceId, robot]));
+
+  // 장치 목록을 기준으로 병합해 과거 버전에서 devices에만 저장된 Jetson도 빠뜨리지 않는다.
+  return devices.map((device) => {
+    const robot = robotsByDeviceId.get(device.id);
+    return robot ? toRobot(robot, device) : toRobotDevice(device);
+  });
 }
 
 export async function fetchRobotDetail(robotId: string): Promise<RobotDetail> {
@@ -65,15 +70,26 @@ export async function fetchUmis(): Promise<Umi[]> {
 export async function registerDevice(
   input: RegisterDeviceInput,
 ): Promise<{ robots: Robot[]; umis: Umi[] }> {
-  await apiRequest<ApiDevice>('/devices', {
-    method: 'POST',
-    body: JSON.stringify({
-      deviceType: toApiDeviceType(input.type),
-      handleNumber: input.id.trim(),
-      name: input.name.trim(),
-      location: input.location.trim(),
-    }),
-  });
+  if (input.type === 'robot') {
+    await apiRequest<ApiRobot>('/robots', {
+      method: 'POST',
+      body: JSON.stringify({
+        handleNumber: input.id.trim(),
+        name: input.name.trim(),
+        location: input.location.trim(),
+      }),
+    });
+  } else {
+    await apiRequest<ApiDevice>('/devices', {
+      method: 'POST',
+      body: JSON.stringify({
+        deviceType: toApiDeviceType(input.type),
+        handleNumber: input.id.trim(),
+        name: input.name.trim(),
+        location: input.location.trim(),
+      }),
+    });
+  }
   const [robots, umis] = await Promise.all([fetchRobots(), fetchUmis()]);
   return { robots, umis };
 }
@@ -104,10 +120,22 @@ function toApiDeviceType(type: DeviceType): ApiDeviceType {
 function toRobot(robot: ApiRobot, device?: ApiDevice): Robot {
   return {
     id: robot.id,
+    robotId: robot.id,
     jetsonDeviceId: robot.jetsonDeviceId,
     name: robot.name,
     location: device?.location ?? '위치 미지정',
     status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    model: 'API로 호출할 수 없습니다',
+  };
+}
+
+function toRobotDevice(device: ApiDevice): Robot {
+  return {
+    id: device.id,
+    jetsonDeviceId: device.id,
+    name: device.name,
+    location: device.location ?? '위치 미지정',
+    status: device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     model: 'API로 호출할 수 없습니다',
   };
 }

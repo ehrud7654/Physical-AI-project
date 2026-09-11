@@ -21,8 +21,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CHECK 제약. 엔티티 생성자가 잘못된 값을 먼저 거부하므로, 정상 fixture를 flush한 뒤 SQL UPDATE로 한 컬럼만 바꿔 DB가
- * 거부하는지 확인한다. JdbcTemplate은 테스트 트랜잭션의 커넥션을 공유한다.
+ * CHECK 제약. 엔티티 생성자가 잘못된 값을 먼저 거부하므로, 정상 fixture를 flush한 뒤 SQL UPDATE로 한 컬럼만 바꿔 DB가 거부하는지 확인한다.
+ * JdbcTemplate은 테스트 트랜잭션의 커넥션을 공유한다.
  */
 @Transactional
 class CheckConstraintIntegrationTest extends IntegrationTestBase {
@@ -89,7 +89,8 @@ class CheckConstraintIntegrationTest extends IntegrationTestBase {
     em.flush();
     assertCheckViolation(
         "retention_policies_max_delete_attempts_check",
-        () -> jdbc.update("update retention_policies set max_delete_attempts = 0 where id = ?", id));
+        () ->
+            jdbc.update("update retention_policies set max_delete_attempts = 0 where id = ?", id));
   }
 
   @Test
