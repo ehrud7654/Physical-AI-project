@@ -18,6 +18,14 @@ def pilot_summary(raw):
         longest_missing = max(longest_missing, current)
     finite = raw.gripper_gap_m[np.isfinite(raw.gripper_gap_m)]
     duration = float(raw.pose_timestamp[-1] - raw.pose_timestamp[0]) if raw.meta.n_steps > 1 else 0.0
+    producer_recorded = raw.meta.notes.get('gripper_producer') is not None
+    issues = []
+    if duration < 20.0:
+        issues.append('usable_duration_under_20s')
+    if not finite.size:
+        issues.append('no_valid_gripper_gap')
+    if not producer_recorded:
+        issues.append('gripper_producer_missing')
     return {
         'status_counts': counts,
         'longest_tx_run': longest_missing,
@@ -26,7 +34,9 @@ def pilot_summary(raw):
         'usable_duration_s': duration,
         'pilot_duration_20s_pass': duration >= 20.0,
         'effective_start_s': raw.meta.notes.get('effective_start_s'),
-        'gripper_producer_recorded': raw.meta.notes.get('gripper_producer') is not None,
+        'gripper_producer_recorded': producer_recorded,
+        'pilot_issues': issues,
+        'pilot_pass': not issues,
     }
 
 
