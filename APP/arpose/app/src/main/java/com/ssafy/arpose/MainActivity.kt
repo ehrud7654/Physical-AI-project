@@ -59,7 +59,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         private const val TAG = "POSE"
         private const val TAG_CSV = "POSE_CSV"
         private const val CAMERA_REQ = 1001
-        private const val TARGET_CPU_WIDTH = 640
+        // 16:9 1920x1080 (계약 meta 예시와 일치, 마젠타 마커 검출 확인됨). ARCore S22 제공.
+        // 4:3 은 640x480 뿐이라 고해상은 16:9. 마운트가 16:9 크롭에서 마커 유지 확인.
+        private const val TARGET_CPU_WIDTH = 1920
 
         // 추적 점프 판정 기준 (사람 손으로는 불가능한 값)
         private const val JUMP_SPEED_MPS = 2.0      // m/s
