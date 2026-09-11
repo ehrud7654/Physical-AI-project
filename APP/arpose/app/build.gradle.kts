@@ -13,6 +13,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        // OpenCV 네이티브는 arm64 만 담는다 (S22=arm64). 전 ABI 넣으면 APK 가 수백 MB 로 튄다.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildFeatures {
@@ -53,4 +55,6 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // 촬영 직후 마커 검출 즉시 QC (온디바이스, 샘플 프레임) — S15P21A103-160
+    implementation("org.opencv:opencv:4.11.0")
 }
