@@ -80,6 +80,9 @@ class Recorder(private val baseDir: File) {
 
     var currentDir: File? = null; private set
 
+    /** 에피소드 식별자 = UUID v4 (계약). 촬영 시작 시 1회 생성·폴더에 영속. 업로드 파일명 {sessionId}.zip. */
+    var sessionId: String = ""; private set
+
     private val jumps = ArrayList<Jump>()
     private val pausedSpans = ArrayList<Paused>()
     private var openPaused: Paused? = null
@@ -114,6 +117,10 @@ class Recorder(private val baseDir: File) {
         currentDir = dir
         framesDir = fd
         lastMeta = metaText
+
+        // 에피소드 UUID v4: 시작 즉시 생성·영속(재시작·재시도에도 유지). 계약 업로드 식별자.
+        sessionId = java.util.UUID.randomUUID().toString().lowercase()
+        File(dir, "session_id.txt").writeText(sessionId)
 
         File(dir, "meta.txt").writeText(metaText)
 
@@ -434,6 +441,7 @@ class Recorder(private val baseDir: File) {
         val root = JSONObject()
             .put("schema", "arpose.episode/1")
             .put("episode", dir.name)
+            .put("session_id", sessionId)
             .put("recorded_at_ms", startMs)
             .put("contract", contract)
             .put("session", session)
