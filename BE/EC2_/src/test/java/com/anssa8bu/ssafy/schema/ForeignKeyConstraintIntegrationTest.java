@@ -69,7 +69,11 @@ class ForeignKeyConstraintIntegrationTest extends IntegrationTestBase {
     TrainingProfile profile = training.retiredProfile();
     // training_profile_id는 존재하지만 (id, config_sha256) 조합이 프로필과 다르다
     training.job(
-        g.userId(), g.skillId(), g.deviceId(), profile.getId(), TrainingModelFixture.sha256Like(UUID.randomUUID()));
+        g.userId(),
+        g.skillId(),
+        g.deviceId(),
+        profile.getId(),
+        TrainingModelFixture.sha256Like(UUID.randomUUID()));
     assertForeignKeyViolation("fk_training_jobs_13", em::flush);
   }
 

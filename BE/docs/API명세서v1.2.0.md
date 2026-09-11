@@ -926,7 +926,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 
 ## 7. 스킬 API
 
-스킬은 시스템 공통 카탈로그이며 일반 사용자가 생성·수정하지 않는다. `skillKey`는 FE·BE·AI 간 계약값이고 내부 UUID `skillId`는 DB 관계와 사용자 API 경로에 사용한다.
+스킬은 시스템 공통 카탈로그와 사용자 소유 커스텀 스킬로 구성한다. `skillKey`는 FE·BE·AI 간 계약값이고 내부 UUID `skillId`는 DB 관계와 사용자 API 경로에 사용한다.
 
 ### SKILL-01 스킬 목록
 
@@ -977,6 +977,16 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 활성 RobotSkillDeployment가 참조하면 `409 SKILL_VERSION_IN_USE`.
 - 보관 처리는 S3 파일 즉시 삭제를 의미하지 않는다.
 
+### SKILL-10 사용자 커스텀 스킬 생성
+
+- `POST /skills` · 사용자 · `Idempotency-Key` 필수
+- 요청: `{ "displayName": "빨간 블록 쌓기", "description": "빨간 블록을 순서대로 쌓는 동작" }`.
+- 서버는 전역 고유 `custom_{UUID}` 형식의 `skillKey`를 생성한다.
+- `ownerId`는 인증 사용자, `tier=CUSTOM`, `status=PLANNED`로 저장한다.
+- 동일 사용자의 표시 이름은 대소문자를 무시하고 중복될 수 없다.
+- 성공 `201`: 생성된 `Skill`.
+- 실패 `409 SKILL_NAME_DUPLICATED`.
+
 ## 8. 학습 관리 API
 
 학습 하이퍼파라미터는 백엔드 운영 설정이다. 사용자용 생성·수정·선택 API를 제공하지 않으며, 적용된 TrainingProfile은 TrainingJob 응답에서 읽기 전용으로 확인한다. 프로필 변경은 Flyway seed 또는 인증된 관리자 운영 절차로 새 version을 생성해 수행한다.
@@ -1006,6 +1016,25 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 성공 `201`: `TrainingJob` (`CREATED`).
 - GPU가 아직 할당되지 않은 경우에도 요청은 성공하며 UI는 할당 대기 상태를 표시한다.
 - 실패: `409 SKILL_BUSY`는 사용하지 않는다. 같은 Skill에 여러 학습 작업을 허용하고 결과 version을 서로 다르게 할당한다.
+
+새로운 커스텀 동작과 첫 학습을 함께 만들 때는 `skillKey` 대신 `newSkill`을 전달할 수 있다.
+
+```json
+{
+  "newSkill": {
+    "displayName": "빨간 블록 쌓기",
+    "description": "빨간 블록을 순서대로 쌓는 동작"
+  },
+  "umiDeviceId": "device_umi_01",
+  "inputMode": "COLLECT_NEW",
+  "expectedEpisodeCount": 20
+}
+```
+
+- `skillKey`와 `newSkill`은 정확히 하나만 전달한다.
+- `newSkill`과 TrainingJob은 하나의 DB 트랜잭션에서 생성한다.
+- 중간에 실패하면 두 레코드를 모두 롤백한다.
+- 동일 사용자 내 동작 이름이 중복되면 `409 SKILL_NAME_DUPLICATED`.
 
 보관 중인 Episode로 새 학습을 생성하는 요청은 다음과 같다.
 
@@ -1155,6 +1184,13 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 성공 `200`: 입력 순서가 포함된 Episode 요약 목록.
 - 학습 입력이 고정되기 전에는 현재 등록된 목록을, 고정된 후에는 불변 snapshot 목록을 반환한다.
 - 로컬 경로, storage key, StorageNode 접속 정보는 반환하지 않는다.
+
+### TRAIN-10 학습 작업 삭제
+
+- `DELETE /training-jobs/{trainingJobId}` · 사용자
+- `CANCELED`, `SUCCEEDED`, `FAILED` 상태만 soft delete할 수 있다.
+- 이미 soft delete된 동일 소유 리소스의 재요청은 멱등하게 `204`로 처리한다.
+- 성공 `204`, 진행 중이면 `409 TRAINING_DELETE_NOT_ALLOWED`.
 
 ## 9. GPU 데이터 수집 API
 
@@ -1406,7 +1442,7 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
   },
   "archive": {
     "archiveId": "6c156521-c456-48e7-90fc-3d2b461b2261",
-    "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip",
+    "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/550e8400-e29b-41d4-a716-446655440000.zip",
     "originalFilename": "01J7ABCDEF123456789XYZW000.zip",
     "contentType": "application/zip",
     "archiveFormatVersion": "umi-episode-zip-v1",
@@ -1437,7 +1473,7 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
 - 성공 `201`: 생성된 `Episode`.
 - 같은 식별자·archive hash 재요청은 기존 Episode를 `200`으로 반환한다. 같은 식별자에 다른 hash면 `409 EPISODE_ID_REUSED`다.
 - archive.archiveId는 GPU Spring Boot가 최종 저장 전에 예약한 UUID이며 필수다. EC2는 이를 episode_archives.id로 사용한다. 동일 ID의 다른 Episode 재사용은 409 ARCHIVE_ID_CONFLICT다.
-- owner_id·endedAt·archiveId로 API 기준 storageKey를 재구성해 요청값과 일치하는지 검증한다. 원본 ZIP 이름은 sessionId.zip이다.
+- ownerId·endedAt·sessionId로 API 기준 storageKey를 재구성해 요청값과 일치하는지 검증한다. 원본 ZIP 이름도 sessionId.zip이다.
 - GPU Spring Boot는 인증된 (ownerId, umiDeviceId, sessionId)를 키로 로컬 영속 journal에 archiveId·endedAt·sha256·storageKey를 최초 한 번 예약한다. 동시 요청도 같은 예약을 사용한다.
 - ZIP은 staging에 저장·검증한 뒤 같은 파일시스템의 최종 key로 atomic rename하고 INGEST-03을 호출한다. EC2는 등록 시 모든 NOT NULL 품질·파일 메타데이터를 함께 저장한다. 사전 DB 빈 행은 만들지 않는다.
 - EC2 응답 유실·GPU 재시작 시 journal 및 최종 파일 hash를 확인하고 같은 archiveId로 등록 재시도한다. 다른 hash면 EPISODE_ID_REUSED. 미등록 파일은 등록 재시도 대상으로 추적하며 등록 상태 확인 없이 삭제하지 않는다.
@@ -1505,7 +1541,7 @@ UMI가 보고한 `quality_status`는 참고값이다. 서버는 추적 끊김·�
           "sessionId": "01J7ABCDEF123456789XYZW000",
           "qualityStatus": "VALID",
           "archive": {
-            "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip",
+            "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/550e8400-e29b-41d4-a716-446655440000.zip",
             "contentType": "application/zip",
             "compressionMethod": "STORE",
             "sizeBytes": 524288000,
@@ -1832,7 +1868,7 @@ Lifecycle scheduler는 보관 기한이 지난 Episode를 직접 삭제하지 �
     "leaseToken": "...",
     "archive": {
       "episodeArchiveId": "episode_archive_01",
-      "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/6c156521-c456-48e7-90fc-3d2b461b2261/archive.zip",
+      "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/550e8400-e29b-41d4-a716-446655440000.zip",
       "sizeBytes": 524288000,
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
@@ -1993,6 +2029,14 @@ Lifecycle scheduler는 보관 기한이 지난 Episode를 직접 삭제하지 �
 
 - 각 SkillVersion의 상태, RobotProfile, contractVersion, 런타임과 중복 파일을 검사한다.
 - 의미상 검증 실패는 `200 valid=false`, 잘못된 요청은 `422`.
+
+### TASK-09 Task 삭제
+
+- `DELETE /tasks/{taskId}` · 사용자
+- 활성 실행 또는 현재 적용된 배포가 없는 경우 soft delete한다.
+- 이미 soft delete된 동일 소유 리소스의 재요청은 멱등하게 `204`로 처리한다.
+- 성공 `204`.
+- 실패 `409 TASK_RUNNING`, `409 TASK_DEPLOYED`.
 
 ## 14. 배포 및 Jetson 모델 로딩 API
 
@@ -2482,7 +2526,7 @@ episode_archives.entry_count
 episode_archives.status
 ```
 
-- `storage_key` 예: `episodes/{owner_id}/{YYYYMMDD}T{HHMMSS}Z/{episode_archive_id}/archive.zip`.
+- `storage_key` 형식: `episodes/{owner UUID 소문자}/{yyyyMMdd'T'HHmmss'Z'}/{session UUID v4 소문자}.zip`.
 - StorageNode의 실제 mount root는 worker 설정에서 관리하고 API로 배포하지 않는다.
 - 사용자 API에는 `storage_node_id`, `storage_key`, 절대 경로를 노출하지 않는다.
 - ZIP이 삭제되어도 size, SHA-256, 형식, 품질 집계와 학습 사용 관계는 유지한다.

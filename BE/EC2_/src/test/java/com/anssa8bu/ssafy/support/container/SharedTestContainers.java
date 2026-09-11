@@ -5,9 +5,8 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 /**
  * 이미 실행 중인 EC2 개발용 PostgreSQL 17 · Redis 7 컨테이너의 접속 정보를 제공한다.
  *
- * <p>이 클래스는 Docker 컨테이너를 새로 생성하지 않는다. 테스트 실행 스크립트가 {@code
- * TEST_POSTGRES_URL / TEST_POSTGRES_USER / TEST_POSTGRES_PASSWORD}를 주입하고, Redis 접속 정보는
- * {@code TEST_REDIS_HOST / TEST_REDIS_PORT}로 재정의할 수 있다.
+ * <p>이 클래스는 Docker 컨테이너를 새로 생성하지 않는다. 테스트 실행 스크립트가 {@code TEST_POSTGRES_URL / TEST_POSTGRES_USER /
+ * TEST_POSTGRES_PASSWORD}를 주입하고, Redis 접속 정보는 {@code TEST_REDIS_HOST / TEST_REDIS_PORT}로 재정의할 수 있다.
  */
 public final class SharedTestContainers {
   private static final String POSTGRES_URL = requiredEnvironmentVariable("TEST_POSTGRES_URL");

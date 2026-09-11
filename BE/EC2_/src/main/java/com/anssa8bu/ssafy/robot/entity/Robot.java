@@ -52,12 +52,29 @@ public class Robot extends AuditableEntity {
     return id;
   }
 
-  public UUID getOwnerId() { return ownerId; }
-  public UUID getJetsonDeviceId() { return jetsonDeviceId; }
-  public UUID getRobotProfileId() { return robotProfileId; }
-  public String getName() { return name; }
-  public UUID getCurrentDeploymentId() { return currentDeploymentId; }
-  public Instant getLastSeenAt() { return lastSeenAt; }
+  public UUID getOwnerId() {
+    return ownerId;
+  }
+
+  public UUID getJetsonDeviceId() {
+    return jetsonDeviceId;
+  }
+
+  public UUID getRobotProfileId() {
+    return robotProfileId;
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public UUID getCurrentDeploymentId() {
+    return currentDeploymentId;
+  }
+
+  public Instant getLastSeenAt() {
+    return lastSeenAt;
+  }
 
   public RobotConnectionStatus getConnectionStatus() {
     return connectionStatus;

@@ -23,8 +23,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * UNIQUE 제약과 부분 UNIQUE 인덱스. 테스트마다 위반 1건만 만들고 트랜잭션은 종료 시 롤백된다(실패한 PostgreSQL 트랜잭션은
- * 이후 문장을 거부하므로 한 테스트에 위반을 두 개 넣지 않는다).
+ * UNIQUE 제약과 부분 UNIQUE 인덱스. 테스트마다 위반 1건만 만들고 트랜잭션은 종료 시 롤백된다(실패한 PostgreSQL 트랜잭션은 이후 문장을 거부하므로 한
+ * 테스트에 위반을 두 개 넣지 않는다).
  */
 @Transactional
 class UniqueConstraintIntegrationTest extends IntegrationTestBase {
@@ -53,7 +53,15 @@ class UniqueConstraintIntegrationTest extends IntegrationTestBase {
     // seed(V2)에 is_default=true 정책이 이미 있다
     em.persist(
         new RetentionPolicy(
-            UUID.randomUUID(), "second-default-" + UUID.randomUUID(), 7, 1, 30, 3, true, true, true,
+            UUID.randomUUID(),
+            "second-default-" + UUID.randomUUID(),
+            7,
+            1,
+            30,
+            3,
+            true,
+            true,
+            true,
             true));
     assertUniqueViolation("uq_retention_policy_default", em::flush);
   }
@@ -124,7 +132,13 @@ class UniqueConstraintIntegrationTest extends IntegrationTestBase {
 
   private static OutboxEvent outbox(String eventId, String aggregateId, Long sequence) {
     return new OutboxEvent(
-        UUID.randomUUID(), eventId, "TEST", aggregateId, "DONE", Map.of("k", "v"), Instant.now(),
+        UUID.randomUUID(),
+        eventId,
+        "TEST",
+        aggregateId,
+        "DONE",
+        Map.of("k", "v"),
+        Instant.now(),
         sequence);
   }
 }

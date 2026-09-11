@@ -33,14 +33,22 @@ class EpisodeQueryServiceIntegrationTest extends IntegrationTestBase {
     assertThat(detail.archive().sizeBytes()).isEqualTo(100);
     // fixture는 READY·VALID·archive AVAILABLE이지만 UNLABELED → 학습 불가, 라벨 지정 안내
     assertThat(detail.trainable()).isFalse();
-    assertThat(detail.blockingReasons()).extracting(BlockingReason::code).containsExactly("EPISODE_NOT_LABELED");
+    assertThat(detail.blockingReasons())
+        .extracting(BlockingReason::code)
+        .containsExactly("EPISODE_NOT_LABELED");
     assertThat(detail.recoveryAction()).isEqualTo(RecoveryAction.SET_LABEL);
 
-    ListQuery all = new ListQuery(null, null, null, null, null, null, null, null, null, null, null, null);
-    assertThat(service.list(g.userId(), all)).extracting(EpisodeResponse::id).containsExactly(g.episodeId());
-    ListQuery bySkill = new ListQuery(null, null, detail.skillKey(), null, null, null, null, null, null, null, null, null);
+    ListQuery all =
+        new ListQuery(null, null, null, null, null, null, null, null, null, null, null, null);
+    assertThat(service.list(g.userId(), all))
+        .extracting(EpisodeResponse::id)
+        .containsExactly(g.episodeId());
+    ListQuery bySkill =
+        new ListQuery(
+            null, null, detail.skillKey(), null, null, null, null, null, null, null, null, null);
     assertThat(service.list(g.userId(), bySkill)).hasSize(1);
-    ListQuery trainableOnly = new ListQuery(null, null, null, null, null, null, null, null, null, true, null, null);
+    ListQuery trainableOnly =
+        new ListQuery(null, null, null, null, null, null, null, null, null, true, null, null);
     assertThat(service.list(g.userId(), trainableOnly)).isEmpty();
     assertThat(service.list(UUID.randomUUID(), all)).isEqualTo(List.of());
 

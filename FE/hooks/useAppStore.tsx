@@ -4,7 +4,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { AdminUser, Dataset, LearnedSkill, Robot, SavedWork, Training, Umi, LearningDraft } from '@/types';
 import { initialPermissions, initialUsers } from '@/mocks';
 import {
-  addTraining,
   applyModel,
   cancelTraining,
   deleteTrainings,
@@ -187,13 +186,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const completeLearning = useCallback(async (input: { name: string; robot: string }) => {
-    setTrainings(await addTraining(input));
+    void input;
+    setTrainings(await fetchTrainings());
     setSkills(await fetchLearnedSkills());
   }, []);
-
-  const visibleTrainings = useMemo(() => learningDraft.step === 5 && learningDraft.name && learningDraft.trainingJobId
-    ? [{ id: learningDraft.trainingJobId, skillKey: learningDraft.skillKey, umiDeviceId: '', inputMode: learningDraft.method === 'existing' ? 'EXISTING_EPISODES' as const : 'COLLECT_NEW' as const, expectedEpisodeCount: learningDraft.expectedEpisodes, receivedEpisodeCount: 0, apiStatus: 'CREATED', name: learningDraft.name, robot: learningDraft.umiId, progress: learningDraft.progress, stage: learningDraft.error || (learningDraft.progress < 35 ? '데이터 준비' : learningDraft.progress < 75 ? '동작 학습' : '결과 확인'), status: learningDraft.error ? '실패' as const : '진행 중' as const, started: '방금 전' }, ...trainings.filter(item => item.id !== learningDraft.trainingJobId)]
-    : trainings, [learningDraft, trainings]);
 
   const saveWorkflow = useCallback(async (work: SavedWork) => {
     const result = await saveWork(work);
@@ -214,7 +210,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       refresh,
       robots,
       umis,
-      trainings: visibleTrainings,
+      trainings,
       trainingRefreshing,
       trainingRefreshError,
       trainingUpdatedAt,
@@ -236,7 +232,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, datasets, visibleTrainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

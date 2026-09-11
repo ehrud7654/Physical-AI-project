@@ -21,6 +21,9 @@ public class Skill extends AuditableEntity {
   @Column(name = "skill_key", nullable = false, updatable = false, length = 100)
   private String skillKey;
 
+  @Column(name = "owner_id")
+  private UUID ownerId;
+
   @Enumerated(EnumType.STRING)
   @Column(name = "tier", nullable = false, length = 20)
   private SkillTier tier;
@@ -48,7 +51,20 @@ public class Skill extends AuditableEntity {
       String displayName,
       String description,
       String persona) {
+    this(id, null, skillKey, tier, status, displayName, description, persona);
+  }
+
+  public Skill(
+      UUID id,
+      UUID ownerId,
+      String skillKey,
+      SkillTier tier,
+      SkillStatus status,
+      String displayName,
+      String description,
+      String persona) {
     this.id = Objects.requireNonNull(id, "id must not be null");
+    this.ownerId = ownerId;
     this.skillKey = requireText(skillKey, "skillKey");
     this.tier = Objects.requireNonNull(tier, "tier must not be null");
     this.status = Objects.requireNonNull(status, "status must not be null");
@@ -58,6 +74,10 @@ public class Skill extends AuditableEntity {
 
     if (tier == SkillTier.DEMO && (persona == null || persona.isBlank())) {
       throw new IllegalArgumentException("DEMO skill requires persona");
+    }
+    if ((tier == SkillTier.CUSTOM) != (ownerId != null)) {
+      throw new IllegalArgumentException(
+          "CUSTOM skill requires ownerId and system skill must not have ownerId");
     }
   }
 
@@ -74,6 +94,10 @@ public class Skill extends AuditableEntity {
 
   public String getSkillKey() {
     return skillKey;
+  }
+
+  public UUID getOwnerId() {
+    return ownerId;
   }
 
   public SkillTier getTier() {

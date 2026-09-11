@@ -25,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeploymentController {
   private final DeploymentService service;
 
-  public DeploymentController(DeploymentService service) { this.service = service; }
+  public DeploymentController(DeploymentService service) {
+    this.service = service;
+  }
 
   @PostMapping
   public ResponseEntity<ApiResponse<DeploymentResponse>> create(
@@ -33,7 +35,8 @@ public class DeploymentController {
       @PathVariable UUID robotId,
       @RequestHeader("Idempotency-Key") String idempotencyKey,
       @Valid @RequestBody CreateRequest request) {
-    DeploymentResponse result = service.create(owner(jwt), robotId, request.taskVersionId(), idempotencyKey);
+    DeploymentResponse result =
+        service.create(owner(jwt), robotId, request.taskVersionId(), idempotencyKey);
     return ResponseEntity.created(
             URI.create("/api/v1/robots/" + robotId + "/deployments/" + result.id()))
         .body(ApiResponse.of(result));
@@ -61,5 +64,7 @@ public class DeploymentController {
     return ApiResponse.of(service.cancel(owner(jwt), robotId, deploymentId));
   }
 
-  private UUID owner(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
+  private UUID owner(Jwt jwt) {
+    return UUID.fromString(jwt.getSubject());
+  }
 }

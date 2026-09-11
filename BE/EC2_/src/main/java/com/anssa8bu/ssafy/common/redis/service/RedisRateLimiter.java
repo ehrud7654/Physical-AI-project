@@ -1,1 +1,24 @@
-package com.anssa8bu.ssafy.common.redis.service; import com.anssa8bu.ssafy.common.redis.RedisKeyGenerator; import org.springframework.data.redis.core.StringRedisTemplate; import org.springframework.stereotype.Service; import java.time.Duration; @Service public class RedisRateLimiter {private final StringRedisTemplate redis;private final RedisKeyGenerator keys;public RedisRateLimiter(StringRedisTemplate r,RedisKeyGenerator k){redis=r;keys=k;}public boolean allow(String actor,String operation,long limit,Duration window){String key=keys.rateLimit(actor,operation);Long count=redis.opsForValue().increment(key);if(count!=null&&count==1)redis.expire(key,window);return count!=null&&count<=limit;}}
+package com.anssa8bu.ssafy.common.redis.service;
+
+import com.anssa8bu.ssafy.common.redis.RedisKeyGenerator;
+import java.time.Duration;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
+public class RedisRateLimiter {
+  private final StringRedisTemplate redis;
+  private final RedisKeyGenerator keys;
+
+  public RedisRateLimiter(StringRedisTemplate r, RedisKeyGenerator k) {
+    redis = r;
+    keys = k;
+  }
+
+  public boolean allow(String actor, String operation, long limit, Duration window) {
+    String key = keys.rateLimit(actor, operation);
+    Long count = redis.opsForValue().increment(key);
+    if (count != null && count == 1) redis.expire(key, window);
+    return count != null && count <= limit;
+  }
+}

@@ -1,6 +1,7 @@
 package com.anssa8bu.ssafy.training.presentation;
 
 import static com.anssa8bu.ssafy.training.dto.TrainingJobApiModels.*;
+
 import com.anssa8bu.ssafy.common.response.ApiResponse;
 import com.anssa8bu.ssafy.training.application.TrainingJobService;
 import jakarta.validation.Valid;
@@ -15,33 +16,72 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/training-jobs")
 public class TrainingJobController {
   private final TrainingJobService service;
-  public TrainingJobController(TrainingJobService service){this.service=service;}
-  @PostMapping public ResponseEntity<ApiResponse<JobResponse>> create(@AuthenticationPrincipal Jwt jwt,
-      @RequestHeader("Idempotency-Key") String key,@Valid @RequestBody CreateRequest request){
-    JobResponse result=service.create(owner(jwt),key,request);
-    return ResponseEntity.created(URI.create("/api/v1/training-jobs/"+result.id())).body(ApiResponse.of(result));
+
+  public TrainingJobController(TrainingJobService service) {
+    this.service = service;
   }
-  @GetMapping public ApiResponse<List<JobResponse>> list(@AuthenticationPrincipal Jwt jwt,
-      @RequestParam(required=false) UUID skillId,@RequestParam(required=false) String skillKey,
-      @RequestParam(required=false) UUID umiDeviceId,@RequestParam(required=false) String status){
-    return ApiResponse.of(service.list(owner(jwt),skillId,skillKey,umiDeviceId,status));}
-  @GetMapping("/{id}") public ApiResponse<JobResponse> get(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){
-    return ApiResponse.of(service.get(owner(jwt),id));}
-  @PostMapping("/{id}/cancel") public ApiResponse<JobResponse> cancel(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){
-    return ApiResponse.of(service.cancel(owner(jwt),id));}
+
+  @PostMapping
+  public ResponseEntity<ApiResponse<JobResponse>> create(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestHeader("Idempotency-Key") String key,
+      @Valid @RequestBody CreateRequest request) {
+    JobResponse result = service.create(owner(jwt), key, request);
+    return ResponseEntity.created(URI.create("/api/v1/training-jobs/" + result.id()))
+        .body(ApiResponse.of(result));
+  }
+
+  @GetMapping
+  public ApiResponse<List<JobResponse>> list(
+      @AuthenticationPrincipal Jwt jwt,
+      @RequestParam(required = false) UUID skillId,
+      @RequestParam(required = false) String skillKey,
+      @RequestParam(required = false) UUID umiDeviceId,
+      @RequestParam(required = false) String status) {
+    return ApiResponse.of(service.list(owner(jwt), skillId, skillKey, umiDeviceId, status));
+  }
+
+  @GetMapping("/{id}")
+  public ApiResponse<JobResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+    return ApiResponse.of(service.get(owner(jwt), id));
+  }
+
+  @PostMapping("/{id}/cancel")
+  public ApiResponse<JobResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+    return ApiResponse.of(service.cancel(owner(jwt), id));
+  }
+
   @PatchMapping("/{id}/input-plan")
-  public ApiResponse<JobResponse> updateInputPlan(@AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID id, @Valid @RequestBody InputPlanUpdateRequest request) {
+  public ApiResponse<JobResponse> updateInputPlan(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID id,
+      @Valid @RequestBody InputPlanUpdateRequest request) {
     return ApiResponse.of(service.updateInputPlan(owner(jwt), id, request));
   }
+
   @PostMapping("/{id}/input-complete")
   public ResponseEntity<ApiResponse<InputCompleteResponse>> completeInput(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID id,
       @RequestHeader("Idempotency-Key") String key,
       @Valid @RequestBody InputCompleteRequest request) {
-    return ResponseEntity.accepted().body(ApiResponse.of(service.completeInput(owner(jwt), id, key, request)));
+    return ResponseEntity.accepted()
+        .body(ApiResponse.of(service.completeInput(owner(jwt), id, key, request)));
   }
-  @GetMapping("/{id}/episodes") public ApiResponse<List<EpisodeInputResponse>> episodes(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){
-    return ApiResponse.of(service.inputEpisodes(owner(jwt),id));}
-  private UUID owner(Jwt jwt){return UUID.fromString(jwt.getSubject());}
+
+  @GetMapping("/{id}/episodes")
+  public ApiResponse<List<EpisodeInputResponse>> episodes(
+      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+    return ApiResponse.of(service.inputEpisodes(owner(jwt), id));
+  }
+
+  @DeleteMapping("/{id}")
+  public ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+    service.delete(owner(jwt), id);
+    return ResponseEntity.noContent().build();
+  }
+
+  private UUID owner(Jwt jwt) {
+    return UUID.fromString(jwt.getSubject());
+  }
 }

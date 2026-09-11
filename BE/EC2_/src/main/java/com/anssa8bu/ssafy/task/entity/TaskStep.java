@@ -38,33 +38,63 @@ public class TaskStep {
 
   protected TaskStep() {}
 
-  public TaskStep(UUID id, UUID taskVersionId, UUID parentStepId, TaskStepType stepType,
-      UUID skillVersionId, int stepOrder, Map<String, Object> parameters,
-      Integer timeoutSeconds, Integer repeatCount) {
+  public TaskStep(
+      UUID id,
+      UUID taskVersionId,
+      UUID parentStepId,
+      TaskStepType stepType,
+      UUID skillVersionId,
+      int stepOrder,
+      Map<String, Object> parameters,
+      Integer timeoutSeconds,
+      Integer repeatCount) {
     this.id = Objects.requireNonNull(id);
     this.taskVersionId = Objects.requireNonNull(taskVersionId);
     this.parentStepId = parentStepId;
     this.stepType = Objects.requireNonNull(stepType);
     this.skillVersionId = skillVersionId;
     if (stepOrder < 1) throw new IllegalArgumentException("stepOrder must be positive");
-    if (timeoutSeconds != null && timeoutSeconds < 1) throw new IllegalArgumentException("timeoutSeconds must be positive");
+    if (timeoutSeconds != null && timeoutSeconds < 1)
+      throw new IllegalArgumentException("timeoutSeconds must be positive");
     this.stepOrder = stepOrder;
     this.parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
     this.timeoutSeconds = timeoutSeconds;
     this.repeatCount = repeatCount;
   }
 
-  public UUID getId() { return id; }
-  public UUID getTaskVersionId() { return taskVersionId; }
-  public UUID getSkillVersionId() { return skillVersionId; }
-  public UUID getParentStepId() { return parentStepId; }
-  public TaskStepType getStepType() { return stepType; }
-  public int getStepOrder() { return stepOrder; }
+  public UUID getId() {
+    return id;
+  }
+
+  public UUID getTaskVersionId() {
+    return taskVersionId;
+  }
+
+  public UUID getSkillVersionId() {
+    return skillVersionId;
+  }
+
+  public UUID getParentStepId() {
+    return parentStepId;
+  }
+
+  public TaskStepType getStepType() {
+    return stepType;
+  }
+
+  public int getStepOrder() {
+    return stepOrder;
+  }
 
   public Map<String, Object> getParameters() {
     return parameters;
   }
 
-  public Integer getTimeoutSeconds() { return timeoutSeconds; }
-  public Integer getRepeatCount() { return repeatCount; }
+  public Integer getTimeoutSeconds() {
+    return timeoutSeconds;
+  }
+
+  public Integer getRepeatCount() {
+    return repeatCount;
+  }
 }

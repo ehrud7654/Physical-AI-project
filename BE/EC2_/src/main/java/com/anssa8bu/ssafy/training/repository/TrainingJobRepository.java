@@ -5,6 +5,9 @@ import java.util.*;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TrainingJobRepository extends JpaRepository<TrainingJob, UUID> {
-  List<TrainingJob> findAllByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
+  List<TrainingJob> findAllByOwnerIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID ownerId);
+
+  Optional<TrainingJob> findByIdAndOwnerIdAndDeletedAtIsNull(UUID id, UUID ownerId);
+
   Optional<TrainingJob> findByIdAndOwnerId(UUID id, UUID ownerId);
 }

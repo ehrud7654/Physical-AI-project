@@ -1,1 +1,10 @@
-package com.anssa8bu.ssafy.common.redis.dto; import java.time.Instant; import java.util.UUID; public record DevicePresence(int schemaVersion,UUID deviceId,Instant lastSeenAt){public DevicePresence{if(schemaVersion!=1)throw new IllegalArgumentException();}}
+package com.anssa8bu.ssafy.common.redis.dto;
+
+import java.time.Instant;
+import java.util.UUID;
+
+public record DevicePresence(int schemaVersion, UUID deviceId, Instant lastSeenAt) {
+  public DevicePresence {
+    if (schemaVersion != 1) throw new IllegalArgumentException();
+  }
+}

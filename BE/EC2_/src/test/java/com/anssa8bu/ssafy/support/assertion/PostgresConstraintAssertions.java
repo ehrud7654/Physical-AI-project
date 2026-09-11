@@ -7,8 +7,8 @@ import java.sql.SQLException;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 
 /**
- * 예외 발생 여부만이 아니라 PostgreSQL SQLSTATE와 constraint 이름까지 확인한다. Hibernate/Spring이 어떤 예외로
- * 감싸든 cause 체인에서 {@link SQLException}을 찾는다.
+ * 예외 발생 여부만이 아니라 PostgreSQL SQLSTATE와 constraint 이름까지 확인한다. Hibernate/Spring이 어떤 예외로 감싸든 cause 체인에서
+ * {@link SQLException}을 찾는다.
  */
 public final class PostgresConstraintAssertions {
   public static final String NOT_NULL = "23502";

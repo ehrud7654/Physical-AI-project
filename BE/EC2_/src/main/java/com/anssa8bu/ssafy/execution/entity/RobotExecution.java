@@ -99,8 +99,10 @@ public class RobotExecution {
       Integer currentStep,
       BigDecimal progressPercent,
       Instant occurredAt) {
-    if (sequence <= lastReportSequence) throw new IllegalArgumentException("sequence must increase");
-    if (reportId == null || reportId.isBlank()) throw new IllegalArgumentException("reportId is required");
+    if (sequence <= lastReportSequence)
+      throw new IllegalArgumentException("sequence must increase");
+    if (reportId == null || reportId.isBlank())
+      throw new IllegalArgumentException("reportId is required");
     if (reportHash == null || !reportHash.matches("[0-9a-f]{64}")) {
       throw new IllegalArgumentException("reportHash must be lowercase SHA-256");
     }
@@ -124,7 +126,8 @@ public class RobotExecution {
         || nextStatus == RobotExecutionStatus.FAILED) finishedAt = occurredAt;
   }
 
-  public void fail(String code, String message, ExecutionRecoveryAction recoveryAction, Instant occurredAt) {
+  public void fail(
+      String code, String message, ExecutionRecoveryAction recoveryAction, Instant occurredAt) {
     if (code == null || code.isBlank() || message == null || message.isBlank()) {
       throw new IllegalArgumentException("failure code and message are required");
     }
@@ -135,26 +138,85 @@ public class RobotExecution {
     finishedAt = occurredAt;
   }
 
-  public UUID getId() { return id; }
-  public UUID getOwnerId() { return ownerId; }
-  public UUID getRobotId() { return robotId; }
-  public UUID getTaskVersionId() { return taskVersionId; }
-  public UUID getDeploymentId() { return deploymentId; }
-  public Integer getCurrentStep() { return currentStep; }
-  public RobotExecutionStatus getStatus() { return status; }
-  public int getTotalSteps() { return totalSteps; }
-  public BigDecimal getProgressPercent() { return progressPercent; }
-  public long getLastReportSequence() { return lastReportSequence; }
-  public String getLastReportId() { return lastReportId; }
-  public String getLastReportHash() { return lastReportHash; }
-  public String getErrorCode() { return errorCode; }
-  public String getErrorMessage() { return errorMessage; }
-  public ExecutionRecoveryAction getRecoveryAction() { return recoveryAction; }
-  public Instant getRequestedAt() { return requestedAt; }
-  public Instant getStartedAt() { return startedAt; }
-  public Instant getFinishedAt() { return finishedAt; }
-  public Instant getUpdatedAt() { return updatedAt; }
-  public Long getRowVersion() { return rowVersion; }
+  public UUID getId() {
+    return id;
+  }
+
+  public UUID getOwnerId() {
+    return ownerId;
+  }
+
+  public UUID getRobotId() {
+    return robotId;
+  }
+
+  public UUID getTaskVersionId() {
+    return taskVersionId;
+  }
+
+  public UUID getDeploymentId() {
+    return deploymentId;
+  }
+
+  public Integer getCurrentStep() {
+    return currentStep;
+  }
+
+  public RobotExecutionStatus getStatus() {
+    return status;
+  }
+
+  public int getTotalSteps() {
+    return totalSteps;
+  }
+
+  public BigDecimal getProgressPercent() {
+    return progressPercent;
+  }
+
+  public long getLastReportSequence() {
+    return lastReportSequence;
+  }
+
+  public String getLastReportId() {
+    return lastReportId;
+  }
+
+  public String getLastReportHash() {
+    return lastReportHash;
+  }
+
+  public String getErrorCode() {
+    return errorCode;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
+
+  public ExecutionRecoveryAction getRecoveryAction() {
+    return recoveryAction;
+  }
+
+  public Instant getRequestedAt() {
+    return requestedAt;
+  }
+
+  public Instant getStartedAt() {
+    return startedAt;
+  }
+
+  public Instant getFinishedAt() {
+    return finishedAt;
+  }
+
+  public Instant getUpdatedAt() {
+    return updatedAt;
+  }
+
+  public Long getRowVersion() {
+    return rowVersion;
+  }
 
   public void requestCancel(Instant occurredAt) {
     if (status == RobotExecutionStatus.REQUESTED) {
@@ -171,4 +233,3 @@ public class RobotExecution {
     }
   }
 }
-

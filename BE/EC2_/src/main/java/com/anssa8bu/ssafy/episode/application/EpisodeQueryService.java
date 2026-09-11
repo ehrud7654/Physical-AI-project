@@ -18,7 +18,6 @@ import com.anssa8bu.ssafy.skill.repository.SkillRepository;
 import com.anssa8bu.ssafy.storage.entity.RetentionPolicy;
 import com.anssa8bu.ssafy.storage.repository.RetentionPolicyRepository;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -68,8 +67,12 @@ public class EpisodeQueryService {
       if (!matches(e, q, skillById.get(e.getSkillId()))) continue;
       EpisodeResponse response =
           toResponse(
-              e, archiveByEpisode.get(e.getId()), skillById.get(e.getSkillId()), deviceById.get(e.getUmiDeviceId()));
-      if (q.availableForTraining() != null && q.availableForTraining() != response.trainable()) continue;
+              e,
+              archiveByEpisode.get(e.getId()),
+              skillById.get(e.getSkillId()),
+              deviceById.get(e.getUmiDeviceId()));
+      if (q.availableForTraining() != null && q.availableForTraining() != response.trainable())
+        continue;
       result.add(response);
     }
     return result;
@@ -118,16 +121,18 @@ public class EpisodeQueryService {
   }
 
   /**
-   * 명세 EPISODE-01의 availableForTraining 조건: status=READY, quality VALID/WARNING, LABELED, success=true,
-   * archive AVAILABLE, 삭제 미시작(=DELETING 아님). 어긋나는 조건마다 FE가 표시할 차단 사유를 만든다.
+   * 명세 EPISODE-01의 availableForTraining 조건: status=READY, quality VALID/WARNING, LABELED,
+   * success=true, archive AVAILABLE, 삭제 미시작(=DELETING 아님). 어긋나는 조건마다 FE가 표시할 차단 사유를 만든다.
    */
   private List<BlockingReason> blockingReasons(Episode e, EpisodeArchive archive) {
     List<BlockingReason> reasons = new ArrayList<>();
     switch (e.getStatus()) {
       case UPLOADING ->
-          reasons.add(new BlockingReason("UPLOAD_IN_PROGRESS", "데이터를 업로드하고 있어요.", RecoveryAction.WAIT));
+          reasons.add(
+              new BlockingReason("UPLOAD_IN_PROGRESS", "데이터를 업로드하고 있어요.", RecoveryAction.WAIT));
       case VALIDATING ->
-          reasons.add(new BlockingReason("EPISODE_VALIDATING", "데이터를 확인하고 있어요.", RecoveryAction.WAIT));
+          reasons.add(
+              new BlockingReason("EPISODE_VALIDATING", "데이터를 확인하고 있어요.", RecoveryAction.WAIT));
       case INVALID ->
           reasons.add(
               new BlockingReason(
@@ -135,28 +140,46 @@ public class EpisodeQueryService {
                   Objects.requireNonNullElse(e.getErrorMessage(), "데이터 확인에 실패했어요. 다시 수집해 주세요."),
                   RecoveryAction.RECORD_AGAIN));
       case DELETING, DELETED ->
-          reasons.add(new BlockingReason("EPISODE_DELETED", "보관 기한이 지나 삭제된 데이터예요.", RecoveryAction.RECORD_AGAIN));
+          reasons.add(
+              new BlockingReason(
+                  "EPISODE_DELETED", "보관 기한이 지나 삭제된 데이터예요.", RecoveryAction.RECORD_AGAIN));
       case DELETE_FAILED ->
-          reasons.add(new BlockingReason("EPISODE_DELETE_FAILED", "데이터 삭제 처리에 실패했어요.", RecoveryAction.CONTACT_SUPPORT));
+          reasons.add(
+              new BlockingReason(
+                  "EPISODE_DELETE_FAILED", "데이터 삭제 처리에 실패했어요.", RecoveryAction.CONTACT_SUPPORT));
       case READY -> {
         if (e.getQualityStatus() == EpisodeQualityStatus.PENDING)
-          reasons.add(new BlockingReason("QUALITY_PENDING", "품질 검사를 기다리고 있어요.", RecoveryAction.WAIT));
+          reasons.add(
+              new BlockingReason("QUALITY_PENDING", "품질 검사를 기다리고 있어요.", RecoveryAction.WAIT));
         else if (e.getQualityStatus() == EpisodeQualityStatus.INVALID)
-          reasons.add(new BlockingReason("QUALITY_INVALID", "데이터 품질이 기준에 미치지 못해요.", RecoveryAction.RECORD_AGAIN));
+          reasons.add(
+              new BlockingReason(
+                  "QUALITY_INVALID", "데이터 품질이 기준에 미치지 못해요.", RecoveryAction.RECORD_AGAIN));
         if (e.getLabelStatus() != EpisodeLabelStatus.LABELED)
-          reasons.add(new BlockingReason("EPISODE_NOT_LABELED", "성공 여부가 아직 표시되지 않았어요.", RecoveryAction.SET_LABEL));
+          reasons.add(
+              new BlockingReason(
+                  "EPISODE_NOT_LABELED", "성공 여부가 아직 표시되지 않았어요.", RecoveryAction.SET_LABEL));
         else if (!Boolean.TRUE.equals(e.getSuccess()))
-          reasons.add(new BlockingReason("EPISODE_NOT_SUCCESSFUL", "실패로 표시된 데이터는 학습에 쓰지 않아요.", RecoveryAction.RECORD_AGAIN));
+          reasons.add(
+              new BlockingReason(
+                  "EPISODE_NOT_SUCCESSFUL",
+                  "실패로 표시된 데이터는 학습에 쓰지 않아요.",
+                  RecoveryAction.RECORD_AGAIN));
         if (archive == null || archive.getStatus() != EpisodeArchiveStatus.AVAILABLE)
-          reasons.add(new BlockingReason("ARCHIVE_NOT_AVAILABLE", "데이터 파일을 아직 사용할 수 없어요.", RecoveryAction.WAIT));
+          reasons.add(
+              new BlockingReason(
+                  "ARCHIVE_NOT_AVAILABLE", "데이터 파일을 아직 사용할 수 없어요.", RecoveryAction.WAIT));
         if (!e.getRetentionExpiresAt().isAfter(clock.instant()))
-          reasons.add(new BlockingReason("RETENTION_EXPIRED", "보관 기한이 지났어요.", RecoveryAction.EXTEND_RETENTION));
+          reasons.add(
+              new BlockingReason(
+                  "RETENTION_EXPIRED", "보관 기한이 지났어요.", RecoveryAction.EXTEND_RETENTION));
       }
     }
     return reasons;
   }
 
-  private EpisodeResponse toResponse(Episode e, EpisodeArchive archive, Skill skill, Device device) {
+  private EpisodeResponse toResponse(
+      Episode e, EpisodeArchive archive, Skill skill, Device device) {
     List<BlockingReason> reasons = blockingReasons(e, archive);
     return new EpisodeResponse(
         e.getId(),
@@ -206,7 +229,9 @@ public class EpisodeQueryService {
             : new ResourceError(
                 e.getErrorCode(),
                 e.getErrorMessage(),
-                e.getStatus() == EpisodeStatus.INVALID ? RecoveryAction.RECORD_AGAIN : RecoveryAction.CONTACT_SUPPORT),
+                e.getStatus() == EpisodeStatus.INVALID
+                    ? RecoveryAction.RECORD_AGAIN
+                    : RecoveryAction.CONTACT_SUPPORT),
         e.getCreatedAt());
   }
 

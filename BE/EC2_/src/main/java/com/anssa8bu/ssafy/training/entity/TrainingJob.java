@@ -110,6 +110,9 @@ public class TrainingJob extends AuditableEntity {
   @Column(name = "finished_at")
   private Instant finishedAt;
 
+  @Column(name = "deleted_at")
+  private Instant deletedAt;
+
   @Version
   @Column(name = "row_version", nullable = false)
   private Long rowVersion;
@@ -170,13 +173,18 @@ public class TrainingJob extends AuditableEntity {
   }
 
   public void requestCancel() {
-    if (status == TrainingJobStatus.CREATED || status == TrainingJobStatus.COLLECTING
-        || status == TrainingJobStatus.INPUT_VALIDATING || status == TrainingJobStatus.INPUT_READY
-        || status == TrainingJobStatus.QUEUED || status == TrainingJobStatus.PREPARING) {
+    if (status == TrainingJobStatus.CREATED
+        || status == TrainingJobStatus.COLLECTING
+        || status == TrainingJobStatus.INPUT_VALIDATING
+        || status == TrainingJobStatus.INPUT_READY
+        || status == TrainingJobStatus.QUEUED
+        || status == TrainingJobStatus.PREPARING) {
       status = TrainingJobStatus.CANCELED;
       finishedAt = Instant.now();
-    } else if (status == TrainingJobStatus.RUNNING || status == TrainingJobStatus.MODEL_UPLOADING
-        || status == TrainingJobStatus.MODEL_VALIDATING) status = TrainingJobStatus.CANCEL_REQUESTED;
+    } else if (status == TrainingJobStatus.RUNNING
+        || status == TrainingJobStatus.MODEL_UPLOADING
+        || status == TrainingJobStatus.MODEL_VALIDATING)
+      status = TrainingJobStatus.CANCEL_REQUESTED;
     else throw new IllegalStateException("종료된 학습은 취소할 수 없습니다.");
   }
 
@@ -199,19 +207,75 @@ public class TrainingJob extends AuditableEntity {
     progressStage = "입력 검증";
   }
 
-  public UUID getOwnerId() { return ownerId; }
-  public UUID getSkillId() { return skillId; }
-  public UUID getUmiDeviceId() { return umiDeviceId; }
-  public UUID getTrainingProfileId() { return trainingProfileId; }
-  public TrainingInputMode getInputMode() { return inputMode; }
-  public int getExpectedEpisodeCount() { return expectedEpisodeCount; }
-  public int getReceivedEpisodeCount() { return receivedEpisodeCount; }
-  public long getReceivedBytes() { return receivedBytes; }
-  public int getEpisodeCount() { return episodeCount; }
-  public String getProgressStage() { return progressStage; }
-  public UUID getResultSkillVersionId() { return resultSkillVersionId; }
-  public String getErrorCode() { return errorCode; }
-  public String getErrorMessage() { return errorMessage; }
-  public Instant getStartedAt() { return startedAt; }
-  public Instant getFinishedAt() { return finishedAt; }
+  public UUID getOwnerId() {
+    return ownerId;
+  }
+
+  public UUID getSkillId() {
+    return skillId;
+  }
+
+  public UUID getUmiDeviceId() {
+    return umiDeviceId;
+  }
+
+  public UUID getTrainingProfileId() {
+    return trainingProfileId;
+  }
+
+  public TrainingInputMode getInputMode() {
+    return inputMode;
+  }
+
+  public int getExpectedEpisodeCount() {
+    return expectedEpisodeCount;
+  }
+
+  public int getReceivedEpisodeCount() {
+    return receivedEpisodeCount;
+  }
+
+  public long getReceivedBytes() {
+    return receivedBytes;
+  }
+
+  public int getEpisodeCount() {
+    return episodeCount;
+  }
+
+  public String getProgressStage() {
+    return progressStage;
+  }
+
+  public UUID getResultSkillVersionId() {
+    return resultSkillVersionId;
+  }
+
+  public String getErrorCode() {
+    return errorCode;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
+
+  public Instant getStartedAt() {
+    return startedAt;
+  }
+
+  public Instant getFinishedAt() {
+    return finishedAt;
+  }
+
+  public Instant getDeletedAt() {
+    return deletedAt;
+  }
+
+  public boolean isDeleted() {
+    return deletedAt != null;
+  }
+
+  public void softDelete(Instant deletedAt) {
+    if (this.deletedAt == null) this.deletedAt = Objects.requireNonNull(deletedAt);
+  }
 }

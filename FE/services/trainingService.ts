@@ -59,7 +59,11 @@ export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
 }
 
 export async function createTrainingJob(input: {
-  skillKey: string;
+  skillKey?: string;
+  newSkill?: {
+    displayName: string;
+    description?: string;
+  };
   umiDeviceId: string;
   inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
   expectedEpisodeCount?: number;
@@ -140,11 +144,6 @@ export async function retryTraining(training: Training): Promise<Training[]> {
       episodeIds: hasEpisodes ? episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId) : undefined,
     }),
   });
-  return fetchTrainings();
-}
-
-/** 학습 생성 화면의 실제 생성 연동 전까지 완료 후 서버 목록만 다시 읽는다. */
-export async function addTraining(_input: { name: string; robot: string }): Promise<Training[]> {
   return fetchTrainings();
 }
 

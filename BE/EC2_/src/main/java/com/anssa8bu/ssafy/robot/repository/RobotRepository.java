@@ -8,5 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RobotRepository extends JpaRepository<Robot, UUID> {
   List<Robot> findAllByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
+
   Optional<Robot> findByIdAndOwnerId(UUID id, UUID ownerId);
 }
