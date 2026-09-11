@@ -8,7 +8,7 @@
   python gripper_gap.py <rec폴더>            # <rec폴더>/gripper.csv 생성
   python gripper_gap.py <rec폴더> --plot     # gripper_gap.png 도 함께
 
-출력 gripper.csv: frame_index,gap_px,gap_m,status
+출력 gripper.csv: frame_index,gap_m,status   (SPEC_umi_raw_bundle 3컬럼)
   status = D(양쪽 직접) / M(중심선 대칭 추정) / T(템플릿 보강) / X(실패)
   gap_m = 손가락 끝 폭(미터). 마커(16mm)로 프레임별 거리를 보정해 얻으므로 D 프레임에만 있다
   (M/T 는 마커 크기를 못 재 빈값). 캘리브 상수는 파일 상단 참조.
@@ -212,12 +212,11 @@ def main():
 
     out_csv = os.path.join(rec, "gripper.csv")
     with open(out_csv, "w", encoding="utf-8") as fh:
-        fh.write("frame_index,gap_px,gap_m,status\n")
+        fh.write("frame_index,gap_m,status\n")   # SPEC 3컬럼. gap_px 는 아래 검증 출력에만 씀
         for i, path in enumerate(files):
             fid = int(os.path.splitext(os.path.basename(path))[0])  # poses.csv 와 join 되도록 실제 프레임번호
-            gpx = "" if np.isnan(gap[i]) else f"{gap[i]:.1f}"
             gm = "" if np.isnan(gap_m[i]) else f"{gap_m[i]:.4f}"
-            fh.write(f"{fid},{gpx},{gm},{status[i]}\n")
+            fh.write(f"{fid},{gm},{status[i]}\n")
 
     cnt = {s: int((status == s).sum()) for s in "DMTX"}
     valid = n - cnt["X"]
