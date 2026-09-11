@@ -3,7 +3,6 @@ package com.ssafy.arpose
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
@@ -507,29 +506,14 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         UploadQueue.enqueue(this)
         pendingUploads = UploadQueue.pendingCount(this)
 
-        // 촬영 직후 즉시 QC: 마커 검출률을 폰에서 바로 보여준다 (S15P21A103-160).
-        if (dir != null) showQcCard(dir, verdict, saved, dropped)
-    }
-
-    /** 방금 촬영의 추적/점프 + 마커 검출률을 카드로. 마커 검출은 백그라운드(~1초). */
-    private fun showQcCard(dir: File, verdict: String, saved: Int, dropped: Int) {
-        Thread {
+        // 촬영 직후 마커 검출률을 백그라운드(~1초)로 계산해 폴더에 저장한다.
+        // 팝업으로 흐름 끊지 않고, 기록 화면이 이 값을 읽어 사용가능 판정에 쓴다 (S15P21A103-160).
+        if (dir != null) Thread {
             val qc = MarkerQc.detectRate(File(dir, "frames"))
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                val markerLine = if (qc.total == 0) "마커 검출: 확인 불가 (OpenCV)"
-                    else "마커 검출: ${qc.detected}/${qc.total} (${qc.rate}%)" +
-                        if (qc.rate < 50) "  ⚠ 낮음 — 마커·초점 확인" else ""
-                AlertDialog.Builder(this)
-                    .setTitle("촬영 점검 · ${dir.name}")
-                    .setMessage("$verdict\n프레임 $saved · 드롭 $dropped\n$markerLine")
-                    .setNegativeButton("이 촬영 삭제") { _, _ ->
-                        dir.deleteRecursively()
-                        pendingUploads = UploadQueue.pendingCount(this)
-                        Toast.makeText(this, "삭제됨", Toast.LENGTH_SHORT).show()
-                    }
-                    .setPositiveButton("계속", null)
-                    .show()
+            try {
+                File(dir, "marker_qc.txt").writeText("detected=${qc.detected}\ntotal=${qc.total}\n")
+            } catch (e: Exception) {
+                Log.e(TAG, "marker_qc 저장 실패", e)
             }
         }.also { it.name = "marker-qc"; it.start() }
     }
