@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import java.io.File
 import android.util.Log
 import android.util.Range
 import android.view.View
@@ -498,17 +499,23 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             recBtn.setBackgroundColor(0xFFE0685E.toInt())
             recTimer.visibility = View.GONE
             dropWarn.visibility = View.GONE
-            Toast.makeText(
-                this,
-                "[AF ${focusName()}] $verdict\n프레임 $saved / 드롭 $dropped\n${dir?.name}",
-                Toast.LENGTH_LONG
-            ).show()
         }
         Log.i(TAG, "저장 완료: ${dir?.absolutePath} 프레임=$saved 드롭=$dropped 점프=$jumps AF=${focusName()}")
 
         // 업로드 예약. 실패하든 말든 촬영 흐름은 여기서 끝난다.
         UploadQueue.enqueue(this)
         pendingUploads = UploadQueue.pendingCount(this)
+
+        // 촬영 직후 마커 검출률을 백그라운드(~1초)로 계산해 폴더에 저장한다.
+        // 팝업으로 흐름 끊지 않고, 기록 화면이 이 값을 읽어 사용가능 판정에 쓴다 (S15P21A103-160).
+        if (dir != null) Thread {
+            val qc = MarkerQc.detectRate(File(dir, "frames"))
+            try {
+                File(dir, "marker_qc.txt").writeText("detected=${qc.detected}\ntotal=${qc.total}\n")
+            } catch (e: Exception) {
+                Log.e(TAG, "marker_qc 저장 실패", e)
+            }
+        }.also { it.name = "marker-qc"; it.start() }
     }
 
     // ---------------- GL ----------------

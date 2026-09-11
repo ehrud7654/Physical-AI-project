@@ -44,7 +44,11 @@ class HistoryActivity : Activity() {
     /** rec 폴더 하나를 카드 한 장으로. */
     private fun rowFor(dir: File, parent: LinearLayout): View {
         val m = parseSummary(File(dir, "summary.txt"))
-        val (icon, color, label) = verdictOf(m)
+        val mkRate = markerRate(dir)
+        // 마커가 거의 안 잡히면(<50%) 최우선 '못 씀'. 아니면 추적/점프 기준 판정.
+        val (icon, color, label) = if (mkRate != null && mkRate < 50)
+            Triple("✗", 0xFFFF4444.toInt(), "마커 거의 안 잡힘 ($mkRate%) — 재촬영")
+        else verdictOf(m)
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -59,9 +63,10 @@ class HistoryActivity : Activity() {
         val info = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             val title = "$icon  ${prettyName(dir.name)}   $label"
+            val mkLine = mkRate?.let { " · 마커 $it%" } ?: ""
             val stat = if (m.isEmpty()) "요약 없음 (녹화 미완료 가능)" else
                 "${m["duration_sec"] ?: "?"}s · ${m["frames_saved"] ?: "?"}프레임 · " +
-                    "${m["rate_hz"] ?: "?"}Hz · 점프 ${m["tracking_jumps"] ?: "?"} · 드롭 ${m["frames_dropped"] ?: "?"}"
+                    "${m["rate_hz"] ?: "?"}Hz · 점프 ${m["tracking_jumps"] ?: "?"} · 드롭 ${m["frames_dropped"] ?: "?"}$mkLine"
             val seg = m["usable_segments"]?.let { "\n사용 가능: $it" } ?: ""
             text = "$title\n$stat$seg"
             setTextColor(0xFFDDDDDD.toInt())
@@ -96,6 +101,21 @@ class HistoryActivity : Activity() {
         card.addView(info)
         card.addView(del)
         return card
+    }
+
+    /** marker_qc.txt(detected/total) → 검출률(%). 없으면 null(옛 촬영·계산 전). */
+    private fun markerRate(dir: File): Int? {
+        val f = File(dir, "marker_qc.txt")
+        if (!f.exists()) return null
+        var d = 0; var t = 0
+        f.readLines().forEach { line ->
+            val i = line.indexOf('=')
+            if (i > 0) {
+                val v = line.substring(i + 1).trim().toIntOrNull() ?: return@forEach
+                when (line.substring(0, i).trim()) { "detected" -> d = v; "total" -> t = v }
+            }
+        }
+        return if (t > 0) d * 100 / t else null
     }
 
     private fun prettyName(name: String): String {
