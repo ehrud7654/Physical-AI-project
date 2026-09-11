@@ -124,8 +124,9 @@ object Uploader {
 
     // ---------------- presigned S3 3-step (EPISODE-UPLOAD-01/02) ----------------
 
-    /** C(장치 인증) 붙기 전 스텁 토큰. 목 서버는 검증 안 함. 로그엔 안 남긴다. */
-    private fun bearer(ctx: Context) = "Bearer stub-${deviceId(ctx)}"
+    /** DEVICE-05 토큰(캐시·자동갱신). 발급 실패 시 스텁으로 폴백(목·오프라인 대비). 로그엔 안 남긴다. */
+    private fun bearer(ctx: Context) =
+        DeviceAuth.token(ctx)?.let { "Bearer $it" } ?: "Bearer stub-${deviceId(ctx)}"
 
     /** ZIP 전체 SHA-256 (소문자 hex 64). 스트리밍. */
     fun sha256Hex(file: File): String {
@@ -159,6 +160,7 @@ object Uploader {
         return try {
             conn.outputStream.use { it.write(body.toByteArray()) }
             val code = conn.responseCode
+            if (code == 401) { DeviceAuth.refresh(ctx); Log.w(TAG, "session 401 → 토큰 갱신 후 재시도 대기"); return null }
             if (code !in 200..299) { Log.w(TAG, "session 발급 HTTP $code"); return null }
             val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
             val ct = d.optJSONObject("requiredHeaders")?.optString("Content-Type", "application/zip")
@@ -205,6 +207,7 @@ object Uploader {
         return try {
             conn.outputStream.use { it.write(body.toByteArray()) }
             val code = conn.responseCode
+            if (code == 401) DeviceAuth.refresh(ctx)
             Log.i(TAG, "complete HTTP $code")
             code in 200..299
         } catch (e: Exception) { Log.w(TAG, "complete 실패: ${e.message}"); false }

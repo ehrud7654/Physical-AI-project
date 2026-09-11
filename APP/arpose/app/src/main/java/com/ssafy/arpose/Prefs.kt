@@ -14,6 +14,10 @@ object Prefs {
     private const val KEY_SESSION_ID = "session_id"
     private const val KEY_SKILL_ID = "skill_id"   // 값 목록은 이슈 109 확정 대기
 
+    // 장치 자격(QR 로 받음). durable — 토큰은 이걸로 DEVICE-05 에서 발급/갱신 (S15P21A103-163).
+    private const val KEY_DEVICE_ID = "device_id"
+    private const val KEY_DEVICE_SECRET = "device_secret"
+
     // 활성 학습(TrainingJob). 촬영 시 stamp → 전송 라우팅·오배정 예방 (S15P21A103-164).
     private const val KEY_ACTIVE_JOB = "active_job_id"
     private const val KEY_ACTIVE_SKILL_KEY = "active_skill_key"
@@ -31,6 +35,11 @@ object Prefs {
     fun userId(ctx: Context) = sp(ctx).getString(KEY_USER_ID, "") ?: ""
     fun sessionId(ctx: Context) = sp(ctx).getString(KEY_SESSION_ID, "") ?: ""
     fun skillId(ctx: Context) = sp(ctx).getString(KEY_SKILL_ID, "") ?: ""
+
+    fun deviceId(ctx: Context) = sp(ctx).getString(KEY_DEVICE_ID, "") ?: ""
+    fun deviceSecret(ctx: Context) = sp(ctx).getString(KEY_DEVICE_SECRET, "") ?: ""
+    fun setDeviceCreds(ctx: Context, id: String, secret: String) =
+        sp(ctx).edit().putString(KEY_DEVICE_ID, id).putString(KEY_DEVICE_SECRET, secret).apply()
 
     fun activeJobId(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_JOB, "") ?: ""
     fun activeSkillKey(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_SKILL_KEY, "") ?: ""
