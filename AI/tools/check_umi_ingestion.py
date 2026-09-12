@@ -151,6 +151,12 @@ class Tests(unittest.TestCase):
                           dict(t_cam_to_pinch=np.zeros((4,4))),dict(usable_segments=[[0,99]])]:
             with self.subTest(overrides=overrides),self.assertRaises(ValueError): self.decode(self.fixture(),**overrides)
 
+        raw=self.decode(self.fixture(),warmup_s=0,pre_stabilized=True)
+        self.assertEqual(raw.meta.n_steps,8)
+        self.assertTrue(raw.meta.notes['pre_stabilized'])
+        with self.assertRaises(ValueError):
+            self.decode(self.fixture(),warmup_s=0,pre_stabilized='yes')
+
     def test_velocity_and_acceleration_use_actual_dt(self):
         arm=np.zeros((4,5)); arm[:,0]=[0,.1,.2,.5]
         limits=TrajectoryLimits((1,)*6,(2,)*6,(.5,)*6)
