@@ -16,11 +16,13 @@ def to_raw(*, bundle: Path, t_cam_to_pinch: np.ndarray,
            t_arcore_world_to_base: np.ndarray, calibration_id: str,
            tracking_valid_values, warmup_s, usable_segments,
            frames_dropped, image_decoder, recording_id=None, skill_id=None,
-           stabilized_at_s=None, demo_start_s=None) -> RawEpisode:
+           stabilized_at_s=None, demo_start_s=None,
+           pre_stabilized=False) -> RawEpisode:
     """Read ZIP/root directory without extracting or re-encoding source images.
 
     usable_segments: half-open original pose ROW offsets.
-    warmup_s: >=3 seconds from first pose timestamp.
+    warmup_s: normally >=3 seconds from first pose timestamp.  Zero is accepted
+      only when the capture protocol explicitly records pre_stabilized=True.
     stabilized_at_s/demo_start_s: optional seconds from the first pose timestamp.
     The latest of these offsets and warmup_s is the first eligible sample.
     image_decoder: bytes -> original-resolution RGB uint8 array.
@@ -32,4 +34,4 @@ def to_raw(*, bundle: Path, t_cam_to_pinch: np.ndarray,
         recording_id=recording_id, skill_id=skill_id, tracking_valid_values=tracking_valid_values,
         warmup_s=warmup_s, usable_segments=usable_segments, frames_dropped=frames_dropped,
         image_decoder=image_decoder, stabilized_at_s=stabilized_at_s,
-        demo_start_s=demo_start_s)
+        demo_start_s=demo_start_s, pre_stabilized=pre_stabilized)

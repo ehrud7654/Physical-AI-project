@@ -23,15 +23,19 @@ def rigid(value):
 def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
                   recording_id, skill_id, tracking_valid_values, warmup_s,
                   usable_segments, frames_dropped, image_decoder,
-                  stabilized_at_s=None, demo_start_s=None):
+                  stabilized_at_s=None, demo_start_s=None,
+                  pre_stabilized=False):
     camera_pinch, base_world = rigid(t_camera_pinch), rigid(t_base_world)
     if not isinstance(calibration_id, str) or not calibration_id.strip():
         raise ValueError('calibration_id required')
+    if type(pre_stabilized) is not bool:
+        raise ValueError('pre_stabilized must be an explicit boolean')
     if (not tracking_valid_values or isinstance(tracking_valid_values, str)
-            or warmup_s is None or not np.isfinite(warmup_s) or warmup_s < 3
+            or warmup_s is None or not np.isfinite(warmup_s) or warmup_s < 0
+            or (warmup_s < 3 and not pre_stabilized)
             or usable_segments is None or type(frames_dropped) is not int or frames_dropped < 0
             or not callable(image_decoder)):
-        raise ValueError('explicit tracking, warmup >=3s, pose-row segments, drop count and RGB decoder required')
+        raise ValueError('explicit tracking, justified warmup, pose-row segments, drop count and RGB decoder required')
     for name, value in (('stabilized_at_s', stabilized_at_s), ('demo_start_s', demo_start_s)):
         if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
                                   or not np.isfinite(value) or value < 0):
@@ -161,6 +165,7 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
                 'source_usable_segments':usable_segments, 'source_clock_origin_ns':stamps[0],
                 'warmup_s':warmup_s, 'stabilized_at_s':stabilized_at_s,
                 'demo_start_s':demo_start_s, 'effective_start_s':effective_start_s,
+                'pre_stabilized':pre_stabilized,
                 'gripper_producer':producer, 'summary_original':summary,
                 'source_files_sha256':hashes,
                 't_base_world':base_world.tolist(), 't_camera_pinch':camera_pinch.tolist(),

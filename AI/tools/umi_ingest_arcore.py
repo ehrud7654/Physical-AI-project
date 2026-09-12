@@ -48,7 +48,7 @@ def main():
     parser.add_argument('--calibration',type=Path,required=True,
                         help='JSON calibration_id, t_cam_to_pinch, t_arcore_world_to_base')
     parser.add_argument('--quality',type=Path,required=True,
-                        help='JSON tracking_valid_values, warmup_s, usable_segments, frames_dropped; optional stabilized_at_s/demo_start_s')
+                        help='JSON tracking_valid_values, warmup_s, usable_segments, frames_dropped; optional stabilized_at_s/demo_start_s/pre_stabilized')
     parser.add_argument('--skill-id')
     parser.add_argument('--out',type=Path,help='New output directory; omit for validation only')
     args=parser.parse_args()
