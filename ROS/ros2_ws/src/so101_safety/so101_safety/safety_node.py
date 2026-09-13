@@ -1,7 +1,12 @@
 """Safety Controller (S15P21A103-49).
 
-관절 리밋·워치독·수동 트리거로 /estop 발행. 드라이버가 /estop 받아 토크 off.
+관절 리밋·워치독·수동 트리거로 /estop 발행. estop_bridge가 /estop 받아 토크 off.
 리밋은 so101.yaml 단일 소스에서 읽는다(하드코딩 X). 리밋 없으면 기동 거부(fail-closed).
+
+감시 대상 (ros2_control):
+  /joint_states                            엔코더 실측 → 범위 초과 감시
+  /forward_position_controller/commands    명령 스트림 → 워치독(정책 죽음 감지)
+  /estop_request                           수동 estop
 
 # ponytail: estop은 한 번 걸리면 유지(래치), 리셋은 노드 재시작. 자동 리셋 위험해서 생략.
 """
@@ -13,7 +18,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float64MultiArray
 
 
 def load_limits(path: str) -> dict[str, tuple[float, float]]:
@@ -48,7 +53,8 @@ class SafetyNode(Node):
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._estop = self.create_publisher(Bool, "/estop", latched)
         self.create_subscription(JointState, "/joint_states", self._on_state, 10)
-        self.create_subscription(JointState, "/joint_command", self._on_cmd, 10)
+        self.create_subscription(
+            Float64MultiArray, "/forward_position_controller/commands", self._on_cmd, 10)
         self.create_subscription(Bool, "/estop_request", self._on_request, 10)
 
         self._last_cmd = None
@@ -68,11 +74,10 @@ class SafetyNode(Node):
         if bad:
             self._trip(f"관절 범위 초과(실측) {bad}")
 
-    def _on_cmd(self, msg: JointState):          # 명령 범위 + 워치독 갱신
+    def _on_cmd(self, msg: Float64MultiArray):   # 명령 스트림 살아있음 → 워치독 갱신
+        # Float64MultiArray엔 관절 이름이 없다. 명령 범위 검사는 SO101System 틱 클램프가
+        # 담당(중복 제거). 여기선 "스트림 끊김"만 워치독으로 감시.
         self._last_cmd = self.get_clock().now()
-        bad = violations(msg.name, msg.position, self._limits)
-        if bad:
-            self._trip(f"명령 범위 초과 {bad}")
 
     def _on_request(self, msg: Bool):            # 수동/버튼 estop
         if msg.data:
