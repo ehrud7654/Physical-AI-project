@@ -241,3 +241,72 @@ python tools/preflight_relative_chunk_policy.py \
 
 이 검사는 여전히 물체 접촉, 폐루프 복구, 성공률을 평가하지 않는다. geometry와
 commanded dynamics를 확인한 다음 카메라 조건을 맞춘 MuJoCo 진단 영상을 만든다.
+
+## phase 정렬 사전검사 결과와 다음 등록 탐색
+
+표본마다 기록 정답의 첫 미래 target을 누적해 현재 pose를 복원한 뒤 validation
+episode 균형 표본 25개를 검사했다.
+
+| 경로 | geometry 통과 | dynamics 통과 |
+|---|---:|---:|
+| 학습 정책 | 5/25 (20%) | 0/25 |
+| 기록 정답 oracle | 4/25 (16%) | 0/25 |
+
+두 경로 모두 현재 anchor IK 불가가 12/25였으므로 정책보다 단일 episode에서 고른
+잠정 시작 등록값이 먼저 병목이다. dynamics도 양쪽 모두 0%였다. 기록 정답의 팔
+속도는 최대 2.45rad/s, 가속도는 최대 9.10rad/s²로 실물 계약의 1.0rad/s와
+3.0rad/s²를 넘었다. 따라서 이 결과를 근거로 재학습하지 않는다.
+
+사전검사는 이제 geometry를 통과한 각 chunk에 대해 균일 시간 확대율도 기록한다.
+시간을 `s`배 늘리면 속도는 `1/s`, 가속도는 `1/s²`가 되므로 다음 최댓값이다.
+
+```text
+max(
+  arm_speed / arm_speed_limit,
+  sqrt(arm_accel / arm_accel_limit),
+  gap_speed / gap_speed_limit,
+  sqrt(gap_accel / gap_accel_limit),
+  1
+)
+```
+
+이 값은 로봇 실행 스케줄에만 적용한다. v6의 원본 timestamp와 학습 label을 다시
+늘리거나 재생성하지 않는다.
+
+단일 시연 후보를 바로 교체하지 않고 validation episode 전체의 기록 정답을 먼저
+통과시키는 탐색기를 추가했다. 목적함수는 sampled oracle chunk IK, 현재 anchor
+도달률, 가로 jaw/수평 접근축, 초기 wrist camera 물체 포함, 테이블 배치와 MuJoCo
+충돌 없음의 결합 통과율이다. 물체 위치는 각 시연의 near-closed pinch pose에서
+추론한다. 결과는 계속 잠정 등록이며 실물 캘리브레이션이나 모터 안전 승인이 아니다.
+
+GPU 추론을 하지 않는 CPU 기하 탐색이다. 먼저 32개 후보를 validation episode
+3편으로 빠르게 거른 뒤 상위 4개만 전체 14편에서 평가한다.
+
+```bash
+python tools/search_relative_chunk_registration.py \
+  --data datasets/umi_real_relative_20260911_v6 \
+  --preflight out/relative_chunk_v6_seed0_phase_aligned.json \
+  --candidates 32 \
+  --screen-episodes 3 \
+  --finalists 4 \
+  --samples-per-episode 2 \
+  --out out/relative_chunk_v6_registration_search32.json
+```
+
+선택 후보를 정책과 기록 정답 양쪽에 다시 적용한다.
+
+```bash
+python tools/preflight_relative_chunk_policy.py \
+  --data datasets/umi_real_relative_20260911_v6 \
+  --policy-ckpt checkpoints/relative_chunk/umi_real_relative_v6_seed0.pt \
+  --registration out/relative_chunk_v6_registration_search32.json \
+  --device cuda \
+  --samples 200 \
+  --out out/relative_chunk_v6_seed0_registration32_preflight.json
+```
+
+기록 정답 geometry가 충분히 통과하지 않으면 epoch를 추가하지 않는다. 후보 수를
+늘려도 개선되지 않으면 시작 등록 하나의 문제가 아니라 5-DoF orientation 투영,
+IK branch 또는 hand-eye 정의를 다시 검사한다. geometry 통과 후에는 보고된 시간
+확대율로 실행 스케줄을 늦춘 다음, 대표 validation episode와 그 episode에서 추론한
+물체 위치를 사용해 camera-matched MuJoCo 영상을 만든다.

@@ -16,6 +16,7 @@ from umi.relative_dataset import (
     relative_vector,
     vector_to_transform,
 )
+from umi.timing import required_time_scale
 
 
 def pose(xyz=(0, 0, 0), yaw_deg=0.0):
@@ -60,6 +61,26 @@ class RelativeDatasetTests(unittest.TestCase):
     def test_gap_contract_rejects_out_of_range(self):
         with self.assertRaisesRegex(ValueError, "gripper width"):
             relative_vector(np.eye(4), np.eye(4), MAX_GRIPPER_WIDTH_M + 1e-3)
+
+    def test_uniform_time_scale_respects_velocity_and_acceleration(self):
+        scale = required_time_scale(
+            arm_speed=2.0, arm_accel=12.0,
+            gap_speed=0.04, gap_accel=0.075,
+            max_arm_speed=1.0, max_arm_accel=3.0,
+            max_gap_speed=0.08, max_gap_accel=0.3,
+        )
+        self.assertAlmostEqual(scale, 2.0)
+        self.assertLessEqual(2.0 / scale, 1.0)
+        self.assertLessEqual(12.0 / scale ** 2, 3.0)
+
+    def test_uniform_time_scale_never_speeds_up(self):
+        scale = required_time_scale(
+            arm_speed=0.2, arm_accel=0.4,
+            gap_speed=0.01, gap_accel=0.02,
+            max_arm_speed=1.0, max_arm_accel=3.0,
+            max_gap_speed=0.08, max_gap_accel=0.3,
+        )
+        self.assertEqual(scale, 1.0)
 
 
 if __name__ == "__main__":

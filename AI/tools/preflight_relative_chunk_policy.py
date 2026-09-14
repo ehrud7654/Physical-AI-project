@@ -25,16 +25,17 @@ from policy.relative_chunk_bc import RelativeChunkBCPolicy
 from tools.umi_mujoco import (
     DEFAULT_CONFIG,
     DEFAULT_SCENE,
-    MujocoArmAdapter,
     MujocoIK,
     build_model,
-    eef_pose_from_joints,
     load_config,
 )
-from umi.arm_preflight import ArmSolution, prepare_arm_commands
-from umi.convert import invert_gap_curve
-from umi.ik import quat_to_matrix
-from umi.relative_dataset import vector_to_transform
+from umi.relative_robot_preflight import (
+    FixedActionPolicy,
+    arm_ranges,
+    episode_anchors,
+    evaluate_chunk,
+    real_limits,
+)
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
@@ -42,42 +43,6 @@ DEFAULT_REAL_CONFIG = AI_ROOT / "configs" / "real" / "so101_ver1.json"
 DEFAULT_REGISTRATION = (
     AI_ROOT / "configs" / "real" / "umi_so101_registration_provisional.json"
 )
-
-
-class RecordingArmAdapter:
-    """Record IK residuals while retaining the checked five-joint boundary."""
-
-    def __init__(self, solver: MujocoIK, gap_curve: Any) -> None:
-        self.delegate = MujocoArmAdapter(solver, gap_curve)
-        self.solutions: list[ArmSolution] = []
-
-    def solve(self, target_pose: np.ndarray, *, seed_rad: np.ndarray,
-              gripper_width_m: float) -> ArmSolution:
-        solution = self.delegate.solve(
-            target_pose, seed_rad=seed_rad,
-            gripper_width_m=gripper_width_m)
-        self.solutions.append(solution)
-        return solution
-
-
-class FixedActionPolicy:
-    """Expose a recorded ground-truth chunk through the policy boundary."""
-
-    def __init__(self, action: np.ndarray) -> None:
-        self.action = np.asarray(action, dtype=np.float32).copy()
-
-    def predict_action(self, observation: Any) -> dict[str, np.ndarray]:
-        del observation
-        return {"action_pred": self.action.copy()}
-
-
-def _matrix_from_fk(model: Any, solver: MujocoIK, q_rad: np.ndarray) -> np.ndarray:
-    pos, quat = eef_pose_from_joints(
-        model, solver.data, q_rad, solver.pinch)
-    result = np.eye(4)
-    result[:3, :3] = quat_to_matrix(quat)
-    result[:3, 3] = pos
-    return result
 
 
 def _registration(path: Path) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -92,29 +57,6 @@ def _registration(path: Path) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
             or not np.isfinite(arm).all() or not np.isfinite(object_xyz).all()):
         raise ValueError("registration must contain finite start_arm_rad[5] and object_xyz_m[3]")
     return arm, object_xyz, payload
-
-
-def _real_limits(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    required = (
-        "limits_rad", "max_gap_m", "max_speed_rad_s", "max_accel_rad_s2",
-        "max_gap_speed_m_s", "max_gap_accel_m_s2",
-    )
-    missing = [key for key in required if key not in payload]
-    if missing:
-        raise ValueError(f"real robot config is missing {missing}")
-    return payload
-
-
-def _ranges(real: dict[str, Any]) -> np.ndarray:
-    order = [
-        "shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex",
-        "wrist_roll",
-    ]
-    ranges = np.asarray([real["limits_rad"][name] for name in order], dtype=float)
-    if ranges.shape != (5, 2) or not np.isfinite(ranges).all():
-        raise ValueError("real limits_rad must contain five finite [lo, hi] rows")
-    return ranges
 
 
 def _balanced_indices(dataset: RelativeChunkDataset, episode_ids: list[str],
@@ -137,19 +79,6 @@ def _balanced_indices(dataset: RelativeChunkDataset, episode_ids: list[str],
     return selected[:count]
 
 
-def _reason(error: ValueError) -> str:
-    message = str(error)
-    if "gripper" in message:
-        return "gripper_range"
-    if "arm range" in message:
-        return "arm_range"
-    if "IK" in message:
-        return "ik_residual_or_convergence"
-    if "rotation_6d" in message:
-        return "invalid_rotation_prediction"
-    return "invalid_prediction_or_contract"
-
-
 def _percentiles(values: list[float]) -> list[float | None]:
     if not values:
         return [None, None, None, None]
@@ -168,109 +97,8 @@ def _empty_stats() -> dict[str, Any]:
         "arm_accel_peaks": [],
         "gap_speed_peaks": [],
         "gap_accel_peaks": [],
+        "required_time_scales": [],
         "examples": [],
-    }
-
-
-def _episode_anchors(episode: dict[str, Any], *, model: Any, ik: MujocoIK,
-                     curve: Any, arm_start: np.ndarray,
-                     ranges: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray | None]]:
-    """Reconstruct each current pose and its continuous oracle IK seed.
-
-    For consecutive 10 Hz anchors, action[i, 0] is current[i]^-1 @ current[i+1].
-    This identity is independently checked by the dataset regression against the
-    inverse pose stored in the next proprio history.
-    """
-    gaps = np.asarray(episode["proprio"][:, -1, 9], dtype=float)
-    first_q = np.r_[arm_start, invert_gap_curve(float(gaps[0]), curve)]
-    poses = [_matrix_from_fk(model, ik, first_q)]
-    arms: list[np.ndarray | None] = [arm_start.copy()]
-    seed = arm_start.copy()
-    adapter = MujocoArmAdapter(ik, curve)
-    for row in range(1, len(gaps)):
-        pose = poses[-1] @ vector_to_transform(episode["action"][row - 1, 0])
-        poses.append(pose)
-        solution = adapter.solve(
-            pose, seed_rad=seed, gripper_width_m=float(gaps[row]))
-        valid = bool(
-            solution.converged
-            and solution.position_error_m <= 0.005
-            and solution.axis_error_deg <= 5.0
-            and solution.roll_error_deg <= 5.0
-            and np.all(solution.positions_rad >= ranges[:, 0])
-            and np.all(solution.positions_rad <= ranges[:, 1])
-        )
-        if valid:
-            seed = solution.positions_rad.copy()
-            arms.append(seed.copy())
-        else:
-            arms.append(None)
-    return poses, arms
-
-
-def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
-                    ik: MujocoIK, curve: Any,
-                    current_pose: np.ndarray, arm_current: np.ndarray,
-                    current_gap: float,
-                    ranges: np.ndarray, gap_max: float, dt: float,
-                    max_arm_speed: float, max_arm_accel: float,
-                    max_gap_speed: float, max_gap_accel: float) -> dict[str, Any]:
-    adapter = RecordingArmAdapter(ik, curve)
-    # Geometry and commanded dynamics are separate questions.  Use the complete
-    # range span as the jump budget here: any two in-range arm values can pass,
-    # while an out-of-range IK result is still rejected.  Real speed and
-    # acceleration limits are applied below from the timestamp-derived dt.
-    geometric_arm_step = ranges[:, 1] - ranges[:, 0]
-    try:
-        commands = prepare_arm_commands(
-            policy, observation,
-            t_current=current_pose,
-            arm_current_rad=arm_current,
-            gripper_current_m=current_gap,
-            solver=adapter,
-            ranges_rad=ranges,
-            gap_range_m=[0.0, gap_max],
-            max_step_rad=geometric_arm_step,
-            max_gap_step_m=gap_max,
-            max_position_error_m=0.005,
-            max_axis_error_deg=5.0,
-            max_roll_error_deg=5.0,
-        )
-    except ValueError as error:
-        return {
-            "result": "geometry_reject", "reason": _reason(error),
-            "detail": str(error),
-        }
-
-    arm = np.vstack([arm_current, *[value.arm_positions_rad for value in commands]])
-    gap = np.asarray([current_gap, *[value.gripper_width_m for value in commands]])
-    arm_velocity = np.diff(arm, axis=0) / dt
-    gap_velocity = np.diff(gap) / dt
-    arm_acceleration = np.diff(arm_velocity, axis=0) / dt
-    gap_acceleration = np.diff(gap_velocity) / dt
-    arm_speed = float(np.abs(arm_velocity).max(initial=0.0))
-    arm_accel = float(np.abs(arm_acceleration).max(initial=0.0))
-    gap_speed = float(np.abs(gap_velocity).max(initial=0.0))
-    gap_accel = float(np.abs(gap_acceleration).max(initial=0.0))
-    violations = []
-    if arm_speed > max_arm_speed + 1e-9:
-        violations.append("arm_velocity")
-    if arm_accel > max_arm_accel + 1e-9:
-        violations.append("arm_acceleration")
-    if gap_speed > max_gap_speed + 1e-9:
-        violations.append("gap_velocity")
-    if gap_accel > max_gap_accel + 1e-9:
-        violations.append("gap_acceleration")
-    return {
-        "result": "accepted" if not violations else "dynamic_reject",
-        "violations": violations,
-        "position_errors": [float(value.position_error_m) for value in adapter.solutions],
-        "axis_errors": [float(value.axis_error_deg) for value in adapter.solutions],
-        "roll_errors": [float(value.roll_error_deg) for value in adapter.solutions],
-        "arm_speed_peak_rad_s": arm_speed,
-        "arm_accel_peak_rad_s2": arm_accel,
-        "gap_speed_peak_m_s": gap_speed,
-        "gap_accel_peak_m_s2": gap_accel,
     }
 
 
@@ -288,6 +116,7 @@ def _accumulate(stats: dict[str, Any], outcome: dict[str, Any],
             "arm_accel_peak_rad_s2": "arm_accel_peaks",
             "gap_speed_peak_m_s": "gap_speed_peaks",
             "gap_accel_peak_m_s2": "gap_accel_peaks",
+            "required_time_scale": "required_time_scales",
         }
         for source, destination in peak_keys.items():
             stats[destination].append(outcome[source])
@@ -322,6 +151,12 @@ def _summary(stats: dict[str, Any], total: int) -> dict[str, Any]:
                 stats["gap_speed_peaks"]),
             "gap_accel_peak_m_s2_p0_p50_p95_max": _percentiles(
                 stats["gap_accel_peaks"]),
+            "required_uniform_time_scale_p0_p50_p95_max": _percentiles(
+                stats["required_time_scales"]),
+            "time_scale_semantics": (
+                "robot-time duration multiplier; source timestamps and training "
+                "labels are not modified"
+            ),
         },
         "rejections": dict(sorted(stats["rejects"].items())),
         "examples": stats["examples"],
@@ -361,8 +196,8 @@ def main() -> int:
     model = build_model(cfg, args.scene)
     ik = MujocoIK(model, cfg)
     arm_start, object_xyz, registration = _registration(args.registration)
-    real = _real_limits(args.real_config)
-    ranges = _ranges(real)
+    real = real_limits(args.real_config)
+    ranges = arm_ranges(real)
     if np.any(arm_start < ranges[:, 0]) or np.any(arm_start > ranges[:, 1]):
         raise ValueError("registered start pose exceeds real arm limits")
 
@@ -387,7 +222,7 @@ def main() -> int:
         current_gap = float(proprio[-1, 9])
         observation = {"image": image.copy(), "proprio": proprio.copy()}
         if episode_index not in anchor_cache:
-            anchor_cache[episode_index] = _episode_anchors(
+            anchor_cache[episode_index] = episode_anchors(
                 episode, model=model, ik=ik, curve=curve,
                 arm_start=arm_start, ranges=ranges)
         current_poses, current_arms = anchor_cache[episode_index]
@@ -412,7 +247,7 @@ def main() -> int:
             "recorded_oracle": FixedActionPolicy(episode["action"][row]),
         }
         for name, candidate in candidates.items():
-            outcome = _evaluate_chunk(
+            outcome = evaluate_chunk(
                 candidate, observation,
                 ik=ik, curve=curve,
                 current_pose=current_poses[row], arm_current=arm_current,
