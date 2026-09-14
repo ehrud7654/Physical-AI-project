@@ -27,7 +27,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class EpisodeArchiveValidator {
   private static final Set<String> REQUIRED =
-      Set.of("meta.json", "summary.json", "frames.csv", "pose.csv", "imu.csv", "gripper.csv");
+      Set.of("meta.json", "summary.json", "frames.csv", "pose.csv", "imu.csv");
+  private static final String OPTIONAL_GRIPPER = "gripper.csv";
   private static final int MAX_ENTRIES = 100_000;
   private final ObjectMapper objectMapper;
 
@@ -57,7 +58,7 @@ public class EpisodeArchiveValidator {
         byte[] bytes = readBounded(zip, maxUncompressedBytes - totalBytes);
         totalBytes += bytes.length;
         hashes.put(name, sha256(bytes));
-        if (REQUIRED.contains(name)) files.put(name, bytes);
+        if (REQUIRED.contains(name) || OPTIONAL_GRIPPER.equals(name)) files.put(name, bytes);
         if (name.startsWith("frames/") && name.endsWith(".jpg")) frameEntryCount++;
       }
     } catch (IOException exception) {
@@ -76,7 +77,9 @@ public class EpisodeArchiveValidator {
     CsvResult frames = validateFramesCsv(files.get("frames.csv"), names);
     CsvResult pose = validateTimedCsv(files.get("pose.csv"), "t_ns,px,py,pz,qw,qx,qy,qz,tracking_state");
     CsvResult imu = validateTimedCsv(files.get("imu.csv"), "t_ns,ax,ay,az,gx,gy,gz");
-    CsvResult gripper = validateTimedCsv(files.get("gripper.csv"), "t_ns,openness,tracking_state");
+    CsvResult gripper = files.containsKey(OPTIONAL_GRIPPER)
+        ? validateTimedCsv(files.get(OPTIONAL_GRIPPER), "t_ns,openness,tracking_state", false)
+        : CsvResult.empty();
     validateCountsAndTimes(summary, frames, pose, imu, gripper, frameEntryCount);
     validateInternalChecksums(summary, hashes);
 
@@ -154,6 +157,7 @@ public class EpisodeArchiveValidator {
     long first = number(summary, "first_timestamp_ns");
     long last = number(summary, "last_timestamp_ns");
     for (CsvResult value : List.of(frames, pose, imu, gripper)) {
+      if (value.count == 0) continue;
       if (value.first < first || value.last > last)
         fail("TIMESTAMP_RANGE_MISMATCH", "CSV timestamp가 summary 범위를 벗어났습니다.");
     }
@@ -182,6 +186,10 @@ public class EpisodeArchiveValidator {
   }
 
   private CsvResult validateTimedCsv(byte[] bytes, String header) {
+    return validateTimedCsv(bytes, header, true);
+  }
+
+  private CsvResult validateTimedCsv(byte[] bytes, String header, boolean requireData) {
     String[] lines = lines(bytes);
     if (!lines[0].equals(header)) fail("CSV_HEADER_INVALID", header + " 계약과 일치하지 않습니다.");
     long previous = -1;
@@ -212,16 +220,19 @@ public class EpisodeArchiveValidator {
       if (first < 0) first = timestamp;
       previous = timestamp;
     }
-    if (lines.length < 2) fail("CSV_EMPTY", "CSV에 데이터가 없습니다.");
+    if (requireData && lines.length < 2) fail("CSV_EMPTY", "CSV에 데이터가 없습니다.");
     return new CsvResult(lines.length - 1, first, previous);
   }
 
   private void validateInternalChecksums(Map<String, Object> summary, Map<String, String> actual) {
     Map<String, Object> expected = map(summary, "checksums");
-    for (String name : List.of("meta.json", "frames.csv", "pose.csv", "imu.csv", "gripper.csv")) {
+    for (String name : List.of("meta.json", "frames.csv", "pose.csv", "imu.csv")) {
       if (!actual.get(name).equals(expected.get(name)))
         fail("INTERNAL_CHECKSUM_MISMATCH", name + " checksum이 일치하지 않습니다.");
     }
+    if (actual.containsKey(OPTIONAL_GRIPPER)
+        && !actual.get(OPTIONAL_GRIPPER).equals(expected.get(OPTIONAL_GRIPPER)))
+      fail("INTERNAL_CHECKSUM_MISMATCH", OPTIONAL_GRIPPER + " checksum이 일치하지 않습니다.");
   }
 
   private byte[] readBounded(InputStream input, long remaining) throws IOException {
@@ -313,5 +324,7 @@ public class EpisodeArchiveValidator {
     catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
   }
   private void fail(String code, String message) { throw new EpisodeArchiveValidationException(code, message); }
-  private record CsvResult(int count, long first, long last) {}
+  private record CsvResult(int count, long first, long last) {
+    private static CsvResult empty() { return new CsvResult(0, -1, -1); }
+  }
 }
