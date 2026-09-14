@@ -8,5 +8,7 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
+        <!-- 실서버(http) 업로드 테스트용. HTTPS 전환되면 제거. -->
+        <domain includeSubdomains="true">j15a103.p.ssafy.io</domain>
     </domain-config>
 </network-security-config>

@@ -23,8 +23,8 @@ android {
 
     buildTypes {
         debug {
-            // 목 서버. adb reverse tcp:8000 tcp:8000 으로 USB 터널을 쓴다.
-            buildConfigField("String", "UPLOAD_BASE_URL", "\"http://127.0.0.1:8000\"")
+            // 실서버 업로드 테스트(임시). 목 서버로 돌아가려면 "http://127.0.0.1:8000" 로 복구.
+            buildConfigField("String", "UPLOAD_BASE_URL", "\"http://j15a103.p.ssafy.io\"")
         }
         release {
             isMinifyEnabled = false
