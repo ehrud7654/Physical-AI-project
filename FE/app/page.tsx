@@ -448,7 +448,12 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
     setQrError('');
     try {
       const issued = await startDeviceEnrollment(targetDeviceId);
-      const image = await QRCode.toDataURL(issued.qrPayload, { width: 328, margin: 1, errorCorrectionLevel: 'M' });
+      const image = await QRCode.toDataURL(issued.qrPayload, {
+        width: 328,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#000000', light: '#FFFFFF' },
+      });
       setEnrollment(issued);
       setQrDataUrl(image);
       setRegistrationComplete(false);

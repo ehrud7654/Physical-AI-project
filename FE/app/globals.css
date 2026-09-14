@@ -2435,6 +2435,7 @@ body{
 .umi-qr-content{display:flex;align-items:center;justify-content:center;gap:28px;margin:28px 0 20px;padding:24px;border:1px solid var(--line);border-radius:16px;background:#f7f8fb}
 .umi-qr-placeholder{position:relative;display:grid;flex:0 0 164px;width:164px;height:164px;place-items:center;border:10px solid #fff;border-radius:12px;background:repeating-linear-gradient(45deg,#e4e7ee 0 8px,#f7f8fb 8px 16px);box-shadow:0 4px 18px rgb(37 48 82 / 10%);color:#737d99;font-size:18px;font-weight:800;letter-spacing:.12em}
 .umi-qr-placeholder::after{position:absolute;inset:0;background:rgb(255 255 255 / 52%);content:""}
+.umi-qr-placeholder:has(img)::after{display:none}
 .umi-qr-placeholder>span,.umi-qr-placeholder>.qr-corner{z-index:1}
 .umi-qr-placeholder>img{display:block;width:100%;height:100%;object-fit:contain}
 .qr-corner{position:absolute;width:34px;height:34px;border:7px solid #65708f;background:white}
