@@ -13,6 +13,7 @@
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>lifecycle_msgs</depend>
+  <exec_depend>python3-httpx</exec_depend>
 
   <!-- httpx 는 rosdep 키가 없어 pip 로 설치: pip install httpx -->
 

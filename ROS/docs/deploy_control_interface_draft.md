@@ -1,135 +1,121 @@
-# 배포 제어 인터페이스 초안 — BE ↔ 젯슨 오케스트레이터
+# 배포 제어 인터페이스 — BE ↔ 젯슨 오케스트레이터
 
-> 상태: **논의용 초안**. BE 파트와 합의 후 확정. 열린 질문은 §7 참고.
-> 범위: **제어 평면(BE↔젯슨)** 만. 젯슨 내부 실시간(ROS)은 `so101_msgs`(별개, 이슈 108).
-> 관련 이슈: 51([ROS] 상태·결과 Backend 전송), 24([BE] 관제 수집 API), 42(Jetson 용량)
+> 상태: **BE 계약 v1.3.0 + 실제 Jetson 컨트롤러 구현 기준**으로 확정. (이전 SSE 초안의 제안 엔드포인트는 폐기)
+> 범위: **제어 평면(BE↔젯슨)** 만. 젯슨 내부 30Hz 실시간은 ros2_control(별개).
+> 관련 이슈: 116([ROS] 오케스트레이터 BE 연동), 126([BE] Jetson 배포 구현)
 
 ---
 
-## 1. 두 평면 (헷갈리기 쉬움)
+## 1. 두 평면
 
 ```
-━━ 제어 평면 (이 문서, BE↔젯슨, HTTP, 저빈도) ━━━━━━━━━━━━
-   BE ──명령(시작/정지/ckpt)──> 젯슨
-   젯슨 ──상태/결과──> BE
+━━ 제어 평면 (이 문서, BE↔젯슨, HTTP/SSE, 저빈도) ━━━━━━━━━━━
+   BE ──명령(APPLY_DEPLOYMENT/EXECUTE_TASK/CANCEL)── SSE ──> 젯슨
+   젯슨 ──heartbeat·배포/실행 리포트── HTTP ──> BE
 
-━━ 데이터 평면 (젯슨 내부, ROS, 30Hz 실시간) ━━━━━━━━━━━━
-   정책노드(ckpt) ⇄ 드라이버 ⇄ 모터·카메라   ← so101_msgs, BE 안 낌
+━━ 데이터 평면 (젯슨 내부, ros2_control, 30Hz) ━━━━━━━━━━━━━
+   정책노드(ckpt→IK) → forward_position_controller → SO101System → 모터
 ```
 
-**BE는 관절 명령을 보내지 않는다.** 고수준(스킬 시작/정지, ckpt 로드)만. 실제 `/joint_command`는 젯슨 내부 정책이 30Hz로 생성.
+**BE는 관절 명령을 보내지 않는다.** 고수준(배포/실행/취소)만. 관절각은 젯슨 내부 정책이 30Hz 생성.
 
 ---
 
 ## 2. 연결 방식
 
-- 젯슨은 캠퍼스 NAT 뒤 → **BE(EC2 공인)로 젯슨이 아웃바운드 연결.** BE→젯슨 직접 호출 불가.
-- **명령(BE→젯슨): SSE** (Server-Sent Events, 단방향 push, 자동 재연결)
-- **상태(젯슨→BE): HTTP POST**
-- 젯슨은 **서버 아님** — SSE 클라이언트(`httpx`) + POST만. FastAPI 등 웹서버는 **BE 쪽**.
-
-```
-BE (SSE 서버 + POST 수신)  ◄── SSE(명령) ── 젯슨 오케스트레이터 (rclpy + httpx)
-                           ◄── POST(상태) ──
-                                              └ ROS lifecycle/service → 정책 노드 start/stop
-```
+- 젯슨은 캠퍼스 NAT 뒤 → **BE(EC2 공인)로 젯슨이 아웃바운드.** BE→젯슨 직접 호출 불가.
+- **명령(BE→젯슨): SSE** `command-stream` (BE가 SseEmitter로 push, 자동 재연결)
+- **리포트(젯슨→BE): HTTP POST(heartbeat) · PATCH(배포·실행 상태)**
+- 인증: **JWT Bearer** (DEVICE-05 device access token). 모든 `/robots/me/**`.
+- 응답은 `ApiResponse{data}` 래퍼.
 
 ---
 
 ## 3. 명령 채널 (SSE, BE → 젯슨)
 
-**엔드포인트(제안):** `GET {BE}/api/deploy/stream?device_id=<젯슨ID>` → `text/event-stream`
+`GET /api/v1/robots/me/command-stream` · `text/event-stream` · JWT
 
-**이벤트 종류(제안):**
+- 이벤트: `event: robot.command`, `id: <commandId>`, `data: <JetsonCommand json>`
+- keepalive 주석: `: connected`(연결 시), `: ping`(주기). 무시.
+- `id`(commandId)로 중복 제거. 재연결 시 `Last-Event-ID`.
 
-| event | 의미 | data 필드 |
-|---|---|---|
-| `load_ckpt` | ckpt 다운로드·로드 | `ckpt_id`, `version`, `url`, `sha256`, `vlm_version?` |
-| `start_skill` | 스킬 실행 시작 | `skill_id`, `run_id`, `params?` |
-| `stop` | 정상 정지 | `run_id` |
-| `estop` | 비상 정지 | — |
-| `ping` | 연결 유지 | — |
-
-**예시:**
-```
-event: load_ckpt
-data: {"ckpt_id":"pick_v3","version":"2026-09-01T10:00","url":"https://.../pick_v3.ckpt","sha256":"ab12..."}
-
-event: start_skill
-data: {"skill_id":"pick_place","run_id":"run_8842","params":{"target":"red_block"}}
-```
-
----
-
-## 4. 상태 채널 (HTTP POST, 젯슨 → BE)
-
-**엔드포인트(제안):** `POST {BE}/api/deploy/status`
-
-**공통 필드:** `device_id`, `ts`(ISO8601), `type`, `run_id?`
-
-| type | 의미 | 추가 필드 |
-|---|---|---|
-| `ckpt_progress` | ckpt 다운로드 진행 | `ckpt_id`, `pct` |
-| `ckpt_ready` | 로드 완료 | `ckpt_id`, `version` |
-| `skill_running` | 실행 중 | `skill_id` |
-| `skill_done` | 완료 | `success`(bool), `duration_s` |
-| `skill_failed` | 실패 | `reason` |
-| `estopped` | 비상정지됨 | `reason` |
-| `heartbeat` | 생존/자원 | `cpu`, `mem`, `gpu_mem`(8GB 감시, 이슈 42) |
-
-**예시:**
+**JetsonCommand:**
 ```json
-{ "device_id":"jetson-a103", "ts":"2026-09-01T10:05:12+09:00",
-  "type":"skill_done", "run_id":"run_8842", "success":true, "duration_s":18.4 }
+{ "commandId": "...", "sequence": 0, "type": "EXECUTE_TASK",
+  "robotId": "...", "executionId": "...", "taskVersionId": "...",
+  "deploymentId": "...", "steps": [ ... ], "issuedAt": "...",
+  "contractVersion": "robot-command-v1" }
 ```
+
+| type | 의미 | 주요 필드 |
+|---|---|---|
+| `APPLY_DEPLOYMENT` | 배포 적용 | `deploymentId` |
+| `EXECUTE_TASK` | 작업 실행 | `executionId`, `taskVersionId`, `steps[]` |
+| `CANCEL_EXECUTION` | 실행 취소 | `executionId` |
+
+`steps[]`: `{stepId, parentStepId, order, type, skillVersionId, timeoutSeconds, repeatCount, parameters}` (오케스트레이션).
 
 ---
 
-## 5. ckpt 배포 흐름
+## 4. 리포트 채널 (젯슨 → BE)
 
-```
-BE: load_ckpt(url, sha256) ──SSE──> 젯슨
-젯슨: url 다운로드 → sha256 검증 → 정책 노드에 로드
-젯슨: ckpt_progress(pct) ... → ckpt_ready ──POST──> BE
-```
+**heartbeat** `POST /api/v1/devices/{deviceId}/heartbeat`
+- 요청 `{firmwareVersion, runtimeVersion, contractVersion}` → 응답 `{serverTime, nextHeartbeatSeconds}`
+- 젯슨 20초 미수신 시 OFFLINE 판정 → heartbeat 주기 <20s(기본 15s)
 
-- ckpt는 **BE가 준 URL에서 젯슨이 pull** (BE가 젯슨으로 push 안 함).
-- 무결성: **sha256 검증 필수** (부분 다운로드/손상 방지).
-- 버전 기록 (롤백 대비).
+**배포 상태** `PATCH /api/v1/robots/me/deployments/{deploymentId}` (JETSON-03)
+- `{reportId, sequence, status, progressPercent, items?, error?}`
+- status: `PENDING→DOWNLOADING→VERIFYING→APPLYING→SUCCEEDED` / `→FAILED` / `→CANCELED`
+- `reportId`+`sequence`(단조증가)로 중복·역순 차단. FAILED면 `error{code,message}` 필수.
+
+**실행 상태** `PATCH /api/v1/robots/me/executions/{executionId}` (JETSON-06)
+- `{reportId, sequence, status, currentStep?, progressPercent, error?}`
+- status: `STARTING→RUNNING→SUCCEEDED` / `→FAILED` / `→CANCELED`. FAILED면 `error{code,message,recoveryAction?}`.
 
 ---
 
-## 6. 젯슨 내부 동작 (참고, 데이터 평면)
+## 5. 배포 흐름
+
+```
+APPLY_DEPLOYMENT(SSE)
+  → GET /robots/me/deployments/pending → Manifest(models[], steps[])
+  → 각 model.downloadUrl(S3 presigned) pull + sha256 검증
+  → PATCH DOWNLOADING → VERIFYING → (정책노드 로드) → APPLYING → SUCCEEDED
+```
+
+- ckpt는 **manifest의 S3 presigned URL에서 젯슨이 pull** (Authorization 안 붙임 — presigned 자기인증).
+- URL 만료 시 `POST /robots/me/deployments/{id}/manifest`로 재발급.
+- **Manifest.Model 메타**: `architecture, framework, contractVersion, actionSpace, controlRateHz(30), cameraNames, inputSchema, outputSchema, sha256` — 정책 노드가 로드·설정에 사용.
+
+---
+
+## 6. 젯슨 내부 동작 (데이터 평면 연결)
 
 오케스트레이터가 SSE 명령을 ROS로 번역:
 
-| SSE 명령 | 젯슨 내부 ROS 동작 |
+| 명령 | 젯슨 내부 |
 |---|---|
-| `load_ckpt` | 정책 노드에 ckpt 로드 (lifecycle configure) |
-| `start_skill` | 정책 노드 activate → 30Hz 루프 시작 |
-| `stop` | 정책 노드 deactivate → 모터 홀드 |
-| `estop` | 안전 노드에 `/estop` 발행 → 즉시 정지 |
-
-30Hz 관절/카메라 루프는 **젯슨 안에서만** 돎 (BE로 안 나감). BE엔 §4 상태만.
+| `APPLY_DEPLOYMENT` | 모델 다운로드·검증 → 정책 노드 lifecycle configure(ckpt 로드) |
+| `EXECUTE_TASK` | 정책 노드 activate → 30Hz 추론 루프 |
+| `CANCEL_EXECUTION` | 정책 노드 deactivate |
+| (안전) | safety 노드 → `/estop` → estop_bridge → 하드웨어 deactivate(토크off) |
 
 ---
 
-## 7. 논의 필요 (BE 파트와 합의)
+## 7. 남은 확정 (AI/BE와)
 
-1. **인증** — SSE/POST에 토큰? (device_id 위조 방지)
-2. **엔드포인트 경로/포맷** — §3·§4 제안 확정
-3. **ckpt 저장 위치** — BE가 주는 url이 S3? EC2? 프리사인드?
-4. **skill_id / run_id 체계** — 누가 발급? (BE가 run_id 주고 젯슨이 에코?)
-5. **오프라인/재연결** — SSE 끊기면 진행 중 스킬 계속? heartbeat 주기?
-6. **다중 젯슨** — device_id 체계 (지금은 1대지만)
-7. **VLM 트리거** — start_skill의 params로 자연어 지시? VLM grounding은 젯슨 내부?
-8. **estop 경로** — SSE로만? 별도 빠른 경로 필요?
+1. **actionSpace** — manifest `actionSpace`(예 JOINT_DELTA)가 정책 152 출력(관절 rad+gripper m)과 일치?
+2. **CKPT 내부 포맷** — 다운로드한 모델을 정책 노드가 어떻게 로드? (AI+BE)
+3. **정책 노드 상태 인터페이스(46)** — 실행 완료(SUCCEEDED/FAILED)·진행률을 정책 노드가 오케스트레이터에 알리는 토픽/서비스. 현재 orchestrator는 STARTING/RUNNING까지만, 완료 리포트는 이거 확정 후.
+4. **ckpt 경로 전달(46)** — configure에 다운로드 경로/메타 전달 배관 (현재 lifecycle 전이만).
+5. **device token 발급 흐름** — DEVICE-05(앱 163에서 배관), 젯슨이 JWT 획득·갱신.
 
 ---
 
 ## 8. 기술 스택 (젯슨 오케스트레이터)
 
-- **rclpy 노드 + `httpx`** (SSE 스트리밍 + POST 한 라이브러리로)
-- SSE 클라이언트는 별도 스레드, rclpy는 메인 spin
-- 정책 제어는 **ROS 2 lifecycle**(configure/activate/deactivate) 또는 서비스
+- **rclpy 노드 + `httpx`** — SSE 스트리밍 + POST/PATCH
+- SSE는 별도 스레드 → 큐 → **워커 스레드**에서 처리(다운로드 블로킹이 executor 안 막게)
+- 정책 제어 = ROS 2 lifecycle(configure/activate/deactivate)
 - **FastAPI 불필요** (젯슨은 클라이언트)
+- 구현: `so101_orchestrator` (be_client.py 전송 + orchestrator_node.py 배관)

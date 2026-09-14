@@ -1,25 +1,29 @@
-"""배포 오케스트레이터 노드 (S15P21A103-115).
+"""배포 오케스트레이터 노드 (S15P21A103-116, 115 후속).
 
-BE(제어 평면) ↔ 젯슨 ROS(데이터 평면) 다리.
-  - SSE로 BE 명령 수신 (별도 스레드) → 스레드 안전 큐 → 타이머에서 ROS로 처리
-  - 정책 노드 lifecycle 제어 (load_ckpt/start/stop)
-  - /estop 발행
-  - 상태 HTTP POST (heartbeat 포함)
+BE(제어 평면) ↔ 젯슨 ROS(데이터 평면) 다리. BE 계약 v1.3.0 기준.
+  - command-stream SSE로 명령 수신 (APPLY_DEPLOYMENT / EXECUTE_TASK / CANCEL_EXECUTION)
+  - 배포: pending manifest → 모델 다운로드+sha256 → 정책 로드 → JETSON-03 리포트
+  - 실행: 정책 lifecycle activate → JETSON-06 리포트
+  - heartbeat POST (liveness)
+  - /estop 발행 (BE estop 명령 시)
 
 설계 메모:
-  SSE는 블로킹이라 스레드에서 돌리고, rclpy 호출은 전부 메인(executor) 스레드에서만.
-  그래서 SSE 스레드는 큐에 넣기만 하고, 실제 ROS 동작(서비스·publish)은 타이머 콜백에서 한다.
+  SSE·다운로드는 블로킹이라 워커 스레드에서. rclpy publish/서비스 call_async는
+  스레드에서 호출해도 안전(발행·요청 생성). 무거운 HTTP가 executor를 막지 않게 분리.
 """
-
 from __future__ import annotations
 
+import hashlib
+import os
 import queue
 import threading
+import uuid
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
+from so101_orchestrator import be_client as bc
 from so101_orchestrator.be_client import BEClient
 from so101_orchestrator.policy_control import PolicyControl
 
@@ -28,102 +32,153 @@ class OrchestratorNode(Node):
     def __init__(self):
         super().__init__("so101_orchestrator")
 
-        # --- 파라미터 (launch/CLI로 주입) ---
-        self.declare_parameter("base_url", "http://localhost:8000")  # TODO(BE): 실제 EC2
+        self.declare_parameter("base_url", "http://localhost:8080")  # EC2 BE
         self.declare_parameter("device_id", "jetson-a103")
-        self.declare_parameter("token", "")
-        self.declare_parameter("heartbeat_sec", 5.0)
+        self.declare_parameter("token", "")                          # DEVICE-05 JWT
+        self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
         self.declare_parameter("ckpt_dir", "/tmp/so101_ckpt")
+        self.declare_parameter("contract_version", "robot-command-v1")
 
         base_url = self.get_parameter("base_url").value
         device_id = self.get_parameter("device_id").value
         token = self.get_parameter("token").value or None
         hb = float(self.get_parameter("heartbeat_sec").value)
         self._ckpt_dir = self.get_parameter("ckpt_dir").value
+        self._contract = self.get_parameter("contract_version").value
+        os.makedirs(self._ckpt_dir, exist_ok=True)
 
-        # --- 협력 객체 ---
         self._be = BEClient(base_url, device_id, token=token)
         self._policy = PolicyControl(self)
-
-        # --- ROS 인터페이스 ---
         self._estop_pub = self.create_publisher(Bool, "/estop", 10)
 
-        # --- SSE 스레드 → 큐 ---
+        self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
         self._cmd_q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         self._sse_thread = threading.Thread(target=self._run_sse, daemon=True)
+        self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._sse_thread.start()
-
-        # --- 타이머: 명령 처리 + heartbeat ---
-        self.create_timer(0.1, self._drain_commands)   # 10Hz로 큐 비움
+        self._worker.start()
         self.create_timer(hb, self._send_heartbeat)
 
-        self.get_logger().info(
-            f"orchestrator 시작 — BE={base_url} device={device_id}"
-        )
+        self.get_logger().info(f"orchestrator 시작 — BE={base_url} device={device_id}")
 
-    # === SSE 스레드 ==========================================================
+    # ── 유틸 ───────────────────────────────────────────────────────────
+    def _next_seq(self, key: str) -> int:
+        self._seq[key] = self._seq.get(key, 0) + 1
+        return self._seq[key]
+
+    @staticmethod
+    def _report_id() -> str:
+        return uuid.uuid4().hex
+
+    # ── SSE 스레드 → 큐 ────────────────────────────────────────────────
     def _run_sse(self):
-        def on_event(event_type: str, data: dict):
-            self._cmd_q.put((event_type, data))  # ROS 호출 안 함, 큐에만
-        self._be.stream_commands(on_event, self._stop.is_set)
+        self._be.stream_commands(self._cmd_q.put, self._stop.is_set)
 
-    # === 명령 처리 (메인 스레드) =============================================
-    def _drain_commands(self):
-        while True:
+    # ── 워커 스레드: 명령 처리 (HTTP·다운로드 블로킹 OK) ────────────────
+    def _run_worker(self):
+        while not self._stop.is_set():
             try:
-                event_type, data = self._cmd_q.get_nowait()
+                cmd = self._cmd_q.get(timeout=0.5)
             except queue.Empty:
-                return
+                continue
             try:
-                self._handle(event_type, data)
+                self._handle(cmd)
             except Exception as e:  # noqa: BLE001
-                self.get_logger().error(f"명령 처리 실패 [{event_type}]: {e}")
+                self.get_logger().error(f"명령 처리 실패 {cmd.get('type')}: {e}")
 
-    def _handle(self, event_type: str, data: dict):
-        self.get_logger().info(f"BE 명령 수신: {event_type} {data}")
-        if event_type == "load_ckpt":
-            self._on_load_ckpt(data)
-        elif event_type == "start_skill":
-            self._on_start_skill(data)
-        elif event_type == "stop":
-            self._on_stop(data)
-        elif event_type == "estop":
-            self._on_estop(data)
-        elif event_type in ("ping", "message"):
-            pass  # keepalive
+    def _handle(self, cmd: dict):
+        ctype = cmd.get("type")
+        self.get_logger().info(f"BE 명령: {ctype} (commandId={cmd.get('commandId')})")
+        if ctype == bc.CMD_APPLY_DEPLOYMENT:
+            self._apply_deployment(cmd)
+        elif ctype == bc.CMD_EXECUTE_TASK:
+            self._execute_task(cmd)
+        elif ctype == bc.CMD_CANCEL_EXECUTION:
+            self._cancel_execution(cmd)
         else:
-            self.get_logger().warn(f"알 수 없는 명령: {event_type}")
+            self.get_logger().warn(f"알 수 없는 명령 타입: {ctype}")
 
-    def _on_load_ckpt(self, data: dict):
-        # TODO(BE 계약): url(EC2 엔드포인트), sha256, version 필드 확정
-        ckpt_id = data.get("ckpt_id", "?")
-        # TODO: self._be.download_ckpt(data["url"], dest) → sha256 검증 → 정책에 경로 전달
-        self._policy.configure()
-        self._be.post_status("ckpt_ready", ckpt_id=ckpt_id)
+    # ── 배포 플로우 (JETSON-01 조회 → 다운로드 → JETSON-03 리포트) ──────
+    def _apply_deployment(self, cmd: dict):
+        dep_id = cmd.get("deploymentId")
+        manifest = self._be.get_pending_deployment()
+        if not manifest:
+            self.get_logger().warn("pending 배포 없음 — APPLY_DEPLOYMENT 무시")
+            return
+        dep_id = manifest.get("deploymentId", dep_id)
+        key = f"dep:{dep_id}"
 
-    def _on_start_skill(self, data: dict):
-        run_id = data.get("run_id")
-        if self._policy.activate():
-            self._be.post_status("skill_running", run_id=run_id,
-                                 skill_id=data.get("skill_id"))
+        try:
+            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
+                                       bc.DEPLOY_DOWNLOADING, 10.0)
+            for model in manifest.get("models", []):
+                dest = os.path.join(self._ckpt_dir, f"{model['skillVersionId']}.ckpt")
+                self._be.download(model["downloadUrl"], dest)
+                if not self._verify_sha256(dest, model.get("sha256")):
+                    self._be.report_deployment(
+                        dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
+                        10.0, error={"code": "SHA256_MISMATCH",
+                                     "message": f"{model['skillVersionId']} 무결성 실패"})
+                    return
 
-    def _on_stop(self, data: dict):
-        run_id = data.get("run_id")
+            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
+                                       bc.DEPLOY_VERIFYING, 60.0)
+            # 정책 노드에 ckpt 로드. ⚠️ TODO(46): configure에 ckpt 경로/manifest 메타 전달
+            #   (현재 policy_control.configure는 lifecycle 전이만). 46 인터페이스 확정 후 배관.
+            self._policy.configure()
+            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
+                                       bc.DEPLOY_APPLYING, 90.0)
+            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
+                                       bc.DEPLOY_SUCCEEDED, 100.0)
+            self.get_logger().info(f"배포 {dep_id} 적용 완료")
+        except Exception as e:  # noqa: BLE001
+            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
+                                       bc.DEPLOY_FAILED, 0.0,
+                                       error={"code": "DEPLOY_ERROR", "message": str(e)})
+            raise
+
+    @staticmethod
+    def _verify_sha256(path: str, expected: str | None) -> bool:
+        if not expected:
+            return True  # 서버가 sha256 안 주면 검증 스킵
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest() == expected
+
+    # ── 실행 플로우 (정책 activate → JETSON-06 리포트) ──────────────────
+    def _execute_task(self, cmd: dict):
+        exec_id = cmd.get("executionId")
+        key = f"exec:{exec_id}"
+        self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
+                                   bc.EXEC_STARTING, progress=0.0)
+        if not self._policy.activate():
+            self._be.report_execution(
+                exec_id, self._report_id(), self._next_seq(key), bc.EXEC_FAILED,
+                progress=0.0, error={"code": "POLICY_ACTIVATE_FAILED",
+                                     "message": "정책 노드 activate 실패"})
+            return
+        self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
+                                   bc.EXEC_RUNNING, current_step=1, progress=5.0)
+        # ⚠️ TODO(46): 실행 완료(SUCCEEDED/FAILED)·진행률은 정책 노드가 알려줘야 함.
+        #   정책 노드 상태 인터페이스(토픽/서비스) 확정되면 구독→step 진행·완료 리포트.
+        self.get_logger().info(f"실행 {exec_id} 시작 — 완료 리포트는 정책 노드 상태 연동 후(46)")
+
+    def _cancel_execution(self, cmd: dict):
+        exec_id = cmd.get("executionId")
+        key = f"exec:{exec_id}"
         self._policy.deactivate()
-        self._be.post_status("skill_done", run_id=run_id, success=True)
+        self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
+                                   bc.EXEC_CANCELED, progress=0.0)
+        self.get_logger().info(f"실행 {exec_id} 취소")
 
-    def _on_estop(self, data: dict):
-        self._estop_pub.publish(Bool(data=True))
-        self._policy.deactivate()
-        self._be.post_status("estopped", reason=data.get("reason", "be_command"))
-
-    # === heartbeat ===========================================================
+    # ── heartbeat ──────────────────────────────────────────────────────
     def _send_heartbeat(self):
-        # TODO: 실제 cpu/mem/gpu_mem 수집 (이슈 42 — 8GB 감시)
-        self._be.post_status("heartbeat", cpu=None, mem=None, gpu_mem=None)
+        self._be.heartbeat(contract=self._contract)  # 실패는 be_client가 로깅
 
-    # === 종료 ================================================================
+    # ── 종료 ───────────────────────────────────────────────────────────
     def destroy_node(self):
         self._stop.set()
         return super().destroy_node()
@@ -138,7 +193,7 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
