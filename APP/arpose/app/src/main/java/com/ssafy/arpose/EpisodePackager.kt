@@ -88,8 +88,10 @@ object EpisodePackager {
         .put("endedAt", m.optString("ended_at"))
         .put("startMonotonicNs", m.optLong("start_monotonic_ns"))
         .put("timestampTimebase", m.optString("timestamp_timebase"))
-        .put("device", JSONObject().put("deviceIdentifier",
-            m.optJSONObject("device")?.optString("device_id") ?: "unknown"))
+        .put("device", JSONObject()
+            .put("deviceIdentifier", m.optJSONObject("device")?.optString("device_id") ?: "unknown")
+            .put("androidVersion", m.optJSONObject("device")?.optString("os_version") ?: "")
+            .put("arCoreVersion", m.optJSONObject("device")?.optString("arcore_version") ?: ""))
         .put("camera", m.optJSONObject("camera") ?: JSONObject())
 
     /** summary.json(snake) → 세션 요청 summary(lower camel, 계약 6.1). */
@@ -241,9 +243,23 @@ object EpisodePackager {
         return sb.toString().toByteArray()
     }
 
-    /** 후처리 gripper.csv 있으면 그대로, 없으면 헤더만(온디바이스/PC 후처리가 채움). */
-    private fun gripperCsv(dir: File): ByteArray =
-        readBytes(dir, "gripper.csv") ?: "t_ns,openness,tracking_state\n".toByteArray()
+    /**
+     * 후처리 gripper.csv 있으면 그대로. 없으면 프레임당 placeholder 행 생성.
+     * ⚠️ 임시(테스트 전용): 서버가 gripperSampleCount>0 을 요구하는데 폰엔 실 gripper 데이터가 없다
+     * (openness 는 PC 후처리 산출물). 진짜 값은 온디바이스 마젠타 검출로 계산해야 함(별도 작업).
+     * placeholder openness=0.5 는 가짜라 학습용 아님.
+     */
+    private fun gripperCsv(dir: File): ByteArray {
+        readBytes(dir, "gripper.csv")?.let { return it }
+        val sb = StringBuilder("t_ns,openness,tracking_state\n")
+        File(dir, "poses.csv").takeIf { it.exists() }?.useLines { lines ->
+            lines.drop(1).forEach { line ->
+                val c = line.split(",")
+                if (c.size >= 13 && c[12].trim().isNotEmpty()) sb.append("${c[1]},0.5,${c[2]}\n")
+            }
+        }
+        return sb.toString().toByteArray()
+    }
 
     /** CSV 데이터 행 수(헤더 1줄 제외). */
     private fun rows(bytes: ByteArray): Int {

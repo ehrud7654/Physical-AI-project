@@ -141,9 +141,9 @@ object Uploader {
     /** requiredHeaders 를 그대로 담는다(계약 6.1: 이름·값까지 그대로 S3 PUT 에 사용). */
     data class Session(val uploadSessionId: String, val uploadUrl: String, val requiredHeaders: Map<String, String>)
 
-    /** ① 업로드 세션 발급. metadata·summary 는 계약 6.1 lower camel (EpisodePackager.pack 이 생성). */
+    /** ① 업로드 세션 발급 (API 1.5.0: TrainingJob 분리, skillKey 기반). metadata·summary 는 lower camel. */
     fun requestSession(
-        ctx: Context, jobId: String, sessionId: String,
+        ctx: Context, sessionId: String,
         sizeBytes: Long, sha256: String, idemKey: String,
         metadata: JSONObject, summary: JSONObject
     ): Session? {
@@ -151,7 +151,7 @@ object Uploader {
             .put("sessionId", sessionId).put("contentType", "application/zip")
             .put("sizeBytes", sizeBytes).put("sha256", sha256)
             .put("metadata", metadata).put("summary", summary).toString()
-        val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions")
+        val conn = (URL("$BASE_URL/api/v1/episode/data-upload-request")
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
@@ -194,13 +194,13 @@ object Uploader {
 
     /** ③ 완료 통지. 202/200 이면 true. */
     fun complete(
-        ctx: Context, jobId: String, uploadSessionId: String, sessionId: String,
+        ctx: Context, uploadSessionId: String, sessionId: String,
         sizeBytes: Long, sha256: String, idemKey: String
     ): Boolean {
-        // 계약 6.3: complete 엔 endedAt 을 다시 보내지 않는다(세션의 metadata.endedAt 과 meta.json 비교).
+        // complete 엔 endedAt 을 다시 보내지 않는다(세션의 metadata.endedAt 과 meta.json 비교).
         val body = JSONObject().put("sessionId", sessionId)
             .put("sizeBytes", sizeBytes).put("sha256", sha256).toString()
-        val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions/$uploadSessionId/complete")
+        val conn = (URL("$BASE_URL/api/v1/episode/data-upload-request/$uploadSessionId/complete")
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS

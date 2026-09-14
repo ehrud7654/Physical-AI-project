@@ -44,10 +44,7 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
         val sessionId = EpisodePackager.readSessionId(dir) ?: UUID.randomUUID().toString().lowercase()
             .also { File(dir, "session_id.txt").writeText(it) }
 
-        val meta = File(dir, "meta.txt").let { if (it.exists()) it.readText() else "" }
-        // 전송 시 History 에서 고른 목적지(.upload_job) 우선, 없으면 촬영 때 stamp(meta), 그도 없으면 폴백.
-        val jobId = File(dir, ".upload_job").let { if (it.exists()) it.readText().trim() else "" }
-            .ifBlank { metaVal(meta, "training_job_id") }.ifBlank { "job_test" }
+        // API 1.5.0: 업로드는 TrainingJob 과 분리. 서버가 metadata.skillKey 로 스킬 확정 → jobId 불필요.
 
         // zip + 세션 요청 metadata·summary (계약 6.1). endedAt 은 metadata 안에 있어 재시도에도 동일.
         val pkg = EpisodePackager.pack(dir, sessionId, zipDir) ?: return false
@@ -57,19 +54,16 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
         val idemUp = idem(dir, "up")
         val idemDone = idem(dir, "done")
 
-        val sess = Uploader.requestSession(ctx, jobId, sessionId, size, sha, idemUp, pkg.metadata, pkg.summary) ?: return false
+        val sess = Uploader.requestSession(ctx, sessionId, size, sha, idemUp, pkg.metadata, pkg.summary) ?: return false
         val etag = Uploader.putS3(sess.uploadUrl, zip, sess.requiredHeaders) ?: return false
-        val ok = Uploader.complete(ctx, jobId, sess.uploadSessionId, sessionId, size, sha, idemDone)
+        val ok = Uploader.complete(ctx, sess.uploadSessionId, sessionId, size, sha, idemDone)
         if (ok) {
             File(dir, ".uploaded").writeText("${sess.uploadSessionId} $etag")
             zip.delete()   // 캐시 zip 은 지워도 됨. rec 원본은 서버 READY 확인 전 보존.
-            Log.i(TAG, "${dir.name} 업로드 완료 (sessionId=$sessionId, job=$jobId)")
+            Log.i(TAG, "${dir.name} 업로드 완료 (sessionId=$sessionId, skillKey=${pkg.metadata.optString("skillKey")})")
         }
         return ok
     }
-
-    private fun metaVal(meta: String, key: String): String =
-        meta.lineSequence().firstOrNull { it.startsWith("$key=") }?.substringAfter("=")?.trim() ?: ""
 
     /** 멱등키를 폴더에 영속 — 재시도 시 동일 키 재사용. */
     private fun idem(dir: File, kind: String): String {
