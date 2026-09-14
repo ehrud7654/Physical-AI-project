@@ -48,7 +48,8 @@ interface AppStore {
   permissions: Record<string, string[]>;
   datasets: Dataset[];
   /** 장치 등록. 중복 ID면 Error를 던진다. */
-  addDevice: (input: RegisterDeviceInput) => Promise<void>;
+  addDevice: (input: RegisterDeviceInput) => Promise<string>;
+  refreshDevices: () => Promise<void>;
   deleteDevicesById: (deviceIds: string[]) => Promise<void>;
   applyModelToRobot: (robotId: string, model: string) => Promise<void>;
   updateRobotInfo: (robotId: string, patch: { name: string; location: string }) => Promise<void>;
@@ -161,6 +162,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     const next = await registerDevice(input);
     setRobots(next.robots);
     setUmis(next.umis);
+    return next.registeredDeviceId;
+  }, []);
+
+  const refreshDevices = useCallback(async () => {
+    const [nextRobots, nextUmis] = await Promise.all([fetchRobots(), fetchUmis()]);
+    setRobots(nextRobots);
+    setUmis(nextUmis);
   }, []);
 
   const deleteDevicesById = useCallback(async (deviceIds: string[]) => {
@@ -230,6 +238,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       permissions,
       datasets,
       addDevice,
+      refreshDevices,
       deleteDevicesById,
       applyModelToRobot,
       updateRobotInfo,
@@ -241,7 +250,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, datasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, deleteDevicesById, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, refreshDevices, deleteDevicesById, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

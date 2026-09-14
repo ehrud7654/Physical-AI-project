@@ -950,6 +950,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - `sessionId`는 소문자 UUID v4이며 ZIP 파일명은 `{sessionId}.zip`으로 파생한다.
 - `contentType`은 `application/zip`, `sizeBytes`는 1 이상 서버 제한 이하, `sha256`은 소문자 hexadecimal 64자리다.
 - EC2는 Device Access Token의 owner·device를 확인하고 해당 장치가 `UMI_CAMERA`인지 검증한다.
+- `metadata.device.deviceIdentifier`는 선택 필드이며 누락·빈 값·`handle_number`와 다른 값을 허용한다. 장치 귀속은 Device Access Token의 서명된 owner·device로만 확정한다.
 - `episodes.skill_id`는 `metadata.skillKey`로 조회한 가시 스킬로 확정한다. 시스템 공통 스킬 또는 인증 사용자 소유 커스텀 스킬만 허용하며, 없으면 `404 RESOURCE_NOT_FOUND`다.
 - EC2가 `episodes/{owner UUID 소문자}/{yyyyMMdd'T'HHmmss'Z'}/{sessionId}.zip` key를 생성한다.
 - 같은 owner·UMI·session과 같은 hash의 재요청은 기존 예약을 반환하고, hash나 `metadata.endedAt`이 다르면 `409 EPISODE_ID_REUSED`다.

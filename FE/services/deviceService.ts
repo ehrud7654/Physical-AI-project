@@ -11,6 +11,7 @@ interface ApiDevice {
   name: string;
   location: string | null;
   connectionStatus: 'ONLINE' | 'OFFLINE';
+  registrationStatus: 'PENDING' | 'REGISTERED';
   lastSeenAt: string | null;
   createdAt: string;
 }
@@ -32,6 +33,13 @@ export interface RegisterDeviceInput {
   id: string;
   name: string;
   location: string;
+}
+
+export interface DeviceEnrollment {
+  enrollmentId: string;
+  deviceId: string;
+  qrPayload: string;
+  expiresAt: string;
 }
 
 export async function fetchRobots(): Promise<Robot[]> {
@@ -69,9 +77,10 @@ export async function fetchUmis(): Promise<Umi[]> {
 
 export async function registerDevice(
   input: RegisterDeviceInput,
-): Promise<{ robots: Robot[]; umis: Umi[] }> {
+): Promise<{ robots: Robot[]; umis: Umi[]; registeredDeviceId: string }> {
+  let registeredDeviceId: string;
   if (input.type === 'robot') {
-    await apiRequest<ApiRobot>('/robots', {
+    const robot = await apiRequest<ApiRobot>('/robots', {
       method: 'POST',
       body: JSON.stringify({
         handleNumber: input.id.trim(),
@@ -79,8 +88,9 @@ export async function registerDevice(
         location: input.location.trim(),
       }),
     });
+    registeredDeviceId = robot.jetsonDeviceId;
   } else {
-    await apiRequest<ApiDevice>('/devices', {
+    const device = await apiRequest<ApiDevice>('/devices', {
       method: 'POST',
       body: JSON.stringify({
         deviceType: toApiDeviceType(input.type),
@@ -89,9 +99,19 @@ export async function registerDevice(
         location: input.location.trim(),
       }),
     });
+    registeredDeviceId = device.id;
   }
   const [robots, umis] = await Promise.all([fetchRobots(), fetchUmis()]);
-  return { robots, umis };
+  return { robots, umis, registeredDeviceId };
+}
+
+export function startDeviceEnrollment(deviceId: string): Promise<DeviceEnrollment> {
+  return apiRequest<DeviceEnrollment>(`/devices/${deviceId}/enrollment`, { method: 'POST' });
+}
+
+export async function fetchDeviceRegistrationStatus(deviceId: string): Promise<ApiDevice['registrationStatus']> {
+  const device = await apiRequest<ApiDevice>(`/devices/${deviceId}`);
+  return device.registrationStatus;
 }
 
 export async function deleteDevices(

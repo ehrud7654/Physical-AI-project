@@ -1,11 +1,12 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, Training, TrainingRequirements, TrainingSkill, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication } from '@/services';
+import { createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -426,14 +427,70 @@ function DevicesView({ initialTab, onSelectRobot, onToast }: { initialTab: Devic
 }
 
 function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; onRegistered: (type: DeviceType, label: string) => void }) {
-  const { addDevice } = useAppStore();
+  const { addDevice, refreshDevices } = useAppStore();
   const [type, setType] = useState<DeviceType>('robot');
   const [name, setName] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [location, setLocation] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [registeredUmi, setRegisteredUmi] = useState<{ id: string; name: string } | null>(null);
+  const [registeredUmi, setRegisteredUmi] = useState<{ id: string; name: string; deviceId: string } | null>(null);
+  const [enrollment, setEnrollment] = useState<DeviceEnrollment | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+  const completionNotified = useRef(false);
+
+  const issueEnrollment = async (targetDeviceId: string) => {
+    setQrLoading(true);
+    setQrError('');
+    try {
+      const issued = await startDeviceEnrollment(targetDeviceId);
+      const image = await QRCode.toDataURL(issued.qrPayload, { width: 328, margin: 1, errorCorrectionLevel: 'M' });
+      setEnrollment(issued);
+      setQrDataUrl(image);
+      setRegistrationComplete(false);
+      completionNotified.current = false;
+      setNow(Date.now());
+    } catch (cause) {
+      setQrError(cause instanceof Error ? cause.message : 'QR 코드를 발급하지 못했어요.');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!enrollment) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [enrollment]);
+
+  useEffect(() => {
+    if (!registeredUmi || !enrollment || registrationComplete) return;
+    let active = true;
+    const checkRegistration = async () => {
+      try {
+        const status = await fetchDeviceRegistrationStatus(registeredUmi.deviceId);
+        if (!active || status !== 'REGISTERED') return;
+        setRegistrationComplete(true);
+        await refreshDevices();
+        if (!completionNotified.current) {
+          completionNotified.current = true;
+          onRegistered('umi', registeredUmi.id);
+        }
+      } catch {
+        // 일시적인 조회 실패는 다음 polling 주기에 다시 확인한다.
+      }
+    };
+    void checkRegistration();
+    const timer = window.setInterval(() => void checkRegistration(), 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [enrollment, onRegistered, refreshDevices, registeredUmi, registrationComplete]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -444,12 +501,13 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
     setError('');
     setSaving(true);
     try {
-      await addDevice({ type, id: deviceId, name, location });
-      onRegistered(type, type === 'robot' ? name.trim() : deviceId.trim());
+      const registeredDeviceId = await addDevice({ type, id: deviceId, name, location });
       if (type === 'umi') {
-        setRegisteredUmi({ id: deviceId.trim(), name: name.trim() });
+        setRegisteredUmi({ id: deviceId.trim(), name: name.trim(), deviceId: registeredDeviceId });
+        await issueEnrollment(registeredDeviceId);
         setSaving(false);
       } else {
+        onRegistered(type, name.trim());
         onClose();
       }
     } catch (cause) {
@@ -462,14 +520,13 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
     <section className="register-modal umi-qr-modal" role="dialog" aria-modal="true" aria-label="UMI 등록 QR" onMouseDown={(event) => event.stopPropagation()}>
       <div className="modal-heading"><div><p className="eyebrow">UMI 등록</p><h2>UMI에서 QR 코드를 스캔해 주세요</h2><p>등록 앱의 카메라로 스캔하면 이 장치와 연결됩니다.</p></div><button type="button" className="close-button" onClick={onClose} aria-label="닫기">×</button></div>
       <div className="umi-qr-content">
-        <div className="umi-qr-placeholder" aria-label="등록 QR 코드 준비 중">
-          <i className="qr-corner qr-corner-top-left" /><i className="qr-corner qr-corner-top-right" /><i className="qr-corner qr-corner-bottom-left" />
-          <span>QR</span>
+        <div className="umi-qr-placeholder" aria-label={qrDataUrl ? "UMI 등록 QR 코드" : "등록 QR 코드 준비 중"}>
+          {qrDataUrl ? <img src={qrDataUrl} alt="UMI 장치 등록 QR 코드" /> : <span>{qrLoading ? '발급 중' : 'QR'}</span>}
         </div>
-        <div className="umi-qr-state"><span>연동 준비 중</span><strong>{registeredUmi.name}</strong><p>{registeredUmi.id}</p></div>
+        <div className="umi-qr-state"><span>{registrationComplete ? '등록 완료' : enrollment ? '연동 대기 중' : '연동 준비 중'}</span><strong>{registeredUmi.name}</strong><p>{registeredUmi.id}</p>{enrollment && !registrationComplete && <p>남은 시간 {Math.max(0, Math.ceil((new Date(enrollment.expiresAt).getTime() - now) / 1000))}초</p>}</div>
       </div>
-      <div className="umi-qr-guide"><strong>QR 코드 발급 API 연결이 필요해요</strong><p>등록 코드를 받으면 이 영역에 실제 QR과 남은 유효시간이 표시됩니다.</p></div>
-      <div className="card-actions umi-qr-actions"><button type="button" className="secondary-button" disabled>QR 다시 발급</button><button type="button" className="primary-button" onClick={onClose}>확인</button></div>
+      <div className="umi-qr-guide"><strong>{registrationComplete ? 'UMI 등록이 완료됐어요' : qrError ? 'QR 코드 발급 실패' : 'UMI 앱에서 QR 코드를 스캔해 주세요'}</strong><p>{registrationComplete ? '등록된 UMI가 장치 목록에 추가되었습니다.' : qrError || 'QR 코드는 일회용이며 유효시간이 지나면 다시 발급해야 합니다.'}</p></div>
+      <div className="card-actions umi-qr-actions"><button type="button" className="secondary-button" disabled={qrLoading || registrationComplete} onClick={() => void issueEnrollment(registeredUmi.deviceId)}>{qrLoading ? '발급 중...' : 'QR 다시 발급'}</button><button type="button" className="primary-button" disabled={!registrationComplete} onClick={onClose}>확인</button></div>
     </section>
   </div>;
 

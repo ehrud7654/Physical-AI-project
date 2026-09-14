@@ -140,6 +140,10 @@ public class DeviceEnrollmentService {
             () ->
                 credentials.save(
                     new DeviceCredential(enrollment.getDeviceId(), secretHash, now)));
+    devices
+        .findById(enrollment.getDeviceId())
+        .orElseThrow(this::invalidToken)
+        .completeRegistration();
     enrollment.markUsed(now);
 
     return new DeviceEnrollmentCompleteResponse(enrollment.getDeviceId(), deviceSecret, now);

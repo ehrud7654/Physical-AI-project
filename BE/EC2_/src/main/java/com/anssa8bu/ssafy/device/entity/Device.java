@@ -39,6 +39,10 @@ public class Device extends AuditableEntity {
   @Column(name = "connection_status", nullable = false, length = 20)
   private DeviceConnectionStatus connectionStatus;
 
+  @Enumerated(EnumType.STRING)
+  @Column(name = "registration_status", nullable = false, length = 20)
+  private DeviceRegistrationStatus registrationStatus;
+
   @Column(name = "firmware_version", length = 100)
   private String firmwareVersion;
 
@@ -64,6 +68,10 @@ public class Device extends AuditableEntity {
     this.name = requireText(name, "name");
     this.connectionStatus =
         Objects.requireNonNull(connectionStatus, "connectionStatus must not be null");
+    this.registrationStatus =
+        deviceType == DeviceType.UMI_CAMERA
+            ? DeviceRegistrationStatus.PENDING
+            : DeviceRegistrationStatus.REGISTERED;
   }
 
   private static String requireText(String value, String fieldName) {
@@ -93,6 +101,10 @@ public class Device extends AuditableEntity {
     this.lastSeenAt = Objects.requireNonNull(receivedAt, "receivedAt must not be null");
   }
 
+  public void completeRegistration() {
+    this.registrationStatus = DeviceRegistrationStatus.REGISTERED;
+  }
+
   public UUID getId() {
     return id;
   }
@@ -119,6 +131,10 @@ public class Device extends AuditableEntity {
 
   public DeviceConnectionStatus getConnectionStatus() {
     return connectionStatus;
+  }
+
+  public DeviceRegistrationStatus getRegistrationStatus() {
+    return registrationStatus;
   }
 
   public String getFirmwareVersion() {

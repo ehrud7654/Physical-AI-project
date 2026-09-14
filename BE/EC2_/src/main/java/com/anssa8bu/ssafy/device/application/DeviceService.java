@@ -7,6 +7,7 @@ import com.anssa8bu.ssafy.device.dto.DeviceUpdateRequest;
 import com.anssa8bu.ssafy.device.entity.Device;
 import com.anssa8bu.ssafy.device.entity.DeviceConnectionStatus;
 import com.anssa8bu.ssafy.device.entity.DeviceType;
+import com.anssa8bu.ssafy.device.entity.DeviceRegistrationStatus;
 import com.anssa8bu.ssafy.device.exception.DeviceAlreadyRegisteredException;
 import com.anssa8bu.ssafy.device.exception.DeviceNotFoundException;
 import com.anssa8bu.ssafy.device.repository.DeviceRepository;
@@ -82,7 +83,10 @@ public class DeviceService {
             ? deviceRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId)
             : deviceRepository.findAllByOwnerIdAndDeviceTypeOrderByCreatedAtDesc(
                 ownerId, deviceType);
-    return devices.stream().map(DeviceResponse::from).toList();
+    return devices.stream()
+        .filter(device -> device.getRegistrationStatus() == DeviceRegistrationStatus.REGISTERED)
+        .map(DeviceResponse::from)
+        .toList();
   }
 
   @Transactional(readOnly = true)

@@ -343,6 +343,8 @@ Content-Type: application/json
 
 `filename`은 `sessionId`로부터 결정되므로 요청하지 않는다. 서버가 내부 표시용 원본 파일명을 저장해야 한다면 `{sessionId}.zip`으로 생성한다. S3 bucket과 object key도 5.4절에 따라 서버가 생성하며 클라이언트가 지정하지 않는다.
 
+`metadata.device.deviceIdentifier`는 선택적 수집 메타데이터다. 앱은 값을 알고 있을 때만 전송할 수 있으며 누락하거나 빈 값으로 보내도 된다. EC2는 이 값을 `devices.handle_number`와 비교하지 않고, Device Access Token의 서명된 `sub(ownerId)`와 `deviceId`로 Episode 귀속을 확정한다.
+
 성공 `201 Created`:
 
 ```json

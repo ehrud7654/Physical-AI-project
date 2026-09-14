@@ -199,11 +199,10 @@ public class EpisodeUploadService {
   private void validateRequest(UUID ownerId, UUID deviceId, EpisodeUploadSessionRequest request) {
     if (request.sizeBytes() > properties.maxUploadBytes())
       throw new EpisodeUploadException(HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE", "업로드 최대 크기를 초과했습니다.");
-    var device = devices.findById(deviceId).filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
+    devices.findById(deviceId)
+        .filter(d -> d.getOwnerId().equals(ownerId))
+        .filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
         .orElseThrow(() -> new EpisodeUploadException(HttpStatus.FORBIDDEN, "FORBIDDEN", "UMI 장치만 업로드할 수 있습니다."));
-    Object identifier = request.metadata().device().get("deviceIdentifier");
-    if (identifier == null || !device.getHandleNumber().equals(identifier.toString()))
-      throw new EpisodeUploadException(HttpStatus.CONFLICT, "DEVICE_MISMATCH", "인증 장치와 메타데이터의 장치가 다릅니다.");
     skills.findBySkillKeyAndVisibleToOwner(request.metadata().skillKey(), ownerId)
         .orElseThrow(() -> notFound("등록된 동작을 찾을 수 없습니다."));
     if (request.metadata().endedAt().isBefore(request.metadata().startedAt())
