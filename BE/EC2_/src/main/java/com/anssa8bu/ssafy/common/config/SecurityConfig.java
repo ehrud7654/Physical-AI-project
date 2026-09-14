@@ -1,5 +1,6 @@
 package com.anssa8bu.ssafy.common.config;
 
+import jakarta.servlet.DispatcherType;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +28,7 @@ public class SecurityConfig {
     "/api/v1/auth/refresh",
     "/api/v1/auth/signup",
     "/api/v1/device-auth/token",
+    "/api/v1/device-auth/skills",
     "/api/v1/device-auth/enroll",
     "/actuator/health",
     "/actuator/health/**"
@@ -47,9 +49,13 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             authorize ->
                 authorize
+                    .dispatcherTypeMatchers(DispatcherType.ERROR)
+                    .permitAll()
                     .requestMatchers(PUBLIC_ENDPOINTS)
                     .permitAll()
-                    .requestMatchers("/api/v1/episode/data-upload-request/**")
+                    .requestMatchers(
+                        "/api/v1/episode",
+                        "/api/v1/episode/**")
                     .hasAuthority("SCOPE_device")
                     .requestMatchers("/api/v1/devices/*/heartbeat")
                     .hasAuthority("SCOPE_device")

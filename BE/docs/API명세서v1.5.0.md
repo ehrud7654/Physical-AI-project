@@ -155,7 +155,7 @@ Jetson → 자신의 pending Deployment manifest 요청
 
 | 표기 | 호출 주체 | 인증 방식 | 허용 범위 |
 |---|---|---|---|
-| 공개 | 인증 전 사용자·장치 | 없음 또는 사전 발급 secret | 로그인·장치 토큰 발급 |
+| 공개 | 인증 전 사용자·장치 | 없음 또는 사전 발급 secret | 로그인·장치 토큰 발급·UMI 스킬 목록 조회 |
 | 사용자 | 웹 클라이언트 | `Authorization: Bearer <userAccessToken>` | 자신 소유 리소스 |
 | UMI | 데이터 수집 장치 | `Authorization: Bearer <deviceAccessToken>` | 자신에게 허용된 학습 입력 전송과 Episode 등록 |
 | GPU | 학습·수집 워커 | `Authorization: Bearer <serviceAccessToken>` | 자신에게 할당된 작업 |
@@ -793,6 +793,51 @@ type RobotExecution = {
 ```
 
 - 실패: `401 INVALID_CREDENTIALS`.
+
+### DEVICE-05A UMI 사용 가능 스킬 목록
+
+- `POST /device-auth/skills` · 공개 경로, UMI 장치 ID와 Device Secret 필수
+- 사용자 로그인이나 Bearer Access Token 없이 QR 등록으로 발급받은 장치 자격증명을 직접 검증한다.
+- 운영 환경에서는 Device Secret 노출 방지를 위해 HTTPS만 허용하고 요청 Body와 인증 실패 로그를 마스킹한다.
+- 요청:
+
+```json
+{
+  "deviceId": "51000000-0000-4000-8000-000000000001",
+  "deviceSecret": "발급받은 Device Secret 원문"
+}
+```
+
+- `deviceId`는 `devices.id` UUID다. `UMI-001` 같은 `handleNumber`나 표시 이름을 사용하지 않는다.
+- EC2는 다음 조건을 모두 검증한다.
+  1. 장치와 `device_credentials`가 존재한다.
+  2. Credential 상태가 `ACTIVE`다.
+  3. 제출한 Secret이 저장된 BCrypt hash와 일치한다.
+  4. 장치 종류가 `UMI_CAMERA`다.
+- 성공하면 `device_credentials.last_authenticated_at`을 서버 시각으로 갱신한다.
+- 조회 범위는 `skills.owner_id IS NULL`인 시스템 공통 스킬과 `skills.owner_id = devices.owner_id`인 커스텀 스킬이다. 다른 사용자 소유 스킬은 반환하지 않는다.
+- 성공 `200`:
+
+```json
+{
+  "data": [
+    {
+      "id": "62000000-0000-4000-8000-000000000001",
+      "skillKey": "pick_place",
+      "tier": "DEMO",
+      "status": "PLANNED",
+      "displayName": "집어 옮기기",
+      "description": "물체를 집어 지정된 위치로 옮기는 동작",
+      "persona": null,
+      "createdAt": "2026-09-14T01:00:00Z",
+      "updatedAt": "2026-09-14T01:00:00Z"
+    }
+  ]
+}
+```
+
+- 실패: `400 VALIDATION_ERROR`, `401 INVALID_CREDENTIALS`.
+- 존재하지 않는 장치, 잘못된 Secret, 비활성 Credential 및 UMI가 아닌 장치는 자격증명·장치 정보 노출을 막기 위해 동일한 인증 실패 응답을 사용한다.
 
 ### DEVICE-06 QR 장치 등록 시작
 
