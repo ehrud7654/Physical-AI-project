@@ -12,28 +12,27 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/v1/training-jobs/{trainingJobId}/episode-upload-sessions")
+@RequestMapping("/api/v1/episode/data-upload-request")
 public class EpisodeUploadController {
   private final EpisodeUploadService service;
   public EpisodeUploadController(EpisodeUploadService service) { this.service = service; }
 
   @PostMapping
   public ResponseEntity<ApiResponse<EpisodeUploadSessionResponse>> create(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID trainingJobId,
+      @AuthenticationPrincipal Jwt jwt,
       @RequestHeader("Idempotency-Key") String key,
       @Valid @RequestBody EpisodeUploadSessionRequest request) {
-    EpisodeUploadSessionResponse result = service.create(owner(jwt), device(jwt), trainingJobId, key, request);
-    URI location = URI.create("/api/v1/training-jobs/" + trainingJobId
-        + "/episode-upload-sessions/" + result.uploadSessionId());
+    EpisodeUploadSessionResponse result = service.create(owner(jwt), device(jwt), key, request);
+    URI location = URI.create("/api/v1/episode/data-upload-request/" + result.uploadSessionId());
     return ResponseEntity.created(location).body(ApiResponse.of(result));
   }
 
   @PostMapping("/{uploadSessionId}/complete")
   public ResponseEntity<ApiResponse<EpisodeUploadCompleteResponse>> complete(
-      @AuthenticationPrincipal Jwt jwt, @PathVariable UUID trainingJobId,
+      @AuthenticationPrincipal Jwt jwt,
       @PathVariable UUID uploadSessionId, @RequestHeader("Idempotency-Key") String key,
       @Valid @RequestBody EpisodeUploadCompleteRequest request) {
-    EpisodeUploadCompleteResponse result = service.complete(owner(jwt), device(jwt), trainingJobId,
+    EpisodeUploadCompleteResponse result = service.complete(owner(jwt), device(jwt),
         uploadSessionId, key, request);
     return result.duplicate() ? ResponseEntity.ok(ApiResponse.of(result))
         : ResponseEntity.accepted().body(ApiResponse.of(result));
@@ -42,18 +41,16 @@ public class EpisodeUploadController {
   @DeleteMapping("/{uploadSessionId}")
   public ResponseEntity<Void> cancel(
       @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID trainingJobId,
       @PathVariable UUID uploadSessionId) {
-    service.cancel(owner(jwt), device(jwt), trainingJobId, uploadSessionId);
+    service.cancel(owner(jwt), device(jwt), uploadSessionId);
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/{uploadSessionId}/renew")
   public ApiResponse<EpisodeUploadSessionResponse> renew(
       @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID trainingJobId,
       @PathVariable UUID uploadSessionId) {
-    return ApiResponse.of(service.renew(owner(jwt), device(jwt), trainingJobId, uploadSessionId));
+    return ApiResponse.of(service.renew(owner(jwt), device(jwt), uploadSessionId));
   }
   private UUID owner(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
   private UUID device(Jwt jwt) { return UUID.fromString(jwt.getClaimAsString("deviceId")); }

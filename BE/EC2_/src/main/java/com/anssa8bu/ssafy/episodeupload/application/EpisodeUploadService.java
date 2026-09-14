@@ -12,8 +12,6 @@ import com.anssa8bu.ssafy.episodeupload.repository.EpisodeUploadSessionRepositor
 import com.anssa8bu.ssafy.episodeupload.storage.*;
 import com.anssa8bu.ssafy.episodevalidation.application.EpisodeValidationRequested;
 import com.anssa8bu.ssafy.skill.repository.SkillRepository;
-import com.anssa8bu.ssafy.training.entity.*;
-import com.anssa8bu.ssafy.training.repository.TrainingJobRepository;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -27,7 +25,6 @@ public class EpisodeUploadService {
   private static final DateTimeFormatter KEY_TIME =
       DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC);
   private final EpisodeUploadSessionRepository sessions;
-  private final TrainingJobRepository jobs;
   private final DeviceRepository devices;
   private final EpisodeRepository episodes;
   private final SkillRepository skills;
@@ -36,25 +33,24 @@ public class EpisodeUploadService {
   private final IdempotencyGuard idempotency;
   private final ApplicationEventPublisher events;
 
-  public EpisodeUploadService(EpisodeUploadSessionRepository sessions, TrainingJobRepository jobs,
+  public EpisodeUploadService(EpisodeUploadSessionRepository sessions,
       DeviceRepository devices, EpisodeRepository episodes, SkillRepository skills, EpisodeObjectStorage storage,
       EpisodeStorageProperties properties, IdempotencyGuard idempotency, ApplicationEventPublisher events) {
-    this.sessions = sessions; this.jobs = jobs; this.devices = devices; this.episodes = episodes;
+    this.sessions = sessions; this.devices = devices; this.episodes = episodes;
     this.skills = skills;
     this.storage = storage; this.properties = properties; this.idempotency = idempotency;
     this.events = events;
   }
 
   @Transactional
-  public EpisodeUploadSessionResponse create(UUID ownerId, UUID deviceId, UUID trainingJobId,
+  public EpisodeUploadSessionResponse create(UUID ownerId, UUID deviceId,
       String key, EpisodeUploadSessionRequest request) {
     validateKey(key);
-    String path = "/api/v1/training-jobs/" + trainingJobId + "/episode-upload-sessions";
+    String path = "/api/v1/episode/data-upload-request";
     IdempotencyGuard.Claim claim = idempotency.claim("DEVICE", deviceId, "POST", path, key, request);
     if (claim.existingResourceId() != null) return signedResponse(sessions.findById(claim.existingResourceId())
         .orElseThrow(() -> notFound("업로드 세션을 찾을 수 없습니다.")));
-    TrainingJob job = requireJob(ownerId, deviceId, trainingJobId);
-    validateRequest(job, deviceId, request);
+    validateRequest(ownerId, deviceId, request);
     Optional<EpisodeUploadSession> prior = sessions.findByOwnerIdAndUmiDeviceIdAndSessionId(
         ownerId, deviceId, request.sessionId());
     if (prior.isPresent()) {
@@ -71,7 +67,7 @@ public class EpisodeUploadService {
       return signedResponse(prior.get());
     }
     UUID uploadId = UUID.randomUUID();
-    EpisodeUploadSession session = new EpisodeUploadSession(uploadId, UUID.randomUUID(), trainingJobId,
+    EpisodeUploadSession session = new EpisodeUploadSession(uploadId, UUID.randomUUID(), null,
         ownerId, deviceId, request.sessionId(), request.sizeBytes(), request.sha256(),
         metadataMap(request.metadata()), summaryMap(request.summary()), properties.bucket(),
         objectKey(ownerId, request.metadata().endedAt(), request.sessionId()),
@@ -83,14 +79,13 @@ public class EpisodeUploadService {
   }
 
   @Transactional
-  public EpisodeUploadCompleteResponse complete(UUID ownerId, UUID deviceId, UUID trainingJobId,
+  public EpisodeUploadCompleteResponse complete(UUID ownerId, UUID deviceId,
       UUID uploadId, String key, EpisodeUploadCompleteRequest request) {
     validateKey(key);
-    String path = "/api/v1/training-jobs/" + trainingJobId + "/episode-upload-sessions/" + uploadId + "/complete";
+    String path = "/api/v1/episode/data-upload-request/" + uploadId + "/complete";
     IdempotencyGuard.Claim claim = idempotency.claim("DEVICE", deviceId, "POST", path, key, request);
     EpisodeUploadSession session = sessions.findForUpdateById(uploadId)
-        .filter(s -> s.getOwnerId().equals(ownerId) && s.getUmiDeviceId().equals(deviceId)
-            && s.getTrainingJobId().equals(trainingJobId))
+        .filter(s -> s.getOwnerId().equals(ownerId) && s.getUmiDeviceId().equals(deviceId))
         .orElseThrow(() -> notFound("업로드 세션을 찾을 수 없습니다."));
     validateCompletion(session, request);
     if (session.getStatus() == EpisodeUploadStatus.VALIDATING) {
@@ -120,11 +115,10 @@ public class EpisodeUploadService {
 
   @Transactional(readOnly = true)
   public EpisodeProcessingStatusResponse status(
-      UUID ownerId, UUID deviceId, UUID trainingJobId, UUID sessionId) {
+      UUID ownerId, UUID deviceId, UUID sessionId) {
     EpisodeUploadSession session =
         sessions
-            .findByTrainingJobIdAndOwnerIdAndUmiDeviceIdAndSessionId(
-                trainingJobId, ownerId, deviceId, sessionId)
+            .findByOwnerIdAndUmiDeviceIdAndSessionId(ownerId, deviceId, sessionId)
             .orElseThrow(() -> notFound("업로드 세션을 찾을 수 없습니다."));
     Optional<Episode> episode = episodes.findByIdAndOwnerId(session.getEpisodeId(), ownerId);
     if (episode.isPresent()) {
@@ -147,8 +141,8 @@ public class EpisodeUploadService {
   }
 
   @Transactional
-  public void cancel(UUID ownerId, UUID deviceId, UUID trainingJobId, UUID uploadId) {
-    EpisodeUploadSession session = requireOwnedSessionForUpdate(ownerId, deviceId, trainingJobId, uploadId);
+  public void cancel(UUID ownerId, UUID deviceId, UUID uploadId) {
+    EpisodeUploadSession session = requireOwnedSessionForUpdate(ownerId, deviceId, uploadId);
     if (session.getStatus() == EpisodeUploadStatus.CANCELLED) {
       return;
     }
@@ -162,8 +156,8 @@ public class EpisodeUploadService {
 
   @Transactional
   public EpisodeUploadSessionResponse renew(
-      UUID ownerId, UUID deviceId, UUID trainingJobId, UUID uploadId) {
-    EpisodeUploadSession session = requireOwnedSessionForUpdate(ownerId, deviceId, trainingJobId, uploadId);
+      UUID ownerId, UUID deviceId, UUID uploadId) {
+    EpisodeUploadSession session = requireOwnedSessionForUpdate(ownerId, deviceId, uploadId);
     if (session.getStatus() != EpisodeUploadStatus.UPLOAD_PENDING) {
       throw new EpisodeUploadException(
           HttpStatus.CONFLICT, "STATE_CONFLICT", "업로드 대기 상태에서만 URL을 재발급할 수 있습니다.");
@@ -192,28 +186,17 @@ public class EpisodeUploadService {
   }
 
   private EpisodeUploadSession requireOwnedSessionForUpdate(
-      UUID ownerId, UUID deviceId, UUID trainingJobId, UUID uploadId) {
+      UUID ownerId, UUID deviceId, UUID uploadId) {
     return sessions
         .findForUpdateById(uploadId)
         .filter(
             session ->
                 session.getOwnerId().equals(ownerId)
-                    && session.getUmiDeviceId().equals(deviceId)
-                    && session.getTrainingJobId().equals(trainingJobId))
+                    && session.getUmiDeviceId().equals(deviceId))
         .orElseThrow(() -> notFound("업로드 세션을 찾을 수 없습니다."));
   }
 
-  private TrainingJob requireJob(UUID ownerId, UUID deviceId, UUID id) {
-    TrainingJob job = jobs.findByIdAndOwnerIdAndDeletedAtIsNull(id, ownerId)
-        .orElseThrow(() -> notFound("학습 작업을 찾을 수 없습니다."));
-    if (!job.getUmiDeviceId().equals(deviceId) || job.getInputMode() != TrainingInputMode.COLLECT_NEW)
-      throw new EpisodeUploadException(HttpStatus.FORBIDDEN, "FORBIDDEN", "이 장치에 허용된 수집 작업이 아닙니다.");
-    if (job.getStatus() != TrainingJobStatus.CREATED && job.getStatus() != TrainingJobStatus.COLLECTING)
-      throw new EpisodeUploadException(HttpStatus.CONFLICT, "STATE_CONFLICT", "현재 작업 상태에서는 업로드할 수 없습니다.");
-    return job;
-  }
-
-  private void validateRequest(TrainingJob job, UUID deviceId, EpisodeUploadSessionRequest request) {
+  private void validateRequest(UUID ownerId, UUID deviceId, EpisodeUploadSessionRequest request) {
     if (request.sizeBytes() > properties.maxUploadBytes())
       throw new EpisodeUploadException(HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE", "업로드 최대 크기를 초과했습니다.");
     var device = devices.findById(deviceId).filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
@@ -221,10 +204,8 @@ public class EpisodeUploadService {
     Object identifier = request.metadata().device().get("deviceIdentifier");
     if (identifier == null || !device.getHandleNumber().equals(identifier.toString()))
       throw new EpisodeUploadException(HttpStatus.CONFLICT, "DEVICE_MISMATCH", "인증 장치와 메타데이터의 장치가 다릅니다.");
-    String expectedSkill = skills.findById(job.getSkillId())
-        .orElseThrow(() -> notFound("스킬을 찾을 수 없습니다.")).getSkillKey();
-    if (!expectedSkill.equals(request.metadata().skillKey()))
-      throw new EpisodeUploadException(HttpStatus.CONFLICT, "SKILL_MISMATCH", "학습 작업과 메타데이터의 스킬이 다릅니다.");
+    skills.findBySkillKeyAndVisibleToOwner(request.metadata().skillKey(), ownerId)
+        .orElseThrow(() -> notFound("등록된 동작을 찾을 수 없습니다."));
     if (request.metadata().endedAt().isBefore(request.metadata().startedAt())
         || request.summary().firstTimestampNs() < request.metadata().startMonotonicNs()
         || request.summary().lastTimestampNs() < request.summary().firstTimestampNs())

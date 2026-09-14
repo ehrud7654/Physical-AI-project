@@ -26,10 +26,6 @@ import com.anssa8bu.ssafy.skill.repository.SkillRepository;
 import com.anssa8bu.ssafy.storage.entity.RetentionPolicy;
 import com.anssa8bu.ssafy.storage.repository.RetentionPolicyRepository;
 import com.anssa8bu.ssafy.storage.repository.StorageNodeRepository;
-import com.anssa8bu.ssafy.training.entity.TrainingJobEpisode;
-import com.anssa8bu.ssafy.training.entity.TrainingJobEpisodeId;
-import com.anssa8bu.ssafy.training.repository.TrainingJobEpisodeRepository;
-import com.anssa8bu.ssafy.training.repository.TrainingJobRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -54,8 +50,6 @@ public class EpisodeValidationResultWriter {
   private final SkillRepository skills;
   private final RetentionPolicyRepository retentionPolicies;
   private final StorageNodeRepository storageNodes;
-  private final TrainingJobRepository jobs;
-  private final TrainingJobEpisodeRepository jobEpisodes;
 
   public EpisodeValidationResultWriter(
       EpisodeUploadSessionRepository sessions,
@@ -63,17 +57,13 @@ public class EpisodeValidationResultWriter {
       EpisodeArchiveRepository archives,
       SkillRepository skills,
       RetentionPolicyRepository retentionPolicies,
-      StorageNodeRepository storageNodes,
-      TrainingJobRepository jobs,
-      TrainingJobEpisodeRepository jobEpisodes) {
+      StorageNodeRepository storageNodes) {
     this.sessions = sessions;
     this.episodes = episodes;
     this.archives = archives;
     this.skills = skills;
     this.retentionPolicies = retentionPolicies;
     this.storageNodes = storageNodes;
-    this.jobs = jobs;
-    this.jobEpisodes = jobEpisodes;
   }
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -157,20 +147,6 @@ public class EpisodeValidationResultWriter {
     archive.confirmAvailable(session.getCompletedAt(), now);
     archives.save(archive);
 
-    jobs.findByIdForUpdate(session.getTrainingJobId())
-        .orElseThrow(() -> new IllegalStateException("training job is missing"));
-    int inputOrder = Math.toIntExact(jobEpisodes.countByIdTrainingJobId(session.getTrainingJobId()) + 1);
-    jobEpisodes.save(
-        new TrainingJobEpisode(
-            new TrainingJobEpisodeId(session.getTrainingJobId(), episode.getId()),
-            inputOrder,
-            session.getSha256(),
-            result.contractVersion(),
-            EpisodeSource.REAL,
-            labelStatus,
-            result.success(),
-            qualityStatus,
-            now));
     session.markReady(qualityStatus.name(), now);
   }
 
