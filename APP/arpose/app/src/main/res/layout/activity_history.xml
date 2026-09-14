@@ -1,66 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/navy900">
+    android:orientation="vertical"
+    android:background="@color/pageLight">
 
+    <!-- 상단바 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <Button
-                android:id="@+id/backBtn"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="← 뒤로"
-                android:textColor="@color/silver"
-                android:background="@color/navy700" />
-
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
-            <Button
-                android:id="@+id/sendBtn"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="전송"
-                android:textColor="@color/silver"
-                android:background="@color/stIndigo" />
-        </LinearLayout>
+        <ImageButton
+            android:id="@+id/backBtn"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:scaleType="centerInside"
+            android:contentDescription="뒤로" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="기록 (선택 후 전송)"
-            android:textColor="#FFFFFF"
-            android:textSize="24sp" />
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="기록"
+            android:textColor="@color/inkPrimary"
+            android:textSize="22sp" />
 
-        <TextView
-            android:id="@+id/emptyText"
+        <Button
+            android:id="@+id/sendBtn"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="촬영 기록 없음"
-            android:textColor="#888888"
-            android:textSize="15sp"
-            android:visibility="gone" />
+            android:text="전송"
+            android:textColor="@color/azureInk"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_btn_azure_disabled"
+            android:paddingHorizontal="22dp"
+            android:paddingVertical="12dp"
+            android:drawableStart="@drawable/ic_send"
+            android:drawablePadding="8dp"
+            android:enabled="false" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/emptyText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:layout_marginStart="16dp"
+        android:text="촬영 기록이 없습니다"
+        android:textColor="@color/inkMuted"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+    <ScrollView
+        android:id="@+id/historyScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <LinearLayout
             android:id="@+id/historyList"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="vertical" />
+            android:orientation="vertical"
+            android:padding="12dp" />
+    </ScrollView>
+
+    <!-- 페이지 이동 -->
+    <LinearLayout
+        android:id="@+id/pagerRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingVertical="8dp">
+
+        <TextView
+            android:id="@+id/pagePrev"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="‹"
+            android:textColor="@color/inkSecondary"
+            android:textSize="22sp"
+            android:padding="12dp" />
+
+        <TextView
+            android:id="@+id/pageLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 / 1"
+            android:textColor="@color/inkSecondary"
+            android:textSize="15sp"
+            android:padding="12dp" />
+
+        <TextView
+            android:id="@+id/pageNext"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="›"
+            android:textColor="@color/inkSecondary"
+            android:textSize="22sp"
+            android:padding="12dp" />
     </LinearLayout>
-</ScrollView>
+</LinearLayout>

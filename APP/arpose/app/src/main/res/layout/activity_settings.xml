@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/navy900">
+    android:background="@color/pageLight">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -10,86 +10,289 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <Button
-            android:id="@+id/backBtn"
-            android:layout_width="wrap_content"
+        <!-- 상단바 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="← 뒤로"
-            android:textColor="@color/silver"
-            android:background="@color/navy700" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="설정"
-            android:textColor="#FFFFFF"
-            android:textSize="24sp" />
+            <ImageButton
+                android:id="@+id/backBtn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_back"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:scaleType="centerInside"
+                android:contentDescription="뒤로" />
 
-        <!-- 초점 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="설정"
+                android:textColor="@color/inkPrimary"
+                android:textSize="24sp" />
+        </LinearLayout>
+
+        <!-- 촬영 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="초점 (AF)"
-            android:textColor="@color/stIndigo"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="FIXED 권장 — 배경 특징점이 선명해 추적에 유리 (수집 기본값)"
-            android:textColor="#888888"
-            android:textSize="13sp" />
-        <RadioGroup
-            android:id="@+id/afGroup"
-            android:layout_width="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="촬영"
+            android:textColor="@color/inkMuted"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:orientation="horizontal">
-            <RadioButton android:id="@+id/afFixed" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="FIXED" android:textColor="#FFFFFF" />
-            <RadioButton android:id="@+id/afAuto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="24dp" android:text="AUTO" android:textColor="#FFFFFF" />
-        </RadioGroup>
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_light"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
 
-        <!-- 노출/화벨 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="14dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="초점 고정"
+                        android:textColor="@color/inkPrimary"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="배경 특징점이 선명해 추적에 유리 · 권장"
+                        android:textColor="@color/inkMuted"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/afSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:track="@drawable/switch_track"
+                    android:thumb="@drawable/switch_thumb"
+                    android:switchMinWidth="52dp"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff="" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginHorizontal="18dp"
+                android:background="@color/hairline" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="14dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="밝기·색 고정"
+                        android:textColor="@color/inkPrimary"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="밝기·화이트밸런스 고정 · 데이터 일관성 · 권장"
+                        android:textColor="@color/inkMuted"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/aeSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:track="@drawable/switch_track"
+                    android:thumb="@drawable/switch_thumb"
+                    android:switchMinWidth="52dp"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff="" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 화질 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="노출·화이트밸런스 (AE/AWB)"
-            android:textColor="@color/stIndigo"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="LOCK = 밝기·색 고정(학습 데이터 계약 요구). 촬영 화면 복귀 시 현재 장면에 잠금."
-            android:textColor="#888888"
-            android:textSize="13sp" />
-        <RadioGroup
-            android:id="@+id/aeGroup"
-            android:layout_width="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="화질"
+            android:textColor="@color/inkMuted"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:orientation="horizontal">
-            <RadioButton android:id="@+id/aeAuto" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="AUTO" android:textColor="#FFFFFF" />
-            <RadioButton android:id="@+id/aeLock" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="24dp" android:text="LOCK" android:textColor="#FFFFFF" />
-        </RadioGroup>
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_light"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
 
-        <!-- 해상도 (고정) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="14dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="해상도"
+                        android:textColor="@color/inkPrimary"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="데이터 계약 · 변경 불가"
+                        android:textColor="@color/inkMuted"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1920×1080 (16:9)"
+                    android:textColor="@color/inkSecondary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 촬영 보조 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="해상도"
-            android:textColor="@color/stIndigo"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-        <TextView
-            android:layout_width="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="촬영 보조"
+            android:textColor="@color/inkMuted"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="640×480 고정 (데이터 계약). 변경 옵션은 필요 시 추가."
-            android:textColor="#888888"
-            android:textSize="13sp" />
+            android:layout_marginTop="6dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_light"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="14dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="구도 그리드"
+                        android:textColor="@color/inkPrimary"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="화면에 3분할 안내선"
+                        android:textColor="@color/inkMuted"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/gridSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:track="@drawable/switch_track"
+                    android:thumb="@drawable/switch_thumb"
+                    android:switchMinWidth="52dp"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff="" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginHorizontal="18dp"
+                android:background="@color/hairline" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="14dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="상세값 표시"
+                        android:textColor="@color/inkPrimary"
+                        android:textSize="16sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="pose·마커 원시값 (개발용)"
+                        android:textColor="@color/inkMuted"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/detailSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:track="@drawable/switch_track"
+                    android:thumb="@drawable/switch_thumb"
+                    android:switchMinWidth="52dp"
+                    android:showText="false"
+                    android:textOn=""
+                    android:textOff="" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

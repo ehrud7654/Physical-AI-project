@@ -24,6 +24,10 @@ import android.util.Range
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
 import com.google.ar.core.ArCoreApk
@@ -89,6 +93,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private lateinit var glView: GLSurfaceView
     private lateinit var poseText: TextView
     private lateinit var recBtn: Button
+    private lateinit var gridOverlay: ImageView
+    private lateinit var menuBtn: ImageButton
 
     private val bg = BackgroundRenderer()
     private var session: Session? = null
@@ -156,6 +162,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         poseText = findViewById(R.id.poseText)
         recBtn = findViewById(R.id.recBtn)
         glView = findViewById(R.id.glView)
+        gridOverlay = findViewById(R.id.gridOverlay)
+        menuBtn = findViewById(R.id.menuBtn)
 
         recorder = Recorder(getExternalFilesDir(null)!!)
         imu = ImuLogger(this)
@@ -171,31 +179,15 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             }
         }
 
-        // 설정·기록은 별도 화면. 녹화 중엔 못 나가게 막는다.
-        findViewById<Button>(R.id.settingsBtn).setOnClickListener {
-            if (recorder?.isRecording == true) {
-                Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
-            } else {
-                startActivity(android.content.Intent(this, SettingsActivity::class.java))
-            }
-        }
-        findViewById<Button>(R.id.historyBtn).setOnClickListener {
-            if (recorder?.isRecording == true) {
-                Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
-            } else {
-                startActivity(android.content.Intent(this, HistoryActivity::class.java))
-            }
-        }
+        // 설정·기록·보조 토글은 메뉴로. 녹화 중엔 화면 이동을 막는다.
+        menuBtn.setOnClickListener { showMenu() }
 
-        // 지표 뷰 + 상세(원시값) 토글
+        // 지표 뷰
         sigDot = findViewById(R.id.sigDot)
         sigText = findViewById(R.id.sigText)
         aeBadge = findViewById(R.id.aeBadge)
         dropWarn = findViewById(R.id.dropWarn)
         recTimer = findViewById(R.id.recTimer)
-        findViewById<Button>(R.id.detailBtn).setOnClickListener {
-            poseText.visibility = if (poseText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }
         learnBadge = findViewById(R.id.learnBadge)
         learnBadge.setOnClickListener { showLearningPicker() }
 
@@ -236,16 +228,120 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             } ?: 0
     }
 
+    /** 학습 선택 — 촬영(다크) 테마의 커스텀 시트. 활성 학습은 azure 테두리 + 편수 표시. */
     private fun showLearningPicker() {
-        val labels = (stubCatalog.map { it.third } + "학습 없이 촬영").toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("학습 선택 (BE 연동 전 스텁)")
-            .setItems(labels) { _, i ->
-                if (i < stubCatalog.size) stubCatalog[i].let { Prefs.setActiveLearning(this, it.first, it.second, it.third) }
-                else Prefs.setActiveLearning(this, "", "", "")
-                updateLearnBadge()
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val activeJob = Prefs.activeJobId(this)
+        val dialog = android.app.Dialog(this)
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+        }
+        root.addView(TextView(this).apply {
+            text = "학습 선택"; setTextColor(0xFFE8EAF0.toInt()); textSize = 18f
+            setPadding(dp(4), 0, dp(4), dp(12))
+        })
+
+        fun addCard(name: String, sub: String, active: Boolean, onSelect: () -> Unit) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setBackgroundResource(if (active) R.drawable.bg_pick_card_active else R.drawable.bg_pick_card)
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(8) }
+                isClickable = true
+                setOnClickListener { onSelect(); updateLearnBadge(); dialog.dismiss() }
             }
-            .show()
+            row.addView(TextView(this).apply {
+                text = name; setTextColor(0xFFE8EAF0.toInt()); textSize = 16f
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            if (sub.isNotEmpty()) row.addView(TextView(this).apply {
+                text = sub; setTextColor(0xFF9AA2B8.toInt()); textSize = 13f
+                setPadding(0, 0, dp(10), 0)
+            })
+            row.addView(TextView(this).apply {
+                text = if (active) "●" else ""; setTextColor(0xFF4F9CF9.toInt()); textSize = 16f
+            })
+            root.addView(row)
+        }
+
+        for ((jobId, skillKey, label) in stubCatalog) {
+            addCard(label, "${episodeCount(jobId)}편", jobId == activeJob) {
+                Prefs.setActiveLearning(this, jobId, skillKey, label)
+            }
+        }
+        addCard("학습 없이 촬영", "", activeJob.isBlank()) {
+            Prefs.setActiveLearning(this, "", "", "")
+        }
+
+        val scroll = android.widget.ScrollView(this).apply {
+            setBackgroundResource(R.drawable.bg_menu_dark)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            addView(root)
+        }
+        dialog.setContentView(scroll)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.show()
+        // 창을 화면 안(≤90%)에 맞추고 내용이 넘치면 내부에서만 스크롤 — 창 자체는 안 움직이게 높이 고정.
+        val approxPx = dp(44 + (stubCatalog.size + 1) * 66 + 32)
+        val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
+        dialog.window?.setLayout(dp(340), minOf(approxPx, maxH))
+    }
+
+    /** 우상단 메뉴: 화면 이동 + 촬영 보조 토글. 코드로 조립(다크 팝업). */
+    private fun showMenu() {
+        val d = resources.displayMetrics.density
+        fun px(v: Int) = (v * d).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_menu_dark)
+        }
+        val pop = PopupWindow(
+            container, px(180), LinearLayout.LayoutParams.WRAP_CONTENT, true
+        ).apply { isOutsideTouchable = true; elevation = px(8).toFloat() }
+
+        fun row(label: String, onClick: () -> Unit) = TextView(this).apply {
+            text = label
+            setTextColor(0xFFE8EAF0.toInt())
+            textSize = 14f
+            setPadding(px(14), px(11), px(14), px(11))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
+        fun divider() = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px(1))
+            setBackgroundColor(0xFF2E3A5E.toInt())
+        }
+        fun guardNav(cls: Class<*>) {
+            if (recorder?.isRecording == true) Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
+            else startActivity(android.content.Intent(this, cls))
+            pop.dismiss()
+        }
+
+        container.addView(row("기록") { guardNav(HistoryActivity::class.java) })
+        container.addView(row("설정") { guardNav(SettingsActivity::class.java) })
+        container.addView(divider())
+        container.addView(row("구도 그리드" + if (Prefs.gridGuide(this)) " ✓" else "") {
+            val v = !Prefs.gridGuide(this)
+            Prefs.setGridGuide(this, v)
+            gridOverlay.visibility = if (v) View.VISIBLE else View.GONE
+            pop.dismiss()
+        })
+        container.addView(row("상세값 표시" + if (Prefs.showDetail(this)) " ✓" else "") {
+            val v = !Prefs.showDetail(this)
+            Prefs.setShowDetail(this, v)
+            poseText.visibility = if (v) View.VISIBLE else View.GONE
+            pop.dismiss()
+        })
+        pop.showAsDropDown(menuBtn)
     }
 
     private fun applyConfig(s: Session) {
@@ -274,6 +370,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         aeLock = Prefs.aeLock(this)
         if (afChanged) intrinsicsLine = "unknown"   // 초점 바뀌면 내부 파라미터 다시 읽기
         updateLearnBadge()   // 학습 배지·편수 갱신
+        gridOverlay.visibility = if (Prefs.gridGuide(this)) View.VISIBLE else View.GONE
+        poseText.visibility = if (Prefs.showDetail(this)) View.VISIBLE else View.GONE
 
         if (session == null) {
             try {
@@ -521,8 +619,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         recorder?.start(meta)
         recorder?.currentDir?.let { imu.start(it) }
         runOnUiThread {
-            recBtn.text = "■ 정지"
-            recBtn.setBackgroundColor(0xFFE0685E.toInt())
+            recBtn.setBackgroundResource(R.drawable.bg_shutter_stop)
         }
     }
 
@@ -540,8 +637,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         }
         recStartMs = 0L
         runOnUiThread {
-            recBtn.text = "● 촬영 시작"
-            recBtn.setBackgroundColor(0xFFE0685E.toInt())
+            recBtn.setBackgroundResource(R.drawable.bg_shutter)
             recTimer.visibility = View.GONE
             dropWarn.visibility = View.GONE
         }
@@ -736,8 +832,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                         state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "위치 잡는 중 — 천천히 움직이세요" }
                         else -> { sigDot.setTextColor(0xFFE0A44E.toInt()); sigText.text = "준비 중…" }
                     }
-                    aeBadge.text = if (aeLock) "밝기 고정" else "밝기 자동 (고정 필요)"
-                    aeBadge.setTextColor(if (aeLock) 0xFF3FBF87.toInt() else 0xFFE0A44E.toInt())
+                    aeBadge.visibility = if (aeLock) View.GONE else View.VISIBLE
                     dropWarn.text = "⚠ 누락 $dropped"
                     dropWarn.visibility = if (recording && dropped > 0) View.VISIBLE else View.GONE
                     if (recording) {
@@ -746,11 +841,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     } else {
                         recTimer.visibility = View.GONE
                         // 녹화 아닐 때만 버튼 갱신 (녹화 중엔 startRecording 이 '정지'로 세팅)
-                        if (trackingOk) {
-                            recBtn.text = "● 촬영 시작"; recBtn.setBackgroundColor(0xFFE0685E.toInt()); recBtn.alpha = 1f
-                        } else {
-                            recBtn.text = "잠시만요…"; recBtn.setBackgroundColor(0xFF2E3A5E.toInt()); recBtn.alpha = 0.6f
-                        }
+                        recBtn.setBackgroundResource(R.drawable.bg_shutter)
+                        recBtn.alpha = if (trackingOk) 1f else 0.5f
                     }
                     poseText.text = detail
                 }
