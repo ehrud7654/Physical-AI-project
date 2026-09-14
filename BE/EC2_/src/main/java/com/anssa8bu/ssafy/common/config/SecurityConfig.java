@@ -27,6 +27,7 @@ public class SecurityConfig {
     "/api/v1/auth/refresh",
     "/api/v1/auth/signup",
     "/api/v1/device-auth/token",
+    "/api/v1/device-auth/skills",
     "/api/v1/device-auth/enroll",
     "/actuator/health",
     "/actuator/health/**"
