@@ -27,6 +27,36 @@ object DeviceAuth {
         return refresh(ctx)
     }
 
+    /**
+     * 장치 등록 (계약 v1.3 §6.0/§12, S15P21A103-168). QR URI 의 enrollmentId·registrationToken(1회용)을
+     * device-auth/enroll 로 교환해 deviceId·deviceSecret 을 1회 수령하고 Prefs(Keystore)에 저장한다.
+     * registrationToken·secret 은 로그 금지. 성공 시 true. (네트워크 → 백그라운드 스레드에서 호출)
+     */
+    fun enroll(ctx: Context, enrollmentId: String, registrationToken: String): Boolean {
+        val body = JSONObject()
+            .put("enrollmentId", enrollmentId)
+            .put("registrationToken", registrationToken).toString()
+        val conn = (URL("${Uploader.BASE_URL}/api/v1/device-auth/enroll")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true
+            connectTimeout = 15_000; readTimeout = 30_000
+            setRequestProperty("Content-Type", "application/json")
+        }
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            if (conn.responseCode !in 200..299) {
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "enroll HTTP ${conn.responseCode} body=$err"); return false
+            }
+            val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
+            Prefs.setDeviceCreds(ctx, d.getString("deviceId"), d.getString("deviceSecret"))
+            token = null; expiryMs = 0L   // 새 자격으로 다음 token() 강제 재발급
+            Log.i(TAG, "장치 등록 완료 (enrolledAt=${d.optString("enrolledAt")})")
+            true
+        } catch (e: Exception) { Log.w(TAG, "enroll 실패: ${e.message}"); false }
+        finally { conn.disconnect() }
+    }
+
     /** 401 등에서 강제 재발급. */
     @Synchronized
     fun refresh(ctx: Context): String? {
