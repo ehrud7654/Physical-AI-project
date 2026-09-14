@@ -27,6 +27,7 @@ public class SecurityConfig {
     "/api/v1/auth/refresh",
     "/api/v1/auth/signup",
     "/api/v1/device-auth/token",
+    "/api/v1/device-auth/enroll",
     "/actuator/health",
     "/actuator/health/**"
   };
@@ -48,8 +49,14 @@ public class SecurityConfig {
                 authorize
                     .requestMatchers(PUBLIC_ENDPOINTS)
                     .permitAll()
+                    .requestMatchers("/api/v1/training-jobs/*/episode-upload-sessions/**")
+                    .hasAuthority("SCOPE_device")
+                    .requestMatchers("/api/v1/training-jobs/*/episodes/by-session/*")
+                    .hasAuthority("SCOPE_device")
+                    .requestMatchers("/api/v1/devices/*/heartbeat")
+                    .hasAuthority("SCOPE_device")
                     .anyRequest()
-                    .authenticated())
+                    .hasAuthority("SCOPE_user"))
         .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)));
 
     return http.build();

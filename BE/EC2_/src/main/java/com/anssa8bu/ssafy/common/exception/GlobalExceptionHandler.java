@@ -3,6 +3,9 @@ package com.anssa8bu.ssafy.common.exception;
 import com.anssa8bu.ssafy.common.response.ErrorResponse;
 import com.anssa8bu.ssafy.device.exception.DeviceAlreadyRegisteredException;
 import com.anssa8bu.ssafy.device.exception.DeviceNotFoundException;
+import com.anssa8bu.ssafy.episodeupload.exception.EpisodeUploadException;
+import com.anssa8bu.ssafy.deviceauth.exception.InvalidDeviceCredentialsException;
+import com.anssa8bu.ssafy.deviceenrollment.exception.DeviceEnrollmentException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +15,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  @ExceptionHandler(DeviceEnrollmentException.class)
+  public ResponseEntity<ErrorResponse> handleDeviceEnrollment(
+      DeviceEnrollmentException exception) {
+    return ResponseEntity.status(exception.getStatus())
+        .body(new ErrorResponse(exception.getCode(), exception.getMessage()));
+  }
+
+  @ExceptionHandler(EpisodeUploadException.class)
+  public ResponseEntity<ErrorResponse> handleEpisodeUpload(EpisodeUploadException exception) {
+    return ResponseEntity.status(exception.getStatus())
+        .body(new ErrorResponse(exception.getCode(), exception.getMessage()));
+  }
 
   @ExceptionHandler(ResourceNotFoundException.class)
   public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException exception) {
@@ -41,6 +57,13 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(InvalidCredentialsException.class)
   public ResponseEntity<ErrorResponse> handleInvalidCredentials(
       InvalidCredentialsException exception) {
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        .body(new ErrorResponse("INVALID_CREDENTIALS", exception.getMessage()));
+  }
+
+  @ExceptionHandler(InvalidDeviceCredentialsException.class)
+  public ResponseEntity<ErrorResponse> handleInvalidDeviceCredentials(
+      InvalidDeviceCredentialsException exception) {
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
         .body(new ErrorResponse("INVALID_CREDENTIALS", exception.getMessage()));
   }

@@ -119,6 +119,14 @@ public class EpisodeArchive extends AuditableEntity {
     return v;
   }
 
+  public void confirmAvailable(Instant storedAt, Instant validatedAt) {
+    if (status != EpisodeArchiveStatus.AVAILABLE) {
+      throw new IllegalStateException("archive status must be AVAILABLE");
+    }
+    this.storedAt = Objects.requireNonNull(storedAt, "storedAt must not be null");
+    this.validatedAt = Objects.requireNonNull(validatedAt, "validatedAt must not be null");
+  }
+
   public UUID getId() {
     return id;
   }

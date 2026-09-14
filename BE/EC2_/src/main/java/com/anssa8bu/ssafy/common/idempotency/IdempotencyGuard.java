@@ -25,6 +25,11 @@ public class IdempotencyGuard {
   }
 
   public Claim claim(UUID actorId, String method, String path, String key, Object request) {
+    return claim("USER", actorId, method, path, key, request);
+  }
+
+  public Claim claim(
+      String actorType, UUID actorId, String method, String path, String key, Object request) {
     if (key == null || key.isBlank() || key.length() > 200) {
       throw new IllegalArgumentException(
           "Idempotency-Key is required and must not exceed 200 characters");
@@ -34,11 +39,12 @@ public class IdempotencyGuard {
     String requestHash = sha256(request);
     Optional<Existing> existing =
         jdbc.query(
-            "select request_hash, resource_id from idempotency_keys where actor_type='USER' and actor_id=? and http_method=? and request_path=? and idempotency_key=? and expires_at>now()",
+            "select request_hash, resource_id from idempotency_keys where actor_type=? and actor_id=? and http_method=? and request_path=? and idempotency_key=? and expires_at>now()",
             (ResultSet rs) ->
                 rs.next()
                     ? Optional.of(new Existing(rs.getString(1), rs.getString(2)))
                     : Optional.empty(),
+            actorType,
             actorId.toString(),
             method,
             path,
@@ -66,9 +72,22 @@ public class IdempotencyGuard {
       int responseStatus,
       String resourceType,
       UUID resourceId) {
+    complete("USER", actorId, method, path, claim, responseStatus, resourceType, resourceId);
+  }
+
+  public void complete(
+      String actorType,
+      UUID actorId,
+      String method,
+      String path,
+      Claim claim,
+      int responseStatus,
+      String resourceType,
+      UUID resourceId) {
     jdbc.update(
-        "insert into idempotency_keys(id,actor_type,actor_id,http_method,request_path,idempotency_key,request_hash,response_status,response_body,resource_type,resource_id,expires_at) values (?,'USER',?,?,?,?,?,?,'{}'::jsonb,?,?,?)",
+        "insert into idempotency_keys(id,actor_type,actor_id,http_method,request_path,idempotency_key,request_hash,response_status,response_body,resource_type,resource_id,expires_at) values (?,?,?,?,?,?,?,?,'{}'::jsonb,?,?,?)",
         UUID.randomUUID(),
+        actorType,
         actorId.toString(),
         method,
         path,

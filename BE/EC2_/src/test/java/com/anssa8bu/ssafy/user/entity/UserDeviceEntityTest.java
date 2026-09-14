@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.anssa8bu.ssafy.device.entity.DeviceCredential;
+import com.anssa8bu.ssafy.device.entity.DeviceCredentialStatus;
 import com.anssa8bu.ssafy.device.entity.DeviceType;
 import java.time.Instant;
 import java.util.UUID;
@@ -31,12 +32,14 @@ class UserDeviceEntityTest {
   }
 
   @Test
-  void registrationCodeHashAndExpirationAreProvidedTogether() {
-    assertThatThrownBy(
-            () ->
-                new DeviceCredential(
-                    UUID.randomUUID(), "device-secret-hash", "registration-code-hash", null))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("registration code hash and expiration must be provided together");
+  void newDeviceCredentialIsActive() {
+    Instant enrolledAt = Instant.parse("2026-09-08T00:00:00Z");
+
+    DeviceCredential credential =
+        new DeviceCredential(UUID.randomUUID(), "device-secret-hash", enrolledAt);
+
+    assertThat(credential.getStatus()).isEqualTo(DeviceCredentialStatus.ACTIVE);
+    assertThat(credential.getEnrolledAt()).isEqualTo(enrolledAt);
+    assertThat(credential.getLastAuthenticatedAt()).isNull();
   }
 }

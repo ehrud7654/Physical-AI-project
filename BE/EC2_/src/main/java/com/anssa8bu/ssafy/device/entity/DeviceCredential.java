@@ -3,6 +3,8 @@ package com.anssa8bu.ssafy.device.entity;
 import com.anssa8bu.ssafy.common.entity.AuditableEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -20,11 +22,15 @@ public class DeviceCredential extends AuditableEntity {
   @Column(name = "device_secret_hash", nullable = false, length = 255)
   private String deviceSecretHash;
 
-  @Column(name = "registration_code_hash", length = 255)
-  private String registrationCodeHash;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "status", nullable = false, length = 20)
+  private DeviceCredentialStatus status;
 
-  @Column(name = "registration_code_expires_at")
-  private Instant registrationCodeExpiresAt;
+  @Column(name = "enrolled_at")
+  private Instant enrolledAt;
+
+  @Column(name = "last_authenticated_at")
+  private Instant lastAuthenticatedAt;
 
   @Column(name = "secret_rotated_at")
   private Instant secretRotatedAt;
@@ -33,21 +39,11 @@ public class DeviceCredential extends AuditableEntity {
 
   public DeviceCredential(
       UUID deviceId,
-      String deviceSecretHash,
-      String registrationCodeHash,
-      Instant registrationCodeExpiresAt) {
+      String deviceSecretHash, Instant enrolledAt) {
     this.deviceId = Objects.requireNonNull(deviceId, "deviceId must not be null");
     this.deviceSecretHash = requireText(deviceSecretHash, "deviceSecretHash");
-    this.registrationCodeHash =
-        registrationCodeHash == null
-            ? null
-            : requireText(registrationCodeHash, "registrationCodeHash");
-    this.registrationCodeExpiresAt = registrationCodeExpiresAt;
-
-    if ((registrationCodeHash == null) != (registrationCodeExpiresAt == null)) {
-      throw new IllegalArgumentException(
-          "registration code hash and expiration must be provided together");
-    }
+    this.status = DeviceCredentialStatus.ACTIVE;
+    this.enrolledAt = enrolledAt;
   }
 
   private static String requireText(String value, String fieldName) {
@@ -62,9 +58,20 @@ public class DeviceCredential extends AuditableEntity {
     this.secretRotatedAt = Objects.requireNonNull(rotatedAt, "rotatedAt must not be null");
   }
 
-  public void clearRegistrationCode() {
-    this.registrationCodeHash = null;
-    this.registrationCodeExpiresAt = null;
+  public void enroll(String newSecretHash, Instant enrolledAt) {
+    this.deviceSecretHash = requireText(newSecretHash, "newSecretHash");
+    this.status = DeviceCredentialStatus.ACTIVE;
+    this.enrolledAt = Objects.requireNonNull(enrolledAt, "enrolledAt must not be null");
+    this.secretRotatedAt = enrolledAt;
+  }
+
+  public void recordAuthentication(Instant authenticatedAt) {
+    this.lastAuthenticatedAt =
+        Objects.requireNonNull(authenticatedAt, "authenticatedAt must not be null");
+  }
+
+  public void revoke() {
+    this.status = DeviceCredentialStatus.REVOKED;
   }
 
   public UUID getDeviceId() {
@@ -75,12 +82,16 @@ public class DeviceCredential extends AuditableEntity {
     return deviceSecretHash;
   }
 
-  public String getRegistrationCodeHash() {
-    return registrationCodeHash;
+  public DeviceCredentialStatus getStatus() {
+    return status;
   }
 
-  public Instant getRegistrationCodeExpiresAt() {
-    return registrationCodeExpiresAt;
+  public Instant getEnrolledAt() {
+    return enrolledAt;
+  }
+
+  public Instant getLastAuthenticatedAt() {
+    return lastAuthenticatedAt;
   }
 
   public Instant getSecretRotatedAt() {

@@ -37,6 +37,8 @@ public class AccessTokenProvider {
             .subject(userId.toString())
             .issuedAt(issuedAt)
             .expiresAt(issuedAt.plus(properties.accessTokenTtl()))
+            .claim("scope", "user")
+            .claim("actorType", "USER")
             .build();
     JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
     return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
