@@ -163,6 +163,7 @@ export interface TrainingSkill {
   skillKey: string;
   displayName: string;
   description: string | null;
+  tier: 'TUTORIAL' | 'DEMO' | 'CUSTOM';
   status: string;
 }
 

@@ -41,6 +41,7 @@ interface ApiEpisodeInput {
 interface ApiSkill {
   id: string;
   skillKey: string;
+  tier: 'TUTORIAL' | 'DEMO' | 'CUSTOM';
   displayName: string;
   description: string | null;
   status: string;

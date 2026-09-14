@@ -1,4 +1,4 @@
-export { fetchRobots, fetchRobotDetail, fetchUmis, registerDevice, applyModel, updateRobot } from './deviceService';
+export { fetchRobots, fetchRobotDetail, fetchUmis, registerDevice, deleteDevices, applyModel, updateRobot } from './deviceService';
 export type { RegisterDeviceInput } from './deviceService';
 export { fetchTrainings, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, createTrainingJob, updateTrainingInputPlan, completeTrainingInput, cancelTraining, deleteTrainings, retryTraining } from './trainingService';
 export { fetchLearnedSkills, fetchSavedWorks, saveWork, deleteWorks } from './workService';

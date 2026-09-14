@@ -389,16 +389,39 @@ function DevicesView({ initialTab, onSelectRobot, onToast }: { initialTab: Devic
   const [tab, setTab] = useState<DeviceType>(initialTab);
   const [sort, setSort] = useState<'recent' | 'oldest'>('recent');
   const [registerOpen, setRegisterOpen] = useState(false);
-  const { robots, umis: umi } = useAppStore();
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { robots, umis: umi, deleteDevicesById } = useAppStore();
   const recentOrder = (value: string) => value === '방금 전' ? -1 : value.startsWith('오늘') ? 0 : value.startsWith('어제') ? 1 : Number.parseInt(value, 10) || 99;
   const sortedRobots = sort === 'recent' ? [...robots] : [...robots].reverse();
   const sortedUmi = [...umi].sort((a, b) => sort === 'recent' ? recentOrder(a.collected) - recentOrder(b.collected) : recentOrder(b.collected) - recentOrder(a.collected));
-  const changeTab = (nextTab: DeviceType) => { setTab(nextTab); setSort('recent'); };
-  return <><div className="page-heading title-divider"><div><h1>장치 관리</h1></div></div><div className="device-toolbar"><div className="device-tabs"><button className={tab === 'umi' ? 'active' : ''} onClick={() => changeTab('umi')}>UMI <span>{umi.length}</span></button><button className={tab === 'robot' ? 'active' : ''} onClick={() => changeTab('robot')}>로봇 <span>{robots.length}</span></button></div><label className="device-sort"><select aria-label="장치 정렬" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="recent">최근 사용순</option><option value="oldest">오래된 순</option></select></label><button className="device-register-action" onClick={() => setRegisterOpen(true)}>새 장치 등록 <span aria-hidden="true">›</span></button></div>
+  const visibleDeviceIds = tab === 'robot' ? sortedRobots.map(item => item.jetsonDeviceId) : sortedUmi.map(item => item.deviceId);
+  const allSelected = visibleDeviceIds.length > 0 && visibleDeviceIds.every(id => selectedIds.includes(id));
+  const toggleDevice = (id: string) => setSelectedIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  const changeTab = (nextTab: DeviceType) => { setTab(nextTab); setSort('recent'); setSelecting(false); setSelectedIds([]); };
+  const handleDelete = () => {
+    if (!selecting) { setSelecting(true); return; }
+    if (!selectedIds.length) { setSelecting(false); return; }
+    setDeleteOpen(true);
+  };
+  const deleteConfirmed = async () => {
+    setDeleting(true);
+    try {
+      await deleteDevicesById(selectedIds);
+      onToast(`${selectedIds.length}개 장치를 삭제했어요.`);
+      setSelectedIds([]); setSelecting(false); setDeleteOpen(false);
+    } catch (cause) {
+      onToast(cause instanceof Error ? cause.message : '장치를 삭제하지 못했어요.');
+    } finally { setDeleting(false); }
+  };
+  return <><div className="page-heading title-divider"><div><h1>장치 관리</h1></div></div><div className="device-toolbar"><div className="device-tabs"><button className={tab === 'umi' ? 'active' : ''} onClick={() => changeTab('umi')}>UMI <span>{umi.length}</span></button><button className={tab === 'robot' ? 'active' : ''} onClick={() => changeTab('robot')}>로봇 <span>{robots.length}</span></button></div><div className="device-toolbar-actions">{selecting && <label className="device-select-all" aria-label="장치 전체 선택"><input className="list-select-checkbox" type="checkbox" disabled={!visibleDeviceIds.length} checked={allSelected} onChange={() => setSelectedIds(allSelected ? [] : visibleDeviceIds)} /></label>}<button className={selecting ? 'danger-button device-delete-action' : 'secondary-button device-delete-action'} onClick={handleDelete}>삭제</button><label className="device-sort"><select aria-label="장치 정렬" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="recent">최근 사용순</option><option value="oldest">오래된 순</option></select></label><button className="device-register-action" onClick={() => setRegisterOpen(true)}>새 장치 등록 <span aria-hidden="true">›</span></button></div></div>
     {tab === 'robot' && !robots.length && <p className="table-empty">등록된 로봇이 없어요. ‘장치 등록’ 버튼으로 추가해 보세요.</p>}
     {tab === 'umi' && !umi.length && <p className="table-empty">등록된 UMI가 없어요. ‘장치 등록’ 버튼으로 추가해 보세요.</p>}
-    {tab === 'robot' ? <div className="device-grid">{sortedRobots.map(robot => <button className="card device-card" key={robot.id} onClick={() => onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.model}</dd></div><div><dt>연결 상태</dt><dd>{robot.status}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button>)}</div> : <div className="device-grid">{sortedUmi.map(item => <article className="card device-card" key={item.id}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 사용</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl><button className="secondary-button">데이터 보기</button></article>)}</div>}
-    {registerOpen && <DeviceRegisterModal onClose={() => setRegisterOpen(false)} onRegistered={(type, label) => { setRegisterOpen(false); setTab(type); onToast(`‘${label}’ 장치를 등록했어요.`); }} />}
+    {tab === 'robot' ? <div className="device-grid">{sortedRobots.map(robot => <article className={`card device-card${selecting ? ' selecting' : ''}`} key={robot.id}>{selecting && <input className="list-select-checkbox device-card-checkbox" type="checkbox" aria-label={`${robot.name} 선택`} checked={selectedIds.includes(robot.jetsonDeviceId)} onChange={() => toggleDevice(robot.jetsonDeviceId)} />}<button className="device-card-content" onClick={() => selecting ? toggleDevice(robot.jetsonDeviceId) : onSelectRobot(robot.id)}><div className="device-card-head"><span className="device-visual">R</span><span className={`status-pill status-${robot.status.replace(' ', '-')}`}><i />{robot.status}</span></div><h2>{robot.name}</h2><p>{robot.location}</p><dl><div><dt>현재 모델</dt><dd>{robot.model}</dd></div><div><dt>연결 상태</dt><dd>{robot.status}</dd></div></dl><span className="detail-link">상세 정보 보기 →</span></button></article>)}</div> : <div className="device-grid">{sortedUmi.map(item => <article className={`card device-card${selecting ? ' selecting' : ''}`} key={item.id}>{selecting && <input className="list-select-checkbox device-card-checkbox" type="checkbox" aria-label={`${item.id} 선택`} checked={selectedIds.includes(item.deviceId)} onChange={() => toggleDevice(item.deviceId)} />}<div className="device-card-content" onClick={() => selecting && toggleDevice(item.deviceId)}><div className="device-card-head"><span className="device-visual umi">U</span><span className={`status-pill status-${item.status}`}><i />{item.status}</span></div><h2>{item.id}</h2><p>{item.place}</p><dl><div><dt>최근 사용</dt><dd>{item.collected}</dd></div><div><dt>보유 데이터</dt><dd>{item.data}개</dd></div></dl></div></article>)}</div>}
+    {registerOpen && <DeviceRegisterModal onClose={() => setRegisterOpen(false)} onRegistered={(type, label) => { setTab(type); onToast(`‘${label}’ 장치를 등록했어요.`); }} />}
+    {deleteOpen && <div className="modal-backdrop" onMouseDown={() => !deleting && setDeleteOpen(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="장치 삭제 확인" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><h2>선택한 장치를 삭제할까요?</h2><p>{selectedIds.length}개 장치가 목록에서 삭제됩니다.</p></div><button className="close-button" disabled={deleting} onClick={() => setDeleteOpen(false)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={deleting} onClick={() => setDeleteOpen(false)}>계속 사용</button><button className="danger-button" disabled={deleting} onClick={() => void deleteConfirmed()}>{deleting ? '삭제 중...' : '삭제'}</button></div></section></div>}
   </>;
 }
 
@@ -410,6 +433,7 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
   const [location, setLocation] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [registeredUmi, setRegisteredUmi] = useState<{ id: string; name: string } | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -422,11 +446,32 @@ function DeviceRegisterModal({ onClose, onRegistered }: { onClose: () => void; o
     try {
       await addDevice({ type, id: deviceId, name, location });
       onRegistered(type, type === 'robot' ? name.trim() : deviceId.trim());
+      if (type === 'umi') {
+        setRegisteredUmi({ id: deviceId.trim(), name: name.trim() });
+        setSaving(false);
+      } else {
+        onClose();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '등록에 실패했어요. 잠시 후 다시 시도해 주세요.');
       setSaving(false);
     }
   };
+
+  if (registeredUmi) return <div className="modal-backdrop" onMouseDown={onClose}>
+    <section className="register-modal umi-qr-modal" role="dialog" aria-modal="true" aria-label="UMI 등록 QR" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="modal-heading"><div><p className="eyebrow">UMI 등록</p><h2>UMI에서 QR 코드를 스캔해 주세요</h2><p>등록 앱의 카메라로 스캔하면 이 장치와 연결됩니다.</p></div><button type="button" className="close-button" onClick={onClose} aria-label="닫기">×</button></div>
+      <div className="umi-qr-content">
+        <div className="umi-qr-placeholder" aria-label="등록 QR 코드 준비 중">
+          <i className="qr-corner qr-corner-top-left" /><i className="qr-corner qr-corner-top-right" /><i className="qr-corner qr-corner-bottom-left" />
+          <span>QR</span>
+        </div>
+        <div className="umi-qr-state"><span>연동 준비 중</span><strong>{registeredUmi.name}</strong><p>{registeredUmi.id}</p></div>
+      </div>
+      <div className="umi-qr-guide"><strong>QR 코드 발급 API 연결이 필요해요</strong><p>등록 코드를 받으면 이 영역에 실제 QR과 남은 유효시간이 표시됩니다.</p></div>
+      <div className="card-actions umi-qr-actions"><button type="button" className="secondary-button" disabled>QR 다시 발급</button><button type="button" className="primary-button" onClick={onClose}>확인</button></div>
+    </section>
+  </div>;
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
     <form className="register-modal" role="dialog" aria-modal="true" aria-label="장치 등록" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}>
@@ -673,7 +718,7 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
     setCatalogLoading(true);
     setCatalogError(false);
     void fetchTrainingSkills()
-      .then(setCatalog)
+      .then((skills) => setCatalog(skills.filter((item) => item.tier !== 'CUSTOM' || item.status !== 'PLANNED')))
       .catch(() => {
         setCatalogError(true);
         onToast('학습 동작 목록을 불러오지 못했어요.');
@@ -681,6 +726,10 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
       .finally(() => setCatalogLoading(false));
   }, [onToast]);
   useEffect(() => {
+    // A newly created custom skill is not part of the catalog fetched when this
+    // wizard opened. Once the server has created the job, its returned skillKey
+    // must not be treated as an invalid stale selection and reset the wizard.
+    if (step >= 5 && learningDraft.trainingJobId) return;
     if (catalog.length && !catalog.some(item => item.skillKey === skillKey)) {
       updateLearningDraft({
         step: 1,
