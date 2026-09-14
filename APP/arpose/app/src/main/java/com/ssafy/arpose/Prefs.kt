@@ -51,11 +51,13 @@ object Prefs {
     fun skillId(ctx: Context) = sp(ctx).getString(KEY_SKILL_ID, "") ?: ""
 
     fun deviceId(ctx: Context) = sp(ctx).getString(KEY_DEVICE_ID, "") ?: ""
-    fun deviceSecret(ctx: Context) = sp(ctx).getString(KEY_DEVICE_SECRET, "") ?: ""
+    /** Device Secret 은 Keystore 암호문으로 저장 — 읽을 때 복호 (S15P21A103-168). */
+    fun deviceSecret(ctx: Context) = SecureStore.decrypt(sp(ctx).getString(KEY_DEVICE_SECRET, "") ?: "")
     /** 등록 시 서버에 저장된 하드웨어 핸들(예: UMI-001). 업로드 metadata.device.deviceIdentifier 로 나감. */
     fun deviceIdentifier(ctx: Context) = sp(ctx).getString(KEY_DEVICE_IDENT, "") ?: ""
     fun setDeviceCreds(ctx: Context, id: String, secret: String) =
-        sp(ctx).edit().putString(KEY_DEVICE_ID, id).putString(KEY_DEVICE_SECRET, secret).apply()
+        sp(ctx).edit().putString(KEY_DEVICE_ID, id)
+            .putString(KEY_DEVICE_SECRET, SecureStore.encrypt(secret)).apply()
 
     fun debugEnabled(ctx: Context) = sp(ctx).getBoolean(KEY_DEBUG_ENABLED, false)
     fun debugJobId(ctx: Context) = sp(ctx).getString(KEY_DEBUG_JOB, "") ?: ""
@@ -68,7 +70,7 @@ object Prefs {
             .putBoolean(KEY_DEBUG_ENABLED, enabled)
             .putString(KEY_DEBUG_JOB, jobId.trim())
             .putString(KEY_DEVICE_ID, deviceId.trim())
-            .putString(KEY_DEVICE_SECRET, deviceSecret.trim())
+            .putString(KEY_DEVICE_SECRET, SecureStore.encrypt(deviceSecret.trim()))
             .apply()
 
     fun activeJobId(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_JOB, "") ?: ""
