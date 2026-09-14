@@ -222,7 +222,8 @@ hardware_interface::return_type SO101System::read(
       RCLCPP_ERROR(LOGGER, "read 연속 %d회 실패, 정지: %s", read_fail_count_, e.what());
       return hardware_interface::return_type::ERROR;
     }
-    RCLCPP_WARN(LOGGER, "read 일시 실패(%d/%d), 이전 상태 유지: %s",
+    RCLCPP_WARN(
+      LOGGER, "read 일시 실패(%d/%d), 이전 상태 유지: %s",
       read_fail_count_, MAX_CONSECUTIVE_FAILS, e.what());
   }
   return hardware_interface::return_type::OK;
@@ -249,7 +250,8 @@ hardware_interface::return_type SO101System::write(
       RCLCPP_ERROR(LOGGER, "write 연속 %d회 실패, 정지: %s", write_fail_count_, e.what());
       return hardware_interface::return_type::ERROR;
     }
-    RCLCPP_WARN(LOGGER, "write 일시 실패(%d/%d): %s",
+    RCLCPP_WARN(
+      LOGGER, "write 일시 실패(%d/%d): %s",
       write_fail_count_, MAX_CONSECUTIVE_FAILS, e.what());
   }
   return hardware_interface::return_type::OK;
