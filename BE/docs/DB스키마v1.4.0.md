@@ -1178,7 +1178,7 @@ WHERE status = 'ACTIVE';
 | 컬럼 | 타입 | NULL | 제약·설명 |
 |---|---|---|---|
 | `id` | uuid | 아니요 | PK |
-| `actor_type` | varchar(30) | 아니요 | `USER`, `UMI`, `GPU`, `JETSON`, `INTERNAL` |
+| `actor_type` | varchar(30) | 아니요 | `USER`, `DEVICE`, `UMI`, `GPU`, `JETSON`, `INTERNAL`. 장치 Access Token 기반 요청은 `DEVICE`를 사용하며, 나머지 장치별 값은 기존 데이터 호환을 위해 유지한다. |
 | `actor_id` | varchar(150) | 아니요 | 주체 ID |
 | `http_method` | varchar(10) | 아니요 | 요청 method |
 | `request_path` | varchar(500) | 아니요 | path template 또는 정규화 path |
