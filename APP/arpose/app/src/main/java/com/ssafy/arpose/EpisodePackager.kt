@@ -88,10 +88,9 @@ object EpisodePackager {
         .put("endedAt", m.optString("ended_at"))
         .put("startMonotonicNs", m.optLong("start_monotonic_ns"))
         .put("timestampTimebase", m.optString("timestamp_timebase"))
-        .put("device", JSONObject()
-            .put("deviceIdentifier", m.optJSONObject("device")?.optString("device_id") ?: "unknown")
-            .put("androidVersion", m.optJSONObject("device")?.optString("os_version") ?: "")
-            .put("arCoreVersion", m.optJSONObject("device")?.optString("arcore_version") ?: ""))
+        // device 는 빈 객체로 보낸다: 서버가 인증 토큰으로 장치를 판별하므로 deviceIdentifier 불필요.
+        // null·빈 문자열 필드는 서버가 거부해서 {} 로 보낸다 (S15P21A103-168, BE 계약 조정).
+        .put("device", JSONObject())
         .put("camera", m.optJSONObject("camera") ?: JSONObject())
 
     /** summary.json(snake) → 세션 요청 summary(lower camel, 계약 6.1). */

@@ -50,8 +50,6 @@ object DeviceAuth {
             }
             val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
             Prefs.setDeviceCreds(ctx, d.getString("deviceId"), d.getString("deviceSecret"))
-            // handleNumber(=업로드 deviceIdentifier). 계약에 추가되면 여기로 옴 — 있으면 저장(없으면 no-op).
-            d.optString("handleNumber").takeIf { it.isNotBlank() }?.let { Prefs.setDeviceIdentifier(ctx, it) }
             token = null; expiryMs = 0L   // 새 자격으로 다음 token() 강제 재발급
             Log.i(TAG, "장치 등록 완료 (enrolledAt=${d.optString("enrolledAt")})")
             true

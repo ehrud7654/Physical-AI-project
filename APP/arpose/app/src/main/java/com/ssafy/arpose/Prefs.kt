@@ -19,7 +19,6 @@ object Prefs {
     // 장치 자격(QR 로 받음). durable — 토큰은 이걸로 DEVICE-05 에서 발급/갱신 (S15P21A103-163).
     private const val KEY_DEVICE_ID = "device_id"
     private const val KEY_DEVICE_SECRET = "device_secret"
-    private const val KEY_DEVICE_IDENT = "device_identifier"
 
     // 디버그 업로드(디버그 빌드 전용). QR 연동 전 실서버 테스트: jobId·자격 직접 입력.
     private const val KEY_DEBUG_ENABLED = "debug_upload"
@@ -53,10 +52,6 @@ object Prefs {
     fun deviceId(ctx: Context) = sp(ctx).getString(KEY_DEVICE_ID, "") ?: ""
     /** Device Secret 은 Keystore 암호문으로 저장 — 읽을 때 복호 (S15P21A103-168). */
     fun deviceSecret(ctx: Context) = SecureStore.decrypt(sp(ctx).getString(KEY_DEVICE_SECRET, "") ?: "")
-    /** 등록 시 서버가 준 하드웨어 핸들(handleNumber, 예: UMI-001). 업로드 metadata.device.deviceIdentifier 로 나감. */
-    fun deviceIdentifier(ctx: Context) = sp(ctx).getString(KEY_DEVICE_IDENT, "") ?: ""
-    fun setDeviceIdentifier(ctx: Context, handle: String) =
-        sp(ctx).edit().putString(KEY_DEVICE_IDENT, handle).apply()
     fun setDeviceCreds(ctx: Context, id: String, secret: String) =
         sp(ctx).edit().putString(KEY_DEVICE_ID, id)
             .putString(KEY_DEVICE_SECRET, SecureStore.encrypt(secret)).apply()
