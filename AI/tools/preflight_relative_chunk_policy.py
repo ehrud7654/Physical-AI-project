@@ -139,9 +139,9 @@ def _balanced_indices(dataset: RelativeChunkDataset, episode_ids: list[str],
 def _reason(error: ValueError) -> str:
     message = str(error)
     if "gripper" in message:
-        return "gripper_range_or_jump"
+        return "gripper_range"
     if "arm range" in message:
-        return "arm_range_or_jump"
+        return "arm_range"
     if "IK" in message:
         return "ik_residual_or_convergence"
     if "rotation_6d" in message:
@@ -180,6 +180,11 @@ def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
     q_start = np.r_[arm_start, invert_gap_curve(current_gap, curve)]
     current_pose = _matrix_from_fk(model, ik, q_start)
     adapter = RecordingArmAdapter(ik, curve)
+    # Geometry and commanded dynamics are separate questions.  Use the complete
+    # range span as the jump budget here: any two in-range arm values can pass,
+    # while an out-of-range IK result is still rejected.  Real speed and
+    # acceleration limits are applied below from the timestamp-derived dt.
+    geometric_arm_step = ranges[:, 1] - ranges[:, 0]
     try:
         commands = prepare_arm_commands(
             policy, observation,
@@ -189,8 +194,8 @@ def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
             solver=adapter,
             ranges_rad=ranges,
             gap_range_m=[0.0, gap_max],
-            max_step_rad=max_arm_speed * dt,
-            max_gap_step_m=max_gap_speed * dt,
+            max_step_rad=geometric_arm_step,
+            max_gap_step_m=gap_max,
             max_position_error_m=0.005,
             max_axis_error_deg=5.0,
             max_roll_error_deg=5.0,
@@ -390,6 +395,10 @@ def main() -> int:
             "max_position_error_m": 0.005,
             "max_axis_error_deg": 5.0,
             "max_roll_error_deg": 5.0,
+            "geometry_jump_budget": (
+                "full in-range span; velocity and acceleration are evaluated "
+                "separately from source timestamps"
+            ),
         },
         "comparison": {
             "policy_prediction": _summary(stats["policy_prediction"], total),
