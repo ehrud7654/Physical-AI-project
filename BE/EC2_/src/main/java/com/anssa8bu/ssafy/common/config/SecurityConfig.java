@@ -51,8 +51,8 @@ public class SecurityConfig {
                     .requestMatchers(PUBLIC_ENDPOINTS)
                     .permitAll()
                     .requestMatchers(
-                        "/api/v1/episode/data-upload-request",
-                        "/api/v1/episode/data-upload-request/**")
+                        "/api/v1/episode",
+                        "/api/v1/episode/**")
                     .hasAuthority("SCOPE_device")
                     .requestMatchers("/api/v1/devices/*/heartbeat")
                     .hasAuthority("SCOPE_device")
