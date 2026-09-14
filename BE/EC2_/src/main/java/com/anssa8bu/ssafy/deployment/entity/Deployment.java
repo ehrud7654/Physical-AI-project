@@ -94,4 +94,37 @@ public class Deployment extends AuditableEntity {
   public Long getRowVersion() {
     return rowVersion;
   }
+
+  public long getLastReportSequence() {
+    return lastReportSequence;
+  }
+
+  public void acceptReport(
+      long sequence,
+      DeploymentStatus nextStatus,
+      BigDecimal progressPercent,
+      String errorCode,
+      String errorMessage,
+      Instant receivedAt) {
+    if (sequence <= lastReportSequence)
+      throw new IllegalArgumentException("sequence must increase");
+    if (progressPercent == null
+        || progressPercent.compareTo(BigDecimal.ZERO) < 0
+        || progressPercent.compareTo(BigDecimal.valueOf(100)) > 0) {
+      throw new IllegalArgumentException("progressPercent is out of range");
+    }
+    if (nextStatus == DeploymentStatus.FAILED
+        && (errorCode == null
+            || errorCode.isBlank()
+            || errorMessage == null
+            || errorMessage.isBlank())) {
+      throw new IllegalArgumentException("failed deployment requires an error");
+    }
+    this.lastReportSequence = sequence;
+    this.status = nextStatus;
+    this.progressPercent = progressPercent;
+    this.errorCode = errorCode;
+    this.errorMessage = errorMessage;
+    if (nextStatus == DeploymentStatus.SUCCEEDED && appliedAt == null) appliedAt = receivedAt;
+  }
 }

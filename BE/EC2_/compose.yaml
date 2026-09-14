@@ -60,6 +60,7 @@ services:
       REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-local-development-only-change-this-secret-key}
       CORS_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      EPISODE_MAX_UPLOAD_BYTES: ${EPISODE_MAX_UPLOAD_BYTES:-52428800}
     depends_on:
       postgres:
         condition: service_healthy

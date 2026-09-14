@@ -5,6 +5,8 @@ import static com.anssa8bu.ssafy.deployment.dto.DeploymentApiModels.DeploymentRe
 
 import com.anssa8bu.ssafy.common.response.ApiResponse;
 import com.anssa8bu.ssafy.deployment.application.DeploymentService;
+import com.anssa8bu.ssafy.jetson.application.JetsonCommandFactory;
+import com.anssa8bu.ssafy.jetson.application.JetsonCommandStreamService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
@@ -24,9 +26,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/robots/{robotId}/deployments")
 public class DeploymentController {
   private final DeploymentService service;
+  private final JetsonCommandFactory commands;
+  private final JetsonCommandStreamService streams;
 
-  public DeploymentController(DeploymentService service) {
+  public DeploymentController(
+      DeploymentService service,
+      JetsonCommandFactory commands,
+      JetsonCommandStreamService streams) {
     this.service = service;
+    this.commands = commands;
+    this.streams = streams;
   }
 
   @PostMapping
@@ -37,6 +46,7 @@ public class DeploymentController {
       @Valid @RequestBody CreateRequest request) {
     DeploymentResponse result =
         service.create(owner(jwt), robotId, request.taskVersionId(), idempotencyKey);
+    streams.publish(commands.deploymentApply(robotId, result.id(), result.taskVersionId()));
     return ResponseEntity.created(
             URI.create("/api/v1/robots/" + robotId + "/deployments/" + result.id()))
         .body(ApiResponse.of(result));
