@@ -10,13 +10,12 @@
         android:orientation="vertical"
         android:gravity="center">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <ImageView
+            android:layout_width="220dp"
             android:layout_height="wrap_content"
-            android:text="ARPose"
-            android:textColor="#33DD55"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+            android:src="@drawable/ssafy_wordmark"
+            android:adjustViewBounds="true"
+            android:contentDescription="SSAFY" />
 
         <!-- QR 스캔 라이브 미리보기 -->
         <FrameLayout

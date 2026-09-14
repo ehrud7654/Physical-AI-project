@@ -1,14 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 웹 대시보드 테마: 네이비 크롬 + 실버 텍스트 + 상태색(초록/인디고/빨강) -->
-    <color name="navy900">#171E33</color>   <!-- 배경(설정·기록·온보딩) -->
-    <color name="navy800">#202A47</color>   <!-- 크롬(상태바·카드) -->
-    <color name="navy700">#2E3A5E</color>   <!-- 버튼·비활성 -->
+    <!-- 촬영(다크): 웹 대시보드 네이비 크롬 + 실버 -->
+    <color name="navy900">#171E33</color>   <!-- 배경 -->
+    <color name="navy800">#202A47</color>   <!-- 크롬·카드 -->
+    <color name="navy700">#2E3A5E</color>   <!-- 비활성·구분 -->
     <color name="chrome">#CC202A47</color>  <!-- 카메라 위 반투명 크롬 -->
     <color name="silver">#E8EAF0</color>
     <color name="silverMuted">#9AA2B8</color>
-    <color name="stGreen">#3FBF87</color>   <!-- 준비 완료/양호 -->
-    <color name="stIndigo">#9AA6F5</color>  <!-- 강조(어두운 배경용) -->
-    <color name="stRed">#E0685E</color>     <!-- REC/오류 -->
-    <color name="stAmber">#E0A44E</color>   <!-- 경고(고정 필요) -->
+
+    <!-- 액센트 = azure 하나 (indigo 폐기, 구참조 대비 유지) -->
+    <color name="azure">#4F9CF9</color>
+    <color name="azureDim">#20305A</color>  <!-- azure 텍스트용 다크 pill 배경 -->
+    <color name="azureInk">#04182E</color>  <!-- azure 채움 위 텍스트 -->
+    <color name="stIndigo">#9AA6F5</color>
+
+    <!-- 상태색 -->
+    <color name="stGreen">#3FBF87</color>
+    <color name="stRed">#E0685E</color>
+    <color name="stAmber">#E0A44E</color>
+
+    <!-- 설정·기록(라이트) -->
+    <color name="pageLight">#F4F5F7</color>
+    <color name="cardLight">#FFFFFF</color>
+    <color name="inkPrimary">#1A1F2E</color>
+    <color name="inkSecondary">#6B7280</color>
+    <color name="inkMuted">#8A909E</color>
+    <color name="hairline">#EEF0F4</color>
+    <color name="toggleOff">#CBD0D9</color>
+
+    <!-- 런처 아이콘 배경 -->
+    <color name="ic_launcher_bg">#171E33</color>
 </resources>

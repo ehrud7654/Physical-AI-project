@@ -138,17 +138,19 @@ object Uploader {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
-    data class Session(val uploadSessionId: String, val uploadUrl: String, val contentType: String)
+    /** requiredHeaders 를 그대로 담는다(계약 6.1: 이름·값까지 그대로 S3 PUT 에 사용). */
+    data class Session(val uploadSessionId: String, val uploadUrl: String, val requiredHeaders: Map<String, String>)
 
-    /** ① 업로드 세션 발급. */
+    /** ① 업로드 세션 발급. metadata·summary 는 계약 6.1 lower camel (EpisodePackager.pack 이 생성). */
     fun requestSession(
-        ctx: Context, jobId: String, sessionId: String, endedAt: String,
-        sizeBytes: Long, sha256: String, idemKey: String
+        ctx: Context, jobId: String, sessionId: String,
+        sizeBytes: Long, sha256: String, idemKey: String,
+        metadata: JSONObject, summary: JSONObject
     ): Session? {
         val body = JSONObject()
             .put("sessionId", sessionId).put("contentType", "application/zip")
             .put("sizeBytes", sizeBytes).put("sha256", sha256)
-            .put("metadata", JSONObject().put("endedAt", endedAt)).toString()
+            .put("metadata", metadata).put("summary", summary).toString()
         val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions")
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; doOutput = true
@@ -163,19 +165,20 @@ object Uploader {
             if (code == 401) { DeviceAuth.refresh(ctx); Log.w(TAG, "session 401 → 토큰 갱신 후 재시도 대기"); return null }
             if (code !in 200..299) { Log.w(TAG, "session 발급 HTTP $code"); return null }
             val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
-            val ct = d.optJSONObject("requiredHeaders")?.optString("Content-Type", "application/zip")
-                ?: "application/zip"
-            Session(d.getString("uploadSessionId"), d.getString("uploadUrl"), ct)
+            val hdrs = mutableMapOf<String, String>()
+            d.optJSONObject("requiredHeaders")?.let { rh -> rh.keys().forEach { k -> hdrs[k] = rh.getString(k) } }
+            if (!hdrs.containsKey("Content-Type")) hdrs["Content-Type"] = "application/zip"
+            Session(d.getString("uploadSessionId"), d.getString("uploadUrl"), hdrs)
         } catch (e: Exception) { Log.w(TAG, "session 발급 실패: ${e.message}"); null }
         finally { conn.disconnect() }
     }
 
-    /** ② S3 presigned PUT. 성공 시 ETag. */
-    fun putS3(uploadUrl: String, zip: File, contentType: String): String? {
+    /** ② S3 presigned PUT. requiredHeaders 를 이름·값 그대로 실어야 한다(checksum·If-None-Match 등). 성공 시 ETag. */
+    fun putS3(uploadUrl: String, zip: File, requiredHeaders: Map<String, String>): String? {
         val conn = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "PUT"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
-            setRequestProperty("Content-Type", contentType)
+            requiredHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
             setFixedLengthStreamingMode(zip.length())
         }
         return try {
@@ -192,9 +195,10 @@ object Uploader {
     /** ③ 완료 통지. 202/200 이면 true. */
     fun complete(
         ctx: Context, jobId: String, uploadSessionId: String, sessionId: String,
-        endedAt: String, sizeBytes: Long, sha256: String, idemKey: String
+        sizeBytes: Long, sha256: String, idemKey: String
     ): Boolean {
-        val body = JSONObject().put("sessionId", sessionId).put("endedAt", endedAt)
+        // 계약 6.3: complete 엔 endedAt 을 다시 보내지 않는다(세션의 metadata.endedAt 과 meta.json 비교).
+        val body = JSONObject().put("sessionId", sessionId)
             .put("sizeBytes", sizeBytes).put("sha256", sha256).toString()
         val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions/$uploadSessionId/complete")
             .openConnection() as HttpURLConnection).apply {

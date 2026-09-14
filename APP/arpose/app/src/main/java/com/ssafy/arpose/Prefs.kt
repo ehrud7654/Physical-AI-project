@@ -6,7 +6,9 @@ import android.content.Context
 object Prefs {
     private const val NAME = "arpose"
     private const val KEY_AF_AUTO = "af_auto"   // true=AUTO, false=FIXED(기본)
-    private const val KEY_AE_LOCK = "ae_lock"   // true=LOCK, false=AUTO(기본)
+    private const val KEY_AE_LOCK = "ae_lock"   // true=LOCK(기본), false=AUTO
+    private const val KEY_GRID_GUIDE = "grid_guide"   // 구도 그리드 (기본 off)
+    private const val KEY_SHOW_DETAIL = "show_detail"  // 상세값 표시 (기본 off)
 
     // QR 로 채울 세션 메타. 지금은 빈 값, QR 스캔 붙으면 setSession 으로 채운다.
     private const val KEY_SERVER_URL = "server_url"
@@ -26,10 +28,14 @@ object Prefs {
     private fun sp(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     fun afAuto(ctx: Context) = sp(ctx).getBoolean(KEY_AF_AUTO, false)
-    fun aeLock(ctx: Context) = sp(ctx).getBoolean(KEY_AE_LOCK, false)
+    fun aeLock(ctx: Context) = sp(ctx).getBoolean(KEY_AE_LOCK, true)
+    fun gridGuide(ctx: Context) = sp(ctx).getBoolean(KEY_GRID_GUIDE, false)
+    fun showDetail(ctx: Context) = sp(ctx).getBoolean(KEY_SHOW_DETAIL, false)
 
     fun setAfAuto(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_AF_AUTO, v).apply()
     fun setAeLock(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_AE_LOCK, v).apply()
+    fun setGridGuide(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_GRID_GUIDE, v).apply()
+    fun setShowDetail(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_SHOW_DETAIL, v).apply()
 
     fun serverUrl(ctx: Context) = sp(ctx).getString(KEY_SERVER_URL, "") ?: ""
     fun userId(ctx: Context) = sp(ctx).getString(KEY_USER_ID, "") ?: ""

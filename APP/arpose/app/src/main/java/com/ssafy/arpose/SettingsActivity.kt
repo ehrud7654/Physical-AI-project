@@ -2,25 +2,32 @@ package com.ssafy.arpose
 
 import android.app.Activity
 import android.os.Bundle
-import android.widget.Button
-import android.widget.RadioGroup
+import android.widget.ImageButton
+import android.widget.Switch
 
-/** 설정 화면. AF/AE 모드를 골라 Prefs 에 저장한다. 촬영 화면이 복귀 시 읽어 적용. */
+/** 설정 화면. 토글로 촬영 옵션을 Prefs 에 저장한다. 촬영 화면이 복귀 시 읽어 적용. */
 class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
-        findViewById<Button>(R.id.backBtn).setOnClickListener { finish() }
+        findViewById<ImageButton>(R.id.backBtn).setOnClickListener { finish() }
 
-        val afGroup = findViewById<RadioGroup>(R.id.afGroup)
-        val aeGroup = findViewById<RadioGroup>(R.id.aeGroup)
+        // 초점: 체크 = 고정(FIXED). Prefs.afAuto 는 AUTO 여부이므로 반전.
+        val afSwitch = findViewById<Switch>(R.id.afSwitch)
+        afSwitch.isChecked = !Prefs.afAuto(this)
+        afSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setAfAuto(this, !checked) }
 
-        // 저장된 값으로 초기 선택
-        afGroup.check(if (Prefs.afAuto(this)) R.id.afAuto else R.id.afFixed)
-        aeGroup.check(if (Prefs.aeLock(this)) R.id.aeLock else R.id.aeAuto)
+        val aeSwitch = findViewById<Switch>(R.id.aeSwitch)
+        aeSwitch.isChecked = Prefs.aeLock(this)
+        aeSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setAeLock(this, checked) }
 
-        afGroup.setOnCheckedChangeListener { _, id -> Prefs.setAfAuto(this, id == R.id.afAuto) }
-        aeGroup.setOnCheckedChangeListener { _, id -> Prefs.setAeLock(this, id == R.id.aeLock) }
+        val gridSwitch = findViewById<Switch>(R.id.gridSwitch)
+        gridSwitch.isChecked = Prefs.gridGuide(this)
+        gridSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setGridGuide(this, checked) }
+
+        val detailSwitch = findViewById<Switch>(R.id.detailSwitch)
+        detailSwitch.isChecked = Prefs.showDetail(this)
+        detailSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setShowDetail(this, checked) }
     }
 }
