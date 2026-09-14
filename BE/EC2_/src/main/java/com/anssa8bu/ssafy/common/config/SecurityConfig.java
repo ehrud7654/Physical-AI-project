@@ -55,6 +55,8 @@ public class SecurityConfig {
                     .hasAuthority("SCOPE_device")
                     .requestMatchers("/api/v1/devices/*/heartbeat")
                     .hasAuthority("SCOPE_device")
+                    .requestMatchers("/api/v1/robots/me/**")
+                    .hasAuthority("SCOPE_device")
                     .anyRequest()
                     .hasAuthority("SCOPE_user"))
         .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)));

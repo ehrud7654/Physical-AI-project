@@ -149,4 +149,48 @@ public class SkillVersion extends CreatedEntity {
   public String getContractVersion() {
     return contractVersion;
   }
+
+  public String getCheckpointBucket() {
+    return checkpointBucket;
+  }
+
+  public String getCheckpointKey() {
+    return checkpointKey;
+  }
+
+  public String getArchitecture() {
+    return architecture;
+  }
+
+  public String getFramework() {
+    return framework;
+  }
+
+  public String getFrameworkVersion() {
+    return frameworkVersion;
+  }
+
+  public ActionSpace getActionSpace() {
+    return actionSpace;
+  }
+
+  public long getParameterCount() {
+    return parameterCount;
+  }
+
+  public BigDecimal getControlRateHz() {
+    return controlRateHz;
+  }
+
+  public List<String> getCameraNames() {
+    return cameraNames;
+  }
+
+  public Map<String, Object> getInputSchema() {
+    return inputSchema;
+  }
+
+  public Map<String, Object> getOutputSchema() {
+    return outputSchema;
+  }
 }

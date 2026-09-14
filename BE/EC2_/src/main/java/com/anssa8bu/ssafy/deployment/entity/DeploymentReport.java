@@ -40,4 +40,33 @@ public class DeploymentReport {
   private Instant reportedAt;
 
   protected DeploymentReport() {}
+
+  public DeploymentReport(
+      UUID id,
+      UUID deploymentId,
+      String reportId,
+      long sequence,
+      DeploymentStatus status,
+      BigDecimal progressPercent,
+      java.util.List<java.util.Map<String, Object>> items,
+      java.util.Map<String, Object> error,
+      Instant reportedAt) {
+    this.id = id;
+    this.deploymentId = deploymentId;
+    this.reportId = reportId;
+    this.sequence = sequence;
+    this.status = status;
+    this.progressPercent = progressPercent;
+    this.items = items == null ? java.util.List.of() : java.util.List.copyOf(items);
+    this.error = error;
+    this.reportedAt = reportedAt;
+  }
+
+  public long getSequence() {
+    return sequence;
+  }
+
+  public String getReportId() {
+    return reportId;
+  }
 }

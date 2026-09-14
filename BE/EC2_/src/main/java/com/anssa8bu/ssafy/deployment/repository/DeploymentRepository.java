@@ -10,4 +10,7 @@ public interface DeploymentRepository extends JpaRepository<Deployment, UUID> {
   Optional<Deployment> findByIdAndRobotId(UUID id, UUID robotId);
 
   boolean existsByRobotIdAndStatusIn(UUID robotId, Collection<DeploymentStatus> statuses);
+
+  Optional<Deployment> findFirstByRobotIdAndStatusInOrderByCreatedAtAsc(
+      UUID robotId, Collection<DeploymentStatus> statuses);
 }
