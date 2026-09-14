@@ -34,6 +34,7 @@ from tools.umi_mujoco import (
 from umi.arm_preflight import ArmSolution, prepare_arm_commands
 from umi.convert import invert_gap_curve
 from umi.ik import quat_to_matrix
+from umi.relative_dataset import vector_to_transform
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
@@ -171,14 +172,49 @@ def _empty_stats() -> dict[str, Any]:
     }
 
 
+def _episode_anchors(episode: dict[str, Any], *, model: Any, ik: MujocoIK,
+                     curve: Any, arm_start: np.ndarray,
+                     ranges: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray | None]]:
+    """Reconstruct each current pose and its continuous oracle IK seed.
+
+    For consecutive 10 Hz anchors, action[i, 0] is current[i]^-1 @ current[i+1].
+    This identity is independently checked by the dataset regression against the
+    inverse pose stored in the next proprio history.
+    """
+    gaps = np.asarray(episode["proprio"][:, -1, 9], dtype=float)
+    first_q = np.r_[arm_start, invert_gap_curve(float(gaps[0]), curve)]
+    poses = [_matrix_from_fk(model, ik, first_q)]
+    arms: list[np.ndarray | None] = [arm_start.copy()]
+    seed = arm_start.copy()
+    adapter = MujocoArmAdapter(ik, curve)
+    for row in range(1, len(gaps)):
+        pose = poses[-1] @ vector_to_transform(episode["action"][row - 1, 0])
+        poses.append(pose)
+        solution = adapter.solve(
+            pose, seed_rad=seed, gripper_width_m=float(gaps[row]))
+        valid = bool(
+            solution.converged
+            and solution.position_error_m <= 0.005
+            and solution.axis_error_deg <= 5.0
+            and solution.roll_error_deg <= 5.0
+            and np.all(solution.positions_rad >= ranges[:, 0])
+            and np.all(solution.positions_rad <= ranges[:, 1])
+        )
+        if valid:
+            seed = solution.positions_rad.copy()
+            arms.append(seed.copy())
+        else:
+            arms.append(None)
+    return poses, arms
+
+
 def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
-                    model: Any, ik: MujocoIK, curve: Any,
-                    arm_start: np.ndarray, current_gap: float,
+                    ik: MujocoIK, curve: Any,
+                    current_pose: np.ndarray, arm_current: np.ndarray,
+                    current_gap: float,
                     ranges: np.ndarray, gap_max: float, dt: float,
                     max_arm_speed: float, max_arm_accel: float,
                     max_gap_speed: float, max_gap_accel: float) -> dict[str, Any]:
-    q_start = np.r_[arm_start, invert_gap_curve(current_gap, curve)]
-    current_pose = _matrix_from_fk(model, ik, q_start)
     adapter = RecordingArmAdapter(ik, curve)
     # Geometry and commanded dynamics are separate questions.  Use the complete
     # range span as the jump budget here: any two in-range arm values can pass,
@@ -189,7 +225,7 @@ def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
         commands = prepare_arm_commands(
             policy, observation,
             t_current=current_pose,
-            arm_current_rad=arm_start,
+            arm_current_rad=arm_current,
             gripper_current_m=current_gap,
             solver=adapter,
             ranges_rad=ranges,
@@ -206,7 +242,7 @@ def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
             "detail": str(error),
         }
 
-    arm = np.vstack([arm_start, *[value.arm_positions_rad for value in commands]])
+    arm = np.vstack([arm_current, *[value.arm_positions_rad for value in commands]])
     gap = np.asarray([current_gap, *[value.gripper_width_m for value in commands]])
     arm_velocity = np.diff(arm, axis=0) / dt
     gap_velocity = np.diff(gap) / dt
@@ -340,6 +376,8 @@ def main() -> int:
     curve = cfg["grasp"]["gap_curve"]
 
     stats = {"policy_prediction": _empty_stats(), "recorded_oracle": _empty_stats()}
+    anchor_cache: dict[int, tuple[list[np.ndarray], list[np.ndarray | None]]] = {}
+    anchor_unavailable = 0
 
     for sample_index in indices:
         episode_index, row = dataset.index[sample_index]
@@ -348,10 +386,27 @@ def main() -> int:
         proprio = episode["proprio"][row]
         current_gap = float(proprio[-1, 9])
         observation = {"image": image.copy(), "proprio": proprio.copy()}
+        if episode_index not in anchor_cache:
+            anchor_cache[episode_index] = _episode_anchors(
+                episode, model=model, ik=ik, curve=curve,
+                arm_start=arm_start, ranges=ranges)
+        current_poses, current_arms = anchor_cache[episode_index]
+        arm_current = current_arms[row]
         identity = {
             "episode": str(episode["id"]), "row": int(row),
             "source_row": int(episode["source_row"][row]),
+            "anchor": "episode_oracle_cumulative_pose",
         }
+        if arm_current is None:
+            anchor_unavailable += 1
+            outcome = {
+                "result": "geometry_reject",
+                "reason": "current_anchor_ik_unavailable",
+                "detail": "recorded cumulative current pose has no valid continuous IK",
+            }
+            for name in stats:
+                _accumulate(stats[name], outcome, identity)
+            continue
         candidates = {
             "policy_prediction": policy,
             "recorded_oracle": FixedActionPolicy(episode["action"][row]),
@@ -359,8 +414,9 @@ def main() -> int:
         for name, candidate in candidates.items():
             outcome = _evaluate_chunk(
                 candidate, observation,
-                model=model, ik=ik, curve=curve,
-                arm_start=arm_start, current_gap=current_gap,
+                ik=ik, curve=curve,
+                current_pose=current_poses[row], arm_current=arm_current,
+                current_gap=current_gap,
                 ranges=ranges, gap_max=max_gap, dt=dt,
                 max_arm_speed=max_arm_speed, max_arm_accel=max_arm_accel,
                 max_gap_speed=max_gap_speed, max_gap_accel=max_gap_accel,
@@ -381,10 +437,12 @@ def main() -> int:
             "start_arm_rad": arm_start.tolist(),
             "object_xyz_m_for_next_render_stage": object_xyz.tolist(),
             "note": (
-                "Each independent prediction is anchored at the same feasible "
-                "SO-101 pose. Object contact and closed-loop visual feedback are "
-                "not evaluated here."
+                "The first sample of each episode uses the registered SO-101 pose. "
+                "Later current poses are composed from recorded action[i,0] and "
+                "seeded continuously through oracle IK. Object contact and "
+                "closed-loop visual feedback are not evaluated here."
             ),
+            "unavailable_sample_anchors": anchor_unavailable,
         },
         "limits": {
             "rate_hz": rate_hz,

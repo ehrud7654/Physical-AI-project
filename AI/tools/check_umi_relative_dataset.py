@@ -48,6 +48,15 @@ class RelativeDatasetTests(unittest.TestCase):
         encoded = relative_vector(current, current, 0.05)
         np.testing.assert_allclose(vector_to_transform(encoded), np.eye(4), atol=1e-9)
 
+    def test_first_future_target_advances_to_next_observation_anchor(self):
+        current = pose((0.2, -0.1, 0.3), 30)
+        following = current @ pose((0.03, 0.01, -0.02), -20)
+        first_future = vector_to_transform(
+            relative_vector(current, following, 0.05))
+        next_history = vector_to_transform(
+            relative_vector(following, current, 0.05))
+        np.testing.assert_allclose(first_future @ next_history, np.eye(4), atol=1e-9)
+
     def test_gap_contract_rejects_out_of_range(self):
         with self.assertRaisesRegex(ValueError, "gripper width"):
             relative_vector(np.eye(4), np.eye(4), MAX_GRIPPER_WIDTH_M + 1e-3)

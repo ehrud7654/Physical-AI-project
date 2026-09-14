@@ -233,6 +233,11 @@ python tools/preflight_relative_chunk_policy.py \
 등록값 `configs/real/umi_so101_registration_provisional.json`은 이전 등록 탐색에서
 `위치 도달 + 가로 파지축 + 첫 화면 물체 포함`을 동시에 만족한 후보를 옮긴 것이다.
 실측 robot-base↔workspace 캘리브레이션이 아니며 실물 명령에는 사용할 수 없다.
-사전검사는 독립적인 각 예측을 같은 시작 pose에 붙이므로 물체 접촉, 폐루프 복구,
-성공률을 평가하지 않는다. 이 결과로 geometry와 commanded dynamics를 확인한 다음
-카메라 조건을 맞춘 MuJoCo 진단 영상을 만든다.
+각 episode의 첫 표본만 잠정 시작 pose에 붙인다. 이후 표본의 현재 pose는 직전
+기록 정답의 첫 미래 target을 누적해 복원하고, 연속 oracle IK로 현재 관절 seed를
+만든다. v6의 인접 표본 1,178쌍에서 이 target과 다음 proprio의 역변환을 합성한
+오차는 Frobenius norm 최대 `9.92e-9`로 확인했다. 모든 진행 단계 청크를 동일한
+시작 pose에 붙이면 후반 동작을 시작점에서 반복하는 잘못된 검사가 된다.
+
+이 검사는 여전히 물체 접촉, 폐루프 복구, 성공률을 평가하지 않는다. geometry와
+commanded dynamics를 확인한 다음 카메라 조건을 맞춘 MuJoCo 진단 영상을 만든다.
