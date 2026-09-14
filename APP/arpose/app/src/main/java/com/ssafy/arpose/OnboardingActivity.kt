@@ -39,6 +39,10 @@ class OnboardingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 이미 등록됨(장치 secret 또는 QR 세션 저장) → 재스캔 없이 바로 촬영 화면 (S15P21A103-168, 최초 1회).
+        if (Prefs.deviceSecret(this).isNotBlank() || Prefs.sessionId(this).isNotBlank()) {
+            startActivity(Intent(this, MainActivity::class.java)); finish(); return
+        }
         setContentView(R.layout.activity_onboarding)
         previewView = findViewById(R.id.previewView)
         status = findViewById(R.id.scanStatus)
