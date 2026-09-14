@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TrainingJobEpisodeRepository
     extends JpaRepository<TrainingJobEpisode, TrainingJobEpisodeId> {
   List<TrainingJobEpisode> findAllByIdTrainingJobIdOrderByInputOrder(UUID trainingJobId);
+
+  long countByIdTrainingJobId(UUID trainingJobId);
 }
