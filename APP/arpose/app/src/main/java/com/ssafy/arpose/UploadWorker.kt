@@ -50,7 +50,8 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
         val pkg = EpisodePackager.pack(dir, sessionId, zipDir) ?: return false
         // deviceIdentifier 는 등록 시 서버에 저장된 하드웨어 핸들(로그인 UUID·secret 과 별개). 서버가 인증 장치와
         // 이 값을 비교해 다르면 409 DEVICE_MISMATCH. 업로드 시점에 주입.
-        // TODO(enroll): QR enroll 붙으면 Prefs.deviceIdentifier 로 채움. 그 전엔 테스트 장치 핸들로 폴백.
+        // enroll 이 handleNumber 를 주면 Prefs.deviceIdentifier 에 저장됨(DeviceAuth.enroll).
+        // BE가 아직 enroll 응답에 handleNumber 를 안 넣어 비어있는 동안은 테스트 장치 핸들로 폴백.
         val devIdent = Prefs.deviceIdentifier(ctx).ifBlank { "UMI-001" }
         pkg.metadata.optJSONObject("device")?.put("deviceIdentifier", devIdent)
         // 전송 때 고른 스킬(.upload_skill)이 있으면 촬영 때 값보다 우선.
