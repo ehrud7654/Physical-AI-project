@@ -109,7 +109,11 @@ class OnboardingActivity : ComponentActivity() {
             val ok = DeviceAuth.enroll(this, enrollmentId, regToken)
             runOnUiThread {
                 if (ok) { status.text = "등록 완료"; goMain() }
-                else { handled = false; status.text = "등록 실패 — 다시 비춰주세요" }
+                else {
+                    status.text = "등록 실패 — 네트워크 확인 후 다시 비춰주세요"
+                    // 실패 시 즉시 재스캔하면 같은 QR 로 초당 수십회 폭주 → 2초 쿨다운 후 재개.
+                    previewView.postDelayed({ handled = false }, 2000)
+                }
             }
         }.start()
     }
