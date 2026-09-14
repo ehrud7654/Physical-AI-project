@@ -14,7 +14,7 @@ import org.hibernate.type.SqlTypes;
 public class EpisodeUploadSession extends AuditableEntity {
   @Id private UUID id;
   @Column(name = "episode_id", nullable = false, updatable = false) private UUID episodeId;
-  @Column(name = "training_job_id", nullable = false, updatable = false) private UUID trainingJobId;
+  @Column(name = "training_job_id", updatable = false) private UUID trainingJobId;
   @Column(name = "owner_id", nullable = false, updatable = false) private UUID ownerId;
   @Column(name = "umi_device_id", nullable = false, updatable = false) private UUID umiDeviceId;
   @Column(name = "session_id", nullable = false, updatable = false) private UUID sessionId;
@@ -44,7 +44,7 @@ public class EpisodeUploadSession extends AuditableEntity {
       Map<String, Object> metadata, Map<String, Object> summary, String bucketName,
       String objectKey, Instant expiresAt) {
     this.id = Objects.requireNonNull(id); this.episodeId = Objects.requireNonNull(episodeId);
-    this.trainingJobId = Objects.requireNonNull(trainingJobId); this.ownerId = Objects.requireNonNull(ownerId);
+    this.trainingJobId = trainingJobId; this.ownerId = Objects.requireNonNull(ownerId);
     this.umiDeviceId = Objects.requireNonNull(umiDeviceId); this.sessionId = Objects.requireNonNull(sessionId);
     this.contentType = "application/zip"; this.sizeBytes = sizeBytes; this.sha256 = sha256;
     this.metadata = Map.copyOf(metadata); this.summary = Map.copyOf(summary);

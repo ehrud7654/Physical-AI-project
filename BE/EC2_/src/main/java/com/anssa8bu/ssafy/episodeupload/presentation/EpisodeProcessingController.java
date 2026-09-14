@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/training-jobs/{trainingJobId}/episodes")
+@RequestMapping("/api/v1/episode/data-upload-request")
 public class EpisodeProcessingController {
 
   private final EpisodeUploadService service;
@@ -24,13 +24,11 @@ public class EpisodeProcessingController {
   @GetMapping("/by-session/{sessionId}")
   public ApiResponse<EpisodeProcessingStatusResponse> status(
       @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID trainingJobId,
       @PathVariable UUID sessionId) {
     return ApiResponse.of(
         service.status(
             UUID.fromString(jwt.getSubject()),
             UUID.fromString(jwt.getClaimAsString("deviceId")),
-            trainingJobId,
             sessionId));
   }
 }
