@@ -8,12 +8,12 @@ from typing import Any
 
 import numpy as np
 
-from tools.umi_mujoco import MujocoArmAdapter, MujocoIK, eef_pose_from_joints
+from tools.umi_mujoco import MujocoArmAdapter, MujocoIK
 from umi.arm_preflight import ArmSolution, prepare_arm_commands
 from umi.convert import invert_gap_curve
 from umi.ik import quat_to_matrix
 from umi.relative_dataset import vector_to_transform
-from umi.timing import required_time_scale
+from umi.timing import uniform_time_schedule
 
 
 class RecordingArmAdapter:
@@ -68,8 +68,8 @@ def arm_ranges(real: dict[str, Any]) -> np.ndarray:
 
 def matrix_from_fk(model: Any, solver: MujocoIK,
                    q_rad: np.ndarray) -> np.ndarray:
-    pos, quat = eef_pose_from_joints(
-        model, solver.data, q_rad, solver.pinch)
+    del model
+    pos, quat = solver.forward_pose(q_rad)
     result = np.eye(4)
     result[:3, :3] = quat_to_matrix(quat)
     result[:3, 3] = pos
@@ -152,20 +152,15 @@ def evaluate_chunk(policy: Any, observation: Any, *,
         value.arm_positions_rad for value in commands]])
     gap = np.asarray([current_gap, *[
         value.gripper_width_m for value in commands]])
-    arm_velocity = np.diff(arm, axis=0) / dt
-    gap_velocity = np.diff(gap) / dt
-    arm_acceleration = np.diff(arm_velocity, axis=0) / dt
-    gap_acceleration = np.diff(gap_velocity) / dt
-    arm_speed = float(np.abs(arm_velocity).max(initial=0.0))
-    arm_accel = float(np.abs(arm_acceleration).max(initial=0.0))
-    gap_speed = float(np.abs(gap_velocity).max(initial=0.0))
-    gap_accel = float(np.abs(gap_acceleration).max(initial=0.0))
-    time_scale = required_time_scale(
-        arm_speed=arm_speed, arm_accel=arm_accel,
-        gap_speed=gap_speed, gap_accel=gap_accel,
+    schedule = uniform_time_schedule(
+        arm, gap, source_period_s=dt,
         max_arm_speed=max_arm_speed, max_arm_accel=max_arm_accel,
         max_gap_speed=max_gap_speed, max_gap_accel=max_gap_accel,
     )
+    arm_speed = schedule.source.arm_speed_rad_s
+    arm_accel = schedule.source.arm_accel_rad_s2
+    gap_speed = schedule.source.gap_speed_m_s
+    gap_accel = schedule.source.gap_accel_m_s2
     violations = []
     if arm_speed > max_arm_speed + 1e-9:
         violations.append("arm_velocity")
@@ -186,5 +181,12 @@ def evaluate_chunk(policy: Any, observation: Any, *,
         "arm_accel_peak_rad_s2": arm_accel,
         "gap_speed_peak_m_s": gap_speed,
         "gap_accel_peak_m_s2": gap_accel,
-        "required_time_scale": time_scale,
+        "required_time_scale": schedule.time_scale,
+        "scheduled_command_period_s": dt * schedule.time_scale,
+        "scheduled_waypoint_time_s": list(schedule.waypoint_time_s[1:]),
+        "scheduled_arm_speed_peak_rad_s": schedule.scheduled.arm_speed_rad_s,
+        "scheduled_arm_accel_peak_rad_s2": schedule.scheduled.arm_accel_rad_s2,
+        "scheduled_gap_speed_peak_m_s": schedule.scheduled.gap_speed_m_s,
+        "scheduled_gap_accel_peak_m_s2": schedule.scheduled.gap_accel_m_s2,
+        "scheduled_violations": [],
     }

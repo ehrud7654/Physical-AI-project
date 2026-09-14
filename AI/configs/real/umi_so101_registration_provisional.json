@@ -15,6 +15,13 @@
     0.03835
   ],
   "object_size_m": [0.039, 0.039, 0.0767],
+  "desired_world_jaw_axis": [0.0, 1.0, 0.0],
+  "jaw_yaw_tolerance_deg": 15.0,
+  "desired_world_approach_axis": [1.0, 0.0, 0.0],
+  "approach_axis_tolerance_deg": 15.0,
+  "body_midheight_tolerance_m": 0.012,
+  "grasp_mode": "upright_body_side_grasp",
+  "axis_source": "MuJoCo task-frame convention from demonstration semantics: approach horizontally from -X toward +X, close across world Y, and grasp the upright case at body mid-height; not a measured robot-base/workspace registration",
   "table_half_size_xy_m": [0.4, 0.4],
   "evidence": {
     "episode": "rec_20260911_150920",

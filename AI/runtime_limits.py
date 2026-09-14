@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -260,6 +261,13 @@ def claim(name: str, stale_ok: bool = False) -> None:
     중복 실행은 느린 것보다 나쁘다. `probe_freeze` 사본 4개가 한 로그로 리다이렉트돼
     읽을 수 없는 파일이 됐고, 낭비된 부하는 머신을 쓰는 모두에게 청구된다.
     """
+    hostname = platform.node().lower()
+    if hostname.startswith("jupyter"):
+        raise SystemExit(
+            "Shared GPU server is training-only; run diagnostics, inference, "
+            "MuJoCo, and rollout locally"
+        )
+
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     lock = LOCK_DIR / f".lock_{name}"
     if lock.exists():

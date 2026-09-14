@@ -28,6 +28,7 @@ import torch
 
 from data.dataset import EpisodeDataset
 from policy.bc import BCNet, to_action
+from tools.run_umi_regression import is_shared_gpu_server
 
 
 def _mae(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -187,6 +188,9 @@ def image_probe(
 
 
 def main() -> int:
+    if is_shared_gpu_server():
+        raise SystemExit(
+            "Shared GPU server is training-only; run policy probes locally")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--policy-ckpt", type=Path)

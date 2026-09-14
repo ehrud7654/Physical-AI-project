@@ -4,8 +4,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import mujoco
-from tools.umi_mujoco import (MujocoIK, eef_pose_from_joints, gap_from_angle,
-                              load_config, build_model, DEFAULT_CONFIG, DEFAULT_SCENE)
+from sim.mujoco.kinematics import pinch_offset_for_gap
+from tools.umi_mujoco import (MujocoIK, gap_from_angle, load_config, build_model,
+                              DEFAULT_CONFIG, DEFAULT_SCENE)
 from umi.ik import quat_to_matrix
 from umi.action_ik import actions_to_joints
 from umi.arm_preflight import prepare_arm_commands
@@ -19,8 +20,30 @@ def main():
     ik = MujocoIK(model, cfg)
     data = mujoco.MjData(model)
     curve = cfg['grasp']['gap_curve']
+    gb = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, 'gripper')
+    pf = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'pad_fixed')
+    pm = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'pad_moving')
+    midpoint_x_errors = []
+    for angle, _ in curve:
+        data.qpos[:6] = 0.0
+        data.qpos[5] = angle
+        mujoco.mj_forward(model, data)
+        rot = data.xmat[gb].reshape(3, 3)
+        origin = data.xpos[gb]
+        fixed = rot.T @ (data.geom_xpos[pf] - origin)
+        moving = rot.T @ (data.geom_xpos[pm] - origin)
+        fixed_inner_x = fixed[0] + model.geom_size[pf][0]
+        moving_inner_x = moving[0] - model.geom_size[pm][0]
+        measured_midpoint_x = 0.5 * (fixed_inner_x + moving_inner_x)
+        configured_gap = gap_from_angle(angle, curve)
+        configured_midpoint_x = pinch_offset_for_gap(
+            cfg['grasp'], configured_gap)[0]
+        midpoint_x_errors.append(abs(measured_midpoint_x - configured_midpoint_x))
+    if max(midpoint_x_errors) > 5e-4:
+        raise AssertionError('gap-dependent midpoint disagrees with pad geometry')
+    print(f'pad midpoint x max error_mm={max(midpoint_x_errors)*1000:.4f}')
     def fk(q):
-        pos, quat = eef_pose_from_joints(model, data, q, ik.pinch)
+        pos, quat = ik.forward_pose(q)
         t = np.eye(4)
         t[:3, :3], t[:3, 3] = quat_to_matrix(quat), pos
         return t

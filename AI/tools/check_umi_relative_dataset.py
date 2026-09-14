@@ -16,7 +16,7 @@ from umi.relative_dataset import (
     relative_vector,
     vector_to_transform,
 )
-from umi.timing import required_time_scale
+from umi.timing import required_time_scale, uniform_time_schedule
 
 
 def pose(xyz=(0, 0, 0), yaw_deg=0.0):
@@ -81,6 +81,43 @@ class RelativeDatasetTests(unittest.TestCase):
             max_gap_speed=0.08, max_gap_accel=0.3,
         )
         self.assertEqual(scale, 1.0)
+
+    def test_uniform_schedule_preserves_waypoints_and_meets_limits(self):
+        arm = np.array([
+            [0, 0, 0, 0, 0],
+            [.2, 0, 0, 0, 0],
+            [.2, .3, 0, 0, 0],
+        ], dtype=float)
+        gap = np.array([.07, .06, .04])
+        original_arm = arm.copy()
+        original_gap = gap.copy()
+        schedule = uniform_time_schedule(
+            arm, gap, source_period_s=.1,
+            max_arm_speed=1.0, max_arm_accel=3.0,
+            max_gap_speed=.08, max_gap_accel=.3,
+        )
+        self.assertGreater(schedule.time_scale, 1.0)
+        self.assertEqual(schedule.waypoint_time_s[0], 0.0)
+        self.assertAlmostEqual(
+            schedule.waypoint_time_s[1], .1 * schedule.time_scale)
+        self.assertLessEqual(schedule.scheduled.arm_speed_rad_s, 1.0 + 1e-9)
+        self.assertLessEqual(schedule.scheduled.arm_accel_rad_s2, 3.0 + 1e-9)
+        self.assertLessEqual(schedule.scheduled.gap_speed_m_s, .08 + 1e-9)
+        self.assertLessEqual(schedule.scheduled.gap_accel_m_s2, .3 + 1e-9)
+        np.testing.assert_array_equal(arm, original_arm)
+        np.testing.assert_array_equal(gap, original_gap)
+
+    def test_uniform_schedule_rejects_invalid_timestamps_or_shapes(self):
+        with self.assertRaisesRegex(ValueError, "source_period_s"):
+            uniform_time_schedule(
+                np.zeros((2, 5)), np.zeros(2), source_period_s=0,
+                max_arm_speed=1, max_arm_accel=1,
+                max_gap_speed=1, max_gap_accel=1)
+        with self.assertRaisesRegex(ValueError, "trajectory"):
+            uniform_time_schedule(
+                np.zeros((2, 4)), np.zeros(2), source_period_s=.1,
+                max_arm_speed=1, max_arm_accel=1,
+                max_gap_speed=1, max_gap_accel=1)
 
 
 if __name__ == "__main__":

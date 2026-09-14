@@ -86,6 +86,25 @@ def build_model(
     # MuJoCo 는 C++ 에서 XML 을 열고 Windows 에서 비ASCII 경로를 처리하지 못한다.
     spec = mujoco.MjSpec.from_file(str(resolve_for_mujoco(scene_path)))
 
+    # The XML supplies defaults, while the reviewed runtime contract lives in
+    # so101.yaml.  Apply the task block before compilation so configuration
+    # overrides are real model changes rather than misleading report metadata.
+    task = cfg["task"]
+    object_body = spec.body("target_object")
+    if object_body is None:
+        raise ValueError("scene has no target_object body")
+    object_body.pos = np.asarray(task["object"]["init_pos"], dtype=float)
+    object_geoms = [g for g in object_body.geoms if g.name == "target_object_geom"]
+    if len(object_geoms) != 1:
+        raise ValueError("scene must have exactly one target_object_geom")
+    object_geoms[0].size = np.asarray(task["object"]["half_size_m"], dtype=float)
+    object_geoms[0].mass = float(task["object"]["mass_kg"])
+    table_geoms = [g for g in spec.worldbody.geoms if g.name == "table"]
+    if len(table_geoms) != 1:
+        raise ValueError("scene must have exactly one table geom")
+    table_geoms[0].size = np.asarray(task["table"]["half_size_m"], dtype=float)
+    table_geoms[0].pos = np.asarray(task["table"]["pos"], dtype=float)
+
     names = [k for k in cams if isinstance(cams[k], dict)]
     if len(names) != int(cams["count"]):
         raise ValueError(f"cameras.count={cams['count']} but {len(names)} camera blocks defined")
@@ -205,8 +224,12 @@ def verify_against_config(model: mujoco.MjModel, cfg: dict[str, Any]) -> list[st
 def normalize(
     q_rad: np.ndarray, cfg: dict[str, Any], clip: bool = False
 ) -> np.ndarray:
-    """Map joint angles (rad) to the [-1, 1] data-contract range.
-    관절각(rad)을 데이터 계약의 [-1,1] 범위로 매핑한다.
+    """Map physical simulator joints to the shared data-contract range.
+
+    J1..J5 use their radian limits. Channel 6 is *not* a hinge angle in the
+    contract: the measured MuJoCo gap curve converts it to full jaw gap metres
+    before the common 0..0.09m -> [-1,1] mapping.
+    J1..J5 는 rad 범위를 쓰고, 6번은 hinge 각도가 아니라 전체 gap(m) 계약이다.
 
     MEASURED: joint limits in MuJoCo are soft, so contact forces push qpos a
     little past the range and this mapping then emits values outside [-1, 1].
@@ -230,16 +253,29 @@ def normalize(
     lo = np.array([s.lo for s in specs], dtype=np.float32)
     hi = np.array([s.hi for s in specs], dtype=np.float32)
     out = (2.0 * (np.asarray(q_rad, dtype=np.float32) - lo) / (hi - lo) - 1.0).astype(np.float32)
+    curve = np.asarray(cfg["grasp"]["gap_curve"], dtype=np.float32)
+    gap_m = np.interp(np.asarray(q_rad, dtype=np.float32)[..., 5],
+                      curve[:, 0], curve[:, 1]) / 100.0
+    out[..., 5] = 2.0 * gap_m / 0.09 - 1.0
     return np.clip(out, -1.0, 1.0).astype(np.float32) if clip else out
 
 
 def denormalize(q_norm: np.ndarray, cfg: dict[str, Any]) -> np.ndarray:
-    """Inverse of :func:`normalize`.
-    normalize의 역변환."""
+    """Convert contract actions to simulator joint targets.
+
+    The gripper channel is first decoded as gap metres, then mapped through the
+    inverse measured gap curve to the MuJoCo hinge target. Values outside the
+    simulated physical gap endpoints saturate at the nearest measured endpoint.
+    """
     specs = joint_specs(cfg)
     lo = np.array([s.lo for s in specs], dtype=np.float32)
     hi = np.array([s.hi for s in specs], dtype=np.float32)
-    return ((np.asarray(q_norm, dtype=np.float32) + 1.0) / 2.0 * (hi - lo) + lo).astype(np.float32)
+    norm = np.asarray(q_norm, dtype=np.float32)
+    out = ((norm + 1.0) / 2.0 * (hi - lo) + lo).astype(np.float32)
+    curve = np.asarray(cfg["grasp"]["gap_curve"], dtype=np.float32)
+    gap_cm = ((norm[..., 5] + 1.0) * 0.045) * 100.0
+    out[..., 5] = np.interp(gap_cm, curve[:, 1], curve[:, 0])
+    return out
 
 
 def dls_ik(

@@ -143,6 +143,34 @@ def grasp_point(model: mujoco.MjModel, data: mujoco.MjData, offset_local: np.nda
     return data.xpos[bid] + rot @ np.asarray(offset_local, dtype=float)
 
 
+def pinch_offset_for_gap(grasp_cfg: dict[str, Any], gap_m: float) -> np.ndarray:
+    """Return the contact-surface midpoint in the gripper body frame.
+
+    ``pinch_offset_local`` remains the legacy fixed point.  An asymmetric
+    parallel jaw has one fixed and one moving contact surface, so its physical
+    midpoint moves by half the requested pad gap.  Keeping that dependence in
+    one function prevents FK, IK and rollout scoring from silently aiming at
+    different points.
+    """
+    legacy = np.asarray(grasp_cfg["pinch_offset_local"], dtype=float)
+    block = grasp_cfg.get("gap_dependent_pinch_midpoint")
+    if block is None:
+        return legacy.copy()
+    if block.get("kind") != "asymmetric_parallel_jaw":
+        raise ValueError("unknown gap_dependent_pinch_midpoint kind")
+    fixed = np.asarray(block["fixed_inner_surface_local_m"], dtype=float)
+    axis = np.asarray(block["gap_axis_local"], dtype=float)
+    if fixed.shape != (3,) or axis.shape != (3,) or not np.isfinite(fixed).all():
+        raise ValueError("gap-dependent pinch geometry must contain finite 3-vectors")
+    axis_norm = float(np.linalg.norm(axis))
+    if not np.isfinite(axis_norm) or axis_norm <= 1e-12:
+        raise ValueError("gap_axis_local must be a non-zero finite vector")
+    gap = float(gap_m)
+    if not np.isfinite(gap) or gap < 0.0:
+        raise ValueError("gap_m must be finite and non-negative")
+    return fixed + 0.5 * gap * axis / axis_norm
+
+
 def approach_axis(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
     """Unit vector the fingers point along, in world coordinates.
     손가락이 향하는 방향의 월드 단위벡터.

@@ -45,9 +45,15 @@ from sim.mujoco.kinematics import (  # noqa: E402
     IKResult,
     approach_axis,
     grasp_point,
+    pinch_offset_for_gap,
     solve_pose_ik,
 )
-from umi.convert import ConversionError, normalize_joints  # noqa: E402
+from umi.convert import (  # noqa: E402
+    ConversionError,
+    invert_gap_curve,
+    normalize_gap,
+    normalize_joints,
+)
 from umi.ik import (  # noqa: E402
     IKSolution,
     approach_axis_from_quat,
@@ -197,21 +203,21 @@ class MujocoIK:
 
     ## 자유도 배분 — 실측 🟢 2026-09-07, docstring 을 믿지 말고 재라
 
-    `wrist_roll` 만 흔들었을 때 (무작위 40자세 x 15각도):
+    레거시 고정 파지점에서 `wrist_roll` 만 흔들었을 때 (무작위 40자세 x 15각도):
 
         파지점 이동   0.0000 mm      접근축 변화   0.000 도      턱축 변화 88.57 도
         (wrist_flex: 282mm / 176도,  elbow_flex: 552mm / 180도)
 
-    `wrist_roll` 은 파지점과 접근축에 **영향이 정확히 0** 이고 턱 방향만 바꾼다.
-    `grasp.pinch_offset_local = [0, 0, -0.08]` 이 roll 축(그리퍼 로컬 z) 위에
-    정확히 놓여 있고 접근축이 그 축이라서 그렇다. 그래서 실제 계는 이렇다.
+    이 결과는 `grasp.pinch_offset_local = [0, 0, -0.08]` 이 roll 축 위에 있을 때만
+    성립한다. SO-101의 실제 접촉면 중점은 고정 턱과 가동 턱 사이에 있어 gap/2만큼
+    로컬 x로 이동한다. 따라서 현재 경로는 gap 종속 중점을 쓰며, roll 보정 뒤
+    위치·접근축을 다시 풀어 결합 오차를 제거한다.
 
         pan · lift · elbow_flex · wrist_flex (4개)  →  위치 3 + 접근축 2  (과결정)
         wrist_roll (1개)                            →  roll 전담, 완전 독립
 
-    따라서 **roll 은 버릴 필요가 없다.** `wrist_roll` 에 대해 선형이고 결합이 0
-    이므로 보정이 **한 번에 정확**하다 — 실측 roll 잔차 중앙 0.0000도 · p95 0.0000도,
-    위치 오차 불변(0.0084mm). 탐색도 반복도 필요 없다.
+    따라서 **roll 은 버릴 필요가 없지만**, gap 종속 중점에서는 한 번의 보정이
+    더는 충분하지 않다. roll과 4관절 위치·접근축 풀이를 번갈아 수행한다.
 
     ⚠️ `wrist_roll` 을 풀이에 열어두면(이전 구현) 야코비안에 영향 0 인 열이 생겨
        감쇠 최소자승이 그 널 방향으로 표류한다. 그게 roll 잔차 47도의 원인이었다.
@@ -281,6 +287,16 @@ class MujocoIK:
         if crosscheck:
             self._crosscheck()
 
+    def pinch_for_gap(self, gap_m: float) -> np.ndarray:
+        """Contact-surface midpoint for one commanded pad gap."""
+        return pinch_offset_for_gap(self.cfg["grasp"], gap_m)
+
+    def forward_pose(self, q_rad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """FK using the same gap-dependent pinch point used by IK."""
+        q = np.asarray(q_rad, dtype=float)
+        gap = gap_from_angle(float(q[5]), self.cfg["grasp"]["gap_curve"])
+        return eef_pose_from_joints(self.model, self.data, q, self.pinch_for_gap(gap))
+
     def _crosscheck(self) -> None:
         """Fail now if the config, the compiled model and the two normalisations disagree.
         설정·컴파일된 모델·두 정규화 구현이 어긋나면 지금 실패한다.
@@ -302,6 +318,9 @@ class MujocoIK:
         lo, hi = self.ranges[:, 0], self.ranges[:, 1]
         q = lo + rng.random((64, N_JOINTS)) * (hi - lo)
         mine = np.stack([normalize_joints(row, self.ranges) for row in q])
+        gaps = np.array([gap_from_angle(row[5], self.cfg["grasp"]["gap_curve"])
+                         for row in q])
+        mine[:, 5] = normalize_gap(gaps)
         theirs = np.stack([sim_normalize(row, self.cfg) for row in q])
         worst = float(np.abs(mine - theirs).max())
         if worst > NORM_CROSSCHECK_ATOL:
@@ -341,7 +360,8 @@ class MujocoIK:
         return seeds
 
     def _best_unseeded(
-        self, pos_m: np.ndarray, desired_axis: np.ndarray, held_roll: float
+        self, pos_m: np.ndarray, desired_axis: np.ndarray, held_roll: float,
+        pinch_offset: np.ndarray, gripper_angle: float,
     ) -> IKResult:
         """Multi-start over `_seed_grid`, keeping the usable solve with least error.
         `_seed_grid` 다중시작. 쓸 수 있는 해 중 오차가 가장 작은 것을 남긴다."""
@@ -353,10 +373,12 @@ class MujocoIK:
             return key_c >= key_r
 
         for seed in self._seed_grid():
+            seed = seed.copy()
+            seed[5] = gripper_angle
             cand = solve_pose_ik(
                 self.model,
                 target_xyz=np.asarray(pos_m, dtype=float),
-                offset_local=self.pinch,
+                offset_local=pinch_offset,
                 desired_axis=desired_axis,
                 q_init=seed,
                 wrist_roll=held_roll if self.match_roll else None,
@@ -388,9 +410,8 @@ class MujocoIK:
         """The `wrist_roll` value that puts the jaws where the demonstration had them.
         시연의 턱 방향을 재현하는 `wrist_roll` 값.
 
-        Exact in one step, because roll is linear in `wrist_roll` with zero coupling
-        to position and approach axis (measured 🟢).
-        roll 이 `wrist_roll` 에 선형이고 위치·접근축과 결합이 0 이라 한 번에 정확하다.
+        The angular correction itself is linear.  A gap-dependent pinch midpoint
+        is off the roll axis, so the caller must re-solve position afterwards.
 
         If the corrected value leaves the joint range, the two equivalents at plus
         and minus 180 degrees are tried first -- the parallel jaw is the same grasp
@@ -404,10 +425,18 @@ class MujocoIK:
         err = signed_roll_error_rad(quat_wxyz, appr, jaw)
         lo, hi = self.ranges[WRIST_ROLL_IDX]
         target = float(q[WRIST_ROLL_IDX]) + ROLL_CORRECTION_SIGN * err
-        for cand in (target, target + np.pi, target - np.pi):
-            if lo <= cand <= hi:
-                return float(cand)
+        valid = [cand for cand in (target, target + np.pi, target - np.pi)
+                 if lo <= cand <= hi]
+        if valid:
+            # Parallel jaws make +/-180 degrees physically equivalent.  Choose
+            # the equivalent nearest the seeded/previous wrist value so a
+            # continuous demonstration does not acquire artificial pi jumps.
+            return float(min(valid, key=lambda cand: abs(cand - q[WRIST_ROLL_IDX])))
         return float(np.clip(target, lo, hi))
+
+    def match_wrist_roll(self, q_rad: np.ndarray, quat_wxyz: np.ndarray) -> float:
+        """Return the continuous wrist-roll label matching the demonstrated jaws."""
+        return self._roll_for(np.asarray(q_rad, dtype=float), quat_wxyz)
 
     def solve(
         self,
@@ -418,17 +447,21 @@ class MujocoIK:
     ) -> IKSolution:
         desired_axis = approach_axis_from_quat(quat_wxyz)
         seed = None if q_init is None else np.asarray(q_init, dtype=float)
-        # wrist_roll 은 위치·접근축에 영향이 0 이므로 풀이에서 고정한다 (실측 근거는
-        # 클래스 docstring). 어느 값으로 고정해도 결과가 같지만, 직전 값을 쓰면
-        # 궤적이 불필요하게 튀지 않는다.
+        gripper_angle = invert_gap_curve(
+            float(gripper_gap_m), self.cfg["grasp"]["gap_curve"])
+        pinch_offset = self.pinch_for_gap(float(gripper_gap_m))
+        if seed is not None:
+            seed = seed.copy()
+            seed[5] = gripper_angle
         held_roll = float(seed[WRIST_ROLL_IDX]) if seed is not None else 0.0
         if seed is None and self.multistart:
-            res: IKResult = self._best_unseeded(pos_m, desired_axis, held_roll)
+            res: IKResult = self._best_unseeded(
+                pos_m, desired_axis, held_roll, pinch_offset, gripper_angle)
         else:
             res = solve_pose_ik(
                 self.model,
                 target_xyz=np.asarray(pos_m, dtype=float),
-                offset_local=self.pinch,
+                offset_local=pinch_offset,
                 desired_axis=desired_axis,
                 q_init=seed,
                 wrist_roll=held_roll if self.match_roll else None,
@@ -436,26 +469,54 @@ class MujocoIK:
                 axis_tol_deg=self.axis_tol_deg,
             )
         q = np.asarray(res.qpos, dtype=float).copy()
+        q[5] = gripper_angle
 
         if self.match_roll:
-            q[WRIST_ROLL_IDX] = self._roll_for(q, quat_wxyz)
+            # The gap-dependent midpoint is off the wrist-roll axis.  Roll
+            # correction therefore moves the point, unlike the legacy fixed
+            # offset.  Alternate roll matching and the four-joint position /
+            # approach solve so the final residual is measured at one pose.
+            within_limits = bool(res.within_limits)
+            for _ in range(3):
+                q[WRIST_ROLL_IDX] = self._roll_for(q, quat_wxyz)
+                refined = solve_pose_ik(
+                    self.model,
+                    target_xyz=np.asarray(pos_m, dtype=float),
+                    offset_local=pinch_offset,
+                    desired_axis=desired_axis,
+                    q_init=q,
+                    wrist_roll=float(q[WRIST_ROLL_IDX]),
+                    pos_tol=self.pos_tol_m,
+                    axis_tol_deg=self.axis_tol_deg,
+                    max_iters=self.max_iters,
+                )
+                within_limits = within_limits and bool(refined.within_limits)
+                q = np.asarray(refined.qpos, dtype=float).copy()
+                q[5] = gripper_angle
+                res = refined
+        else:
+            within_limits = bool(res.within_limits)
 
         appr, jaw = self._achieved(q)
         roll = roll_residual_deg(quat_wxyz, appr, jaw)
+        actual_pos = grasp_point(self.model, self.data, pinch_offset)
+        pos_error = float(np.linalg.norm(np.asarray(pos_m, dtype=float) - actual_pos))
+        axis_cos = float(np.clip(np.dot(appr, desired_axis), -1.0, 1.0))
+        axis_error = float(np.degrees(np.arccos(axis_cos)))
 
         # 수렴 판정은 sim 쪽 상수(5mm, 5도)를 그대로 쓴다. 임계값을 새로 지어내지
         # 않는다. 솔버에 준 정지 허용오차(pos_tol_m)와는 다른 것이다 — 이쪽은
         # "쓸 수 있는 해인가", 저쪽은 "언제 멈추는가" 다.
         converged = (
-            res.pos_error_m < IKResult.POS_TOL_M
-            and res.axis_error_deg < IKResult.AXIS_TOL_DEG
+            pos_error < IKResult.POS_TOL_M
+            and axis_error < IKResult.AXIS_TOL_DEG
         )
         return IKSolution(
             q_rad=q,
-            pos_error_m=float(res.pos_error_m),
-            axis_error_deg=float(res.axis_error_deg),
+            pos_error_m=pos_error,
+            axis_error_deg=axis_error,
             roll_residual_deg=float(roll),
-            within_limits=bool(res.within_limits),
+            within_limits=within_limits,
             converged=bool(converged),
         )
 
@@ -511,7 +572,7 @@ def main() -> int:
 
     for e in range(args.episodes):
         q_true = smooth_joint_trajectory(ranges, args.steps, rng)
-        poses = [eef_pose_from_joints(model, data, q, ik.pinch) for q in q_true]
+        poses = [ik.forward_pose(q) for q in q_true]
         gaps = [gap_from_angle(q[5], curve) for q in q_true]
 
         sols = []

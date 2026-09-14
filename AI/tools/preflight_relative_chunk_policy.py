@@ -29,6 +29,7 @@ from tools.umi_mujoco import (
     build_model,
     load_config,
 )
+from tools.run_umi_regression import is_shared_gpu_server
 from umi.relative_robot_preflight import (
     FixedActionPolicy,
     arm_ranges,
@@ -98,6 +99,11 @@ def _empty_stats() -> dict[str, Any]:
         "gap_speed_peaks": [],
         "gap_accel_peaks": [],
         "required_time_scales": [],
+        "scheduled_dynamic_accepted": 0,
+        "scheduled_arm_speed_peaks": [],
+        "scheduled_arm_accel_peaks": [],
+        "scheduled_gap_speed_peaks": [],
+        "scheduled_gap_accel_peaks": [],
         "examples": [],
     }
 
@@ -120,6 +126,16 @@ def _accumulate(stats: dict[str, Any], outcome: dict[str, Any],
         }
         for source, destination in peak_keys.items():
             stats[destination].append(outcome[source])
+        scheduled_peak_keys = {
+            "scheduled_arm_speed_peak_rad_s": "scheduled_arm_speed_peaks",
+            "scheduled_arm_accel_peak_rad_s2": "scheduled_arm_accel_peaks",
+            "scheduled_gap_speed_peak_m_s": "scheduled_gap_speed_peaks",
+            "scheduled_gap_accel_peak_m_s2": "scheduled_gap_accel_peaks",
+        }
+        for source, destination in scheduled_peak_keys.items():
+            stats[destination].append(outcome[source])
+        if not outcome["scheduled_violations"]:
+            stats["scheduled_dynamic_accepted"] += 1
         if outcome["violations"]:
             stats["rejects"].update(outcome["violations"])
         else:
@@ -157,6 +173,23 @@ def _summary(stats: dict[str, Any], total: int) -> dict[str, Any]:
                 "robot-time duration multiplier; source timestamps and training "
                 "labels are not modified"
             ),
+            "after_uniform_retime": {
+                "accepted_chunks": stats["scheduled_dynamic_accepted"],
+                "accepted_fraction": (
+                    stats["scheduled_dynamic_accepted"] / total if total else 0.0),
+                "arm_speed_peak_rad_s_p0_p50_p95_max": _percentiles(
+                    stats["scheduled_arm_speed_peaks"]),
+                "arm_accel_peak_rad_s2_p0_p50_p95_max": _percentiles(
+                    stats["scheduled_arm_accel_peaks"]),
+                "gap_speed_peak_m_s_p0_p50_p95_max": _percentiles(
+                    stats["scheduled_gap_speed_peaks"]),
+                "gap_accel_peak_m_s2_p0_p50_p95_max": _percentiles(
+                    stats["scheduled_gap_accel_peaks"]),
+                "semantics": (
+                    "same waypoints; only cumulative robot execution timestamps "
+                    "are stretched uniformly"
+                ),
+            },
         },
         "rejections": dict(sorted(stats["rejects"].items())),
         "examples": stats["examples"],
@@ -164,6 +197,9 @@ def _summary(stats: dict[str, Any], total: int) -> dict[str, Any]:
 
 
 def main() -> int:
+    if is_shared_gpu_server():
+        raise SystemExit(
+            "Shared GPU server is training-only; run policy preflight locally")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--policy-ckpt", type=Path, required=True)

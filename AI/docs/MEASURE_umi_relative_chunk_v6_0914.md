@@ -1,6 +1,10 @@
 # MEASURE — 실물 UMI 상대 action chunk v6 파일럿 (2026-09-14)
 
-관련 Jira: `S15P21A103-34`(학습 기준선), `S15P21A103-154`(UMI 상대 action preflight)
+관련 Jira: `S15P21A103-34`(학습 기준선), `S15P21A103-154`(UMI 상대 action preflight),
+`S15P21A103-171`(8-step chunk 시뮬레이션 검증)
+
+차원·좌표계·청크 길이와 기존 `(6,)` 계약의 호환 경계는
+`docs/SPEC_umi_relative_target_trajectory_0914.md`를 정본으로 한다.
 
 ## 결론
 
@@ -118,10 +122,24 @@ bytes: 305114112
 sha256: b211da54953a9089f4d41eba886ec837d498e7d886550ca5506996cd0f2dd78a
 ```
 
-## V100 smoke 학습
+## 로컬 데이터셋 검증
+
+공유 GPU 서버로 올리기 전에 로컬 PC에서 계약 검증을 끝낸다.
+
+```bash
+cd AI
+python tools/verify_umi_relative_dataset.py \
+  datasets/umi_real_relative_20260911_v6
+```
+
+## V100 smoke 학습 — 서버에서 허용되는 유일한 단계
 
 이 데이터는 기존 `tools/train_bc.py`의 관절 `(6,)` 계약과 호환되지 않는다.
 반드시 전용 학습기를 사용한다.
+
+공유 GPU 서버(`jupyter01`)에서는 아래 학습 명령만 실행한다. 데이터 검증, probe,
+preflight, 등록 탐색, MuJoCo, rollout은 체크포인트와 필요한 데이터를 로컬 PC로
+내려받은 뒤 실행한다.
 
 ```bash
 cd ~/S15P21A103_umi/AI
@@ -133,9 +151,6 @@ export OMP_NUM_THREADS=2
 export MKL_NUM_THREADS=2
 export OPENBLAS_NUM_THREADS=2
 export NUMEXPR_NUM_THREADS=2
-
-python tools/verify_umi_relative_dataset.py \
-  datasets/umi_real_relative_20260911_v6
 
 python tools/train_relative_chunk_bc.py \
   --data datasets/umi_real_relative_20260911_v6 \
@@ -149,7 +164,8 @@ python tools/train_relative_chunk_bc.py \
 smoke 학습은 loader, shape, CUDA, 역전파와 checkpoint 저장만 확인한다. loss가
 내려가도 성능 통과가 아니다.
 
-학습 후 같은 체크포인트에서 이미지 의존성을 검사한다.
+학습 후 체크포인트를 로컬 PC로 내려받아 같은 체크포인트에서 이미지 의존성을
+검사한다. 공유 GPU 서버에서는 별도 추론·검증·시뮬레이션을 실행하지 않는다.
 
 ```bash
 python tools/probe_relative_chunk_policy.py \
@@ -157,7 +173,7 @@ python tools/probe_relative_chunk_policy.py \
   --policy-ckpt checkpoints/relative_chunk/umi_real_relative_v6_smoke.pt \
   --samples 1000 \
   --batch-size 64 \
-  --device cuda \
+  --device cpu \
   --out out/relative_chunk_v6_smoke_probe.json
 ```
 
@@ -179,12 +195,12 @@ python tools/probe_relative_chunk_policy.py \
 
 ## 다음 판정 순서
 
-1. V100 3-epoch smoke 학습과 checkpoint 저장 확인
-2. 같은 checkpoint의 검정·셔플·노이즈 이미지 검사
-3. 한 episode overfit으로 모델이 데이터 자체를 학습 가능한지 확인
-4. 30-epoch 기준선 학습
-5. 상대 chunk를 현재 SO-101 pose에 decode하고 IK/dynamic preflight 수행
-6. 카메라 조건을 맞춘 MuJoCo 폐루프 영상과 성공률 확인
+1. **V100 서버:** 3-epoch smoke 학습과 checkpoint 저장 확인
+2. **로컬:** 같은 checkpoint의 검정·셔플·노이즈 이미지 검사
+3. **V100 서버:** 한 episode overfit 학습과 30-epoch 기준선 학습
+4. **로컬:** 상대 chunk를 현재 SO-101 pose에 decode하고 IK/dynamic preflight 수행
+5. **로컬:** 시작 자세·물체 등록 탐색
+6. **로컬:** 카메라 조건을 맞춘 MuJoCo 폐루프 영상과 성공률 확인
 
 ## 30-epoch 기준선 결과와 robot-time 사전검사
 
@@ -203,7 +219,8 @@ sha256: 47d530265f72eea42af6ba9d40603aa766232afbc23b662930e56345e72b6c32
 따라서 정책이 이미지 전체를 사용하며 단순 등속 shortcut보다 낫다는 것은 확인했다.
 다만 배경/진행 단계가 아니라 물체 위치 자체를 읽는지는 아직 입증되지 않았다.
 
-다음 명령은 모터를 전혀 사용하지 않는 offline 사전검사다. 체크포인트에 기록된
+다음 명령은 **로컬 PC에서만** 실행하는 offline 사전검사다. 모터를 전혀 사용하지
+않는다. 체크포인트에 기록된
 validation episode에서 균형 표본을 뽑고, 각 상대 action chunk를 같은 잠정 SO-101
 시작 pose에 붙여 MuJoCo IK와 실물 설정의 명령 속도·가속도 한계를 검사한다. 같은
 표본의 기록된 정답 chunk도 동일 조건에서 함께 검사한다. 정답도 실패하면 등록·IK·
@@ -212,20 +229,12 @@ validation episode에서 균형 표본을 뽑고, 각 상대 action chunk를 같
 기하 판정에 섞지 않고, 통과한 관절열의 timestamp 기반 속도·가속도로 따로 판정한다.
 
 ```bash
-cd ~/S15P21A103_umi/AI
-conda activate aiot_v100
-
-export CUDA_VISIBLE_DEVICES=2
-export AI_THREADS=2
-export OMP_NUM_THREADS=2
-export MKL_NUM_THREADS=2
-export OPENBLAS_NUM_THREADS=2
-export NUMEXPR_NUM_THREADS=2
+cd AI
 
 python tools/preflight_relative_chunk_policy.py \
   --data datasets/umi_real_relative_20260911_v6 \
   --policy-ckpt checkpoints/relative_chunk/umi_real_relative_v6_seed0.pt \
-  --device cuda \
+  --device cpu \
   --samples 200 \
   --out out/relative_chunk_v6_seed0_robot_preflight.json
 ```
@@ -279,8 +288,9 @@ max(
 충돌 없음의 결합 통과율이다. 물체 위치는 각 시연의 near-closed pinch pose에서
 추론한다. 결과는 계속 잠정 등록이며 실물 캘리브레이션이나 모터 안전 승인이 아니다.
 
-GPU 추론을 하지 않는 CPU 기하 탐색이다. 먼저 32개 후보를 validation episode
-3편으로 빠르게 거른 뒤 상위 4개만 전체 14편에서 평가한다.
+정책 추론은 없지만 검증 작업이므로 **로컬 PC 전용**이다. 공유 GPU 서버에서는
+실행하지 않는다. 먼저 32개 후보를 validation episode 3편으로 빠르게 거른 뒤
+상위 4개만 전체 14편에서 평가한다.
 
 ```bash
 python tools/search_relative_chunk_registration.py \
@@ -300,7 +310,7 @@ python tools/preflight_relative_chunk_policy.py \
   --data datasets/umi_real_relative_20260911_v6 \
   --policy-ckpt checkpoints/relative_chunk/umi_real_relative_v6_seed0.pt \
   --registration out/relative_chunk_v6_registration_search32.json \
-  --device cuda \
+  --device cpu \
   --samples 200 \
   --out out/relative_chunk_v6_seed0_registration32_preflight.json
 ```
@@ -310,3 +320,197 @@ python tools/preflight_relative_chunk_policy.py \
 IK branch 또는 hand-eye 정의를 다시 검사한다. geometry 통과 후에는 보고된 시간
 확대율로 실행 스케줄을 늦춘 다음, 대표 validation episode와 그 episode에서 추론한
 물체 위치를 사용해 camera-matched MuJoCo 영상을 만든다.
+
+## 0914 후속: canonical pinch v8과 비대칭 그리퍼 중점
+
+v6의 카메라→마커중점 회전은 저장 영상의 OpenCV 축을 ARCore/OpenGL 축으로 바꿨지만,
+그 결과의 child frame이 로봇에서 사용하는 canonical pinch frame과 같다는 검증이
+없었다. 70개 시연의 폐쇄 시점 자세를 ARCore 중력축과 대조하니 v6의 child `+Z`가
+세계 위쪽을 향했다. 손가락 접근축은 아래를 향해야 하므로, 로컬 `+X` jaw 축은
+유지하고 `Y/Z`를 뒤집는 `diag(1,-1,-1)` basis change를 적용한 v8을 만들었다.
+
+첫 번째 축 가설로 만들었던
+`configs/real/umi_s22_canonical_pinch_provisional.json`은 중력 검증에서 탈락했으며
+`REJECTED_AXIS_HYPOTHESIS`로 보존했다. v8은 다음 설정을 사용한다.
+
+```text
+configs/real/umi_s22_canonical_pinch_gravity_checked_provisional.json
+dataset: datasets/umi_real_relative_20260911_v8
+episodes: 70
+rows: 1,248
+contract problems: 0
+```
+
+v8을 처음 MuJoCo에 재생했을 때 물체 중심 궤적은 맞았지만 열린 고정 턱이 먼저
+물체를 밀었다. 원인은 SO-101이 대칭 양방향 그리퍼가 아니라 고정 턱 하나와 가동 턱
+하나를 갖는데도, 모든 gap에서 로컬 `[0,0,-0.080]`을 패드 중점으로 사용한 것이었다.
+MuJoCo 패드 형상에서 고정 접촉면은 로컬 `x=-0.0075m`이고 턱은 `+x`로 벌어진다.
+따라서 시뮬레이션 파지 중점을 다음처럼 정의했다.
+
+```text
+pinch_midpoint_local(gap) = [-0.0075, 0, -0.080] + gap/2 * [1, 0, 0]
+```
+
+이 값은 MuJoCo 패드 형상의 FK·IK·rollout 채점을 서로 일치시키기 위한
+**시뮬레이션 기하값**이다. 실물 SO-101 모터/패드 캘리브레이션으로 사용하지 않는다.
+gap 종속 중점은 wrist-roll 축에서 벗어나므로 roll 보정 뒤 위치가 움직인다. IK는
+roll 보정과 고정-roll 위치·접근축 풀이를 번갈아 수행하고, 마지막 동일 pose에서
+위치·축·roll 잔차를 다시 계산한다.
+
+회귀검사는 다음과 같다.
+
+```text
+MuJoCo 3.3.7, 120 targets
+pad midpoint x max error: 0.0245 mm
+FK→IK max position error: 0.00007236 mm
+FK→IK max rotation error: 0.00002366 deg
+gap roundtrip max error: 6.939e-18 m
+unreachable target: rejected
+camera frame tests: 8/8 PASS
+```
+
+14개 validation 시연, 32개 시작 자세 후보 탐색 결과는
+`out/relative_chunk_v8_registration_search32_dynamic_pinch.json`에 기록했다.
+선택 후보의 top-down 조건은 14/14, 전체 scene 조건은 10/14, 표본 oracle
+geometry는 9/27이었다. 이는 실물 base 등록이 아니라 MuJoCo 진단용 잠정값이다.
+
+대표 시연 `rec_20260911_150833`을 기록 정답으로 재생한 결과:
+
+```text
+geometry error before final tail: none
+closest dynamic-pinch distance: 9.3 mm
+first jaw contact: cycle 7
+final jaw contacts: 5
+object lift: 28.0 mm
+success threshold: not reached
+final tail: 8개 중 도달 가능한 2개 실행, step 2 IK reject
+```
+
+보정 전에는 열린 한쪽 턱이 물체를 밀고 접촉을 잃었지만, 보정 후에는 양쪽 접촉을
+유지한 채 물체를 28mm 들어 올렸다. 아직 성공 기준을 넘지 않았고 마지막 미래
+waypoint가 5-DoF IK에서 탈락하므로 성공으로 보고하지 않는다.
+
+v6 체크포인트는 v8과 이미지가 같아도 상대 pose target의 표현 frame이 다르므로
+v8 정책 평가에 사용할 수 없다. v8은 별도 smoke 재학습 후 로컬 이미지 의존성 검사와
+MuJoCo learned-policy 진단을 해야 한다. 공유 GPU 서버는 이 **학습만** 수행하고,
+추론·probe·preflight·등록 탐색·MuJoCo는 계속 로컬 CPU에서만 실행한다.
+
+전달용 v8 묶음은 다음과 같다.
+
+```text
+file: datasets/umi_real_relative_20260911_v8.tar
+bytes: 305116160
+sha256: 363fd01dc18ab3df69bb2105803aae978b598baa982271ae4d2f16fb74101bef
+tar entries: 142 (dataset.json 포함)
+```
+
+서버에서는 압축 해제 후 아래 smoke **학습만** 실행한다.
+
+```bash
+tar -xf datasets/umi_real_relative_20260911_v8.tar -C datasets
+
+python tools/train_relative_chunk_bc.py \
+  --data datasets/umi_real_relative_20260911_v8 \
+  --device cuda \
+  --epochs 3 \
+  --batch-size 32 \
+  --seed 0 \
+  --out checkpoints/relative_chunk/umi_real_relative_v8_smoke.pt
+```
+
+## 0914 후속: 접촉 jaw yaw 조건을 포함한 등록 탐색
+
+기존 top-down 조건은 jaw 축이 수평인지만 확인해 세계 `X/Y` 중 어느 방향으로
+닫히는지는 구분하지 못했다. 물체의 MuJoCo footprint도 `39 x 39mm` 정사각형이라
+접촉 물리만으로는 90도 차이가 드러나지 않는다. 첫 oracle 영상에서 세계 `+X`가
+물체의 위·아래를 끼우는 방향으로 보이는 것을 확인했다. 실제 시연처럼 물체의 양옆을
+끼우도록 접근축은 유지하고 jaw yaw를 90도 돌려 세계 `+Y`를 task-frame 기준으로
+정했다. 접촉 시점 jaw 축의 부호 대칭 yaw 오차가 15도 이내인지 별도 조건으로
+검사한다.
+
+```text
+desired_world_jaw_axis: [0, 1, 0]
+jaw_yaw_tolerance_deg: 15
+source: MuJoCo task-frame convention; 실물 robot-base/workspace yaw 실측값 아님
+```
+
+각 시연의 시작→near-closed 접촉 회전을 평균해 목표 접촉 회전에서 역산한 시작 회전을
+IK 후보 생성에 사용했다. 32개 후보를 3편으로 선별하고 상위 4개를 validation 14편에
+재평가한 결과는 다음 파일에 기록했다.
+
+```text
+result: out/relative_chunk_v8_registration_search32_dynamic_pinch_yaw_y.json
+selected candidate: 17
+combined geometry+scene: 5/27 = 18.5%
+oracle geometry: 9/27 = 33.3%
+all scene constraints: 7/14 = 50.0%
+jaw yaw aligned: 13/14 = 92.9%
+top-down: 14/14 = 100%
+representative episode: rec_20260911_150833
+representative contact jaw yaw error: 0.739 deg
+```
+
+대표 시연의 기록 정답 oracle을 같은 등록값으로 로컬 MuJoCo에서 재생했다.
+
+```text
+video: out/relative_chunk_v8_oracle_150833_dynamic_pinch_yaw_y.gif
+report: out/relative_chunk_v8_oracle_150833_dynamic_pinch_yaw_y.json
+simulation wrist-camera video: out/relative_chunk_v8_oracle_150833_dynamic_pinch_yaw_y_simcam.gif
+comparison: out/relative_chunk_v8_oracle_yaw_90deg_compare.png
+closest dynamic-pinch distance: 1.23 mm
+first jaw contact: cycle 8
+final jaw contacts: 4
+object lift: 32.8 mm
+final tail: 2 commands executed, step 2 IK reject
+success threshold: not reached
+```
+
+영상과 수치상 대표 시연은 물체 중심에 도달해 양옆 방향으로 접촉한 뒤 물체를
+32.8mm 들어 올렸다. 하지만 마지막 waypoint가 5-DoF IK에서 탈락했고 성공 기준에는
+도달하지 않아 성공 rollout으로 보고하지 않는다. 또한 `+X` yaw는 실제 작업대에서
+측정한 방향이 아니므로, 향후 실물 base 등록이 확보되면 해당 기준으로 다시 탐색해야
+한다. 이 변경은 robot-side 등록·검증 조건만 바꾸며 v8 데이터셋과 tar의 내용·해시는
+변경하지 않는다.
+
+## 0914 후속: 실제 측면 접근 의미를 반영한 canonical pinch v9
+
+실물 영상은 카메라 시점이 유지된 상태에서 세로로 선 과자 케이스가 점점 크게
+보이고, 두 마커가 물체 몸통의 좌우에 남는다. 이는 위에서 내려오는 top-down 파지가
+아니라 물체 몸통을 향해 수평으로 접근해 양옆을 잡는 동작이다.
+
+v8 validation trajectory의 시작→near-closure 중앙 이동은
+`[-0.2, +123.3, +4.1] mm`로, 실제 전진축이 v8 `+Y`에 들어 있었다. v8 child
+frame을 `Rx(-90deg)`로 basis change해 다음 v9 canonical frame으로 고쳤다.
+
+```text
++X: jaw opening
++Y: up
++Z: horizontal forward/approach
+extrinsic: configs/real/umi_s22_canonical_pinch_side_grasp_provisional.json
+dataset: datasets/umi_real_relative_20260911_v9
+episodes: 70
+rows: 1,248
+contract problems: 0
+```
+
+등록 탐색도 top-down 판정을 제거하고 수평 접근, jaw 축 직교, 몸통 중앙 높이,
+양쪽 pad 중심 포함, 초기 카메라 가시성, 충돌과 IK를 함께 검사하도록 변경했다.
+32개 후보 탐색 결과는 다음과 같다.
+
+```text
+result: out/relative_chunk_v9_registration_search32_side_body_grasp.json
+status: REJECTED_NO_VALID_REGISTRATION
+selected candidate: 1
+side-grasp direction: 13/14 = 92.9%
+jaw yaw aligned: 13/14 = 92.9%
+horizontal approach aligned: 13/14 = 92.9%
+body mid-height aligned: 13/14 = 92.9%
+all scene constraints: 2/14 = 14.3%
+oracle geometry: 4/27 = 14.8%
+combined geometry+scene: 0/27 = 0%
+```
+
+좌표계 해석과 파지 의미는 개선됐지만 장면 조건과 IK를 동시에 만족한 등록값은
+아직 없다. 따라서 v9를 성공한 rollout이나 확정 robot-base 등록으로 보고하지
+않는다. v9 계약과 8-step 실행 의미는 Track A/B 합의 및 `S15P21A103-171` 결과
+전까지 잠정 상태다.

@@ -109,7 +109,8 @@ class MujocoPickEnv:
         return list(self._cams)
 
     def reset(
-        self, seed: int | None = None, object_xy: tuple[float, float] | None = None
+        self, seed: int | None = None, object_xy: tuple[float, float] | None = None,
+        initial_q_rad: np.ndarray | None = None,
     ) -> Observation:
         """Randomise the object position and settle the scene.
         물체 위치를 무작위로 놓고 씬을 안정시킨다.
@@ -123,6 +124,11 @@ class MujocoPickEnv:
         0% 는 태스크에 대해 아무것도 말해주지 않는다. 물체가 움직였다는 것만 말해준다.
         """
         mujoco.mj_resetData(self.model, self.data)
+        if initial_q_rad is not None:
+            initial_q_rad = np.asarray(initial_q_rad, dtype=float).reshape(6)
+            if not np.isfinite(initial_q_rad).all():
+                raise ValueError("initial_q_rad must contain six finite values")
+            self.data.qpos[:6] = initial_q_rad
         if self._domain is not None:
             self._domain.apply(self.model, self.data, seed=seed)
         rng = np.random.default_rng(seed)
@@ -200,10 +206,16 @@ class MujocoPickEnv:
         왔는지를 말한다. 실패의 형태를 묻기 위한 값이다. 15mm 안까지 오는 0% 와
         50mm 안에도 못 오는 0% 는 처방이 다르다.
         """
-        from sim.mujoco.kinematics import grasp_point
+        from sim.mujoco.kinematics import grasp_point, pinch_offset_for_gap
 
+        curve = np.asarray(self.cfg["grasp"]["gap_curve"], dtype=float)
+        gap_m = float(np.interp(
+            float(self.data.qpos[self.gripper_index]),
+            curve[:, 0], curve[:, 1],
+        )) / 100.0
         pinch = grasp_point(
-            self.model, self.data, np.asarray(self.cfg["grasp"]["pinch_offset_local"])
+            self.model, self.data,
+            pinch_offset_for_gap(self.cfg["grasp"], gap_m),
         )
         obj = self.data.xpos[self._obj_body]
         d = pinch - obj

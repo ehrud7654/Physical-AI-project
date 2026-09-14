@@ -10,6 +10,15 @@ import numpy as np
 ARCORE_GL_TO_OPENCV = np.diag([1.0, -1.0, -1.0, 1.0])
 ARCORE_CAMERA_AXES = "+X right, +Y up, -Z forward (ARCore/OpenGL)"
 GRIPPER_BODY_TO_PINCH_ROTATION = np.diag([1.0, -1.0, -1.0])
+SUPPLIED_HAND_TO_CANONICAL_PINCH_ROTATION = np.diag([1.0, -1.0, -1.0])
+"""Canonical pinch axes expressed in the supplied calibration child frame.
+
+Across all 70 recordings, supplied child +X is horizontal at closure and +Z
+points opposite gravity (median 1.46 degrees from world up).  The policy
+contract keeps +X as the jaw-opening axis but requires +Z toward the fingertips
+(down at a top-down closure).  A proper 180-degree rotation about +X therefore
+flips both Y and Z.  This is data-checked, not inferred from a variable name.
+"""
 """Pose of the OpenCV camera frame in the ARCore/OpenGL camera frame.
 
 ARCore/OpenGL: +x right, +y up, -z forward.
@@ -31,6 +40,20 @@ def rigid(value, *, name="transform") -> np.ndarray:
 def camera_opencv_to_arcore_child(t_opencv_child) -> np.ndarray:
     """Express an OpenCV-camera child pose in the ARCore camera frame."""
     return ARCORE_GL_TO_OPENCV @ rigid(t_opencv_child, name="t_opencv_child")
+
+
+def camera_supplied_hand_to_canonical_pinch(t_camera_hand) -> np.ndarray:
+    """Convert the supplied child axes to the policy's canonical pinch axes.
+
+    This is a child-frame basis change, so it post-multiplies the camera-to-hand
+    transform.  It does not alter the measured marker-midpoint origin.
+    """
+    hand_to_pinch = np.eye(4)
+    hand_to_pinch[:3, :3] = SUPPLIED_HAND_TO_CANONICAL_PINCH_ROTATION
+    return rigid(
+        rigid(t_camera_hand, name="t_camera_hand") @ hand_to_pinch,
+        name="t_camera_pinch",
+    )
 
 
 def world_arcore_to_world_opencv(t_world_arcore) -> np.ndarray:

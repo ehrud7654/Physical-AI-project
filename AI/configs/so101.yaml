@@ -74,9 +74,16 @@ cameras:
     # gripper 로컬축 실측: local -z = 손가락 방향, local +x = 월드 위쪽, TCP = local (-0.0079,0,-0.0981)
     # 그리퍼 메시 hull(중심 local(-0.0098,0,-0.0282), rbound 0.0843) 바깥으로 빼야 한다.
     # 안쪽에 두면 렌더 화면이 노란 메시로 꽉 찬다 — 실측으로 확인됨.
-    # ⚠️ 실물 카메라 마운트 형상 미정. HW 파트 마운트 확정되면 이 값 재계측 필요.
-    pos: [0.06, -0.07, 0.02]
-    xyaxes: [0.0, -0.8602, -0.5098, 0.8961, 0.2259, -0.3813]
+    # 2026-09-11 S22 UMI 시연 시점을 재현한 **평가용 프록시**.
+    # T_gripper_camera = T_gripper_pinch @ inverse(T_camera_pinch_GL).
+    # 70편 폐쇄 프레임의 중력 방향으로 검정해 supplied child +z(위)를 정책
+    # canonical pinch +z(손끝/아래)로 뒤집었다. +x 개폐축을 보존하는 proper
+    # rotation이므로 y도 함께 뒤집는다. 이 child-frame 치환을 생략하면 톱다운
+    # 접촉에서 카메라가 파지점보다 77.5mm 아래에 놓이는 비물리 결과가 난다.
+    # Hand-eye 원점은 여전히 마커중점 기준 잠정값이다.
+    # ⚠️ 로봇용 IMX708 실측 extrinsic 이 아니다. HW 장착값이 오면 교체하고 재평가한다.
+    pos: [0.0014, 0.13422045, -0.00252116]
+    xyaxes: [1.0, 0.0, 0.0, 0.0, 0.25881905, -0.96592583]
     fovy: 70
 
 # 그리퍼 접촉 패드 — 시뮬 전용. 실물에는 대응물이 없다.
@@ -124,8 +131,16 @@ task:
 # 파지 파라미터 — 전부 실측으로 정한 값이다. 추정 없음.
 # 측정: 2026-08-27, MuJoCo 3.12.0. 상세는 docs/MEASURE_grasp_0827.md
 grasp:
-  # 파지점: gripper body 로컬 좌표. TCP site(손가락 끝)가 아니라 패드 사이 중심이다.
+  # 레거시 고정 파지점. gap 종속 정의가 없는 예전 경로의 호환용이다.
   pinch_offset_local: [0.0, 0.0, -0.080]
+  # SO-101은 고정 턱 하나와 가동 턱 하나라 두 접촉면의 중점이 gap에 따라 움직인다.
+  # pad_fixed의 안쪽 면 x=-0.0125+0.005=-0.0075m (위 gripper_pads 실측값),
+  # 턱은 gripper 로컬 +x로 벌어진다. 따라서 midpoint=fixed+gap/2*axis다.
+  # 시뮬레이터 형상에서 재현한 값이며 실물 모터 캘리브레이션으로 사용하지 않는다.
+  gap_dependent_pinch_midpoint:
+    kind: asymmetric_parallel_jaw
+    fixed_inner_surface_local_m: [-0.0075, 0.0, -0.080]
+    gap_axis_local: [1.0, 0.0, 0.0]
   approach_axis: [0.0, 0.0, -1.0]     # 손가락이 향할 월드 방향 (수직 하강 파지)
   approach_height_m: 0.07             # 파지점 위 접근 높이
   grasp_z_offset_m: 0.008             # 물체 중심보다 이만큼 위를 잡는다.

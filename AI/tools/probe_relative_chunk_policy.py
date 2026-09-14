@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Subset
 
 from data.relative_chunk_dataset import RelativeChunkDataset
 from policy.relative_chunk_bc import RelativeChunkBCPolicy
+from tools.run_umi_regression import is_shared_gpu_server
 from umi.relative_dataset import relative_vector, vector_to_transform
 
 
@@ -68,6 +69,9 @@ def differences(reference: np.ndarray, changed: np.ndarray) -> dict[str, float]:
 
 
 def main() -> int:
+    if is_shared_gpu_server():
+        raise SystemExit(
+            "Shared GPU server is training-only; run policy probes locally")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--policy-ckpt", type=Path, required=True)
