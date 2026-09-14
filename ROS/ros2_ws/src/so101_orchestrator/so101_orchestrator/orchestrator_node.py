@@ -33,8 +33,9 @@ class OrchestratorNode(Node):
         super().__init__("so101_orchestrator")
 
         self.declare_parameter("base_url", "http://localhost:8080")  # EC2 BE
-        self.declare_parameter("device_id", "jetson-a103")
-        self.declare_parameter("token", "")                          # DEVICE-05 JWT
+        self.declare_parameter("device_id", "51000000-0000-4000-8000-000000000002")
+        self.declare_parameter("token", "")                          # 고정 JWT (없으면 secret 로 발급)
+        self.declare_parameter("device_secret", "")                  # DEVICE-05 — 절대 소스/깃에 X
         self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
         self.declare_parameter("ckpt_dir", "/tmp/so101_ckpt")
         self.declare_parameter("contract_version", "robot-command-v1")
@@ -42,12 +43,21 @@ class OrchestratorNode(Node):
         base_url = self.get_parameter("base_url").value
         device_id = self.get_parameter("device_id").value
         token = self.get_parameter("token").value or None
+        # secret 은 param 우선, 없으면 env (로그·ros param 덤프에 안 남기려고 env 허용)
+        self._device_secret = (self.get_parameter("device_secret").value
+                               or os.environ.get("SO101_DEVICE_SECRET", ""))
         hb = float(self.get_parameter("heartbeat_sec").value)
         self._ckpt_dir = self.get_parameter("ckpt_dir").value
         self._contract = self.get_parameter("contract_version").value
         os.makedirs(self._ckpt_dir, exist_ok=True)
 
         self._be = BEClient(base_url, device_id, token=token)
+        # 고정 token 없으면 secret 으로 발급 + 주기 재발급 (900s 만료 전에).
+        if not token and self._device_secret:
+            period = self._renew_token(initial=True)
+            self.create_timer(period, self._renew_token)
+        elif not token:
+            self.get_logger().warn("token·device_secret 둘 다 없음 — BE 인증 없이 시작(요청 401 예상)")
         self._policy = PolicyControl(self)
         self._estop_pub = self.create_publisher(Bool, "/estop", 10)
 
@@ -173,6 +183,18 @@ class OrchestratorNode(Node):
         self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
                                    bc.EXEC_CANCELED, progress=0.0)
         self.get_logger().info(f"실행 {exec_id} 취소")
+
+    # ── 토큰 발급/갱신 (DEVICE-05) ──────────────────────────────────────
+    def _renew_token(self, initial: bool = False) -> float:
+        """secret 으로 JWT 재발급. 만료(기본 900s)의 2/3 지점을 갱신 주기로 반환.
+        실패해도 죽지 않음 — 다음 주기에 재시도(초기 실패는 60s 뒤)."""
+        try:
+            expires = self._be.fetch_device_token(self._device_secret)
+            self.get_logger().info(f"device token 발급/갱신 OK ({expires}s 유효)")
+            return max(60.0, expires * 2.0 / 3.0)
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().error(f"token 발급 실패{' (계속 시도)' if initial else ''}: {e}")
+            return 60.0
 
     # ── heartbeat ──────────────────────────────────────────────────────
     def _send_heartbeat(self):

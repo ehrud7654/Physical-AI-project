@@ -1,6 +1,7 @@
 """BE(제어 평면) 클라이언트 — 젯슨은 아웃바운드 클라이언트다 (S15P21A103-116).
 
-BE 계약 v1.3.0 / 실제 Jetson 컨트롤러 구현 기준:
+BE 계약 v1.5.0 / 실제 Jetson 컨트롤러 구현 기준:
+  토큰 발급  POST /api/v1/device-auth/token               {deviceId, deviceSecret} → JWT (900s)
   명령 수신  GET  /api/v1/robots/me/command-stream        SSE, event=robot.command
   heartbeat POST /api/v1/devices/{deviceId}/heartbeat
   배포 조회  GET  /api/v1/robots/me/deployments/pending    → Manifest | 204
@@ -67,6 +68,19 @@ class BEClient:
     def _require_httpx():
         if httpx is None:
             raise RuntimeError("httpx 미설치: pip install httpx")
+
+    # ── 토큰 발급 (DEVICE-05, 공개 경로) ────────────────────────────────
+    def fetch_device_token(self, device_secret: str) -> int:
+        """POST device-auth/token 으로 JWT 발급받아 self.token 갱신. expiresIn(초) 반환.
+        공개 경로 — Bearer 없이 deviceSecret 로 인증. 실패(401 INVALID_CREDENTIALS 등)면 예외."""
+        self._require_httpx()
+        url = f"{self.api}/device-auth/token"
+        r = httpx.post(url, json={"deviceId": self.device_id, "deviceSecret": device_secret},
+                       timeout=10.0)
+        r.raise_for_status()
+        data = self._unwrap(r)
+        self.token = data["accessToken"]
+        return int(data.get("expiresIn", 900))
 
     @staticmethod
     def _unwrap(resp) -> dict:
