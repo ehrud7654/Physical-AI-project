@@ -1,0 +1,36 @@
+{
+  "status": "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
+  "source": "AI/out/umi_real_v4_registration_pinch_offset_corrected.json selected candidate 412",
+  "purpose": "Offline relative-chunk IK preflight and camera-matched MuJoCo diagnostics only",
+  "start_arm_rad": [
+    -1.2043524179661667,
+    0.659867826814829,
+    -0.08139068531671878,
+    -0.6894013245947189,
+    1.478277466806234
+  ],
+  "object_xyz_m": [
+    0.23529053243526266,
+    0.33671305066965884,
+    0.03835
+  ],
+  "object_size_m": [0.039, 0.039, 0.0767],
+  "table_half_size_xy_m": [0.4, 0.4],
+  "evidence": {
+    "episode": "rec_20260911_150920",
+    "contact_index": 42,
+    "contact_gap_m": 0.040592553,
+    "first_view_visible": true,
+    "first_view_depth_m": 0.23433131856154799,
+    "first_view_centre_error_norm": 0.4861564579680184,
+    "jaw_vertical_abs": 0.1381369585157616,
+    "approach_vertical_abs": 0.1910685548682164,
+    "reach_p95_mm": 0.009324503645531727
+  },
+  "limitations": [
+    "Search registration, not a measured robot-base-to-workspace calibration.",
+    "Object geometry is provisional and represents the standing baked-potato snack case.",
+    "S22 marker-midpoint hand-eye remains provisional.",
+    "Must not be used for real motor commands."
+  ]
+}

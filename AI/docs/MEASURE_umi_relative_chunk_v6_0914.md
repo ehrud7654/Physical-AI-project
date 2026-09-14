@@ -185,3 +185,50 @@ python tools/probe_relative_chunk_policy.py \
 4. 30-epoch 기준선 학습
 5. 상대 chunk를 현재 SO-101 pose에 decode하고 IK/dynamic preflight 수행
 6. 카메라 조건을 맞춘 MuJoCo 폐루프 영상과 성공률 확인
+
+## 30-epoch 기준선 결과와 robot-time 사전검사
+
+V100 seed 0, 30 epoch 학습 결과는 train `0.40240`, validation `0.42742`였다.
+검증 최저값도 30 epoch에서 나왔다. 체크포인트는 다음과 같다.
+
+```text
+file: checkpoints/relative_chunk/umi_real_relative_v6_seed0.pt
+bytes: 4137941
+sha256: 47d530265f72eea42af6ba9d40603aa766232afbc23b662930e56345e72b6c32
+```
+
+같은 체크포인트의 967개 표본 이미지 치환 검사에서 원본 예측의 translation
+오차는 34.5mm였고 constant-velocity 기준선은 78.9mm였다. 검정 이미지와 셔플
+이미지로 바꾸면 원본 출력 대비 translation이 각각 79.0mm, 66.9mm 변했다.
+따라서 정책이 이미지 전체를 사용하며 단순 등속 shortcut보다 낫다는 것은 확인했다.
+다만 배경/진행 단계가 아니라 물체 위치 자체를 읽는지는 아직 입증되지 않았다.
+
+다음 명령은 모터를 전혀 사용하지 않는 offline 사전검사다. 체크포인트에 기록된
+validation episode에서 균형 표본을 뽑고, 각 상대 action chunk를 같은 잠정 SO-101
+시작 pose에 붙여 MuJoCo IK와 실물 설정의 명령 속도·가속도 한계를 검사한다.
+
+```bash
+cd ~/S15P21A103_umi/AI
+conda activate aiot_v100
+
+export CUDA_VISIBLE_DEVICES=2
+export AI_THREADS=2
+export OMP_NUM_THREADS=2
+export MKL_NUM_THREADS=2
+export OPENBLAS_NUM_THREADS=2
+export NUMEXPR_NUM_THREADS=2
+
+python tools/preflight_relative_chunk_policy.py \
+  --data datasets/umi_real_relative_20260911_v6 \
+  --policy-ckpt checkpoints/relative_chunk/umi_real_relative_v6_seed0.pt \
+  --device cuda \
+  --samples 200 \
+  --out out/relative_chunk_v6_seed0_robot_preflight.json
+```
+
+등록값 `configs/real/umi_so101_registration_provisional.json`은 이전 등록 탐색에서
+`위치 도달 + 가로 파지축 + 첫 화면 물체 포함`을 동시에 만족한 후보를 옮긴 것이다.
+실측 robot-base↔workspace 캘리브레이션이 아니며 실물 명령에는 사용할 수 없다.
+사전검사는 독립적인 각 예측을 같은 시작 pose에 붙이므로 물체 접촉, 폐루프 복구,
+성공률을 평가하지 않는다. 이 결과로 geometry와 commanded dynamics를 확인한 다음
+카메라 조건을 맞춘 MuJoCo 진단 영상을 만든다.
