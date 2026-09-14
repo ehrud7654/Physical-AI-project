@@ -95,7 +95,10 @@ class HistoryActivity : Activity() {
             text = "현재 학습: $activeName"; setTextColor(0xFF8A909E.toInt()); textSize = 13f
             setPadding(dp(2), 0, dp(2), dp(10))
         })
-        for ((jobId, _, label) in stubCatalog) {
+        // 서버 카탈로그 우선(없으면 스텁). 선택한 skillKey 를 폴더에 기록 → 업로드가 이 값을 쓴다.
+        val catalog = DeviceSkills.cached.takeIf { it.isNotEmpty() }
+            ?.map { Triple(it.id, it.skillKey, it.displayName) } ?: stubCatalog
+        for ((jobId, skillKey, label) in catalog) {
             root.addView(TextView(this).apply {
                 text = label; setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
                 setBackgroundResource(R.drawable.bg_pick_row_light)
@@ -107,7 +110,11 @@ class HistoryActivity : Activity() {
                     val rootDir = getExternalFilesDir(null)
                     selected.forEach { name ->
                         val d = File(rootDir, name)
-                        if (d.isDirectory) { File(d, ".upload_job").writeText(jobId); File(d, ".queued").writeText("1") }
+                        if (d.isDirectory) {
+                            File(d, ".upload_job").writeText(jobId)
+                            File(d, ".upload_skill").writeText(skillKey)
+                            File(d, ".queued").writeText("1")
+                        }
                     }
                     UploadQueue.enqueue(this@HistoryActivity)
                     Toast.makeText(this@HistoryActivity, "${selected.size}편 전송 대기 → $label", Toast.LENGTH_SHORT).show()
@@ -127,7 +134,7 @@ class HistoryActivity : Activity() {
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.show()
         val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
-        dialog.window?.setLayout(dp(360), minOf(dp(70 + stubCatalog.size * 64 + 60), maxH))
+        dialog.window?.setLayout(dp(360), minOf(dp(70 + catalog.size * 64 + 60), maxH))
     }
 
     /** 삭제 확인 — 라이트 커스텀 다이얼로그. */
@@ -365,9 +372,15 @@ class HistoryActivity : Activity() {
                 it.startsWith("training_job_id=") -> job = it.substringAfter("=").trim()
             }
         }
-        val raw = key.ifBlank { job }
+        // 전송 때 재선택한 skillKey(.upload_skill)가 있으면 그게 우선.
+        val picked = File(dir, ".upload_skill").let { if (it.exists()) it.readText().trim() else "" }
+        val useKey = picked.ifBlank { key }
+        val raw = useKey.ifBlank { job }
         if (raw.isBlank()) return null
-        return stubCatalog.firstOrNull { it.second == key || it.first == job }?.third ?: raw
+        // 서버 카탈로그로 displayName 매핑(청기잡기 등). 없으면 스텁, 그것도 없으면 raw key.
+        return DeviceSkills.cached.firstOrNull { it.skillKey == useKey }?.displayName
+            ?: stubCatalog.firstOrNull { it.second == useKey || it.first == job }?.third
+            ?: raw
     }
 
     /** marker_qc.txt(detected/total) → 검출률(%). 없으면 null(옛 촬영·계산 전). */

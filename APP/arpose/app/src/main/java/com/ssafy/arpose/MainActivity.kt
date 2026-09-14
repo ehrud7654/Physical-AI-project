@@ -267,7 +267,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             root.addView(row)
         }
 
-        for ((jobId, skillKey, label) in stubCatalog) {
+        // 서버 카탈로그(DeviceSkills) 우선, 못 받았으면 스텁. id 를 로컬 편수 그룹키(jobId)로 쓴다.
+        val catalog = DeviceSkills.cached.takeIf { it.isNotEmpty() }
+            ?.map { Triple(it.id, it.skillKey, it.displayName) } ?: stubCatalog
+        for ((jobId, skillKey, label) in catalog) {
             addCard(label, "${episodeCount(jobId)}편", jobId == activeJob) {
                 Prefs.setActiveLearning(this, jobId, skillKey, label)
             }
@@ -285,7 +288,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.show()
         // 창을 화면 안(≤90%)에 맞추고 내용이 넘치면 내부에서만 스크롤 — 창 자체는 안 움직이게 높이 고정.
-        val approxPx = dp(44 + (stubCatalog.size + 1) * 66 + 32)
+        val approxPx = dp(44 + (catalog.size + 1) * 66 + 32)
         val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
         dialog.window?.setLayout(dp(340), minOf(approxPx, maxH))
     }
@@ -355,6 +358,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         // AF 바뀌면 ARCore focusMode 도 재적용. (기존엔 최초 생성 때만 applyConfig 해서 토글이 안 먹던 버그)
         if (afChanged) session?.let { try { applyConfig(it) } catch (e: Exception) { Log.e(TAG, "AF 재적용 실패", e) } }
         updateLearnBadge()   // 학습 배지·편수 갱신
+        // 서버 스킬 카탈로그 새로고침(백그라운드). 성공하면 다음 피커 열 때 반영.
+        if (DeviceSkills.cached.isEmpty()) Thread { DeviceSkills.refresh(this) }.start()
         gridOverlay.visibility = if (Prefs.gridGuide(this)) View.VISIBLE else View.GONE
         poseText.visibility = if (Prefs.showDetail(this)) View.VISIBLE else View.GONE
 
@@ -550,8 +555,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             val awbLk = res.get(CaptureResult.CONTROL_AWB_LOCK)
             val exp = res.get(CaptureResult.SENSOR_EXPOSURE_TIME)
             val iso = res.get(CaptureResult.SENSOR_SENSITIVITY)
+            val lensFocus = res.get(CaptureResult.LENS_FOCUS_DISTANCE)   // 실제 렌즈 초점(디옵터) readback
             camModesLine = "ois=$ois eis=$eis ae_mode=$aeMode ae_lock=$aeLk " +
-                "af_mode=$afMode awb_mode=$awbMode awb_lock=$awbLk exp_ns=$exp iso=$iso"
+                "af_mode=$afMode lens_focus=$lensFocus awb_mode=$awbMode awb_lock=$awbLk exp_ns=$exp iso=$iso"
             if (capLogCount < 6) { Log.i(TAG, "CAM $camModesLine"); capLogCount++ }
         }
     }
