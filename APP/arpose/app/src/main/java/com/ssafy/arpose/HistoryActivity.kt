@@ -40,8 +40,6 @@ class HistoryActivity : Activity() {
         setContentView(R.layout.activity_history)
         findViewById<ImageButton>(R.id.backBtn).setOnClickListener { finish() }
         findViewById<Button>(R.id.sendBtn).setOnClickListener { sendSelected() }
-        findViewById<TextView>(R.id.pagePrev).setOnClickListener { if (page > 0) { page--; populate(); scrollTop() } }
-        findViewById<TextView>(R.id.pageNext).setOnClickListener { page++; populate(); scrollTop() }
         populate()
     }
 
@@ -51,6 +49,36 @@ class HistoryActivity : Activity() {
     private fun scrollTop() {
         val sv = findViewById<ScrollView>(R.id.historyScroll)
         sv.post { sv.scrollTo(0, 0) }
+    }
+
+    /** ‹ 1 2 3 4 5 › — 5페이지 블록 단위. 번호 클릭=이동, 화살표=앞뒤 페이지, 현재=azure 강조. */
+    private fun buildPager(pager: LinearLayout, totalPages: Int) {
+        pager.removeAllViews()
+        if (totalPages <= 1) { pager.visibility = View.GONE; return }
+        pager.visibility = View.VISIBLE
+        fun arrow(txt: String, enabled: Boolean, onClick: () -> Unit) = TextView(this).apply {
+            text = txt; textSize = 20f
+            setTextColor(if (enabled) 0xFF1A1F2E.toInt() else 0xFFCBD0D9.toInt())
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            if (enabled) setOnClickListener { onClick() }
+        }
+        pager.addView(arrow("‹", page > 0) { page--; populate(); scrollTop() })
+        val start = (page / 5) * 5
+        for (p in start until minOf(start + 5, totalPages)) {
+            pager.addView(TextView(this).apply {
+                text = "${p + 1}"; textSize = 16f; gravity = Gravity.CENTER; minWidth = dp(38)
+                val cur = p == page
+                setTextColor(if (cur) 0xFFFFFFFF.toInt() else 0xFF1A1F2E.toInt())
+                setTypeface(typeface, if (cur) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                if (cur) background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xFF4F9CF9.toInt()) }
+                setOnClickListener { if (p != page) { page = p; populate(); scrollTop() } }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(2); marginEnd = dp(2) }
+            })
+        }
+        pager.addView(arrow("›", page < totalPages - 1) { page++; populate(); scrollTop() })
     }
 
     /** 선택 → 목적지(학습) 확인 → .queued 마킹 후 업로드 큐. 라이트 커스텀 시트(스톡 다이얼로그 대신). */
@@ -183,15 +211,7 @@ class HistoryActivity : Activity() {
         val slice = recs.subList(from, minOf(from + PAGE_SIZE, recs.size))
         for (dir in slice) list.addView(cardFor(dir, list))
 
-        // 페이저
-        if (totalPages <= 1) {
-            pager.visibility = View.GONE
-        } else {
-            pager.visibility = View.VISIBLE
-            findViewById<TextView>(R.id.pageLabel).text = "${page + 1} / $totalPages"
-            findViewById<TextView>(R.id.pagePrev).apply { isEnabled = page > 0; alpha = if (page > 0) 1f else 0.3f }
-            findViewById<TextView>(R.id.pageNext).apply { isEnabled = page < totalPages - 1; alpha = if (page < totalPages - 1) 1f else 0.3f }
-        }
+        buildPager(pager, totalPages)
         updateSendBtn()
     }
 
@@ -272,7 +292,17 @@ class HistoryActivity : Activity() {
                 populate()
             }
         }
-        header.addView(left); header.addView(check)
+        header.addView(left)
+        learnLabel(dir)?.let { name -> header.addView(TextView(this).apply {
+            text = name; setTextColor(0xFF4F9CF9.toInt()); textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply { cornerRadius = dp(999).toFloat(); setColor(0x1A4F9CF9) }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(8) }
+        }) }
+        header.addView(check)
         card.addView(header)
 
         // ---- 상세 (펼쳐졌을 때만) ----
@@ -322,6 +352,22 @@ class HistoryActivity : Activity() {
             textSize = 14f
         })
         return row
+    }
+
+    /** 촬영 때 stamp 된 학습명. meta.txt 의 active_skill_key/training_job_id → 스텁 라벨. 없으면 null. */
+    private fun learnLabel(dir: File): String? {
+        val meta = File(dir, "meta.txt")
+        if (!meta.exists()) return null
+        var key = ""; var job = ""
+        meta.readLines().forEach {
+            when {
+                it.startsWith("active_skill_key=") -> key = it.substringAfter("=").trim()
+                it.startsWith("training_job_id=") -> job = it.substringAfter("=").trim()
+            }
+        }
+        val raw = key.ifBlank { job }
+        if (raw.isBlank()) return null
+        return stubCatalog.firstOrNull { it.second == key || it.first == job }?.third ?: raw
     }
 
     /** marker_qc.txt(detected/total) → 검출률(%). 없으면 null(옛 촬영·계산 전). */

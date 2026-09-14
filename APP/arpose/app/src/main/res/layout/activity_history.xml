@@ -17,6 +17,7 @@
             android:id="@+id/backBtn"
             android:layout_width="40dp"
             android:layout_height="40dp"
+            android:layout_marginStart="-10dp"
             android:src="@drawable/ic_back"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:scaleType="centerInside"
@@ -69,43 +70,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp" />
+            android:padding="16dp" />
     </ScrollView>
 
-    <!-- 페이지 이동 -->
+    <!-- 페이지 이동 (번호는 코드로 생성) -->
     <LinearLayout
         android:id="@+id/pagerRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center"
-        android:paddingVertical="8dp">
-
-        <TextView
-            android:id="@+id/pagePrev"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="‹"
-            android:textColor="@color/inkSecondary"
-            android:textSize="22sp"
-            android:padding="12dp" />
-
-        <TextView
-            android:id="@+id/pageLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="1 / 1"
-            android:textColor="@color/inkSecondary"
-            android:textSize="15sp"
-            android:padding="12dp" />
-
-        <TextView
-            android:id="@+id/pageNext"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="›"
-            android:textColor="@color/inkSecondary"
-            android:textSize="22sp"
-            android:padding="12dp" />
-    </LinearLayout>
+        android:paddingVertical="8dp" />
 </LinearLayout>

@@ -80,9 +80,6 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         private const val JUMP_CONT_K = 5.0         // 직전 최대값 대비 배율
         private const val JUMP_CONT_N = 3           // 비교할 직전 프레임 수
 
-        // FIXED 일 때 렌즈 초점 거리(디옵터, 1/m). 0 = 무한대 ≈ ARCore FIXED 동작(배경 선명).
-        // ponytail: 근접 물체가 흐리면 3.0(≈33cm)까지 올릴 것. 물리 튜닝 값.
-        private const val FIXED_FOCUS_DIOPTERS = 0f
 
         // shared camera 에서 ARCore 가 30fps 프레임을 ~0.1ms 간격으로 두 번씩 준다.
         // 정확히 같은 timestamp 만 버리면 중복이 새어 60Hz 로 저장되므로, 이 간격보다
@@ -238,7 +235,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             orientation = android.widget.LinearLayout.VERTICAL
         }
         root.addView(TextView(this).apply {
-            text = "학습 선택"; setTextColor(0xFFE8EAF0.toInt()); textSize = 18f
+            text = "학습 선택"; setTextColor(0xFFFFFFFF.toInt()); textSize = 18f
             setPadding(dp(4), 0, dp(4), dp(12))
         })
 
@@ -256,12 +253,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                 setOnClickListener { onSelect(); updateLearnBadge(); dialog.dismiss() }
             }
             row.addView(TextView(this).apply {
-                text = name; setTextColor(0xFFE8EAF0.toInt()); textSize = 16f
+                text = name; setTextColor(0xFFFFFFFF.toInt()); textSize = 16f
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             if (sub.isNotEmpty()) row.addView(TextView(this).apply {
-                text = sub; setTextColor(0xFF9AA2B8.toInt()); textSize = 13f
+                text = sub; setTextColor(0xFFB8C0D8.toInt()); textSize = 13f
                 setPadding(0, 0, dp(10), 0)
             })
             row.addView(TextView(this).apply {
@@ -293,54 +290,40 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         dialog.window?.setLayout(dp(340), minOf(approxPx, maxH))
     }
 
-    /** 우상단 메뉴: 화면 이동 + 촬영 보조 토글. 코드로 조립(다크 팝업). */
+    /** 우상단 메뉴: 기록·설정만(구도 그리드·상세값은 설정 화면에서). 코드로 조립(다크 팝업). */
     private fun showMenu() {
         val d = resources.displayMetrics.density
         fun px(v: Int) = (v * d).toInt()
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(R.drawable.bg_menu_dark)
+            setPadding(px(6), px(6), px(6), px(6))
         }
         val pop = PopupWindow(
-            container, px(180), LinearLayout.LayoutParams.WRAP_CONTENT, true
+            container, px(230), LinearLayout.LayoutParams.WRAP_CONTENT, true
         ).apply { isOutsideTouchable = true; elevation = px(8).toFloat() }
 
-        fun row(label: String, onClick: () -> Unit) = TextView(this).apply {
+        fun guardNav(cls: Class<*>) {
+            if (recorder?.isRecording == true) Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
+            else startActivity(android.content.Intent(this, cls))
+            pop.dismiss()
+        }
+        fun row(label: String, icon: Int, onClick: () -> Unit) = TextView(this).apply {
             text = label
-            setTextColor(0xFFE8EAF0.toInt())
-            textSize = 14f
-            setPadding(px(14), px(11), px(14), px(11))
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 17f
+            setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
+            compoundDrawablePadding = px(14)
+            setPadding(px(16), px(15), px(16), px(15))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             )
             isClickable = true
             setOnClickListener { onClick() }
         }
-        fun divider() = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, px(1))
-            setBackgroundColor(0xFF2E3A5E.toInt())
-        }
-        fun guardNav(cls: Class<*>) {
-            if (recorder?.isRecording == true) Toast.makeText(this, "녹화 중에는 이동할 수 없음", Toast.LENGTH_SHORT).show()
-            else startActivity(android.content.Intent(this, cls))
-            pop.dismiss()
-        }
 
-        container.addView(row("기록") { guardNav(HistoryActivity::class.java) })
-        container.addView(row("설정") { guardNav(SettingsActivity::class.java) })
-        container.addView(divider())
-        container.addView(row("구도 그리드" + if (Prefs.gridGuide(this)) " ✓" else "") {
-            val v = !Prefs.gridGuide(this)
-            Prefs.setGridGuide(this, v)
-            gridOverlay.visibility = if (v) View.VISIBLE else View.GONE
-            pop.dismiss()
-        })
-        container.addView(row("상세값 표시" + if (Prefs.showDetail(this)) " ✓" else "") {
-            val v = !Prefs.showDetail(this)
-            Prefs.setShowDetail(this, v)
-            poseText.visibility = if (v) View.VISIBLE else View.GONE
-            pop.dismiss()
-        })
+        container.addView(row("기록", R.drawable.ic_history) { guardNav(HistoryActivity::class.java) })
+        container.addView(row("설정", R.drawable.ic_tune) { guardNav(SettingsActivity::class.java) })
         pop.showAsDropDown(menuBtn)
     }
 
@@ -369,6 +352,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         autoFocus = Prefs.afAuto(this)
         aeLock = Prefs.aeLock(this)
         if (afChanged) intrinsicsLine = "unknown"   // 초점 바뀌면 내부 파라미터 다시 읽기
+        // AF 바뀌면 ARCore focusMode 도 재적용. (기존엔 최초 생성 때만 applyConfig 해서 토글이 안 먹던 버그)
+        if (afChanged) session?.let { try { applyConfig(it) } catch (e: Exception) { Log.e(TAG, "AF 재적용 실패", e) } }
         updateLearnBadge()   // 학습 배지·편수 갱신
         gridOverlay.visibility = if (Prefs.gridGuide(this)) View.VISIBLE else View.GONE
         poseText.visibility = if (Prefs.showDetail(this)) View.VISIBLE else View.GONE
@@ -535,7 +520,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             b.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
         } else {
             b.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
-            b.set(CaptureRequest.LENS_FOCUS_DISTANCE, FIXED_FOCUS_DIOPTERS)
+            // FIXED 초점 거리(디옵터). 디버그 슬라이더로 조절, 기본 6.25≈16cm. 물리 튜닝 노브.
+            b.set(CaptureRequest.LENS_FOCUS_DISTANCE, Prefs.focusDiopters(this))
         }
         b.set(CaptureRequest.CONTROL_AE_LOCK, aeLock)
         b.set(CaptureRequest.CONTROL_AWB_LOCK, aeLock)
