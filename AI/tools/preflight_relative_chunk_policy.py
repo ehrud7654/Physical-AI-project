@@ -59,6 +59,17 @@ class RecordingArmAdapter:
         return solution
 
 
+class FixedActionPolicy:
+    """Expose a recorded ground-truth chunk through the policy boundary."""
+
+    def __init__(self, action: np.ndarray) -> None:
+        self.action = np.asarray(action, dtype=np.float32).copy()
+
+    def predict_action(self, observation: Any) -> dict[str, np.ndarray]:
+        del observation
+        return {"action_pred": self.action.copy()}
+
+
 def _matrix_from_fk(model: Any, solver: MujocoIK, q_rad: np.ndarray) -> np.ndarray:
     pos, quat = eef_pose_from_joints(
         model, solver.data, q_rad, solver.pinch)
@@ -144,6 +155,138 @@ def _percentiles(values: list[float]) -> list[float | None]:
     return [float(value) for value in np.percentile(values, [0, 50, 95, 100])]
 
 
+def _empty_stats() -> dict[str, Any]:
+    return {
+        "geometry_accepted": 0,
+        "dynamic_accepted": 0,
+        "rejects": Counter(),
+        "position_errors": [],
+        "axis_errors": [],
+        "roll_errors": [],
+        "arm_speed_peaks": [],
+        "arm_accel_peaks": [],
+        "gap_speed_peaks": [],
+        "gap_accel_peaks": [],
+        "examples": [],
+    }
+
+
+def _evaluate_chunk(policy: Any, observation: dict[str, np.ndarray], *,
+                    model: Any, ik: MujocoIK, curve: Any,
+                    arm_start: np.ndarray, current_gap: float,
+                    ranges: np.ndarray, gap_max: float, dt: float,
+                    max_arm_speed: float, max_arm_accel: float,
+                    max_gap_speed: float, max_gap_accel: float) -> dict[str, Any]:
+    q_start = np.r_[arm_start, invert_gap_curve(current_gap, curve)]
+    current_pose = _matrix_from_fk(model, ik, q_start)
+    adapter = RecordingArmAdapter(ik, curve)
+    try:
+        commands = prepare_arm_commands(
+            policy, observation,
+            t_current=current_pose,
+            arm_current_rad=arm_start,
+            gripper_current_m=current_gap,
+            solver=adapter,
+            ranges_rad=ranges,
+            gap_range_m=[0.0, gap_max],
+            max_step_rad=max_arm_speed * dt,
+            max_gap_step_m=max_gap_speed * dt,
+            max_position_error_m=0.005,
+            max_axis_error_deg=5.0,
+            max_roll_error_deg=5.0,
+        )
+    except ValueError as error:
+        return {
+            "result": "geometry_reject", "reason": _reason(error),
+            "detail": str(error),
+        }
+
+    arm = np.vstack([arm_start, *[value.arm_positions_rad for value in commands]])
+    gap = np.asarray([current_gap, *[value.gripper_width_m for value in commands]])
+    arm_velocity = np.diff(arm, axis=0) / dt
+    gap_velocity = np.diff(gap) / dt
+    arm_acceleration = np.diff(arm_velocity, axis=0) / dt
+    gap_acceleration = np.diff(gap_velocity) / dt
+    arm_speed = float(np.abs(arm_velocity).max(initial=0.0))
+    arm_accel = float(np.abs(arm_acceleration).max(initial=0.0))
+    gap_speed = float(np.abs(gap_velocity).max(initial=0.0))
+    gap_accel = float(np.abs(gap_acceleration).max(initial=0.0))
+    violations = []
+    if arm_speed > max_arm_speed + 1e-9:
+        violations.append("arm_velocity")
+    if arm_accel > max_arm_accel + 1e-9:
+        violations.append("arm_acceleration")
+    if gap_speed > max_gap_speed + 1e-9:
+        violations.append("gap_velocity")
+    if gap_accel > max_gap_accel + 1e-9:
+        violations.append("gap_acceleration")
+    return {
+        "result": "accepted" if not violations else "dynamic_reject",
+        "violations": violations,
+        "position_errors": [float(value.position_error_m) for value in adapter.solutions],
+        "axis_errors": [float(value.axis_error_deg) for value in adapter.solutions],
+        "roll_errors": [float(value.roll_error_deg) for value in adapter.solutions],
+        "arm_speed_peak_rad_s": arm_speed,
+        "arm_accel_peak_rad_s2": arm_accel,
+        "gap_speed_peak_m_s": gap_speed,
+        "gap_accel_peak_m_s2": gap_accel,
+    }
+
+
+def _accumulate(stats: dict[str, Any], outcome: dict[str, Any],
+                identity: dict[str, Any]) -> None:
+    if outcome["result"] == "geometry_reject":
+        stats["rejects"][outcome["reason"]] += 1
+    else:
+        stats["geometry_accepted"] += 1
+        stats["position_errors"].extend(outcome["position_errors"])
+        stats["axis_errors"].extend(outcome["axis_errors"])
+        stats["roll_errors"].extend(outcome["roll_errors"])
+        peak_keys = {
+            "arm_speed_peak_rad_s": "arm_speed_peaks",
+            "arm_accel_peak_rad_s2": "arm_accel_peaks",
+            "gap_speed_peak_m_s": "gap_speed_peaks",
+            "gap_accel_peak_m_s2": "gap_accel_peaks",
+        }
+        for source, destination in peak_keys.items():
+            stats[destination].append(outcome[source])
+        if outcome["violations"]:
+            stats["rejects"].update(outcome["violations"])
+        else:
+            stats["dynamic_accepted"] += 1
+    if len(stats["examples"]) < 8:
+        stats["examples"].append({**identity, **{
+            key: value for key, value in outcome.items()
+            if key not in ("position_errors", "axis_errors", "roll_errors")
+        }})
+
+
+def _summary(stats: dict[str, Any], total: int) -> dict[str, Any]:
+    return {
+        "geometry": {
+            "accepted_chunks": stats["geometry_accepted"],
+            "accepted_fraction": stats["geometry_accepted"] / total if total else 0.0,
+            "position_error_m_p0_p50_p95_max": _percentiles(stats["position_errors"]),
+            "axis_error_deg_p0_p50_p95_max": _percentiles(stats["axis_errors"]),
+            "roll_error_deg_p0_p50_p95_max": _percentiles(stats["roll_errors"]),
+        },
+        "dynamics": {
+            "accepted_chunks": stats["dynamic_accepted"],
+            "accepted_fraction": stats["dynamic_accepted"] / total if total else 0.0,
+            "arm_speed_peak_rad_s_p0_p50_p95_max": _percentiles(
+                stats["arm_speed_peaks"]),
+            "arm_accel_peak_rad_s2_p0_p50_p95_max": _percentiles(
+                stats["arm_accel_peaks"]),
+            "gap_speed_peak_m_s_p0_p50_p95_max": _percentiles(
+                stats["gap_speed_peaks"]),
+            "gap_accel_peak_m_s2_p0_p50_p95_max": _percentiles(
+                stats["gap_accel_peaks"]),
+        },
+        "rejections": dict(sorted(stats["rejects"].items())),
+        "examples": stats["examples"],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
@@ -191,17 +334,7 @@ def main() -> int:
     max_gap = float(real["max_gap_m"])
     curve = cfg["grasp"]["gap_curve"]
 
-    accepted = 0
-    dynamic_accepted = 0
-    rejects: Counter[str] = Counter()
-    position_errors: list[float] = []
-    axis_errors: list[float] = []
-    roll_errors: list[float] = []
-    arm_speed_peaks: list[float] = []
-    arm_accel_peaks: list[float] = []
-    gap_speed_peaks: list[float] = []
-    gap_accel_peaks: list[float] = []
-    examples: list[dict[str, Any]] = []
+    stats = {"policy_prediction": _empty_stats(), "recorded_oracle": _empty_stats()}
 
     for sample_index in indices:
         episode_index, row = dataset.index[sample_index]
@@ -209,79 +342,25 @@ def main() -> int:
         image = episode["image"][row]
         proprio = episode["proprio"][row]
         current_gap = float(proprio[-1, 9])
-        q_start = np.r_[arm_start, invert_gap_curve(current_gap, curve)]
-        current_pose = _matrix_from_fk(model, ik, q_start)
-        adapter = RecordingArmAdapter(ik, curve)
         observation = {"image": image.copy(), "proprio": proprio.copy()}
-        try:
-            commands = prepare_arm_commands(
-                policy, observation,
-                t_current=current_pose,
-                arm_current_rad=arm_start,
-                gripper_current_m=current_gap,
-                solver=adapter,
-                ranges_rad=ranges,
-                gap_range_m=[0.0, max_gap],
-                max_step_rad=max_arm_speed * dt,
-                max_gap_step_m=max_gap_speed * dt,
-                max_position_error_m=0.005,
-                max_axis_error_deg=5.0,
-                max_roll_error_deg=5.0,
+        identity = {
+            "episode": str(episode["id"]), "row": int(row),
+            "source_row": int(episode["source_row"][row]),
+        }
+        candidates = {
+            "policy_prediction": policy,
+            "recorded_oracle": FixedActionPolicy(episode["action"][row]),
+        }
+        for name, candidate in candidates.items():
+            outcome = _evaluate_chunk(
+                candidate, observation,
+                model=model, ik=ik, curve=curve,
+                arm_start=arm_start, current_gap=current_gap,
+                ranges=ranges, gap_max=max_gap, dt=dt,
+                max_arm_speed=max_arm_speed, max_arm_accel=max_arm_accel,
+                max_gap_speed=max_gap_speed, max_gap_accel=max_gap_accel,
             )
-        except ValueError as error:
-            category = _reason(error)
-            rejects[category] += 1
-            if len(examples) < 12:
-                examples.append({
-                    "episode": str(episode["id"]), "row": int(row),
-                    "source_row": int(episode["source_row"][row]),
-                    "result": "rejected", "reason": category,
-                    "detail": str(error),
-                })
-            continue
-
-        accepted += 1
-        position_errors.extend(float(value.position_error_m) for value in adapter.solutions)
-        axis_errors.extend(float(value.axis_error_deg) for value in adapter.solutions)
-        roll_errors.extend(float(value.roll_error_deg) for value in adapter.solutions)
-        arm = np.vstack([arm_start, *[value.arm_positions_rad for value in commands]])
-        gap = np.asarray([current_gap, *[value.gripper_width_m for value in commands]])
-        arm_velocity = np.diff(arm, axis=0) / dt
-        gap_velocity = np.diff(gap) / dt
-        arm_acceleration = np.diff(arm_velocity, axis=0) / dt
-        gap_acceleration = np.diff(gap_velocity) / dt
-        arm_speed = float(np.abs(arm_velocity).max(initial=0.0))
-        arm_accel = float(np.abs(arm_acceleration).max(initial=0.0))
-        gap_speed = float(np.abs(gap_velocity).max(initial=0.0))
-        gap_accel = float(np.abs(gap_acceleration).max(initial=0.0))
-        arm_speed_peaks.append(arm_speed)
-        arm_accel_peaks.append(arm_accel)
-        gap_speed_peaks.append(gap_speed)
-        gap_accel_peaks.append(gap_accel)
-        violations = []
-        if arm_speed > max_arm_speed + 1e-9:
-            violations.append("arm_velocity")
-        if arm_accel > max_arm_accel + 1e-9:
-            violations.append("arm_acceleration")
-        if gap_speed > max_gap_speed + 1e-9:
-            violations.append("gap_velocity")
-        if gap_accel > max_gap_accel + 1e-9:
-            violations.append("gap_acceleration")
-        if violations:
-            rejects.update(violations)
-        else:
-            dynamic_accepted += 1
-        if len(examples) < 12:
-            examples.append({
-                "episode": str(episode["id"]), "row": int(row),
-                "source_row": int(episode["source_row"][row]),
-                "result": "accepted" if not violations else "dynamic_reject",
-                "violations": violations,
-                "arm_speed_peak_rad_s": arm_speed,
-                "arm_accel_peak_rad_s2": arm_accel,
-                "gap_speed_peak_m_s": gap_speed,
-                "gap_accel_peak_m_s2": gap_accel,
-            })
+            _accumulate(stats[name], outcome, identity)
 
     total = len(indices)
     result = {
@@ -312,23 +391,15 @@ def main() -> int:
             "max_axis_error_deg": 5.0,
             "max_roll_error_deg": 5.0,
         },
-        "geometry": {
-            "accepted_chunks": accepted,
-            "accepted_fraction": accepted / total if total else 0.0,
-            "position_error_m_p0_p50_p95_max": _percentiles(position_errors),
-            "axis_error_deg_p0_p50_p95_max": _percentiles(axis_errors),
-            "roll_error_deg_p0_p50_p95_max": _percentiles(roll_errors),
+        "comparison": {
+            "policy_prediction": _summary(stats["policy_prediction"], total),
+            "recorded_oracle": _summary(stats["recorded_oracle"], total),
+            "interpretation": (
+                "If the recorded oracle also fails, fix registration, IK or timing "
+                "before blaming the learned policy. If the oracle passes but the "
+                "policy fails, the learned output is the bottleneck."
+            ),
         },
-        "dynamics": {
-            "accepted_chunks": dynamic_accepted,
-            "accepted_fraction": dynamic_accepted / total if total else 0.0,
-            "arm_speed_peak_rad_s_p0_p50_p95_max": _percentiles(arm_speed_peaks),
-            "arm_accel_peak_rad_s2_p0_p50_p95_max": _percentiles(arm_accel_peaks),
-            "gap_speed_peak_m_s_p0_p50_p95_max": _percentiles(gap_speed_peaks),
-            "gap_accel_peak_m_s2_p0_p50_p95_max": _percentiles(gap_accel_peaks),
-        },
-        "rejections": dict(sorted(rejects.items())),
-        "examples": examples,
         "next_gate": (
             "Only after geometry and commanded dynamics are measured should a "
             "camera-matched MuJoCo diagnostic video be interpreted."
