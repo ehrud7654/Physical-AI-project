@@ -39,7 +39,7 @@ object EpisodePackager {
         val imuBytes = readBytes(dir, "imu.csv") ?: ByteArray(0)
         val gripperBytes = gripperCsv(dir)
         val framesBytes = framesCsv(dir)
-        val metaJson = buildMetaJson(sid, ep)
+        val metaJson = buildMetaJson(sid, ep, poseBytes)
         val metaBytes = metaJson.toString(2).toByteArray()
         val checksums = JSONObject()
             .put("meta.json", sha256(metaBytes))
@@ -122,17 +122,25 @@ object EpisodePackager {
      * meta.json — episode-archive-v1 (계약 5.2). episode.json 에서 값을 매핑한다.
      * 라벨은 아직 없으므로 success=null, label_status=UNLABELED (계약 라벨 불변식).
      */
-    private fun buildMetaJson(sid: String, ep: JSONObject?): JSONObject {
+    private fun buildMetaJson(sid: String, ep: JSONObject?, poseBytes: ByteArray): JSONObject {
         val summary = ep?.optJSONObject("summary")
         val clock = ep?.optJSONObject("clock_ref")
         val camIntr = ep?.optJSONObject("camera")?.optJSONObject("intrinsics")
         val raw = ep?.optJSONObject("meta_raw")
 
-        val startMs = clock?.optString("start_wallclock_ms")?.toLongOrNull()
+        // 시작 시각·timebase 는 세션 시작 클럭이 아니라 "첫 pose 샘플"에 맞춘다.
+        // 세션 시작 클럭이 첫 프레임보다 수십 ms 늦게 찍혀 startMonotonicNs > firstTimestampNs 가 되면
+        // 서버가 "시작 전 데이터"로 보고 422(수집 시간 범위) 낸다. 첫/마지막 샘플에 맞춰 monotonic↔wallclock 을 정렬.
+        val clockWallMs = clock?.optString("start_wallclock_ms")?.toLongOrNull()
             ?: ep?.optLong("recorded_at_ms") ?: 0L
-        val durSec = summary?.optDouble("duration_sec", 0.0) ?: 0.0
-        val endMs = if (startMs > 0) startMs + (durSec * 1000).toLong() else 0L
-        val startMono = clock?.optString("start_elapsed_realtime_ns")?.toLongOrNull() ?: 0L
+        val clockMonoNs = clock?.optString("start_elapsed_realtime_ns")?.toLongOrNull() ?: 0L
+        val (firstTs, lastTs) = firstLastTs(poseBytes)
+        // wallclock(ts) = clockWallMs + (ts - clockMonoNs)/1e6
+        fun wallMsAt(ts: Long) = if (clockWallMs > 0 && ts > 0) clockWallMs + (ts - clockMonoNs) / 1_000_000L else 0L
+        val startMono = if (firstTs > 0) firstTs else clockMonoNs
+        val startMs = if (firstTs > 0) wallMsAt(firstTs) else clockWallMs
+        val endMs = if (lastTs > firstTs) wallMsAt(lastTs)
+            else startMs + ((summary?.optDouble("duration_sec", 0.0) ?: 0.0) * 1000).toLong()
 
         // "Samsung SM-S938N" → manufacturer / model
         val deviceStr = ep?.optString("device") ?: raw?.optString("device") ?: ""

@@ -163,7 +163,10 @@ object Uploader {
             conn.outputStream.use { it.write(body.toByteArray()) }
             val code = conn.responseCode
             if (code == 401) { DeviceAuth.refresh(ctx); Log.w(TAG, "session 401 → 토큰 갱신 후 재시도 대기"); return null }
-            if (code !in 200..299) { Log.w(TAG, "session 발급 HTTP $code"); return null }
+            if (code !in 200..299) {
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "session 발급 HTTP $code body=$err"); return null
+            }
             val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
             val hdrs = mutableMapOf<String, String>()
             d.optJSONObject("requiredHeaders")?.let { rh -> rh.keys().forEach { k -> hdrs[k] = rh.getString(k) } }
@@ -178,6 +181,8 @@ object Uploader {
         val conn = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "PUT"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            // 큰 본문 전송 전에 서버가 4xx 로 거절할 수 있게 100-continue. 없으면 조기 거절 시 Broken pipe 로 에러코드 못 봄.
+            setRequestProperty("Expect", "100-continue")
             requiredHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
             setFixedLengthStreamingMode(zip.length())
         }
@@ -186,7 +191,13 @@ object Uploader {
                 zip.inputStream().use { it.copyTo(out) }
             }
             val code = conn.responseCode
-            if (code !in 200..299) { Log.w(TAG, "S3 PUT HTTP $code"); return null }
+            if (code !in 200..299) {
+                // [임시 진단] 서명 노출 방지 위해 host+path 만, S3 에러 XML 바디도.
+                val u = URL(uploadUrl)
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "S3 PUT HTTP $code url=${u.host}${u.path} body=$err")
+                return null
+            }
             conn.getHeaderField("ETag") ?: "no-etag"
         } catch (e: Exception) { Log.w(TAG, "S3 PUT 실패: ${e.message}"); null }
         finally { conn.disconnect() }

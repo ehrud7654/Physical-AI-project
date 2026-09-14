@@ -48,6 +48,14 @@ class UploadWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
 
         // zip + 세션 요청 metadata·summary (계약 6.1). endedAt 은 metadata 안에 있어 재시도에도 동일.
         val pkg = EpisodePackager.pack(dir, sessionId, zipDir) ?: return false
+        // deviceIdentifier 는 등록 시 서버에 저장된 하드웨어 핸들(로그인 UUID·secret 과 별개). 서버가 인증 장치와
+        // 이 값을 비교해 다르면 409 DEVICE_MISMATCH. 업로드 시점에 주입.
+        // TODO(enroll): QR enroll 붙으면 Prefs.deviceIdentifier 로 채움. 그 전엔 테스트 장치 핸들로 폴백.
+        val devIdent = Prefs.deviceIdentifier(ctx).ifBlank { "UMI-001" }
+        pkg.metadata.optJSONObject("device")?.put("deviceIdentifier", devIdent)
+        // 전송 때 고른 스킬(.upload_skill)이 있으면 촬영 때 값보다 우선.
+        File(dir, ".upload_skill").takeIf { it.exists() }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { pkg.metadata.put("skillKey", it) }
         val zip = pkg.zip
         val size = zip.length()
         val sha = Uploader.sha256Hex(zip)
