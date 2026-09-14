@@ -37,7 +37,7 @@ public record EpisodeUploadSessionRequest(
       @Positive int frameCount,
       @Positive int poseSampleCount,
       @Positive int imuSampleCount,
-      @Positive int gripperSampleCount,
+      @PositiveOrZero int gripperSampleCount,
       @PositiveOrZero int missingFrameCount,
       @PositiveOrZero int trackingGapCount,
       @PositiveOrZero long trackingLostDurationNs) {}
