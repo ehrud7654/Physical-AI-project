@@ -2,11 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, Training, TrainingRequirements, TrainingSkill, TrainingStatus, View, WorkflowBlock } from '@/types';
+import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, Training, TrainingSkill, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
+import { createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -393,6 +393,23 @@ function DevicesView({ initialTab, onSelectRobot, onToast }: { initialTab: Devic
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  useEffect(() => {
+    if (!detail || ['완료', '실패', '취소됨'].includes(detail.status)) return;
+    let active = true;
+    const refreshDetail = async () => {
+      try {
+        const latest = await fetchTrainingDetail(detail.id);
+        if (active) setDetail(latest);
+      } catch {
+        if (active) onToast('학습 진행 상태를 갱신하지 못했어요.');
+      }
+    };
+    const timer = window.setInterval(() => void refreshDetail(), 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [detail?.id, detail?.status, onToast]);
   const [deleting, setDeleting] = useState(false);
   const { robots, umis: umi, deleteDevicesById } = useAppStore();
   const recentOrder = (value: string) => value === '방금 전' ? -1 : value.startsWith('오늘') ? 0 : value.startsWith('어제') ? 1 : Number.parseInt(value, 10) || 99;
@@ -646,9 +663,11 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
     if (!confirmFor) return;
     setBusy(true);
     await cancelTrainingById(confirmFor.id);
+    await refreshTrainings();
     onToast(`‘${confirmFor.name}’ 학습을 취소했어요.`);
     setBusy(false);
     setConfirmFor(null);
+    setDetail(null);
   };
   const refreshStatus = async () => {
     const refreshed = await refreshTrainings();
@@ -669,6 +688,30 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
   const updatedLabel = trainingUpdatedAt
     ? new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(trainingUpdatedAt)
     : '확인 중';
+
+  if (detail) {
+    const terminal = ['완료', '실패', '취소됨'].includes(detail.status);
+    return <>
+      <button className="back-link" onClick={() => { setDetail(null); void refreshTrainings(); }}>← 학습 목록으로 돌아가기</button>
+      <div className="progress-layout">
+        <section className="card progress-card">
+          <div className="progress-card-actions">{!terminal && <button className="danger-button" disabled={busy} onClick={() => setConfirmFor(detail)}>학습 취소</button>}</div>
+          <div className="learning-orbit"><span>{detail.status === '완료' ? '✓' : '✦'}</span></div>
+          <p className="eyebrow">{detail.status}</p>
+          <h2>{detail.name}</h2>
+          <div className="progress-number">{detail.progress}<small>%</small></div>
+          <div className="progress-track"><i style={{ width: `${detail.progress}%` }} /></div>
+          <div className="progress-meta"><div><small>현재 단계</small><strong>{detail.stage}</strong></div><div><small>시작 시각</small><strong>{detail.started}</strong></div><div><small>입력 방식</small><strong>{detail.inputMode === 'EXISTING_EPISODES' ? '수집 데이터' : '신규 수집'}</strong></div></div>
+        </section>
+        <section className="card log-card">
+          <div className="log-heading"><div><h3>진행 기록</h3></div><span>API 조회 결과</span></div>
+          <div className="log-list"><p><time>{detail.started}</time><span className={terminal ? 'log-ok' : 'log-run'}>{detail.status}</span>{detail.stage} · {detail.progress}%</p></div>
+          <div className="training-save-actions"><button className="secondary-button" onClick={() => { setDetail(null); void refreshTrainings(); }}>학습 목록으로 돌아가기</button>{detail.status === '완료' && <button className="primary-button" disabled={!skills.some(skill => skill.name === detail.name)} onClick={() => onUseResult(detail.name)}>이 동작으로 작업 생성</button>}</div>
+        </section>
+      </div>
+      {confirmFor && <div className="modal-backdrop" onMouseDown={() => !busy && setConfirmFor(null)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="학습 취소 확인" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>학습을 취소할까요?</h2><p>취소 후 학습 목록을 자동으로 갱신합니다.</p></div><button className="close-button" onClick={() => setConfirmFor(null)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={busy} onClick={() => setConfirmFor(null)}>계속 진행</button><button className="danger-button" disabled={busy} onClick={() => void cancelConfirmed()}>{busy ? '요청 중...' : '취소 요청'}</button></div></section></div>}
+    </>;
+  }
 
   return <>
     <div className="page-heading list-page-heading title-divider"><div><h1>학습 목록</h1></div><button className="primary-button page-create-button" onClick={() => onNavigate('learn')}>새 학습 생성 <span aria-hidden="true">›</span></button></div>
@@ -744,225 +787,95 @@ function DataView() {
 }
 
 function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; onToast: (message: string) => void }) {
-  const { umis, datasets, learningDraft, updateLearningDraft, resetLearningDraft, cancelTrainingById, completeLearning, draftReady, draftStored } = useAppStore();
-  const { step, skillKey, method, umiId, expectedEpisodes, selected, progress, name } = learningDraft;
-  const setStep = (step: number) => updateLearningDraft({ step });
-  const [newSkillActive, setNewSkillActive] = useState(Boolean(name.trim()));
-  const setSkillKey = (skillKey: string) => {
-    setNewSkillActive(false);
-    updateLearningDraft({ skillKey, selected: [], name: '' });
-  };
-  const setMethod = (method: 'new' | 'existing' | null) => updateLearningDraft({ method });
-  const setUmiId = (umiId: string) => updateLearningDraft({ umiId });
-  const setExpectedEpisodes = (expectedEpisodes: number) => updateLearningDraft({ expectedEpisodes });
-  const setSelected = (fn: (current: string[]) => string[]) => updateLearningDraft({ selected: fn(selected) });
+  const { umis, datasets, learningDraft, updateLearningDraft, resetLearningDraft, refreshDatasets, refreshTrainings } = useAppStore();
+  const { step, skillKey, selected } = learningDraft;
   const [catalog, setCatalog] = useState<TrainingSkill[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState(false);
-  const [requirements, setRequirements] = useState<TrainingRequirements | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [canceling, setCanceling] = useState(false);
-  const [savingResult, setSavingResult] = useState(false);
-  const serverSkill = newSkillActive ? undefined : catalog.find(item => item.skillKey === skillKey);
-  const displayedSkills = catalog.map((item, index) => ({
-    key: item.skillKey,
-    name: item.displayName,
-    description: item.description ?? '등록된 설명이 없습니다.',
-    mark: item.displayName.trim().charAt(0) || String(index + 1),
-  }));
-  const catalogSkill = displayedSkills.find(item => item.key === skillKey) ?? displayedSkills[0];
-  const customName = name.trim();
-  const skill = newSkillActive ? (customName ? { ...catalogSkill, name: customName } : undefined) : catalogSkill;
-  const selectedUmi = umis.find(item => item.id === umiId);
-  const availableData = newSkillActive ? [] : datasets.filter(item => item.skillKey === skillKey);
-  const readyData = availableData.filter(item => item.ready);
-  const selectedData = availableData.filter(item => item.ready && selected.includes(item.id));
-  const allReadySelected = readyData.length > 0 && readyData.every(item => selected.includes(item.id));
+
   useEffect(() => {
     setCatalogLoading(true);
     setCatalogError(false);
-    void fetchTrainingSkills()
-      .then((skills) => setCatalog(skills.filter((item) => item.tier !== 'CUSTOM' || item.status !== 'PLANNED')))
+    void Promise.all([fetchTrainingSkills(), refreshDatasets()])
+      .then(([skills]) => setCatalog(skills.filter((item) => item.tier !== 'CUSTOM' || item.status !== 'PLANNED')))
       .catch(() => {
         setCatalogError(true);
-        onToast('학습 동작 목록을 불러오지 못했어요.');
+        onToast('학습 동작과 수집 데이터를 불러오지 못했어요.');
       })
       .finally(() => setCatalogLoading(false));
-  }, [onToast]);
+  }, [onToast, refreshDatasets]);
+
   useEffect(() => {
-    // A newly created custom skill is not part of the catalog fetched when this
-    // wizard opened. Once the server has created the job, its returned skillKey
-    // must not be treated as an invalid stale selection and reset the wizard.
-    if (step >= 5 && learningDraft.trainingJobId) return;
-    if (catalog.length && !catalog.some(item => item.skillKey === skillKey)) {
-      updateLearningDraft({
-        step: 1,
-        skillKey: catalog[0].skillKey,
-        method: null,
-        selected: [],
-        trainingJobId: undefined,
-        name: '',
-        error: undefined,
-      });
-    } else if (!catalogLoading && !catalog.length && step !== 1) {
-      updateLearningDraft({
-        step: 1,
-        method: null,
-        selected: [],
-        trainingJobId: undefined,
-        name: '',
-        error: undefined,
-      });
+    if (step < 1 || step > 3) {
+      updateLearningDraft({ step: 1, method: 'existing', selected: [], trainingJobId: undefined, error: undefined });
+      return;
     }
-  }, [catalog, catalogLoading, skillKey, step, updateLearningDraft]);
-  useEffect(() => {
-    if (!serverSkill) return;
-    void fetchTrainingRequirements(serverSkill.skillKey).then((next) => {
-      setRequirements(next);
-      if (expectedEpisodes < next.minimumEpisodeCount) setExpectedEpisodes(next.recommendedEpisodeCount);
-    }).catch(() => onToast('학습 입력 조건을 불러오지 못했어요.'));
-  }, [serverSkill?.id]);
-  useEffect(() => {
-    if (step !== 5 || !learningDraft.trainingJobId) return;
-    let active = true;
-    const refreshJob = async () => {
-      try {
-        const job = await fetchTrainingDetail(learningDraft.trainingJobId!);
-        if (!active) return;
-        updateLearningDraft({
-          progress: job.progress,
-          method: job.inputMode === 'COLLECT_NEW' ? 'new' : 'existing',
-          error: job.status === '실패' ? job.stage : undefined,
-        });
-        if (job.status === '완료') updateLearningDraft({ step: 6, progress: 100, error: undefined });
-      } catch {
-        if (active) updateLearningDraft({ error: '학습 상태를 불러오지 못했어요.' });
-      }
-    };
-    void refreshJob();
-    const timer = window.setInterval(() => void refreshJob(), 3000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [step, learningDraft.trainingJobId, updateLearningDraft]);
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [step]);
-  const toggleEpisode = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const toggleAllReady = () => setSelected(() => allReadySelected ? [] : readyData.map(item => item.id));
-  const stage = progress < 35 ? '데이터 전처리' : progress < 75 ? '동작 패턴 학습' : '결과 확인';
-  const canContinueData = method === 'new'
-    ? Boolean(selectedUmi?.status === '온라인' && Number.isInteger(expectedEpisodes)
-        && expectedEpisodes >= (newSkillActive ? 1 : (requirements?.minimumEpisodeCount ?? 1))
-        && expectedEpisodes <= (newSkillActive ? 100 : (requirements?.maximumEpisodeCount ?? 100)))
-    : selectedData.length > 0;
+    if (!catalog.length) return;
+    if (!catalog.some((item) => item.skillKey === skillKey)) {
+      updateLearningDraft({ step: 1, skillKey: catalog[0].skillKey, method: 'existing', selected: [] });
+    }
+  }, [catalog, skillKey, step, updateLearningDraft]);
+
+  const skill = catalog.find((item) => item.skillKey === skillKey);
+  const availableData = datasets.filter((item) => item.skillKey === skillKey);
+  const readyData = availableData.filter((item) => item.trainable);
+  const selectedData = readyData.filter((item) => selected.includes(item.id));
+  const allSelected = readyData.length > 0 && readyData.every((item) => selected.includes(item.id));
+  const selectSkill = (nextSkillKey: string) => {
+    updateLearningDraft({ skillKey: nextSkillKey, method: 'existing', selected: [], name: '' });
+  };
+  const toggleEpisode = (episodeId: string) => updateLearningDraft({
+    selected: selected.includes(episodeId) ? selected.filter((id) => id !== episodeId) : [...selected, episodeId],
+  });
+
   const submitTraining = async () => {
-    const targetUmi = method === 'new' ? selectedUmi : umis.find(item => item.id === selectedData[0]?.umiId);
-    if (!method || !targetUmi) { onToast('학습에 사용할 UMI를 확인할 수 없어요.'); return; }
+    if (!skill || !selectedData.length) return;
+    const umi = umis.find((item) => item.id === selectedData[0].umiId);
+    if (!umi) {
+      onToast('수집 데이터의 UMI 장치를 확인할 수 없어요.');
+      return;
+    }
     setSubmitting(true);
     try {
-      const job = await createTrainingJob({
-        ...(newSkillActive
-          ? { newSkill: { displayName: customName } }
-          : { skillKey }),
-        umiDeviceId: targetUmi.deviceId,
-        inputMode: method === 'new' ? 'COLLECT_NEW' : 'EXISTING_EPISODES',
-        expectedEpisodeCount: method === 'new' ? expectedEpisodes : undefined,
-        episodeIds: method === 'existing' ? selectedData.map(item => item.id) : undefined,
+      await createTrainingJob({
+        skillKey: skill.skillKey,
+        umiDeviceId: umi.deviceId,
+        inputMode: 'EXISTING_EPISODES',
+        episodeIds: selectedData.map((item) => item.id),
       });
-      updateLearningDraft({
-        skillKey: job.skillKey,
-        progress: job.progress,
-        step: 5,
-        method: job.inputMode === 'COLLECT_NEW' ? 'new' : 'existing',
-        startedAt: null,
-        name: customName || job.name,
-        trainingJobId: job.id,
-        error: undefined,
-      });
+      resetLearningDraft();
+      await refreshTrainings();
       onToast('학습 작업을 생성했어요.');
-    } catch {
-      onToast('학습 작업을 생성하지 못했어요.');
-    } finally { setSubmitting(false); }
-  };
-  const cancelCurrentTraining = async () => {
-    if (!learningDraft.trainingJobId) return;
-    setCanceling(true);
-    try {
-      await cancelTrainingById(learningDraft.trainingJobId);
-      resetLearningDraft();
-      setCancelOpen(false);
-      onToast('학습 취소를 요청했어요.');
       onNavigate('training');
     } catch {
-      onToast('학습을 취소하지 못했어요. 다시 시도해 주세요.');
+      onToast('학습 작업을 생성하지 못했어요. 선택한 데이터와 UMI 정보를 확인해 주세요.');
     } finally {
-      setCanceling(false);
+      setSubmitting(false);
     }
   };
-  const saveCompletedTraining = async () => {
-    if (!learningDraft.trainingJobId || step !== 6 || !skill) return;
-    setSavingResult(true);
-    try {
-      await completeLearning({ name: skill.name, robot: umiId });
-      resetLearningDraft();
-      onToast('완료된 학습을 저장했어요.');
-      onNavigate('training');
-    } catch {
-      onToast('학습 결과를 저장하지 못했어요. 다시 시도해 주세요.');
-    } finally {
-      setSavingResult(false);
-    }
-  };
-  const learningStepSummaries = [
-    skill?.name ?? '',
-    method === 'new' ? '새로 동작 보여주기' : method === 'existing' ? '기존 데이터 사용' : '',
-    step > 3 ? '준비 완료' : '',
-    step > 4 ? '확인 완료' : '',
-    '',
-  ];
 
   if (catalogLoading) {
-    return <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>학습 동작을 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>;
+    return <div className="center-panel"><section className="card state-card"><span className="spinner" aria-hidden="true" /><h2>학습 데이터를 불러오는 중이에요</h2><p>잠시만 기다려 주세요.</p></section></div>;
   }
-
   if (catalogError) {
-    return <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>학습 동작을 불러오지 못했어요</h2><p>페이지를 새로고침해 다시 시도해 주세요.</p></section></div>;
+    return <div className="center-panel"><section className="card state-card"><span className="state-icon">!</span><h2>학습 데이터를 불러오지 못했어요</h2><p>페이지를 새로고침해 다시 시도해 주세요.</p></section></div>;
   }
 
   return <>
-    <div className="page-heading learning-heading title-divider"><div><h1>학습 생성</h1></div><span className="draft-label">{draftReady && draftStored ? '이 기기에 임시 저장됨' : '현재 화면에 보관 중'}</span></div>
-    <p className="mobile-step-status" role="status">{Math.min(step, 5)} / 5 · {['동작 선택', '데이터 방식', '데이터 준비', '최종 확인', '학습 진행'][Math.min(step,5)-1]}</p><ol className="steps redesigned-steps" aria-label="학습 생성 단계">
-      {['동작 선택', '데이터 방식', '데이터 준비', '최종 확인', '학습 진행'].map((label, index) => <li key={label} className={step === index + 1 || (step === 6 && index === 4) ? 'current' : step > index + 1 ? 'done' : ''}><span>{step > index + 1 ? '✓' : index + 1}</span><div><strong>{label}</strong>{learningStepSummaries[index] && <small>{learningStepSummaries[index]}</small>}</div></li>)}
+    <div className="page-heading learning-heading title-divider"><div><h1>학습 생성</h1></div></div>
+    <p className="mobile-step-status" role="status">{step} / 3 · {['동작 선택', '수집 데이터 선택', '최종 확인'][step - 1]}</p>
+    <ol className="steps redesigned-steps" aria-label="학습 생성 단계">
+      {['동작 선택', '수집 데이터 선택', '최종 확인'].map((label, index) => <li key={label} className={step === index + 1 ? 'current' : step > index + 1 ? 'done' : ''}><span>{step > index + 1 ? '✓' : index + 1}</span><div><strong>{label}</strong></div></li>)}
     </ol>
 
-    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택하거나 새 이름을 입력해 주세요</h2></div></div><div className="skill-choice-grid">{displayedSkills.map((item) => <button key={item.key} className={!newSkillActive && skillKey === item.key ? 'selected' : ''} onClick={() => setSkillKey(item.key)}><span>{item.mark}</span><div><strong>{item.name}</strong><p>{item.description}</p></div><i>{!newSkillActive && skillKey === item.key ? '✓' : ''}</i></button>)}<div className={`new-skill-entry${newSkillActive ? ' selected' : ''}`}><span aria-hidden="true">＋</span><div><label htmlFor="new-skill-name">새로운 동작 학습하기</label><div className="new-skill-input-row"><input id="new-skill-name" maxLength={40} value={name} onFocus={() => { setNewSkillActive(true); setMethod('new'); }} onChange={(event) => { setNewSkillActive(true); updateLearningDraft({ name: event.target.value, method: 'new', selected: [] }); }} placeholder="학습 이름을 입력해 주세요" autoComplete="off" /></div></div></div></div><div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => setStep(2)}>다음: 데이터 방식 →</button></div></section>}
+    {step === 1 && <section className="card learning-wizard-card"><div className="wizard-title"><span>1</span><div><h2>학습할 동작을 선택해 주세요</h2></div></div><div className="skill-choice-grid">{catalog.map((item, index) => <button key={item.id} className={skillKey === item.skillKey ? 'selected' : ''} onClick={() => selectSkill(item.skillKey)}><span>{item.displayName.trim().charAt(0) || index + 1}</span><div><strong>{item.displayName}</strong><p>{item.description ?? '등록된 설명이 없습니다.'}</p></div><i>{skillKey === item.skillKey ? '✓' : ''}</i></button>)}</div>{!catalog.length && <p className="table-empty">등록된 동작이 없습니다.</p>}<div className="wizard-actions"><span /><button className="primary-button" disabled={!skill} onClick={() => updateLearningDraft({ step: 2, method: 'existing' })}>다음: 수집 데이터 선택 →</button></div></section>}
 
-    {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>2</span><div><h2>학습 데이터를 어떻게 준비할까요?</h2></div></div><div className="method-choice-grid"><button className={method === 'new' ? 'selected' : ''} onClick={() => setMethod('new')}><span className="method-icon">＋</span><strong>새로 동작 보여주기</strong><p>온라인 UMI를 선택하고 로봇에게 새로운 동작을 보여줍니다.</p><ul><li>새 환경이나 동작을 학습할 때</li><li>UMI로 동작을 직접 보여줄 수 있을 때</li></ul></button><button disabled={newSkillActive} className={method === 'existing' ? 'selected' : ''} onClick={() => setMethod('existing')}><span className="method-icon">↻</span><strong>기존 데이터 사용</strong><p>{newSkillActive ? '새로운 동작은 먼저 데이터를 수집해야 합니다.' : '준비된 기존 데이터를 선택해 바로 학습합니다.'}</p><ul><li>같은 동작을 다시 학습할 때</li><li>기존 데이터를 조합하고 싶을 때</li></ul></button></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(1)}>← 이전</button><button className="primary-button" disabled={!method} onClick={() => setStep(3)}>다음: 데이터 준비 →</button></div></section>}
+    {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>2</span><div><h2>학습에 사용할 수집 데이터를 선택해 주세요</h2></div></div><div className="episode-select-list"><div className="episode-selection-toolbar"><span>학습 가능 {readyData.length}개</span><button className="text-button" type="button" disabled={!readyData.length} onClick={() => updateLearningDraft({ selected: allSelected ? [] : readyData.map((item) => item.id) })}>{allSelected ? '전체 선택 해제' : '전체 선택'}</button></div>{availableData.map((item) => <label key={item.id} className={`${selected.includes(item.id) ? 'selected' : ''}${!item.trainable ? ' disabled' : ''}`}><input type="checkbox" disabled={!item.trainable} checked={selected.includes(item.id)} onChange={() => toggleEpisode(item.id)} /><span><strong>데이터 {String(item.seq).padStart(3, '0')}</strong><small>{item.date} · {item.duration} · {item.umiId}</small></span><em>{item.trainable ? '확인 완료 · 학습 가능' : recoveryActionLabel[item.recoveryAction]}</em></label>)}{!availableData.length && <p className="table-empty">이 동작에 수집된 데이터가 없습니다.</p>}<div className="episode-selection-summary" role="status"><strong>{selectedData.length}개 선택됨</strong><span>{selectedData.length ? '선택한 데이터로 학습을 생성할 수 있어요.' : '학습할 데이터를 선택해 주세요.'}</span></div></div><div className="wizard-actions"><button className="secondary-button" onClick={() => updateLearningDraft({ step: 1, selected: [] })}>← 이전</button><button className="primary-button" disabled={!selectedData.length} onClick={() => updateLearningDraft({ step: 3 })}>다음: 최종 확인 →</button></div></section>}
 
-    {step === 3 && <section className="card learning-wizard-card"><div className="wizard-title"><span>3</span><div><h2>{method === 'new' ? '동작을 보여줄 UMI를 선택해 주세요' : '학습에 사용할 데이터를 선택해 주세요'}</h2></div></div>{method === 'new' ? <><div className="umi-choice-list">{umis.map((item) => <button key={item.id} disabled={item.status !== '온라인'} className={umiId === item.id ? 'selected' : ''} onClick={() => setUmiId(item.id)}><span className="device-visual umi">U</span><div><strong>{item.id}</strong><p>{item.place} · 최근 사용 {item.collected}</p></div><span className={`status-pill status-${item.status}`}><i />{item.status}</span></button>)}</div><label className="episode-count">예상 동작 횟수<input type="number" min={1} value={expectedEpisodes} onChange={(event) => setExpectedEpisodes(Number(event.target.value))} /></label></> : <div className="episode-select-list"><div className="episode-selection-toolbar"><span>학습 가능 {readyData.length}개</span><button className="text-button" type="button" disabled={!readyData.length} onClick={toggleAllReady}>{allReadySelected ? '전체 선택 해제' : '학습 가능한 데이터 전체 선택'}</button></div>{availableData.map((item) => { const available = item.trainable; return <label key={item.id} className={`${selected.includes(item.id) ? 'selected' : ''}${!available ? ' disabled' : ''}`}><input type="checkbox" disabled={!available} checked={selected.includes(item.id)} onChange={() => toggleEpisode(item.id)} /><span><strong>데이터 {String(item.seq).padStart(3, '0')}</strong><small>{item.date} · {item.duration} · {item.umiId}</small></span><em>{available ? '확인 완료 · 학습 가능' : recoveryActionLabel[item.recoveryAction]}</em></label>; })}{!availableData.length && <p className="table-empty">이 동작의 데이터가 없어요. 이전 단계에서 새로 동작 보여주기를 선택해 주세요.</p>}<div className="episode-selection-summary" role="status"><strong>{selectedData.length}개 선택됨</strong><span>{selectedData.length > 0 ? '선택한 데이터로 진행할 수 있어요.' : '데이터를 선택해 주세요.'}</span></div></div>}<div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(2)}>← 이전</button><button className="primary-button" disabled={!canContinueData} onClick={() => setStep(4)}>다음: 최종 확인 →</button></div></section>}
-
-    {step === 4 && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>4</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.name}</dd></div><div><dt>데이터 방식</dt><dd>{method === 'new' ? '새 데이터 만들기' : '기존 데이터 사용'}</dd></div><div><dt>{method === 'new' ? '사용할 UMI' : '선택 데이터'}</dt><dd>{method === 'new' ? `${umiId} · ${expectedEpisodes}회 예정` : `${selected.length}개 데이터`}</dd></div></dl><div className="review-notice"><strong>생성하면 바로 데이터 준비를 시작합니다.</strong><p>{method === 'new' ? 'UMI로 동작을 보여주면 데이터 확인 후 학습이 시작돼요.' : '선택한 데이터 확인 후 학습이 시작돼요.'}</p></div><div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(3)}>← 이전</button><button className="primary-button" disabled={submitting} onClick={() => void submitTraining()}>{submitting ? '생성 중...' : '학습 작업 생성'}</button></div></section>}
-
-    {(step === 5 || step === 6) && <div className="progress-layout">
-      <section className="card progress-card">
-        <div className="progress-card-actions">{step === 5 && <button className="danger-button" disabled={canceling} onClick={() => setCancelOpen(true)}>학습 취소</button>}</div>
-        <div className="learning-orbit"><span>{step === 6 ? '✓' : '✦'}</span></div>
-        <p className="eyebrow">{step === 6 ? '학습 완료' : method === 'new' && progress < 25 ? '데이터 준비 중' : '학습 진행 중'}</p>
-        <h2>{skill.name}</h2>
-        {step === 6 && <p>학습 결과가 준비됐어요. 오른쪽의 학습 저장 버튼으로 결과를 등록해 주세요.</p>}
-        <div className="progress-number">{step === 6 ? 100 : progress}<small>%</small></div>
-        <div className="progress-track"><i style={{ width: `${step === 6 ? 100 : progress}%` }} /></div>
-        <div className="progress-meta"><div><small>현재 단계</small><strong>{step === 6 ? '학습 완료' : method === 'new' && progress < 25 ? '데이터 확인' : stage}</strong></div><div><small>예상 남은 시간</small><strong>{step === 6 ? '완료' : `약 ${Math.max(1, Math.ceil((100 - progress) / 12))}분`}</strong></div><div><small>입력 방식</small><strong>{method === 'new' ? '새 데이터' : '기존 데이터'}</strong></div></div>
-      </section>
-      <section className="card log-card">
-        <div className="log-heading"><div><h3>진행 기록</h3></div><span>{step === 6 ? '완료' : '실시간'}</span></div>
-        {learningDraft.error && <div className="log-error" role="alert"><p>{learningDraft.error}</p><button className="secondary-button" onClick={() => onNavigate('training')}>학습 목록에서 다시 시도</button></div>}
-        <div className="log-list"><p><time>10:52:08</time><span className="log-ok">완료</span>학습 작업 생성</p><p><time>10:52:14</time><span className="log-ok">완료</span>입력 데이터 확인</p>{step === 6 ? <p><time>완료</time><span className="log-ok">완료</span>학습 및 결과 확인 완료</p> : <p><time>10:53:02</time><span className="log-run">진행</span>{stage} 진행 중...</p>}</div>
-        <div className="training-save-actions"><button className="primary-button" disabled={step !== 6 || savingResult} onClick={() => void saveCompletedTraining()}>{savingResult ? '저장 중...' : '학습 저장'}</button>{step !== 6 && <small>학습이 완료되면 저장할 수 있어요.</small>}</div>
-      </section>
-    </div>}
-    {cancelOpen && <div className="modal-backdrop" onMouseDown={() => !canceling && setCancelOpen(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="학습 취소 확인" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><h2>학습을 취소할까요?</h2></div><button className="close-button" disabled={canceling} onClick={() => setCancelOpen(false)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={canceling} onClick={() => setCancelOpen(false)}>계속 진행</button><button className="danger-button" disabled={canceling} onClick={() => void cancelCurrentTraining()}>{canceling ? '취소 중...' : '취소'}</button></div></section></div>}
+    {step === 3 && skill && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>3</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.displayName}</dd></div><div><dt>선택 데이터</dt><dd>{selectedData.length}개</dd></div><div><dt>수집 UMI</dt><dd>{selectedData[0]?.umiId ?? '확인할 수 없음'}</dd></div></dl><div className="review-notice"><strong>생성하면 학습 목록에서 진행 상태를 확인할 수 있습니다.</strong></div><div className="wizard-actions"><button className="secondary-button" onClick={() => updateLearningDraft({ step: 2 })}>← 이전</button><button className="primary-button" disabled={submitting || !selectedData.length} onClick={() => void submitTraining()}>{submitting ? '생성 중...' : '학습 작업 생성'}</button></div></section>}
   </>;
 }
-
 export function LegacyLearnView({ onToast, onGoWork }: { onToast: (message: string) => void; onGoWork: () => void }) {
   const { robots, datasets, completeLearning } = useAppStore();
   const [selected, setSelected] = useState<string[]>([]);

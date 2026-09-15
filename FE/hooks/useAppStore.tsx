@@ -206,11 +206,15 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const cancelTrainingById = useCallback(async (trainingJobId: string) => {
     setTrainings(await cancelTraining(trainingJobId));
-  }, []);
+    if (learningDraft.trainingJobId === trainingJobId) resetLearningDraft();
+  }, [learningDraft.trainingJobId, resetLearningDraft]);
 
   const deleteTrainingsById = useCallback(async (trainingJobIds: string[]) => {
     setTrainings(await deleteTrainings(trainingJobIds));
-  }, []);
+    if (learningDraft.trainingJobId && trainingJobIds.includes(learningDraft.trainingJobId)) {
+      resetLearningDraft();
+    }
+  }, [learningDraft.trainingJobId, resetLearningDraft]);
 
   const deleteWorksById = useCallback(async (workIds: string[]) => {
     setSavedWorks(await deleteWorks(workIds));
