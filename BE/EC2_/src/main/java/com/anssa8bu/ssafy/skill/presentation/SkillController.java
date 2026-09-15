@@ -37,6 +37,11 @@ public class SkillController {
     return ApiResponse.of(service.listVisible(owner(jwt)));
   }
 
+  @GetMapping("/overview")
+  public ApiResponse<List<SkillOverviewResponse>> overview(@AuthenticationPrincipal Jwt jwt) {
+    return ApiResponse.of(service.listOverview(owner(jwt)));
+  }
+
   @PostMapping
   public ResponseEntity<ApiResponse<SkillResponse>> create(
       @AuthenticationPrincipal Jwt jwt,

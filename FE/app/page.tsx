@@ -2,11 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, Training, TrainingSkill, TrainingStatus, View, WorkflowBlock } from '@/types';
+import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus, Dataset, DeviceType, EpisodePreviewSession, LearnedSkill, RobotDetail, RobotExecution, RobotStatus, SavedWork, SkillOverview, Training, TrainingSkill, TrainingStatus, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { createCustomSkill, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
+import { createCustomSkill, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchSkillOverviews, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -50,6 +50,18 @@ function formatWorkDuration(seconds: number): string {
 
 function formatUpdatedAt(value: string): string {
   return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+}
+
+function formatApiDateTimeParts(value: string): { date: string; time: string } {
+  const date = new Date(value);
+  return {
+    date: new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(date),
+    time: new Intl.DateTimeFormat('ko-KR', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).format(date),
+  };
 }
 
 function getWorkflowIssues(work: SavedWork): string[] {
@@ -747,6 +759,14 @@ const datasetStatusMeta: Record<Dataset['status'], { label: string; description:
   DELETE_FAILED: { label: '삭제 실패', description: '파일 삭제에 실패했어요. 관리자에게 문의해 주세요.', className: 'invalid' },
 };
 
+const deploymentStatusMeta: Record<SkillOverview['deploymentStatus'], { label: string; className: string }> = {
+  DEPLOYED: { label: '실행 가능', className: 'ready' },
+  PLANNED: { label: '학습 필요', className: 'deployment-warning' },
+  COLLECTING: { label: '데이터 수집 중', className: 'deployment-warning' },
+  TRAINING: { label: '학습 중', className: 'deployment-warning' },
+  GATE_FAILED: { label: '검증 실패', className: 'invalid' },
+};
+
 const recoveryActionLabel: Record<Dataset['recoveryAction'], string> = {
   WAIT: '처리가 끝날 때까지 기다려 주세요.', RETRY_UPLOAD: '데이터를 다시 전송해 주세요.', RECORD_AGAIN: '동작을 다시 보여주세요.',
   SET_LABEL: '데이터의 동작 정보를 확인해 주세요.', EXTEND_RETENTION: '보관 기간을 연장해 주세요.', CREATE_DEPLOYMENT: '로봇에 작업을 먼저 배포해 주세요.',
@@ -790,7 +810,7 @@ function DataView() {
 }
 
 function SkillListView({ onToast }: { onToast: (message: string) => void }) {
-  const [skills, setSkills] = useState<TrainingSkill[]>([]);
+  const [skills, setSkills] = useState<SkillOverview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -803,7 +823,7 @@ function SkillListView({ onToast }: { onToast: (message: string) => void }) {
     setLoading(true);
     setError('');
     try {
-      setSkills(await fetchTrainingSkills());
+      setSkills(await fetchSkillOverviews());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '동작 목록을 불러오지 못했어요.');
       onToast('동작 목록을 불러오지 못했어요.');
@@ -826,8 +846,8 @@ function SkillListView({ onToast }: { onToast: (message: string) => void }) {
     setCreating(true);
     setCreateError('');
     try {
-      const created = await createCustomSkill({ displayName: name, description });
-      setSkills((current) => [...current, created]);
+      await createCustomSkill({ displayName: name, description });
+      await loadSkills();
       setCreateOpen(false);
       setDisplayName('');
       setDescription('');
@@ -846,23 +866,23 @@ function SkillListView({ onToast }: { onToast: (message: string) => void }) {
         {loading && <p role="status">등록된 동작을 불러오는 중이에요.</p>}
         {error && <p className="form-error" role="alert">동작 목록을 불러오지 못했어요. <button className="text-button" type="button" onClick={() => void loadSkills()}>다시 시도</button></p>}
       </div>
-      <button className="primary-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button>
     </div>
     <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table" aria-label="동작 목록">
         <div className="episode-row skill-list-row header" role="row">
-          <span>동작 ID</span><span>동작 키</span><span>표시 이름</span><span>분류</span><span>상태</span><span>설명</span>
+          <span>동작 이름</span><span>설명</span><span>최신 버전</span><span>버전 생성 시각</span><span>배포 상태</span><span>최근 학습 요청</span>
         </div>
-        {skills.map((skill) => <div className="episode-row skill-list-row" role="row" key={skill.id}>
-          <span data-label="동작 ID" title={skill.id}><code>{skill.id}</code></span>
-          <span data-label="동작 키">{skill.skillKey}</span>
-          <span data-label="표시 이름">{skill.displayName}</span>
-          <span data-label="분류">{skill.tier}</span>
-          <span data-label="상태">{skill.status}</span>
+        {skills.map((skill) => { const deployment = deploymentStatusMeta[skill.deploymentStatus]; const versionCreatedAt = skill.latestVersionCreatedAt ? formatApiDateTimeParts(skill.latestVersionCreatedAt) : null; const latestTrainingRequestedAt = skill.latestTrainingRequestedAt ? formatApiDateTimeParts(skill.latestTrainingRequestedAt) : null; return <div className="episode-row skill-list-row" role="row" key={`${skill.displayName}-${skill.latestVersionCreatedAt ?? 'empty'}`}>
+          <span className="skill-list-name" data-label="동작 이름">{skill.displayName}</span>
           <span data-label="설명">{skill.description || '-'}</span>
-        </div>)}
+          <span className="skill-list-version" data-label="최신 버전">{skill.latestVersion == null ? '-' : `v${skill.latestVersion}`}</span>
+          <span className="skill-list-datetime" data-label="버전 생성 시각">{versionCreatedAt ? <><strong>{versionCreatedAt.date}</strong><small>{versionCreatedAt.time}</small></> : '-'}</span>
+          <span data-label="배포 상태"><span className={`dataset-status ${deployment.className}`}><i />{deployment.label}</span></span>
+          <span className="skill-list-datetime" data-label="최근 학습 요청">{latestTrainingRequestedAt ? <><strong>{latestTrainingRequestedAt.date}</strong><small>{latestTrainingRequestedAt.time}</small></> : '-'}</span>
+        </div>; })}
         {!loading && !error && !skills.length && <div className="table-empty"><p>등록된 동작이 없어요.</p></div>}
       </div>
+      <div className="skill-list-actions"><button className="primary-button skill-add-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button></div>
     </section>
     {createOpen && <div className="modal-backdrop" onMouseDown={() => !creating && setCreateOpen(false)}>
       <form className="register-modal skill-create-modal" role="dialog" aria-modal="true" aria-label="동작 추가" onSubmit={submitSkill} onMouseDown={(event) => event.stopPropagation()}>

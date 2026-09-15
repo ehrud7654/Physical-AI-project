@@ -167,6 +167,15 @@ export interface TrainingSkill {
   status: string;
 }
 
+export interface SkillOverview {
+  displayName: string;
+  description: string | null;
+  latestVersion: number | null;
+  latestVersionCreatedAt: string | null;
+  deploymentStatus: 'PLANNED' | 'COLLECTING' | 'TRAINING' | 'GATE_FAILED' | 'DEPLOYED';
+  latestTrainingRequestedAt: string | null;
+}
+
 export type TaskReadiness = 'PREPARING' | 'READY' | 'BLOCKED' | 'UNKNOWN';
 export interface TaskReadinessResult {
   valid: boolean; readiness: TaskReadiness; robotId: string; taskVersionId: string;

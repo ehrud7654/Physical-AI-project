@@ -1,4 +1,4 @@
-import type { Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
+import type { SkillOverview, Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
 import { apiRequest } from './client';
 
 type ApiTrainingStatus =
@@ -57,6 +57,10 @@ export async function fetchTrainingRequirements(skillKey: string): Promise<Train
 
 export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
   return apiRequest<ApiSkill[]>('/skills');
+}
+
+export async function fetchSkillOverviews(): Promise<SkillOverview[]> {
+  return apiRequest<SkillOverview[]>('/skills/overview');
 }
 
 export async function createCustomSkill(input: {

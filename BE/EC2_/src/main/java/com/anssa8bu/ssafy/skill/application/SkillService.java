@@ -2,17 +2,23 @@ package com.anssa8bu.ssafy.skill.application;
 
 import static com.anssa8bu.ssafy.skill.dto.SkillApiModels.CreateCustomSkillRequest;
 import static com.anssa8bu.ssafy.skill.dto.SkillResponses.SkillResponse;
+import static com.anssa8bu.ssafy.skill.dto.SkillResponses.SkillOverviewResponse;
 
 import com.anssa8bu.ssafy.common.exception.BusinessConflictException;
 import com.anssa8bu.ssafy.common.exception.ResourceNotFoundException;
 import com.anssa8bu.ssafy.common.idempotency.IdempotencyGuard;
+import com.anssa8bu.ssafy.model.entity.SkillVersion;
+import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.skill.entity.Skill;
 import com.anssa8bu.ssafy.skill.entity.SkillStatus;
 import com.anssa8bu.ssafy.skill.entity.SkillTier;
 import com.anssa8bu.ssafy.skill.repository.SkillRepository;
-import java.util.List;
-import java.util.Locale;
-import java.util.UUID;
+import com.anssa8bu.ssafy.training.entity.TrainingJob;
+import com.anssa8bu.ssafy.training.repository.TrainingJobRepository;
+import java.time.Instant;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,16 +26,54 @@ import org.springframework.transaction.annotation.Transactional;
 public class SkillService {
   private static final String CREATE_PATH = "/api/v1/skills";
   private final SkillRepository skills;
+  private final SkillVersionRepository versions;
+  private final TrainingJobRepository trainingJobs;
   private final IdempotencyGuard idempotency;
 
-  public SkillService(SkillRepository skills, IdempotencyGuard idempotency) {
+  public SkillService(
+      SkillRepository skills,
+      SkillVersionRepository versions,
+      TrainingJobRepository trainingJobs,
+      IdempotencyGuard idempotency) {
     this.skills = skills;
+    this.versions = versions;
+    this.trainingJobs = trainingJobs;
     this.idempotency = idempotency;
   }
 
   @Transactional(readOnly = true)
   public List<SkillResponse> listVisible(UUID ownerId) {
     return skills.findVisibleByOwnerId(ownerId).stream().map(this::toResponse).toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<SkillOverviewResponse> listOverview(UUID ownerId) {
+    List<Skill> visibleSkills = skills.findVisibleByOwnerId(ownerId);
+    Set<UUID> skillIds = visibleSkills.stream().map(Skill::getId).collect(Collectors.toSet());
+
+    Map<UUID, SkillVersion> latestVersions = versions.findAllBySkillIdIn(skillIds).stream()
+        .collect(Collectors.toMap(
+            SkillVersion::getSkillId,
+            Function.identity(),
+            (left, right) -> left.getVersion() >= right.getVersion() ? left : right));
+    Map<UUID, Instant> latestRequests = trainingJobs
+        .findAllByOwnerIdAndDeletedAtIsNullOrderByCreatedAtDesc(ownerId).stream()
+        .filter(job -> skillIds.contains(job.getSkillId()))
+        .collect(Collectors.toMap(
+            TrainingJob::getSkillId,
+            TrainingJob::getCreatedAt,
+            (left, right) -> left.isAfter(right) ? left : right));
+
+    return visibleSkills.stream().map(skill -> {
+      SkillVersion latest = latestVersions.get(skill.getId());
+      return new SkillOverviewResponse(
+          skill.getDisplayName(),
+          skill.getDescription(),
+          latest == null ? null : latest.getVersion(),
+          latest == null ? null : latest.getCreatedAt(),
+          skill.getStatus(),
+          latestRequests.get(skill.getId()));
+    }).toList();
   }
 
   @Transactional
