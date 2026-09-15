@@ -41,8 +41,25 @@ class HistoryActivity : Activity() {
         setContentView(R.layout.activity_history)
         findViewById<ImageButton>(R.id.backBtn).setOnClickListener { finish() }
         findViewById<Button>(R.id.sendBtn).setOnClickListener { sendSelected() }
+        findViewById<TextView>(R.id.selectAllBtn).setOnClickListener { toggleSelectAll() }
+        findViewById<TextView>(R.id.deleteSelectedBtn).apply {
+            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xFFE0685E.toInt()) }
+            setOnClickListener { confirmDeleteSelected() }
+        }
         populate()
         uploadWork.observeForever(uploadObserver)   // 전송 완료되면 목록 자동 갱신
+    }
+
+    /** 모든 rec 폴더명. 전체 선택/해제용. */
+    private fun allRecNames(): List<String> =
+        getExternalFilesDir(null)?.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }
+            ?.map { it.name } ?: emptyList()
+
+    private fun toggleSelectAll() {
+        val all = allRecNames()
+        if (all.isEmpty()) return
+        if (selected.containsAll(all)) selected.clear() else { selected.clear(); selected.addAll(all) }
+        populate()
     }
 
     override fun onDestroy() {
@@ -182,8 +199,8 @@ class HistoryActivity : Activity() {
         dialog.window?.setLayout(dp(360), minOf(dp(80 + rows * 64 + 60), maxH))
     }
 
-    /** 삭제 확인 — 라이트 커스텀 다이얼로그. */
-    private fun confirmDelete(dir: File, name: String) {
+    /** 삭제 확인 — 라이트 커스텀 다이얼로그(단건·다건 공용). onYes 후 목록 새로고침. */
+    private fun deleteDialog(message: String, onYes: () -> Unit) {
         val dialog = android.app.Dialog(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -191,7 +208,7 @@ class HistoryActivity : Activity() {
             setPadding(dp(22), dp(22), dp(22), dp(16))
         }
         root.addView(TextView(this).apply {
-            text = "${prettyName(name)} 삭제할까요?"; setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
+            text = message; setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
         })
         val btns = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END
@@ -206,16 +223,27 @@ class HistoryActivity : Activity() {
         btns.addView(TextView(this).apply {
             text = "삭제"; setTextColor(0xFFE0685E.toInt()); textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(dp(14), dp(8), dp(6), dp(8))
-            setOnClickListener {
-                dir.deleteRecursively(); selected.remove(name); expanded.remove(name)
-                dialog.dismiss(); populate()
-            }
+            setOnClickListener { onYes(); dialog.dismiss(); populate() }
         })
         root.addView(btns)
         dialog.setContentView(root)
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.show()
         dialog.window?.setLayout(dp(320), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun confirmDelete(dir: File, name: String) =
+        deleteDialog("${prettyName(name)} 삭제할까요?") {
+            dir.deleteRecursively(); selected.remove(name); expanded.remove(name)
+        }
+
+    private fun confirmDeleteSelected() {
+        if (selected.isEmpty()) return
+        deleteDialog("선택한 ${selected.size}편을 삭제할까요?") {
+            val rootDir = getExternalFilesDir(null)
+            selected.forEach { nm -> File(rootDir, nm).deleteRecursively(); expanded.remove(nm) }
+            selected.clear()
+        }
     }
 
     /** 전송 상태: 완료(.uploaded) / 대기(.queued) / 미전송. */
@@ -236,6 +264,14 @@ class HistoryActivity : Activity() {
             btn.setBackgroundResource(R.drawable.bg_btn_azure)
             btn.isEnabled = true
         }
+        // 선택 액션 바: 선택 삭제 버튼(있을 때만) + 전체 선택/해제 토글 라벨.
+        findViewById<TextView>(R.id.deleteSelectedBtn).apply {
+            text = "선택 삭제 (${selected.size})"
+            visibility = if (selected.isEmpty()) View.GONE else View.VISIBLE
+        }
+        val all = allRecNames()
+        findViewById<TextView>(R.id.selectAllBtn).text =
+            if (all.isNotEmpty() && selected.containsAll(all)) "전체 해제" else "전체 선택"
     }
 
     private fun populate() {
@@ -378,12 +414,19 @@ class HistoryActivity : Activity() {
 
         val del = TextView(this).apply {
             text = "삭제"
-            setTextColor(0xFFE0685E.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
             textSize = 14f
-            setPadding(0, dp(10), 0, dp(2))
+            setPadding(dp(20), dp(9), dp(20), dp(9))
+            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xFFE0685E.toInt()) }
             setOnClickListener { confirmDelete(dir, name) }
         }
-        detail.addView(del)
+        detail.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END
+            setPadding(0, dp(12), 0, 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            addView(del)
+        })
         card.addView(detail)
 
         header.setOnClickListener {
