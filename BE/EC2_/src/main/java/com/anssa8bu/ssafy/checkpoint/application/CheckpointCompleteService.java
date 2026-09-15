@@ -20,11 +20,18 @@ public class CheckpointCompleteService {
   private final TrainingLeaseValidator leases; private final ApplicationEventPublisher publisher;
   private final Clock clock;
   private final IdempotencyGuard idempotency;
+  private final CheckpointMetadataValidator metadataValidator;
+  private final com.anssa8bu.ssafy.model.repository.RobotProfileRepository robotProfiles;
+  private final com.anssa8bu.ssafy.training.repository.TrainingProfileRepository trainingProfiles;
   public CheckpointCompleteService(TrainingJobRepository jobs, SkillVersionRepository versions,
       TrainingLeaseValidator leases, ApplicationEventPublisher publisher, Clock clock,
-      IdempotencyGuard idempotency) {
+      IdempotencyGuard idempotency, CheckpointMetadataValidator metadataValidator,
+      com.anssa8bu.ssafy.model.repository.RobotProfileRepository robotProfiles,
+      com.anssa8bu.ssafy.training.repository.TrainingProfileRepository trainingProfiles) {
     this.jobs=jobs;this.versions=versions;this.leases=leases;this.publisher=publisher;this.clock=clock;
     this.idempotency=idempotency;
+    this.metadataValidator=metadataValidator;this.robotProfiles=robotProfiles;
+    this.trainingProfiles=trainingProfiles;
   }
   @Transactional
   public CompleteResponse complete(UUID jobId, String idempotencyKey, CompleteRequest request) {
@@ -41,10 +48,16 @@ public class CheckpointCompleteService {
     SkillVersion version=versions.findById(request.skillVersionId())
         .filter(v -> v.getTrainingJobId().equals(jobId))
         .orElseThrow(() -> new ResourceNotFoundException("SkillVersion"));
+    var robot=robotProfiles.findById(request.metadata().robotProfileId())
+        .orElseThrow(() -> new ResourceNotFoundException("RobotProfile"));
+    metadataValidator.validate(request.metadata(),robot);
+    var profile=trainingProfiles.findById(version.getTrainingProfileId())
+        .orElseThrow(() -> new ResourceNotFoundException("TrainingProfile"));
     if (version.getCheckpointBytes()!=request.checkpoint().sizeBytes()
         || !version.getCheckpointSha256().equals(request.checkpoint().sha256())
-        || !version.getRobotProfileId().equals(request.metadata().robotProfileId())
-        || !version.getTrainingConfigSha256().equals(request.metadata().trainingConfigSha256()))
+        || !profile.getProfileKey().equals(request.metadata().trainingProfileKey())
+        || profile.getVersion()!=request.metadata().trainingProfileVersion()
+        || !metadataValidator.matches(version,request.metadata()))
       throw new BusinessConflictException("CHECKPOINT_RESERVATION_CONFLICT", "CKPT 완료 정보가 예약값과 다릅니다.");
     version.beginValidation(); job.markModelValidating();
     publisher.publishEvent(new CheckpointValidationRequested(version.getId()));

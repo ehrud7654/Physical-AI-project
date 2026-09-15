@@ -188,25 +188,6 @@ public class TrainingJob extends AuditableEntity {
     else throw new IllegalStateException("종료된 학습은 취소할 수 없습니다.");
   }
 
-  public void updateExpectedEpisodeCount(int expectedCount) {
-    if (inputMode != TrainingInputMode.COLLECT_NEW
-        || (status != TrainingJobStatus.CREATED && status != TrainingJobStatus.COLLECTING))
-      throw new IllegalStateException("입력 계획을 변경할 수 없는 상태입니다.");
-    if (expectedCount < 1) throw new IllegalArgumentException("expectedCount must be positive");
-    expectedEpisodeCount = expectedCount;
-  }
-
-  public void beginInputValidation(int confirmedCount) {
-    if (inputMode != TrainingInputMode.COLLECT_NEW)
-      throw new IllegalStateException("신규 수집 작업만 입력 완료를 요청할 수 있습니다.");
-    if (status != TrainingJobStatus.CREATED && status != TrainingJobStatus.COLLECTING)
-      throw new IllegalStateException("입력 완료를 요청할 수 없는 상태입니다.");
-    if (confirmedCount != receivedEpisodeCount)
-      throw new IllegalStateException("수신된 Episode 수와 확인한 수가 일치하지 않습니다.");
-    status = TrainingJobStatus.INPUT_VALIDATING;
-    progressStage = "입력 검증";
-  }
-
   public UUID getOwnerId() {
     return ownerId;
   }
@@ -281,7 +262,7 @@ public class TrainingJob extends AuditableEntity {
 
   public void claim(String workerId, UUID storageNodeId, int gpuIndex, String gitRev,
       String leaseHash, Instant leaseExpiresAt) {
-    if (status != TrainingJobStatus.QUEUED && status != TrainingJobStatus.CREATED)
+    if (status != TrainingJobStatus.QUEUED)
       throw new IllegalStateException("claim할 수 없는 학습 상태입니다.");
     this.assignedWorkerId = Objects.requireNonNull(workerId);
     this.assignedStorageNodeId = storageNodeId;
@@ -289,8 +270,7 @@ public class TrainingJob extends AuditableEntity {
     this.gitRev = gitRev;
     this.leaseTokenHash = Objects.requireNonNull(leaseHash);
     this.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt);
-    this.status = inputMode == TrainingInputMode.COLLECT_NEW
-        ? TrainingJobStatus.COLLECTING : TrainingJobStatus.PREPARING;
+    this.status = TrainingJobStatus.PREPARING;
   }
 
   public void renewLease(Instant expiresAt) { this.leaseExpiresAt = Objects.requireNonNull(expiresAt); }
@@ -300,20 +280,35 @@ public class TrainingJob extends AuditableEntity {
   }
 
   public void applyProgress(String stage, BigDecimal percent, Integer epoch, Integer totalEpochs) {
-    this.status = TrainingJobStatus.RUNNING;
-    if (startedAt == null) startedAt = Instant.now();
+    if (status != TrainingJobStatus.RUNNING)
+      throw new IllegalStateException("RUNNING 상태에서만 진행도를 갱신할 수 있습니다.");
+    if (stage == null || stage.isBlank() || percent == null
+        || percent.compareTo(BigDecimal.ZERO) < 0
+        || percent.compareTo(new BigDecimal("100")) > 0)
+      throw new IllegalArgumentException("유효한 stage와 0~100 percent가 필요합니다.");
+    if ((epoch == null) != (totalEpochs == null)
+        || (epoch != null && (epoch < 0 || totalEpochs < 1 || epoch > totalEpochs)))
+      throw new IllegalArgumentException("epoch와 totalEpochs가 올바르지 않습니다.");
     this.progressStage = stage;
-    this.progressPercent = percent == null ? this.progressPercent : percent;
+    this.progressPercent = percent;
     this.currentEpoch = epoch;
     this.totalEpochs = totalEpochs;
   }
 
   public void start(Instant at) {
+    if (status != TrainingJobStatus.PREPARING && status != TrainingJobStatus.QUEUED)
+      throw new IllegalStateException("학습을 시작할 수 없는 상태입니다.");
     status = TrainingJobStatus.RUNNING;
     if (startedAt == null) startedAt = at;
   }
 
   public void markModelUploading(Instant completedAt) {
+    if (status != TrainingJobStatus.RUNNING && status != TrainingJobStatus.MODEL_UPLOADING)
+      throw new IllegalStateException("학습 완료를 보고할 수 없는 상태입니다.");
+    if (startedAt != null && completedAt.isBefore(startedAt))
+      throw new IllegalArgumentException("모델 완료 시각은 학습 시작 시각보다 빠를 수 없습니다.");
+    if (modelCompletedAt != null && !modelCompletedAt.equals(completedAt))
+      throw new IllegalStateException("최초 모델 완료 시각과 일치하지 않습니다.");
     status = TrainingJobStatus.MODEL_UPLOADING;
     modelCompletedAt = completedAt;
   }
@@ -352,7 +347,7 @@ public class TrainingJob extends AuditableEntity {
       releaseAssignment(); return;
     }
     attempt++;
-    status=inputMode==TrainingInputMode.COLLECT_NEW?TrainingJobStatus.CREATED:TrainingJobStatus.QUEUED;
+    status=TrainingJobStatus.QUEUED;
     progressStage="재할당 대기";
     releaseAssignment();
   }

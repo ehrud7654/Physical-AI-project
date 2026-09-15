@@ -686,7 +686,7 @@ WHERE status = 'ACTIVE';
 | `training_profile_id` | uuid | 아니요 | FK → `training_profiles.id`, 생성 시 백엔드가 결정 |
 | `assigned_storage_node_id` | uuid | 예 | FK → `storage_nodes.id` |
 | `assigned_worker_id` | varchar(100) | 예 | 현재 GPU worker |
-| `input_mode` | varchar(30) | 아니요 | `COLLECT_NEW`, `EXISTING_EPISODES` |
+| `input_mode` | varchar(30) | 아니요 | 고정값 `EXISTING_EPISODES` |
 | `status` | varchar(30) | 아니요 | 학습 상태 |
 | `attempt` | integer | 아니요 | 기본 1 |
 | `lease_token_hash` | varchar(64) | 예 | 현재 lease token hash |
@@ -719,7 +719,6 @@ WHERE status = 'ACTIVE';
 허용 상태:
 
 ```text
-CREATED, COLLECTING, INPUT_VALIDATING, INPUT_READY,
 QUEUED, PREPARING, RUNNING, MODEL_UPLOADING,
 MODEL_VALIDATING, CANCEL_REQUESTED, CANCELED,
 SUCCEEDED, FAILED
@@ -803,7 +802,7 @@ INDEX (episode_id, training_job_id)
 | `attempt` | integer | 아니요 | 보고 attempt |
 | `event_id` | varchar(150) | 아니요 | worker 이벤트 ID |
 | `sequence` | bigint | 아니요 | attempt 안의 순번 |
-| `event_type` | varchar(100) | 아니요 | `INPUT_PROGRESS`, `PROGRESS` 등 |
+| `event_type` | varchar(100) | 아니요 | `STARTED`, `PROGRESS`, `TRAINING_FINISHED`, `FAILED`, `CANCELED` |
 | `payload` | jsonb | 아니요 | 이벤트 내용 |
 | `occurred_at` | timestamptz | 아니요 | worker 발생 시각 |
 | `received_at` | timestamptz | 아니요 | 서버 수신 시각 |

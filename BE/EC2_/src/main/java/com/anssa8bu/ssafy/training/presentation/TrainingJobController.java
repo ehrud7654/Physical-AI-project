@@ -51,24 +51,6 @@ public class TrainingJobController {
     return ApiResponse.of(service.cancel(owner(jwt), id));
   }
 
-  @PatchMapping("/{id}/input-plan")
-  public ApiResponse<JobResponse> updateInputPlan(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID id,
-      @Valid @RequestBody InputPlanUpdateRequest request) {
-    return ApiResponse.of(service.updateInputPlan(owner(jwt), id, request));
-  }
-
-  @PostMapping("/{id}/input-complete")
-  public ResponseEntity<ApiResponse<InputCompleteResponse>> completeInput(
-      @AuthenticationPrincipal Jwt jwt,
-      @PathVariable UUID id,
-      @RequestHeader("Idempotency-Key") String key,
-      @Valid @RequestBody InputCompleteRequest request) {
-    return ResponseEntity.accepted()
-        .body(ApiResponse.of(service.completeInput(owner(jwt), id, key, request)));
-  }
-
   @GetMapping("/{id}/episodes")
   public ApiResponse<List<EpisodeInputResponse>> episodes(
       @AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {

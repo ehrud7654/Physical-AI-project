@@ -492,12 +492,11 @@ type TrainingJob = {
   assignedStorageNodeId: string | null;
   gpuIndex: number | null;
   gitRev: string | null;
-  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
+  inputMode: 'EXISTING_EPISODES';
   status:
     | 'CREATED'
     | 'COLLECTING'
     | 'INPUT_VALIDATING'
-    | 'INPUT_READY'
     | 'QUEUED'
     | 'PREPARING'
     | 'RUNNING'
@@ -1278,20 +1277,19 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 {
   "skillKey": "pick_place",
   "umiDeviceId": "device_umi_01",
-  "inputMode": "COLLECT_NEW",
-  "expectedEpisodeCount": 20
+  "episodeIds": ["episode_100", "episode_101", "episode_102"]
 }
 ```
 
 - `skillKey`는 `SkillKey` enum 중 하나여야 한다. 일반 사용자는 새 스킬 key를 만들 수 없다.
 - `umiDeviceId`는 사용자 소유 UMI여야 한다.
-- `inputMode=COLLECT_NEW`이면 `expectedEpisodeCount`는 1 이상이고 `episodeIds`는 받을 수 없다.
-- `expectedEpisodeCount`는 입력 완료 전까지 수정 가능하다.
+- 학습은 UMI가 S3에 업로드하고 서버 검증을 통과한 Episode만 사용한다.
+- `episodeIds`는 1개 이상이며 중복될 수 없다. `inputMode`는 요청받지 않고 `EXISTING_EPISODES`로 고정한다.
 - 학습 하이퍼파라미터는 요청받지 않는다. 요청에 `config`, `algorithm`, `epochs`, `batchSize`, `seed`, `learningRate`, `optimizer` 또는 `options`가 있으면 `400 FIELD_NOT_ALLOWED`로 거부한다.
 - 서버는 작업 생성 트랜잭션에서 현재 ACTIVE TrainingProfile을 선택하고 profile key·version·전체 설정 snapshot·SHA-256을 고정한다.
 - 같은 `Idempotency-Key` 재요청은 그 사이 ACTIVE 프로필이 바뀌었더라도 최초 TrainingJob과 프로필을 그대로 반환한다.
-- 서버는 두 입력 모드 모두에 대해 `skillKey`, `source`, `success`, `contractVersion`, 선택 방식이 포함된 `datasetQuery` snapshot을 생성한다. 클라이언트가 임의 JSON을 그대로 저장하게 하지 않는다.
-- 성공 `201`: `TrainingJob` (`CREATED`).
+- 서버는 `skillKey`, `source`, `success`, `contractVersion`, 선택 방식이 포함된 `datasetQuery` snapshot을 생성한다. 클라이언트가 임의 JSON을 그대로 저장하게 하지 않는다.
+- 성공 `201`: `TrainingJob` (`QUEUED`).
 - GPU가 아직 할당되지 않은 경우에도 요청은 성공하며 UI는 할당 대기 상태를 표시한다.
 - 실패: `409 SKILL_BUSY`는 사용하지 않는다. 같은 Skill에 여러 학습 작업을 허용하고 결과 version을 서로 다르게 할당한다.
 
@@ -1304,8 +1302,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
     "description": "빨간 블록을 순서대로 쌓는 동작"
   },
   "umiDeviceId": "device_umi_01",
-  "inputMode": "COLLECT_NEW",
-  "expectedEpisodeCount": 20
+  "episodeIds": ["episode_100", "episode_101"]
 }
 ```
 
@@ -1320,12 +1317,11 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 {
   "skillKey": "pick_place",
   "umiDeviceId": "device_umi_01",
-  "inputMode": "EXISTING_EPISODES",
   "episodeIds": ["episode_100", "episode_101", "episode_102"]
 }
 ```
 
-- `inputMode=EXISTING_EPISODES`이면 `episodeIds`는 1개 이상이고 중복될 수 없다.
+- `episodeIds`는 1개 이상이고 중복될 수 없다.
 - 모든 Episode는 요청 사용자 소유이고 `READY`, `qualityStatus IN (VALID, WARNING)`이며 EpisodeArchive가 `AVAILABLE`이고 실제 ZIP이 존재해야 한다.
 - 모든 Episode의 `skillId`는 요청 `skillKey`에 해당하는 스킬과 같아야 한다.
 - MVP에서는 모든 Episode가 동일한 StorageNode에 있어야 한다. 다르면 `422 EPISODE_STORAGE_NODE_MISMATCH`.
@@ -1362,40 +1358,16 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
   - `409 STATE_CONFLICT`
   - `503 GPU_UNAVAILABLE`
 
-### TRAIN-05 예상 Episode 수 수정
+### TRAIN-05·06 폐기
 
-- `PATCH /training-jobs/{trainingJobId}/input-plan` · 사용자
-- 요청: `expectedEpisodeCount: integer >= 1`.
-- `inputMode=COLLECT_NEW`이며 `CREATED` 또는 `COLLECTING`에서만 가능.
-- 성공 `200`: 수정된 `TrainingJob`.
-- 입력 완료 요청 이후에는 `409 STATE_CONFLICT`.
-
-### TRAIN-06 입력 완료 요청
-
-- `POST /training-jobs/{trainingJobId}/input-complete` · 사용자 · `Idempotency-Key` 필수
-- 요청:
-
-```json
-{
-  "receivedEpisodeCount": 20
-}
-```
-
-- `inputMode=COLLECT_NEW` 작업에만 허용한다.
-- 요청의 수는 사용자 확인용이며 최종 수는 GPU가 등록 완료한 Episode 수를 사용한다.
-- EC2는 TrainingJob을 `INPUT_VALIDATING`으로 전환하고 GPU에 입력 종료 명령을 전달한다.
-- GPU가 Episode별 archive의 존재·상태·SHA-256, ZIP 내부 계약, 최소 수량과 학습 입력 규격을 검증한다.
-- MVP 학습 입력에는 `labelStatus=LABELED`, `success=true`, `qualityStatus IN (VALID, WARNING)`인 Episode만 포함한다. 제외 후 최소 수량을 만족하지 못하면 `INPUT_INVALID`로 실패한다.
-- 검증 성공 시 Episode별 archive SHA-256·contract·source·label·품질을 `TrainingJobEpisode`에 snapshot하고 `inputSnapshotSha256`을 불변으로 고정한다.
-- 성공 접수 `202`: `{ "data": { "trainingJobId": "job_31", "status": "INPUT_VALIDATING" } }`.
-- 검증 성공 후 `INPUT_READY → QUEUED`, 실패 시 `FAILED`.
-- 실패: `409 INPUT_COUNT_MISMATCH`, `409 STATE_CONFLICT`.
+- `PATCH /training-jobs/{trainingJobId}/input-plan`과 `POST /training-jobs/{trainingJobId}/input-complete`는 폐기한다.
+- 학습 입력은 TRAIN-01 생성 시 지정한 검증 완료 Episode 목록으로 즉시 고정한다.
 
 ### TRAIN-07 학습 취소 요청
 
 - `POST /training-jobs/{trainingJobId}/cancel` · 사용자
 - 요청 본문 없음.
-- `CREATED`, `COLLECTING`, `INPUT_READY`, `QUEUED`는 즉시 취소 가능.
+- `QUEUED`, `PREPARING`은 즉시 취소 가능.
 - 실행 중이면 `202`와 `CANCEL_REQUESTED`를 반환하며 GPU 확인 후 `CANCELED`.
 - 종료 상태는 `409 STATE_CONFLICT`.
 - 취소해도 Episode를 즉시 삭제하지 않는다. Episode는 자신의 보관 기한과 조기 삭제 정책을 따른다.
@@ -1478,9 +1450,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 }
 ```
 
-- 서버는 다음 조건을 만족하는 작업 하나를 원자적으로 할당한다.
-  - `COLLECT_NEW`: 아직 StorageNode가 정해지지 않은 `CREATED` 작업
-  - `EXISTING_EPISODES`: 현재 `storageNodeId`에 모든 입력 Episode가 위치한 `QUEUED` 작업
+- 서버는 S3 업로드 및 검증이 끝난 Episode가 입력으로 고정된 `EXISTING_EPISODES`, `QUEUED` 작업 하나를 원자적으로 할당한다.
 - 성공 `200`:
 
 ```json
@@ -1540,7 +1510,6 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - GPU는 지원하지 않는 profile key·version이면 학습 시작 전에 `UNSUPPORTED_TRAINING_PROFILE`로 실패 보고한다.
 - GPU는 canonical JSON으로 `configSha256`을 다시 계산하고 응답값과 다르면 `TRAINING_CONFIG_MISMATCH`로 실패 보고한다.
 - 해시 입력은 profile 식별자와 상태를 제외한 `{"algorithm": ..., "hyperparameters": ...}` 객체이며 합의된 canonical JSON UTF-8 bytes를 사용한다.
-- `COLLECT_NEW` 할당 시 `assignedWorkerId`, `assignedStorageNodeId`를 설정하고 `COLLECTING`으로 변경한다.
 - `EXISTING_EPISODES` 할당 시 `assignedWorkerId`를 설정하고 `PREPARING`으로 변경한다.
 - Claim 응답은 내부 S3 key 대신 Episode별 제한 시간 Presigned GET `downloadUrl`과 `expiresAt`을 제공한다. GPU는 URL을 변경하지 않고 만료 전에 다운로드하며 URL을 로그나 영속 journal에 저장하지 않는다.
 - 작업 없음 `204`.
@@ -1573,14 +1542,12 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
   "data": {
     "leaseExpiresAt": "2026-09-01T04:02:00Z",
     "cancelRequested": false,
-    "closeInputRequested": false,
     "serverTime": "2026-09-01T04:01:00Z"
   }
 }
 ```
 
-- `closeInputRequested=true`면 GPU는 입력을 닫고 검증 후 이벤트를 보고한다.
-- 수집 단계의 장시간 작업도 heartbeat로 임대를 갱신한다.
+- Episode 입력은 TrainingJob 생성 시 이미 고정되므로 입력 종료 신호를 제공하지 않는다.
 
 ### GPU-03 상태·진행 이벤트
 
@@ -1596,9 +1563,6 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 
 | type | payload | 처리 |
 |---|---|---|
-| `INPUT_PROGRESS` | `{ receivedEpisodeCount, receivedBytes }` | DB 집계 갱신 |
-| `INPUT_READY` | `{ receivedEpisodeCount, episodeIds, inputSnapshotSha256 }` | INPUT_VALIDATING → INPUT_READY → QUEUED |
-| `INPUT_INVALID` | `{ code, message }` | FAILED |
 | `STARTED` | `{}` | QUEUED/PREPARING → RUNNING |
 | `PROGRESS` | `{ stage, percent, epoch, totalEpochs, metrics? }` | 학습 진행도 갱신 |
 | `TRAINING_FINISHED` | `{ checkpointSizeBytes, checkpointSha256 }` | MODEL_UPLOADING |
@@ -1686,7 +1650,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 새 Idempotency-Key로 URL을 재발급해도 동일 SkillVersion·key를 사용한다. 허용 시간 오차는 배포 전 확정한다.
 - 기존 key를 덮어쓰지 않으며 조건부 쓰기 또는 버킷 정책으로 재사용을 차단한다.
 
-- metadata는 CheckpointMetadata 전체 필드가 필수다. EC2는 형식·프로필·RobotProfile을 검증하고 sizeBytes·sha256·전체 메타데이터·version·key를 같은 트랜잭션에서 저장한 뒤 UPLOADING 행을 생성한다. 이 상태는 S3 객체 검증 완료를 뜻하지 않는다.
+- metadata는 CheckpointMetadata 전체 필드가 필수다. EC2는 형식·TrainingProfile·RobotProfile의 계약 버전, action space, camera 목록을 검증하고 sizeBytes·sha256·전체 메타데이터·version·key를 같은 트랜잭션에서 저장한 뒤 UPLOADING 행을 생성한다. 이 상태는 S3 객체 검증 완료를 뜻하지 않는다.
 - GPU-05의 metadata·크기·hash는 예약값과 일치해야 한다. 다른 값이면 409 CHECKPOINT_RESERVATION_CONFLICT이며 예약 행을 덮어쓰지 않는다.
 
 ### GPU-05 CKPT 업로드 완료
@@ -1733,11 +1697,13 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - EC2 또는 검증 워커가 다음을 확인한다.
   1. S3 객체 존재
   2. 크기와 SHA-256
-  3. CKPT 기본 구조 및 필수 메타데이터
-  4. 요청 메타데이터와 CKPT 내부 메타데이터 일치
+  3. CKPT가 PyTorch ZIP 또는 legacy pickle signature를 사용하는지 확인
+  4. GPU-04와 GPU-05의 전체 metadata envelope 일치
   5. RobotProfile 입출력 호환성
   6. `actionSpace` 허용 enum과 `nParams > 0`
-  7. TrainingJob, TrainingProfile, 완료 요청과 CKPT 내부 manifest의 profile key·version·설정 SHA-256 일치
+  7. TrainingJob, TrainingProfile, 완료 요청의 profile key·version·설정 SHA-256 일치
+
+- EC2는 안전하지 않은 pickle 역직렬화를 수행하지 않는다. CKPT 내부 메타데이터가 필요한 경우 GPU 검증 결과를 서명 가능한 별도 manifest 계약으로 추가하며, 현재 버전에서는 GPU-04/05의 metadata envelope와 S3 checksum을 기준으로 판정한다.
 - 검증 성공:
   - `SkillVersion.status = READY`
   - `TrainingJob.status = SUCCEEDED`

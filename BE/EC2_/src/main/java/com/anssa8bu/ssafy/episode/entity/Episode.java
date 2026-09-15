@@ -379,4 +379,12 @@ public class Episode extends AuditableEntity {
   public Instant getRetentionExpiresAt() {
     return retentionExpiresAt;
   }
+
+  public void markUsedByTraining(Instant usedAt, int graceDays, int maxRetentionDays) {
+    this.lastUsedAt=Objects.requireNonNull(usedAt);
+    Instant extended=usedAt.plus(java.time.Duration.ofDays(graceDays));
+    Instant maximum=getCreatedAt().plus(java.time.Duration.ofDays(maxRetentionDays));
+    Instant target=extended.isAfter(maximum)?maximum:extended;
+    if (target.isAfter(retentionExpiresAt)) retentionExpiresAt=target;
+  }
 }

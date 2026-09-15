@@ -45,7 +45,6 @@ public class TrainingHeartbeatService {
     try { cache.save(job.getId(),new TrainingLeaseCache(1,job.getId(),job.getAttempt(),
         job.getAssignedWorkerId(),job.getLeaseTokenHash(),expires),redisTtl.trainingLease()); }
     catch (RuntimeException ignored) { }
-    return new HeartbeatResponse(expires, job.getStatus()==TrainingJobStatus.CANCEL_REQUESTED,
-        false, now);
+    return new HeartbeatResponse(expires, job.getStatus()==TrainingJobStatus.CANCEL_REQUESTED, now);
   }
 }
