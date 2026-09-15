@@ -21,6 +21,7 @@
                 android:id="@+id/backBtn"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
+                android:layout_marginStart="-10dp"
                 android:src="@drawable/ic_back"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="centerInside"
@@ -87,6 +88,7 @@
                     android:track="@drawable/switch_track"
                     android:thumb="@drawable/switch_thumb"
                     android:switchMinWidth="52dp"
+                    android:thumbTextPadding="0dp"
                     android:showText="false"
                     android:textOn=""
                     android:textOff="" />
@@ -132,6 +134,7 @@
                     android:track="@drawable/switch_track"
                     android:thumb="@drawable/switch_thumb"
                     android:switchMinWidth="52dp"
+                    android:thumbTextPadding="0dp"
                     android:showText="false"
                     android:textOn=""
                     android:textOff="" />
@@ -244,6 +247,7 @@
                     android:track="@drawable/switch_track"
                     android:thumb="@drawable/switch_thumb"
                     android:switchMinWidth="52dp"
+                    android:thumbTextPadding="0dp"
                     android:showText="false"
                     android:textOn=""
                     android:textOff="" />
@@ -289,9 +293,83 @@
                     android:track="@drawable/switch_track"
                     android:thumb="@drawable/switch_thumb"
                     android:switchMinWidth="52dp"
+                    android:thumbTextPadding="0dp"
                     android:showText="false"
                     android:textOn=""
                     android:textOff="" />
+            </LinearLayout>
+        </LinearLayout>
+        <!-- 디버그 (테스트 전용, 디버그 빌드에서만 보임) -->
+        <LinearLayout
+            android:id="@+id/debugSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="18dp" android:text="디버그 (테스트 전용)"
+                android:textColor="@color/inkMuted" android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" android:orientation="vertical"
+                android:background="@drawable/bg_card_light" android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:gravity="center_vertical">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="디버그 업로드 사용"
+                        android:textColor="@color/inkPrimary" android:textSize="16sp" />
+                    <Switch android:id="@+id/debugSwitch"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:track="@drawable/switch_track" android:thumb="@drawable/switch_thumb"
+                        android:switchMinWidth="52dp" android:thumbTextPadding="0dp"
+                        android:showText="false" android:textOn="" android:textOff="" />
+                </LinearLayout>
+
+                <EditText android:id="@+id/jobIdInput"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:hint="trainingJobId"
+                    android:textColor="@color/inkPrimary" android:textColorHint="@color/inkMuted"
+                    android:textSize="14sp" android:background="@drawable/bg_pick_row_light"
+                    android:padding="12dp" android:inputType="text" android:maxLines="1" />
+
+                <EditText android:id="@+id/deviceIdInput"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="deviceId"
+                    android:textColor="@color/inkPrimary" android:textColorHint="@color/inkMuted"
+                    android:textSize="14sp" android:background="@drawable/bg_pick_row_light"
+                    android:padding="12dp" android:inputType="text" android:maxLines="1" />
+
+                <EditText android:id="@+id/secretInput"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:hint="deviceSecret"
+                    android:textColor="@color/inkPrimary" android:textColorHint="@color/inkMuted"
+                    android:textSize="14sp" android:background="@drawable/bg_pick_row_light"
+                    android:padding="12dp" android:inputType="text" android:maxLines="1" />
+
+                <TextView android:id="@+id/focusLabel"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp" android:text="초점 거리"
+                    android:textColor="@color/inkPrimary" android:textSize="14sp" />
+                <TextView
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="FIXED(초점 고정)일 때만 적용 · 슬라이드해 파지/작업거리 맞춤"
+                    android:textColor="@color/inkMuted" android:textSize="12sp" />
+                <SeekBar android:id="@+id/focusSeek"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" android:max="120"
+                    android:progressTint="@color/azure" android:thumbTint="@color/azure" />
+
+                <Button android:id="@+id/saveDebugBtn"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:layout_gravity="end"
+                    android:text="저장" android:textColor="@color/azureInk"
+                    android:background="@drawable/bg_btn_azure"
+                    android:paddingHorizontal="20dp" android:paddingVertical="10dp" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

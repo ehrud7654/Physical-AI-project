@@ -90,7 +90,7 @@
             android:paddingHorizontal="14dp"
             android:paddingVertical="7dp"
             android:text="학습: 미선택 ▾"
-            android:textColor="@color/azure"
+            android:textColor="@color/silver"
             android:textSize="14sp"
             android:textStyle="bold" />
 

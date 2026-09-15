@@ -36,7 +36,11 @@ object UploadQueue {
     private fun networkType(): NetworkType {
         val url = Uploader.BASE_URL
         val local = url.contains("127.0.0.1") || url.contains("localhost") || url.contains("10.0.2.2")
-        return if (local) NetworkType.NOT_REQUIRED else NetworkType.UNMETERED
+        return when {
+            local -> NetworkType.NOT_REQUIRED
+            BuildConfig.DEBUG -> NetworkType.CONNECTED   // 디버그 테스트: 셀룰러 포함 아무 네트워크 허용
+            else -> NetworkType.UNMETERED                // 릴리즈: Wi-Fi 전용(데이터 요금 보호)
+        }
     }
 
     /**

@@ -39,7 +39,7 @@ object EpisodePackager {
         val imuBytes = readBytes(dir, "imu.csv") ?: ByteArray(0)
         val gripperBytes = gripperCsv(dir)
         val framesBytes = framesCsv(dir)
-        val metaJson = buildMetaJson(sid, ep)
+        val metaJson = buildMetaJson(sid, ep, poseBytes)
         val metaBytes = metaJson.toString(2).toByteArray()
         val checksums = JSONObject()
             .put("meta.json", sha256(metaBytes))
@@ -88,8 +88,10 @@ object EpisodePackager {
         .put("endedAt", m.optString("ended_at"))
         .put("startMonotonicNs", m.optLong("start_monotonic_ns"))
         .put("timestampTimebase", m.optString("timestamp_timebase"))
-        .put("device", JSONObject().put("deviceIdentifier",
-            m.optJSONObject("device")?.optString("device_id") ?: "unknown"))
+        .put("device", JSONObject()
+            .put("deviceIdentifier", m.optJSONObject("device")?.optString("device_id") ?: "unknown")
+            .put("androidVersion", m.optJSONObject("device")?.optString("os_version") ?: "")
+            .put("arCoreVersion", m.optJSONObject("device")?.optString("arcore_version") ?: ""))
         .put("camera", m.optJSONObject("camera") ?: JSONObject())
 
     /** summary.json(snake) → 세션 요청 summary(lower camel, 계약 6.1). */
@@ -120,17 +122,25 @@ object EpisodePackager {
      * meta.json — episode-archive-v1 (계약 5.2). episode.json 에서 값을 매핑한다.
      * 라벨은 아직 없으므로 success=null, label_status=UNLABELED (계약 라벨 불변식).
      */
-    private fun buildMetaJson(sid: String, ep: JSONObject?): JSONObject {
+    private fun buildMetaJson(sid: String, ep: JSONObject?, poseBytes: ByteArray): JSONObject {
         val summary = ep?.optJSONObject("summary")
         val clock = ep?.optJSONObject("clock_ref")
         val camIntr = ep?.optJSONObject("camera")?.optJSONObject("intrinsics")
         val raw = ep?.optJSONObject("meta_raw")
 
-        val startMs = clock?.optString("start_wallclock_ms")?.toLongOrNull()
+        // 시작 시각·timebase 는 세션 시작 클럭이 아니라 "첫 pose 샘플"에 맞춘다.
+        // 세션 시작 클럭이 첫 프레임보다 수십 ms 늦게 찍혀 startMonotonicNs > firstTimestampNs 가 되면
+        // 서버가 "시작 전 데이터"로 보고 422(수집 시간 범위) 낸다. 첫/마지막 샘플에 맞춰 monotonic↔wallclock 을 정렬.
+        val clockWallMs = clock?.optString("start_wallclock_ms")?.toLongOrNull()
             ?: ep?.optLong("recorded_at_ms") ?: 0L
-        val durSec = summary?.optDouble("duration_sec", 0.0) ?: 0.0
-        val endMs = if (startMs > 0) startMs + (durSec * 1000).toLong() else 0L
-        val startMono = clock?.optString("start_elapsed_realtime_ns")?.toLongOrNull() ?: 0L
+        val clockMonoNs = clock?.optString("start_elapsed_realtime_ns")?.toLongOrNull() ?: 0L
+        val (firstTs, lastTs) = firstLastTs(poseBytes)
+        // wallclock(ts) = clockWallMs + (ts - clockMonoNs)/1e6
+        fun wallMsAt(ts: Long) = if (clockWallMs > 0 && ts > 0) clockWallMs + (ts - clockMonoNs) / 1_000_000L else 0L
+        val startMono = if (firstTs > 0) firstTs else clockMonoNs
+        val startMs = if (firstTs > 0) wallMsAt(firstTs) else clockWallMs
+        val endMs = if (lastTs > firstTs) wallMsAt(lastTs)
+            else startMs + ((summary?.optDouble("duration_sec", 0.0) ?: 0.0) * 1000).toLong()
 
         // "Samsung SM-S938N" → manufacturer / model
         val deviceStr = ep?.optString("device") ?: raw?.optString("device") ?: ""
@@ -241,9 +251,23 @@ object EpisodePackager {
         return sb.toString().toByteArray()
     }
 
-    /** 후처리 gripper.csv 있으면 그대로, 없으면 헤더만(온디바이스/PC 후처리가 채움). */
-    private fun gripperCsv(dir: File): ByteArray =
-        readBytes(dir, "gripper.csv") ?: "t_ns,openness,tracking_state\n".toByteArray()
+    /**
+     * 후처리 gripper.csv 있으면 그대로. 없으면 프레임당 placeholder 행 생성.
+     * ⚠️ 임시(테스트 전용): 서버가 gripperSampleCount>0 을 요구하는데 폰엔 실 gripper 데이터가 없다
+     * (openness 는 PC 후처리 산출물). 진짜 값은 온디바이스 마젠타 검출로 계산해야 함(별도 작업).
+     * placeholder openness=0.5 는 가짜라 학습용 아님.
+     */
+    private fun gripperCsv(dir: File): ByteArray {
+        readBytes(dir, "gripper.csv")?.let { return it }
+        val sb = StringBuilder("t_ns,openness,tracking_state\n")
+        File(dir, "poses.csv").takeIf { it.exists() }?.useLines { lines ->
+            lines.drop(1).forEach { line ->
+                val c = line.split(",")
+                if (c.size >= 13 && c[12].trim().isNotEmpty()) sb.append("${c[1]},0.5,${c[2]}\n")
+            }
+        }
+        return sb.toString().toByteArray()
+    }
 
     /** CSV 데이터 행 수(헤더 1줄 제외). */
     private fun rows(bytes: ByteArray): Int {

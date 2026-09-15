@@ -19,6 +19,14 @@ object Prefs {
     // 장치 자격(QR 로 받음). durable — 토큰은 이걸로 DEVICE-05 에서 발급/갱신 (S15P21A103-163).
     private const val KEY_DEVICE_ID = "device_id"
     private const val KEY_DEVICE_SECRET = "device_secret"
+    private const val KEY_DEVICE_IDENT = "device_identifier"
+
+    // 디버그 업로드(디버그 빌드 전용). QR 연동 전 실서버 테스트: jobId·자격 직접 입력.
+    private const val KEY_DEBUG_ENABLED = "debug_upload"
+    private const val KEY_DEBUG_JOB = "debug_job_id"
+
+    // FIXED 초점 거리(디옵터=1/m). 기본 6.25 ≈ 16cm (파지 10~16cm + ~40cm 를 224 기준으로 커버).
+    private const val KEY_FOCUS_DIOPTERS = "focus_diopters"
 
     // 활성 학습(TrainingJob). 촬영 시 stamp → 전송 라우팅·오배정 예방 (S15P21A103-164).
     private const val KEY_ACTIVE_JOB = "active_job_id"
@@ -44,8 +52,24 @@ object Prefs {
 
     fun deviceId(ctx: Context) = sp(ctx).getString(KEY_DEVICE_ID, "") ?: ""
     fun deviceSecret(ctx: Context) = sp(ctx).getString(KEY_DEVICE_SECRET, "") ?: ""
+    /** 등록 시 서버에 저장된 하드웨어 핸들(예: UMI-001). 업로드 metadata.device.deviceIdentifier 로 나감. */
+    fun deviceIdentifier(ctx: Context) = sp(ctx).getString(KEY_DEVICE_IDENT, "") ?: ""
     fun setDeviceCreds(ctx: Context, id: String, secret: String) =
         sp(ctx).edit().putString(KEY_DEVICE_ID, id).putString(KEY_DEVICE_SECRET, secret).apply()
+
+    fun debugEnabled(ctx: Context) = sp(ctx).getBoolean(KEY_DEBUG_ENABLED, false)
+    fun debugJobId(ctx: Context) = sp(ctx).getString(KEY_DEBUG_JOB, "") ?: ""
+    fun focusDiopters(ctx: Context) = sp(ctx).getFloat(KEY_FOCUS_DIOPTERS, 6.25f)
+    fun setFocusDiopters(ctx: Context, v: Float) = sp(ctx).edit().putFloat(KEY_FOCUS_DIOPTERS, v).apply()
+
+    /** 디버그 업로드 설정 저장(토글·jobId·자격). 디버그 빌드 설정 화면에서만 호출. */
+    fun setDebug(ctx: Context, enabled: Boolean, jobId: String, deviceId: String, deviceSecret: String) =
+        sp(ctx).edit()
+            .putBoolean(KEY_DEBUG_ENABLED, enabled)
+            .putString(KEY_DEBUG_JOB, jobId.trim())
+            .putString(KEY_DEVICE_ID, deviceId.trim())
+            .putString(KEY_DEVICE_SECRET, deviceSecret.trim())
+            .apply()
 
     fun activeJobId(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_JOB, "") ?: ""
     fun activeSkillKey(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_SKILL_KEY, "") ?: ""

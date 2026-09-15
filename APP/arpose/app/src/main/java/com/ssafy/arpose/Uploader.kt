@@ -141,9 +141,9 @@ object Uploader {
     /** requiredHeaders 를 그대로 담는다(계약 6.1: 이름·값까지 그대로 S3 PUT 에 사용). */
     data class Session(val uploadSessionId: String, val uploadUrl: String, val requiredHeaders: Map<String, String>)
 
-    /** ① 업로드 세션 발급. metadata·summary 는 계약 6.1 lower camel (EpisodePackager.pack 이 생성). */
+    /** ① 업로드 세션 발급 (API 1.5.0: TrainingJob 분리, skillKey 기반). metadata·summary 는 lower camel. */
     fun requestSession(
-        ctx: Context, jobId: String, sessionId: String,
+        ctx: Context, sessionId: String,
         sizeBytes: Long, sha256: String, idemKey: String,
         metadata: JSONObject, summary: JSONObject
     ): Session? {
@@ -151,7 +151,7 @@ object Uploader {
             .put("sessionId", sessionId).put("contentType", "application/zip")
             .put("sizeBytes", sizeBytes).put("sha256", sha256)
             .put("metadata", metadata).put("summary", summary).toString()
-        val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions")
+        val conn = (URL("$BASE_URL/api/v1/episode/data-upload-request")
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
@@ -163,7 +163,10 @@ object Uploader {
             conn.outputStream.use { it.write(body.toByteArray()) }
             val code = conn.responseCode
             if (code == 401) { DeviceAuth.refresh(ctx); Log.w(TAG, "session 401 → 토큰 갱신 후 재시도 대기"); return null }
-            if (code !in 200..299) { Log.w(TAG, "session 발급 HTTP $code"); return null }
+            if (code !in 200..299) {
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "session 발급 HTTP $code body=$err"); return null
+            }
             val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
             val hdrs = mutableMapOf<String, String>()
             d.optJSONObject("requiredHeaders")?.let { rh -> rh.keys().forEach { k -> hdrs[k] = rh.getString(k) } }
@@ -178,6 +181,8 @@ object Uploader {
         val conn = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "PUT"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            // 큰 본문 전송 전에 서버가 4xx 로 거절할 수 있게 100-continue. 없으면 조기 거절 시 Broken pipe 로 에러코드 못 봄.
+            setRequestProperty("Expect", "100-continue")
             requiredHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
             setFixedLengthStreamingMode(zip.length())
         }
@@ -186,7 +191,13 @@ object Uploader {
                 zip.inputStream().use { it.copyTo(out) }
             }
             val code = conn.responseCode
-            if (code !in 200..299) { Log.w(TAG, "S3 PUT HTTP $code"); return null }
+            if (code !in 200..299) {
+                // [임시 진단] 서명 노출 방지 위해 host+path 만, S3 에러 XML 바디도.
+                val u = URL(uploadUrl)
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "S3 PUT HTTP $code url=${u.host}${u.path} body=$err")
+                return null
+            }
             conn.getHeaderField("ETag") ?: "no-etag"
         } catch (e: Exception) { Log.w(TAG, "S3 PUT 실패: ${e.message}"); null }
         finally { conn.disconnect() }
@@ -194,13 +205,13 @@ object Uploader {
 
     /** ③ 완료 통지. 202/200 이면 true. */
     fun complete(
-        ctx: Context, jobId: String, uploadSessionId: String, sessionId: String,
+        ctx: Context, uploadSessionId: String, sessionId: String,
         sizeBytes: Long, sha256: String, idemKey: String
     ): Boolean {
-        // 계약 6.3: complete 엔 endedAt 을 다시 보내지 않는다(세션의 metadata.endedAt 과 meta.json 비교).
+        // complete 엔 endedAt 을 다시 보내지 않는다(세션의 metadata.endedAt 과 meta.json 비교).
         val body = JSONObject().put("sessionId", sessionId)
             .put("sizeBytes", sizeBytes).put("sha256", sha256).toString()
-        val conn = (URL("$BASE_URL/api/v1/training-jobs/$jobId/episode-upload-sessions/$uploadSessionId/complete")
+        val conn = (URL("$BASE_URL/api/v1/episode/data-upload-request/$uploadSessionId/complete")
             .openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; doOutput = true
             connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS

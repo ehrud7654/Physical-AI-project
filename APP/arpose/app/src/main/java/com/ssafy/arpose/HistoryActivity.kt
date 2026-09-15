@@ -40,8 +40,6 @@ class HistoryActivity : Activity() {
         setContentView(R.layout.activity_history)
         findViewById<ImageButton>(R.id.backBtn).setOnClickListener { finish() }
         findViewById<Button>(R.id.sendBtn).setOnClickListener { sendSelected() }
-        findViewById<TextView>(R.id.pagePrev).setOnClickListener { if (page > 0) { page--; populate(); scrollTop() } }
-        findViewById<TextView>(R.id.pageNext).setOnClickListener { page++; populate(); scrollTop() }
         populate()
     }
 
@@ -53,30 +51,126 @@ class HistoryActivity : Activity() {
         sv.post { sv.scrollTo(0, 0) }
     }
 
-    /** 선택 → 목적지(학습) 확인 → .queued 마킹 후 업로드 큐. 실제 전송은 UploadWorker(3-step). */
+    /** ‹ 1 2 3 4 5 › — 5페이지 블록 단위. 번호 클릭=이동, 화살표=앞뒤 페이지, 현재=azure 강조. */
+    private fun buildPager(pager: LinearLayout, totalPages: Int) {
+        pager.removeAllViews()
+        if (totalPages <= 1) { pager.visibility = View.GONE; return }
+        pager.visibility = View.VISIBLE
+        fun arrow(txt: String, enabled: Boolean, onClick: () -> Unit) = TextView(this).apply {
+            text = txt; textSize = 20f
+            setTextColor(if (enabled) 0xFF1A1F2E.toInt() else 0xFFCBD0D9.toInt())
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            if (enabled) setOnClickListener { onClick() }
+        }
+        pager.addView(arrow("‹", page > 0) { page--; populate(); scrollTop() })
+        val start = (page / 5) * 5
+        for (p in start until minOf(start + 5, totalPages)) {
+            pager.addView(TextView(this).apply {
+                text = "${p + 1}"; textSize = 16f; gravity = Gravity.CENTER; minWidth = dp(38)
+                val cur = p == page
+                setTextColor(if (cur) 0xFFFFFFFF.toInt() else 0xFF1A1F2E.toInt())
+                setTypeface(typeface, if (cur) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                if (cur) background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xFF4F9CF9.toInt()) }
+                setOnClickListener { if (p != page) { page = p; populate(); scrollTop() } }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(2); marginEnd = dp(2) }
+            })
+        }
+        pager.addView(arrow("›", page < totalPages - 1) { page++; populate(); scrollTop() })
+    }
+
+    /** 선택 → 목적지(학습) 확인 → .queued 마킹 후 업로드 큐. 라이트 커스텀 시트(스톡 다이얼로그 대신). */
     private fun sendSelected() {
         if (selected.isEmpty()) { Toast.makeText(this, "전송할 촬영을 선택하세요", Toast.LENGTH_SHORT).show(); return }
-        val names = stubCatalog.map { it.third }.toTypedArray()
         val activeName = Prefs.activeSkillName(this)
-        AlertDialog.Builder(this)
-            .setTitle("${selected.size}편 전송 → 학습 선택" + if (activeName.isNotBlank()) " (현재: $activeName)" else "")
-            .setItems(names) { _, i ->
-                val (jobId, _, _) = stubCatalog[i]
-                val root = getExternalFilesDir(null)
-                selected.forEach { name ->
-                    val dir = File(root, name)
-                    if (dir.isDirectory) {
-                        File(dir, ".upload_job").writeText(jobId)   // 목적지 job (meta training_job_id 덮어씀)
-                        File(dir, ".queued").writeText("1")          // 전송 대기 표시
+        val dialog = android.app.Dialog(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(TextView(this).apply {
+            text = "${selected.size}편 전송 → 학습 선택"; setTextColor(0xFF1A1F2E.toInt()); textSize = 18f
+            setPadding(dp(2), 0, dp(2), dp(4))
+        })
+        if (activeName.isNotBlank()) root.addView(TextView(this).apply {
+            text = "현재 학습: $activeName"; setTextColor(0xFF8A909E.toInt()); textSize = 13f
+            setPadding(dp(2), 0, dp(2), dp(10))
+        })
+        // 서버 카탈로그 우선(없으면 스텁). 선택한 skillKey 를 폴더에 기록 → 업로드가 이 값을 쓴다.
+        val catalog = DeviceSkills.cached.takeIf { it.isNotEmpty() }
+            ?.map { Triple(it.id, it.skillKey, it.displayName) } ?: stubCatalog
+        for ((jobId, skillKey, label) in catalog) {
+            root.addView(TextView(this).apply {
+                text = label; setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
+                setBackgroundResource(R.drawable.bg_pick_row_light)
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(8) }
+                setOnClickListener {
+                    val rootDir = getExternalFilesDir(null)
+                    selected.forEach { name ->
+                        val d = File(rootDir, name)
+                        if (d.isDirectory) {
+                            File(d, ".upload_job").writeText(jobId)
+                            File(d, ".upload_skill").writeText(skillKey)
+                            File(d, ".queued").writeText("1")
+                        }
                     }
+                    UploadQueue.enqueue(this@HistoryActivity)
+                    Toast.makeText(this@HistoryActivity, "${selected.size}편 전송 대기 → $label", Toast.LENGTH_SHORT).show()
+                    selected.clear(); dialog.dismiss(); populate()
                 }
-                UploadQueue.enqueue(this)
-                Toast.makeText(this, "${selected.size}편 전송 대기 → ${stubCatalog[i].third}", Toast.LENGTH_SHORT).show()
-                selected.clear()
-                populate()
+            })
+        }
+        root.addView(TextView(this).apply {
+            text = "취소"; setTextColor(0xFF6B7280.toInt()); textSize = 15f; gravity = Gravity.CENTER
+            setPadding(dp(10), dp(14), dp(10), dp(4)); setOnClickListener { dialog.dismiss() }
+        })
+        val scroll = ScrollView(this).apply {
+            setBackgroundResource(R.drawable.bg_dialog_light)
+            setPadding(dp(20), dp(20), dp(20), dp(16)); addView(root)
+        }
+        dialog.setContentView(scroll)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.show()
+        val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
+        dialog.window?.setLayout(dp(360), minOf(dp(70 + catalog.size * 64 + 60), maxH))
+    }
+
+    /** 삭제 확인 — 라이트 커스텀 다이얼로그. */
+    private fun confirmDelete(dir: File, name: String) {
+        val dialog = android.app.Dialog(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_dialog_light)
+            setPadding(dp(22), dp(22), dp(22), dp(16))
+        }
+        root.addView(TextView(this).apply {
+            text = "${prettyName(name)} 삭제할까요?"; setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
+        })
+        val btns = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END
+            setPadding(0, dp(18), 0, 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        btns.addView(TextView(this).apply {
+            text = "취소"; setTextColor(0xFF6B7280.toInt()); textSize = 15f
+            setPadding(dp(14), dp(8), dp(14), dp(8)); setOnClickListener { dialog.dismiss() }
+        })
+        btns.addView(TextView(this).apply {
+            text = "삭제"; setTextColor(0xFFE0685E.toInt()); textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(14), dp(8), dp(6), dp(8))
+            setOnClickListener {
+                dir.deleteRecursively(); selected.remove(name); expanded.remove(name)
+                dialog.dismiss(); populate()
             }
-            .setNegativeButton("취소", null)
-            .show()
+        })
+        root.addView(btns)
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.show()
+        dialog.window?.setLayout(dp(320), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
 
     /** 전송 상태: 완료(.uploaded) / 대기(.queued) / 미전송. */
@@ -124,15 +218,7 @@ class HistoryActivity : Activity() {
         val slice = recs.subList(from, minOf(from + PAGE_SIZE, recs.size))
         for (dir in slice) list.addView(cardFor(dir, list))
 
-        // 페이저
-        if (totalPages <= 1) {
-            pager.visibility = View.GONE
-        } else {
-            pager.visibility = View.VISIBLE
-            findViewById<TextView>(R.id.pageLabel).text = "${page + 1} / $totalPages"
-            findViewById<TextView>(R.id.pagePrev).apply { isEnabled = page > 0; alpha = if (page > 0) 1f else 0.3f }
-            findViewById<TextView>(R.id.pageNext).apply { isEnabled = page < totalPages - 1; alpha = if (page < totalPages - 1) 1f else 0.3f }
-        }
+        buildPager(pager, totalPages)
         updateSendBtn()
     }
 
@@ -213,7 +299,17 @@ class HistoryActivity : Activity() {
                 populate()
             }
         }
-        header.addView(left); header.addView(check)
+        header.addView(left)
+        learnLabel(dir)?.let { name -> header.addView(TextView(this).apply {
+            text = name; setTextColor(0xFF4F9CF9.toInt()); textSize = 12f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply { cornerRadius = dp(999).toFloat(); setColor(0x1A4F9CF9) }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(8) }
+        }) }
+        header.addView(check)
         card.addView(header)
 
         // ---- 상세 (펼쳐졌을 때만) ----
@@ -234,17 +330,7 @@ class HistoryActivity : Activity() {
             setTextColor(0xFFE0685E.toInt())
             textSize = 14f
             setPadding(0, dp(10), 0, dp(2))
-            setOnClickListener {
-                AlertDialog.Builder(this@HistoryActivity)
-                    .setMessage("${prettyName(name)} 삭제할까요?")
-                    .setPositiveButton("삭제") { _, _ ->
-                        dir.deleteRecursively()
-                        selected.remove(name); expanded.remove(name)
-                        populate()
-                    }
-                    .setNegativeButton("취소", null)
-                    .show()
-            }
+            setOnClickListener { confirmDelete(dir, name) }
         }
         detail.addView(del)
         card.addView(detail)
@@ -273,6 +359,28 @@ class HistoryActivity : Activity() {
             textSize = 14f
         })
         return row
+    }
+
+    /** 촬영 때 stamp 된 학습명. meta.txt 의 active_skill_key/training_job_id → 스텁 라벨. 없으면 null. */
+    private fun learnLabel(dir: File): String? {
+        val meta = File(dir, "meta.txt")
+        if (!meta.exists()) return null
+        var key = ""; var job = ""
+        meta.readLines().forEach {
+            when {
+                it.startsWith("active_skill_key=") -> key = it.substringAfter("=").trim()
+                it.startsWith("training_job_id=") -> job = it.substringAfter("=").trim()
+            }
+        }
+        // 전송 때 재선택한 skillKey(.upload_skill)가 있으면 그게 우선.
+        val picked = File(dir, ".upload_skill").let { if (it.exists()) it.readText().trim() else "" }
+        val useKey = picked.ifBlank { key }
+        val raw = useKey.ifBlank { job }
+        if (raw.isBlank()) return null
+        // 서버 카탈로그로 displayName 매핑(청기잡기 등). 없으면 스텁, 그것도 없으면 raw key.
+        return DeviceSkills.cached.firstOrNull { it.skillKey == useKey }?.displayName
+            ?: stubCatalog.firstOrNull { it.second == useKey || it.first == job }?.third
+            ?: raw
     }
 
     /** marker_qc.txt(detected/total) → 검출률(%). 없으면 null(옛 촬영·계산 전). */
