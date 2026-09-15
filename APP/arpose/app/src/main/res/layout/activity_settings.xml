@@ -8,9 +8,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="16dp">
 
-        <!-- 상단바 -->
+        <!-- 상단바 (기록 화면과 위치/크기 통일: 컨테이너 16dp + backBtn -10dp) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -33,7 +33,7 @@
                 android:layout_marginStart="8dp"
                 android:text="설정"
                 android:textColor="@color/inkPrimary"
-                android:textSize="24sp" />
+                android:textSize="22sp" />
         </LinearLayout>
 
         <!-- 촬영 -->
