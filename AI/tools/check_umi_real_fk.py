@@ -71,6 +71,12 @@ class Tests(unittest.TestCase):
         self.assertEqual(snap.ros_time_s, 10.25)
         np.testing.assert_allclose(snap.t_base_tcp, self.fk.pose(np.zeros(5)))
 
+    def test_joint_state_rejects_config_gap_contract_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "does not match the episode contract"):
+            snapshot_from_joint_state(
+                (*ARM_JOINTS, "gripper"), [0] * 5 + [0.08], 0, 0,
+                self.fk, max_gap_m=0.08)
+
     def test_invalid_or_incomplete_state_rejected(self):
         with self.assertRaises(ValueError):
             snapshot_from_joint_state(ARM_JOINTS, np.zeros(5), 0, 0, self.fk)

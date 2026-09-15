@@ -17,14 +17,15 @@ import zipfile
 
 import numpy as np
 
+from contract.episode import GRIPPER_MAX_GAP_M
 from umi.action_decode import rotation_6d_rows_to_matrix
 from umi.camera_frames import rigid
 from umi.ik import quat_to_matrix
 
 
-SCHEMA = "umi_relative_chunk/0.1.0-provisional"
+SCHEMA = "umi_relative_chunk/0.2.0-provisional"
 ACTION_DIM = 10
-MAX_GRIPPER_WIDTH_M = 0.09
+MAX_GRIPPER_WIDTH_M = GRIPPER_MAX_GAP_M
 
 
 def load_longest_relative_run(
@@ -126,7 +127,7 @@ def validate_arrays(arrays: dict[str, np.ndarray], *, obs_horizon: int,
         "image": (None, obs_horizon, 3, 224, 224),
         "proprio": (None, obs_horizon, ACTION_DIM),
         "action": (None, action_horizon, ACTION_DIM),
-        "observation_timestamp": (None,),
+        "observation_timestamp": (None, obs_horizon),
         "action_timestamp": (None, action_horizon),
         "source_row": (None,),
     }
@@ -153,10 +154,16 @@ def validate_arrays(arrays: dict[str, np.ndarray], *, obs_horizon: int,
             problems.append(f"{key} dtype must be float64, got {arrays[key].dtype}")
         if not np.isfinite(arrays[key]).all():
             problems.append(f"{key} contains NaN or inf")
-    if n and not np.all(np.diff(arrays["observation_timestamp"]) > 0):
-        problems.append("observation timestamps must increase")
-    if n and np.any(arrays["action_timestamp"] <= arrays["observation_timestamp"][:, None]):
-        problems.append("every action target must be in the future")
+    observation_timestamp = arrays["observation_timestamp"]
+    if observation_timestamp.shape == (n, obs_horizon):
+        if n and not np.all(np.diff(observation_timestamp, axis=1) > 0):
+            problems.append("timestamps within each observation history must increase")
+        if n > 1 and not np.all(np.diff(observation_timestamp[:, -1]) > 0):
+            problems.append("current observation timestamps must increase between rows")
+        if n and np.any(
+            arrays["action_timestamp"] <= observation_timestamp[:, -1, None]
+        ):
+            problems.append("every action target must be in the future")
     # The last proprio pose is the current pose relative to itself.
     if n:
         identity = np.eye(4)

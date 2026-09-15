@@ -9,6 +9,8 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
+from contract.episode import GRIPPER_MAX_GAP_M
+
 
 ARM_JOINTS = (
     "shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"
@@ -116,7 +118,8 @@ class SO101UrdfFK:
 
 
 def snapshot_from_joint_state(names, positions, stamp_sec, stamp_nanosec,
-                              fk: SO101UrdfFK, *, max_gap_m=0.09) -> JointStateSnapshot:
+                              fk: SO101UrdfFK,
+                              *, max_gap_m=GRIPPER_MAX_GAP_M) -> JointStateSnapshot:
     """Convert one published JointState sample; timestamp remains ROS Time."""
     names = tuple(names)
     values = np.asarray(positions, dtype=float)
@@ -129,6 +132,8 @@ def snapshot_from_joint_state(names, positions, stamp_sec, stamp_nanosec,
         raise ValueError(f"JointState missing {missing}")
     arm = np.array([state[name] for name in ARM_JOINTS])
     gap = float(state["gripper"])
+    if not math.isclose(float(max_gap_m), GRIPPER_MAX_GAP_M, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError("robot max_gap_m does not match the episode contract")
     if not 0.0 <= gap <= max_gap_m:
         raise ValueError("gripper must be full contact-surface width in 0..max_gap_m")
     if type(stamp_sec) is not int or type(stamp_nanosec) is not int or stamp_sec < 0 \

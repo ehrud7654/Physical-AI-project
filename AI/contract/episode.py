@@ -45,7 +45,11 @@ STATE_DIM = 6
 ACTION_DIM = 6
 STATE_RANGE = (-1.0, 1.0)
 CAMERA_NAMES = ("cam_wrist",)
-GRIPPER_GAP_RANGE_M = (0.0, 0.09)
+# Contract normalisation constant. It must not be loaded from a robot config:
+# changing it would reinterpret every existing 0.3 episode. A different
+# endpoint requires a contract-version bump and an explicit migration.
+GRIPPER_MAX_GAP_M = 0.09
+GRIPPER_GAP_RANGE_M = (0.0, GRIPPER_MAX_GAP_M)
 
 # How far outside STATE_RANGE a value may sit before the episode is rejected.
 # Exposed as a constant because other code has to reason about it: a degree-based

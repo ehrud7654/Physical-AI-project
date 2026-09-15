@@ -99,6 +99,7 @@ def build_one(bundle: Path, quality_path: Path, t_camera_pinch: np.ndarray, *,
         images: list[np.ndarray] = []
         proprio: list[np.ndarray] = []
         actions: list[np.ndarray] = []
+        observation_times: list[np.ndarray] = []
         action_times: list[np.ndarray] = []
         decoded: dict[int, np.ndarray] = {}
         for current in rows:
@@ -123,13 +124,14 @@ def build_one(bundle: Path, quality_path: Path, t_camera_pinch: np.ndarray, *,
             images.append(np.stack(image_history))
             proprio.append(np.stack(proprio_history))
             actions.append(np.stack(action_history))
+            observation_times.append(timestamps[sampled[list(hist_indices)]])
             action_times.append(timestamps[sampled[list(future_indices)]])
 
     arrays = {
         "image": np.stack(images).astype(np.uint8),
         "proprio": np.stack(proprio).astype(np.float32),
         "action": np.stack(actions).astype(np.float32),
-        "observation_timestamp": timestamps[sampled[rows]].astype(np.float64),
+        "observation_timestamp": np.stack(observation_times).astype(np.float64),
         "action_timestamp": np.stack(action_times).astype(np.float64),
         "source_row": source_sampled[rows].astype(np.int64),
     }

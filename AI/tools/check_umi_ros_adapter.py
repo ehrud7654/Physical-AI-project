@@ -58,6 +58,11 @@ class RosAdapterTest(unittest.TestCase):
                          (0, 33_333_333))
         self.assertEqual(gripper_command_data(command), (0.09,))
 
+    def test_command_rejects_config_gap_contract_mismatch(self):
+        command = ArmCommand(np.zeros(5), 0.08)
+        with self.assertRaisesRegex(ValueError, "does not match the episode contract"):
+            gripper_command_data(command, max_gap_m=0.08)
+
     def test_real_message_instances_are_populated(self):
         command = ArmCommand(np.zeros(5), 0.045)
         trajectory = SimpleNamespace(joint_names=None, points=None)

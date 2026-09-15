@@ -79,7 +79,7 @@ def main() -> int:
         translation.append(np.linalg.norm(action[..., :3], axis=-1).reshape(-1))
         gaps.append(action[..., 9].reshape(-1))
         horizons.append(
-            arrays["action_timestamp"][:, -1] - arrays["observation_timestamp"])
+            arrays["action_timestamp"][:, -1] - arrays["observation_timestamp"][:, -1])
         source_steps.append(np.diff(arrays["source_row"]).astype(float))
         rotations = np.stack([
             vector_to_transform(value)[:3, :3]

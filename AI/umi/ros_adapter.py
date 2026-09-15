@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 
+from contract.episode import GRIPPER_MAX_GAP_M
 from umi.arm_preflight import ArmCommand
 from umi.chunk_runtime import Snapshot
 from umi.real_fk import ARM_JOINTS, SO101UrdfFK, snapshot_from_joint_state
@@ -78,10 +79,14 @@ def arm_trajectory_fields(command: ArmCommand, *, duration_s: float) -> JointTra
     )
 
 
-def gripper_command_data(command: ArmCommand, *, max_gap_m: float = 0.09) -> tuple[float]:
+def gripper_command_data(
+    command: ArmCommand, *, max_gap_m: float = GRIPPER_MAX_GAP_M
+) -> tuple[float]:
     """Return Float64MultiArray.data for the full contact-surface width."""
     gap = float(command.gripper_width_m)
     maximum = float(max_gap_m)
+    if not math.isclose(maximum, GRIPPER_MAX_GAP_M, rel_tol=0.0, abs_tol=1e-12):
+        raise ValueError("robot max_gap_m does not match the episode contract")
     if (not math.isfinite(gap) or not math.isfinite(maximum) or maximum <= 0
             or not 0.0 <= gap <= maximum):
         raise ValueError("gripper width must be full gap in 0..max_gap_m")
@@ -90,7 +95,7 @@ def gripper_command_data(command: ArmCommand, *, max_gap_m: float = 0.09) -> tup
 
 def fill_ros_command_messages(command: ArmCommand, trajectory_message,
                               trajectory_point, gripper_message, *, duration_s: float,
-                              max_gap_m: float = 0.09):
+                              max_gap_m: float = GRIPPER_MAX_GAP_M):
     """Populate real ROS message instances without importing ROS packages here."""
     fields = arm_trajectory_fields(command, duration_s=duration_s)
     gap_data = list(gripper_command_data(command, max_gap_m=max_gap_m))

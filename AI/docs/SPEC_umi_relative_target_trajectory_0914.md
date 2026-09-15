@@ -22,7 +22,10 @@ UMI raw에는 robot `ctrl`, EEF controller target 또는 IK 입력 명령이 없
 
 ## 2. 텐서 계약
 
-스키마 이름은 `umi_relative_chunk/0.1.0-provisional`이다.
+스키마 이름은 `umi_relative_chunk/0.2.0-provisional`이다. 0.2.0에서
+`observation_timestamp`를 현재 시점 하나인 `(N,)`에서 history 각 시점인
+`(N, 2)`로 변경했다. 기존 0.1.0 데이터는 재생성해야 하며 같은 스키마로
+조용히 재해석하지 않는다.
 
 | 항목 | 값 |
 |---|---|
@@ -32,7 +35,7 @@ UMI raw에는 robot `ctrl`, EEF controller target 또는 IK 입력 명령이 없
 | `image` | `(N, 2, 3, 224, 224)`, `uint8`, canonical RGB |
 | `proprio` | `(N, 2, 10)`, `float32` |
 | `relative_target_trajectory` | 저장 배열명 `action`, `(N, 8, 10)`, `float32` |
-| `observation_timestamp` | `(N,)`, `float64`, 초 |
+| `observation_timestamp` | `(N, 2)`, `float64`, 초. history 순서 `[t-1, t]` |
 | `action_timestamp` | `(N, 8)`, `float64`, 초 |
 | `source_row` | `(N,)`, 원본 pose 행 위치 |
 
@@ -42,10 +45,21 @@ UMI raw에는 robot `ctrl`, EEF controller target 또는 IK 입력 명령이 없
 [x_m, y_m, z_m, r0x, r0y, r0z, r1x, r1y, r1z, gap_m]
 ```
 
+이 순서는 `proprio`와 `relative_target_trajectory`에 동일하게 적용한다.
+`proprio`는 `[t-1, t]` 두 관측을 저장하며 마지막 pose는 현재 pose 기준 항등이다.
+`relative_target_trajectory`의 8개 미래 pose는 모두 현재 시점 `t`를 동일한 anchor로
+사용한다. `observation_timestamp[n, 0]`과 `[n, 1]`은 각각 `t-1`, `t` 관측에
+대응하며 카메라 개수를 나타내는 축이 아니다.
+
 - `x_m..z_m`: 현재 pinch 기준 미래 pinch 평행이동, 단위 m
 - `r0*`, `r1*`: 현재 pinch 기준 미래 pinch 회전행렬의 첫 두 행
 - `gap_m`: 상대 변화량이 아닌 미래 시점의 절대 접촉면 gap, 단위 m
 - 허용 gap 범위: `[0.0, 0.09] m`
+
+`0.09m`는 계약 0.3 계열의 정규화 의미를 고정하는 계약 상수다. 로봇 config에서
+동적으로 읽어 과거 데이터를 재해석하지 않는다. config의 `max_gap_m`가 이 값과
+다르면 로드 단계에서 실패해야 하며, 물리 규격 변경은 계약 버전 상승과 명시적
+마이그레이션으로 처리한다.
 
 `action`은 현재 파일 구현과의 호환을 위한 배열 이름이다. 계약 의미와 외부 API
 필드명은 반드시 `relative_target_trajectory`로 기록한다.

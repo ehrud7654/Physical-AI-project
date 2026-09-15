@@ -48,6 +48,8 @@ import numpy as np
 from contract.episode import (
     ACTION_DIM,
     CONTRACT_VERSION,
+    GRIPPER_GAP_RANGE_M,
+    GRIPPER_MAX_GAP_M,
     IMAGE_SHAPE,
     RANGE_TOLERANCE,
     STATE_DIM,
@@ -178,7 +180,7 @@ def normalize_joints(
 def normalize_gap(gap_m: np.ndarray | float) -> np.ndarray:
     """Full contact-surface gap 0..0.09 m to the contract's [-1, 1]."""
     gap = np.asarray(gap_m, dtype=float)
-    return 2.0 * gap / 0.09 - 1.0
+    return 2.0 * gap / GRIPPER_MAX_GAP_M - 1.0
 
 
 def denormalize_joints(x_norm: np.ndarray, ranges_rad: np.ndarray) -> np.ndarray:
@@ -332,7 +334,8 @@ def convert(
             solutions.append(None)
             continue
         gap_m = float(raw.gripper_gap_m[i])
-        if not np.isfinite(gap_m) or not 0.0 <= gap_m <= 0.09:
+        if (not np.isfinite(gap_m)
+                or not GRIPPER_GAP_RANGE_M[0] <= gap_m <= GRIPPER_GAP_RANGE_M[1]):
             rejects[REJECT_GAP_OUT_OF_RANGE] += 1
             solutions.append(None)
             continue

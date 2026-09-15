@@ -14,6 +14,7 @@ from umi.action_decode import decode_relative_actions
 from umi.relative_dataset import (
     MAX_GRIPPER_WIDTH_M,
     relative_vector,
+    validate_arrays,
     vector_to_transform,
 )
 from umi.timing import required_time_scale, uniform_time_schedule
@@ -61,6 +62,25 @@ class RelativeDatasetTests(unittest.TestCase):
     def test_gap_contract_rejects_out_of_range(self):
         with self.assertRaisesRegex(ValueError, "gripper width"):
             relative_vector(np.eye(4), np.eye(4), MAX_GRIPPER_WIDTH_M + 1e-3)
+
+    def test_observation_timestamps_follow_history_axis(self):
+        identity = relative_vector(np.eye(4), np.eye(4), 0.04).astype(np.float32)
+        arrays = {
+            "image": np.zeros((2, 2, 3, 224, 224), dtype=np.uint8),
+            "proprio": np.tile(identity, (2, 2, 1)),
+            "action": np.tile(identity, (2, 8, 1)),
+            "observation_timestamp": np.array([[0.0, 0.1], [0.1, 0.2]]),
+            "action_timestamp": np.array([
+                np.arange(0.2, 1.0, 0.1), np.arange(0.3, 1.1, 0.1)
+            ]),
+            "source_row": np.array([1, 2], dtype=np.int64),
+        }
+        self.assertEqual(validate_arrays(arrays, obs_horizon=2, action_horizon=8), [])
+        arrays["observation_timestamp"] = arrays["observation_timestamp"][:, -1]
+        self.assertTrue(any(
+            "observation_timestamp.shape" in problem
+            for problem in validate_arrays(arrays, obs_horizon=2, action_horizon=8)
+        ))
 
     def test_uniform_time_scale_respects_velocity_and_acceleration(self):
         scale = required_time_scale(

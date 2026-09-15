@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from contract.episode import GRIPPER_MAX_GAP_M
 from tools.umi_mujoco import MujocoArmAdapter, MujocoIK
 from umi.arm_preflight import ArmSolution, prepare_arm_commands
 from umi.convert import invert_gap_curve
@@ -52,6 +53,13 @@ def real_limits(path: Path) -> dict[str, Any]:
     missing = [key for key in required if key not in payload]
     if missing:
         raise ValueError(f"real robot config is missing {missing}")
+    max_gap_m = float(payload["max_gap_m"])
+    if (not np.isfinite(max_gap_m)
+            or not np.isclose(max_gap_m, GRIPPER_MAX_GAP_M, rtol=0.0, atol=1e-12)):
+        raise ValueError(
+            f"real robot max_gap_m={max_gap_m!r} does not match "
+            f"episode contract {GRIPPER_MAX_GAP_M!r}"
+        )
     return payload
 
 
