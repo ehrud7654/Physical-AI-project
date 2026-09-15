@@ -137,14 +137,42 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
                for z in zs for y in ys for x in xs]
     rng.shuffle(targets)
     for x, y, z, rotation in targets:
-        solution = ik.solve(
-            np.asarray([x, y, z]), matrix_to_quat(rotation),
-            initial_gap_m, q_init=None)
+        target_xyz = np.asarray([x, y, z])
+        target_quat = matrix_to_quat(rotation)
+        solution = ik.solve(target_xyz, target_quat, initial_gap_m, q_init=None)
+        # A parallel jaw is unchanged by 180 degrees about the approach axis,
+        # but the attached wrist camera is not.  The generic IK intentionally
+        # folds that symmetry.  For registration candidate generation, test
+        # both wrist-roll equivalents and retain the one whose canonical +Y
+        # points in the requested (directed) up direction.
+        directed_solutions = [solution]
+        for delta in (np.pi, -np.pi):
+            seed_q = np.asarray(solution.q_rad, dtype=float).copy()
+            seed_q[4] += delta
+            if ranges[4, 0] <= seed_q[4] <= ranges[4, 1]:
+                directed_solutions.append(ik.solve(
+                    target_xyz, target_quat, initial_gap_m, q_init=seed_q))
+
+        def directed_score(value: Any) -> tuple[float, float, float]:
+            _, achieved_quat = ik.forward_pose(value.q_rad)
+            achieved_rotation = quat_to_matrix(achieved_quat)
+            return (
+                float(np.dot(achieved_rotation[:, 1], rotation[:, 1])),
+                -float(value.pos_error_m),
+                -float(value.axis_error_deg),
+            )
+
+        solution = max(directed_solutions, key=directed_score)
+        _, achieved_quat = ik.forward_pose(solution.q_rad)
+        achieved_rotation = quat_to_matrix(achieved_quat)
+        directed_up_error = float(np.degrees(np.arccos(np.clip(
+            np.dot(achieved_rotation[:, 1], rotation[:, 1]), -1.0, 1.0))))
         arm = np.asarray(solution.q_rad[:5], dtype=float)
         valid = bool(
             solution.converged
             and solution.pos_error_m <= 0.005
             and solution.axis_error_deg <= 5.0
+            and directed_up_error <= 5.0
             and np.all(arm >= ranges[:, 0])
             and np.all(arm <= ranges[:, 1])
         )
@@ -241,6 +269,8 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                         jaw_yaw_tolerance_deg: float,
                         desired_world_approach_axis: np.ndarray,
                         approach_axis_tolerance_deg: float,
+                        desired_world_up_axis: np.ndarray,
+                        up_axis_tolerance_deg: float,
                         body_midheight_tolerance_m: float) -> dict[str, Any]:
     curve = cfg["grasp"]["gap_curve"]
     data = mujoco.MjData(model)
@@ -297,10 +327,15 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             approach_alignment, -1.0, 1.0))))
         approach_axis_aligned = (
             approach_axis_error <= approach_axis_tolerance_deg)
+        up_axis = np.asarray(contact_pose[:3, 1], dtype=float)
+        up_axis_error = float(np.degrees(np.arccos(np.clip(
+            np.dot(up_axis, desired_world_up_axis), -1.0, 1.0))))
+        up_axis_aligned = up_axis_error <= up_axis_tolerance_deg
         side_body_grasp = bool(
             jaw_vertical <= 0.25
             and abs(float(approach_axis[2])) <= 0.25
             and approach_axis_aligned
+            and up_axis_aligned
         )
         half_xy = np.asarray(table["half_size_m"][:2], dtype=float)
         table_xy = np.asarray(table["pos"][:2], dtype=float)
@@ -310,11 +345,12 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         body_midheight_aligned = (
             grasp_height_error <= body_midheight_tolerance_m)
 
+        contact_ik_available = arms[contact] is not None
         contact_collision_free = False
         pad_vertical_overlaps = {"pad_fixed": 0.0, "pad_moving": 0.0}
         pad_center_offsets = {"pad_fixed": None, "pad_moving": None}
         object_center_inside_both_pads = False
-        if arms[contact] is not None:
+        if contact_ik_available:
             data.qpos[:6] = np.r_[
                 arms[contact], invert_gap_curve(float(gaps[contact]), curve)]
             mujoco.mj_forward(model, data)
@@ -343,6 +379,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             camera_above_table,
             side_body_grasp,
             jaw_yaw_aligned,
+            up_axis_aligned,
             object_on_table,
             body_midheight_aligned,
             object_center_inside_both_pads,
@@ -352,7 +389,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         scene_ok = bool(
             start_collision_free
             and camera["visible"] and camera_above_table and side_body_grasp
-            and jaw_yaw_aligned
+            and jaw_yaw_aligned and up_axis_aligned
             and object_on_table and body_midheight_aligned
             and object_center_inside_both_pads
             and contact_collision_free
@@ -403,6 +440,11 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             "approach_axis_error_deg": approach_axis_error,
             "approach_axis_tolerance_deg": approach_axis_tolerance_deg,
             "approach_axis_aligned": approach_axis_aligned,
+            "up_axis_world": up_axis.tolist(),
+            "desired_world_up_axis": desired_world_up_axis.tolist(),
+            "up_axis_error_deg": up_axis_error,
+            "up_axis_tolerance_deg": up_axis_tolerance_deg,
+            "up_axis_aligned": up_axis_aligned,
             "upright_body_side_grasp": side_body_grasp,
             "jaw_axis_world": jaw_axis.tolist(),
             "desired_world_jaw_axis": desired_world_jaw_axis.tolist(),
@@ -414,6 +456,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             "grasp_height_error_m": grasp_height_error,
             "body_midheight_tolerance_m": body_midheight_tolerance_m,
             "body_midheight_aligned": body_midheight_aligned,
+            "contact_ik_available": contact_ik_available,
             "pad_vertical_overlap_m": pad_vertical_overlaps,
             "pad_center_z_offset_m": pad_center_offsets,
             "pad_center_margin_m": pad_center_margin_m,
@@ -437,18 +480,39 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         for report in episode_reports])
     yaw_aligned_fraction = _mean([
         bool(report["jaw_yaw_aligned"]) for report in episode_reports])
+    up_aligned_fraction = _mean([
+        bool(report["up_axis_aligned"]) for report in episode_reports])
     visible_fraction = _mean([
         bool(report["first_view"]["visible"]) for report in episode_reports])
     centered_fraction = _mean([
         bool(report["object_center_inside_both_pads_with_margin"])
         for report in episode_reports])
+    contact_ik_reports = [
+        report for report in episode_reports if report["contact_ik_available"]]
+    contact_ik_fraction = len(contact_ik_reports) / len(episode_reports)
+    centered_given_contact_ik = _mean([
+        bool(report["object_center_inside_both_pads_with_margin"])
+        for report in contact_ik_reports])
+    collision_free_given_contact_ik = _mean([
+        report["contact_table_contacts"] == 0
+        and report["contact_self_contacts"] == 0
+        for report in contact_ik_reports])
+    # Prefer an episode that passes both the scene contract and at least one
+    # sampled full-chunk geometry check. Choosing only by camera centring can
+    # produce a neat view whose recorded tail is not executable.
     representative_pool = [
-        report for report in episode_reports if report["scene_constraints_ok"]]
+        report for report in episode_reports
+        if report["scene_constraints_ok"] and report["combined_accepted"] > 0]
+    if not representative_pool:
+        representative_pool = [
+            report for report in episode_reports if report["scene_constraints_ok"]]
     if not representative_pool:
         representative_pool = episode_reports
     representative = min(
         representative_pool,
         key=lambda report: (
+            -report["combined_accepted"],
+            -report["oracle_geometry_accepted"],
             report["first_view"]["centre_error_norm"]
             if report["first_view"]["centre_error_norm"] is not None else 1e9,
             report["episode"],
@@ -473,8 +537,13 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         "side_grasp_episode_fraction": side_grasp_fraction,
         "approach_axis_aligned_episode_fraction": approach_aligned_fraction,
         "jaw_yaw_aligned_episode_fraction": yaw_aligned_fraction,
+        "up_axis_aligned_episode_fraction": up_aligned_fraction,
         "initial_object_visible_episode_fraction": visible_fraction,
         "pad_centered_episode_fraction": centered_fraction,
+        "contact_ik_available_episode_fraction": contact_ik_fraction,
+        "pad_centered_given_contact_ik_fraction": centered_given_contact_ik,
+        "collision_free_given_contact_ik_fraction": (
+            collision_free_given_contact_ik),
         "representative_episode": representative["episode"],
         "representative_object_xyz_m": representative["object_xyz_m"],
         "per_episode": episode_reports,
@@ -555,6 +624,19 @@ def main() -> int:
         source_registration.get("approach_axis_tolerance_deg", 15.0))
     if not 0.0 <= approach_axis_tolerance < 90.0:
         raise ValueError("approach_axis_tolerance_deg must be within [0, 90)")
+    desired_up = np.asarray(
+        source_registration.get("desired_world_up_axis"), dtype=float)
+    if (desired_up.shape != (3,) or not np.isfinite(desired_up).all()
+            or np.linalg.norm(desired_up) <= 1e-9):
+        raise ValueError("registration needs a finite desired_world_up_axis")
+    desired_up = desired_up / np.linalg.norm(desired_up)
+    if (abs(float(np.dot(desired_up, desired_jaw))) > 1e-6
+            or abs(float(np.dot(desired_up, desired_approach))) > 1e-6):
+        raise ValueError("desired up axis must be orthogonal to jaw and approach")
+    up_axis_tolerance = float(
+        source_registration.get("up_axis_tolerance_deg", 15.0))
+    if not 0.0 <= up_axis_tolerance < 90.0:
+        raise ValueError("up_axis_tolerance_deg must be within [0, 90)")
     body_midheight_tolerance = float(
         source_registration.get("body_midheight_tolerance_m", 0.012))
     if body_midheight_tolerance <= 0.0:
@@ -626,6 +708,8 @@ def main() -> int:
             jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
             desired_world_approach_axis=desired_approach,
             approach_axis_tolerance_deg=approach_axis_tolerance,
+            desired_world_up_axis=desired_up,
+            up_axis_tolerance_deg=up_axis_tolerance,
             body_midheight_tolerance_m=body_midheight_tolerance,
         )
         screen_reports.append(report)
@@ -644,8 +728,11 @@ def main() -> int:
             report["combined_accepted_fraction"],
             report["scene_constraint_episode_fraction"],
             report["pad_centered_episode_fraction"],
+            report["contact_ik_available_episode_fraction"],
+            report["pad_centered_given_contact_ik_fraction"],
             report["jaw_yaw_aligned_episode_fraction"],
             report["approach_axis_aligned_episode_fraction"],
+            report["up_axis_aligned_episode_fraction"],
             report["side_grasp_episode_fraction"],
             report["scene_component_fraction"],
             report["oracle_geometry_accepted_fraction"],
@@ -671,6 +758,8 @@ def main() -> int:
             jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
             desired_world_approach_axis=desired_approach,
             approach_axis_tolerance_deg=approach_axis_tolerance,
+            desired_world_up_axis=desired_up,
+            up_axis_tolerance_deg=up_axis_tolerance,
             body_midheight_tolerance_m=body_midheight_tolerance,
         )
         reports.append(report)
@@ -703,10 +792,15 @@ def main() -> int:
         "start_arm_rad": selected["start_arm_rad"],
         "object_xyz_m": selected["representative_object_xyz_m"],
         "object_size_m": object_size.tolist(),
+        "table_half_size_xy_m": [
+            float(value) for value in cfg["task"]["table"]["half_size_m"][:2]
+        ],
         "desired_world_jaw_axis": desired_jaw.tolist(),
         "jaw_yaw_tolerance_deg": jaw_yaw_tolerance,
         "desired_world_approach_axis": desired_approach.tolist(),
         "approach_axis_tolerance_deg": approach_axis_tolerance,
+        "desired_world_up_axis": desired_up.tolist(),
+        "up_axis_tolerance_deg": up_axis_tolerance,
         "body_midheight_tolerance_m": body_midheight_tolerance,
         "grasp_mode": source_registration.get("grasp_mode"),
         "axis_source": source_registration.get("axis_source"),
@@ -738,9 +832,13 @@ def main() -> int:
                 "scene_component_fraction",
                 "jaw_yaw_aligned_episode_fraction",
                 "approach_axis_aligned_episode_fraction",
+                "up_axis_aligned_episode_fraction",
                 "side_grasp_episode_fraction",
                 "initial_object_visible_episode_fraction",
                 "pad_centered_episode_fraction",
+                "contact_ik_available_episode_fraction",
+                "pad_centered_given_contact_ik_fraction",
+                "collision_free_given_contact_ik_fraction",
             )
         } for report in screen_reports],
         "selected": selected,
@@ -774,6 +872,8 @@ def main() -> int:
             "jaw_yaw_aligned_episode_fraction"],
         "approach_axis_aligned_episode_fraction": selected[
             "approach_axis_aligned_episode_fraction"],
+        "up_axis_aligned_episode_fraction": selected[
+            "up_axis_aligned_episode_fraction"],
         "side_grasp_episode_fraction": selected[
             "side_grasp_episode_fraction"],
     }, ensure_ascii=False, indent=2))

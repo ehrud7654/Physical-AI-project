@@ -8,7 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 
 from umi.camera_frames import (
+    GRAVITY_PINCH_TO_SIDE_GRASP_ROTATION,
     SUPPLIED_HAND_TO_CANONICAL_PINCH_ROTATION,
+    camera_gravity_pinch_to_side_grasp,
     camera_supplied_hand_to_canonical_pinch,
     camera_opencv_to_arcore_child,
     gripper_camera_from_pinch,
@@ -88,13 +90,32 @@ class Tests(unittest.TestCase):
     def test_mujoco_wrist_camera_includes_gripper_to_pinch_axes(self):
         _, camera_pinch = load_arcore_pinch_calibration(
             Path(__file__).resolve().parents[1]
-            / "configs/real/umi_s22_canonical_pinch_gravity_checked_provisional.json")
+            / "configs/real/umi_s22_canonical_pinch_side_grasp_provisional.json")
         expected = gripper_camera_from_pinch(camera_pinch)
         camera = load_config()["cameras"]["cam_wrist"]
         np.testing.assert_allclose(camera["pos"], expected[:3, 3], atol=1e-8)
         np.testing.assert_allclose(
             np.asarray(camera["xyaxes"]).reshape(2, 3).T,
             expected[:3, :2], atol=1e-8)
+
+    def test_gravity_checked_axes_are_mapped_to_side_grasp_axes(self):
+        root = Path(__file__).resolve().parents[1]
+        _, gravity_pinch = load_arcore_pinch_calibration(
+            root
+            / "configs/real/umi_s22_canonical_pinch_gravity_checked_provisional.json")
+        config, side_pinch = load_arcore_pinch_calibration(
+            root
+            / "configs/real/umi_s22_canonical_pinch_side_grasp_provisional.json")
+        expected = np.eye(4)
+        expected[:3, :3] = GRAVITY_PINCH_TO_SIDE_GRASP_ROTATION
+        np.testing.assert_allclose(side_pinch, gravity_pinch @ expected, atol=1e-12)
+        np.testing.assert_allclose(
+            side_pinch,
+            camera_gravity_pinch_to_side_grasp(gravity_pinch),
+            atol=1e-12,
+        )
+        self.assertEqual(
+            config["child_frame"], "canonical_pinch_marker_midpoint_side_grasp")
 
     def test_supplied_axes_are_explicitly_mapped_to_canonical_pinch(self):
         root = Path(__file__).resolve().parents[1]

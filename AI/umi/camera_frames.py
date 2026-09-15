@@ -19,6 +19,17 @@ contract keeps +X as the jaw-opening axis but requires +Z toward the fingertips
 (down at a top-down closure).  A proper 180-degree rotation about +X therefore
 flips both Y and Z.  This is data-checked, not inferred from a variable name.
 """
+GRAVITY_PINCH_TO_SIDE_GRASP_ROTATION = np.asarray([
+    [1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0],
+    [0.0, -1.0, 0.0],
+])
+"""Side-grasp child axes expressed in the gravity-checked v8 pinch frame.
+
+The 0911 videos move mainly along v8 +Y while closing around the upright
+object's body.  Rotating the child frame by -90 degrees about its preserved
+jaw axis maps that motion to canonical +Z forward and keeps +Y world-up.
+"""
 """Pose of the OpenCV camera frame in the ARCore/OpenGL camera frame.
 
 ARCore/OpenGL: +x right, +y up, -z forward.
@@ -53,6 +64,17 @@ def camera_supplied_hand_to_canonical_pinch(t_camera_hand) -> np.ndarray:
     return rigid(
         rigid(t_camera_hand, name="t_camera_hand") @ hand_to_pinch,
         name="t_camera_pinch",
+    )
+
+
+def camera_gravity_pinch_to_side_grasp(t_camera_gravity_pinch) -> np.ndarray:
+    """Map the gravity-checked v8 child frame to the v9 side-grasp frame."""
+    gravity_to_side = np.eye(4)
+    gravity_to_side[:3, :3] = GRAVITY_PINCH_TO_SIDE_GRASP_ROTATION
+    return rigid(
+        rigid(t_camera_gravity_pinch, name="t_camera_gravity_pinch")
+        @ gravity_to_side,
+        name="t_camera_side_pinch",
     )
 
 

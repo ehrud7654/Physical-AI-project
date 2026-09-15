@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import copy
 from collections import deque
+from contextlib import nullcontext
 import json
 from pathlib import Path
 import sys
@@ -20,7 +21,6 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw
 
-from policy.relative_chunk_bc import RelativeChunkBCPolicy
 from sim.mujoco.build_scene import load_config, normalize
 from sim.mujoco.env import MujocoPickEnv
 from tools.run_umi_regression import is_shared_gpu_server
@@ -49,12 +49,18 @@ def _registration(path: Path) -> dict:
     arm = np.asarray(payload.get("start_arm_rad"), dtype=float)
     obj = np.asarray(payload.get("object_xyz_m"), dtype=float)
     size = np.asarray(payload.get("object_size_m"), dtype=float)
+    table_half_xy = np.asarray(payload.get("table_half_size_xy_m"), dtype=float)
     if (arm.shape != (5,) or obj.shape != (3,) or size.shape != (3,)
             or not np.isfinite(arm).all() or not np.isfinite(obj).all()
-            or not np.isfinite(size).all() or np.any(size <= 0)):
-        raise ValueError("registration needs finite start_arm_rad[5], object xyz/size[3]")
+            or not np.isfinite(size).all() or np.any(size <= 0)
+            or table_half_xy.shape != (2,)
+            or not np.isfinite(table_half_xy).all()
+            or np.any(table_half_xy <= 0)):
+        raise ValueError(
+            "registration needs finite start_arm_rad[5], object xyz/size[3], "
+            "and table_half_size_xy_m[2]")
     return {**payload, "start_arm_rad": arm, "object_xyz_m": obj,
-            "object_size_m": size}
+            "object_size_m": size, "table_half_size_xy_m": table_half_xy}
 
 
 def _episode_object_xyz(registration: dict, episode_id: str) -> np.ndarray:
@@ -111,6 +117,33 @@ class _ValidationPrefixPolicy:
         return {"action_pred": action[:self.steps].copy()}
 
 
+class _GapPreloadPolicy:
+    """Apply simulation-only under-closure to near-closed aperture targets.
+
+    UMI measures aperture rather than contact force. A target equal to object
+    width merely touches the MuJoCo body, so this diagnostic wrapper measures
+    the runtime preload required by the simulated contact model without
+    changing any stored training label.
+    """
+
+    def __init__(self, policy, *, preload_m: float,
+                 activation_gap_m: float) -> None:
+        self.policy = policy
+        self.preload_m = float(preload_m)
+        self.activation_gap_m = float(activation_gap_m)
+
+    def predict_action(self, observation):
+        output = self.policy.predict_action(observation)
+        action = np.asarray(output["action_pred"]).copy()
+        active = action[..., -1] <= self.activation_gap_m
+        action[..., -1] = np.where(
+            active,
+            np.maximum(0.0, action[..., -1] - self.preload_m),
+            action[..., -1],
+        )
+        return {"action_pred": action}
+
+
 def _save_gif(frames: list[np.ndarray], path: Path, fps: int) -> None:
     if not frames:
         raise ValueError("cannot save an empty rollout")
@@ -128,7 +161,8 @@ def main() -> int:
             "Shared GPU server is training-only; run MuJoCo rollout locally")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
-    parser.add_argument("--policy-ckpt", type=Path, required=True)
+    parser.add_argument("--policy-ckpt", type=Path,
+                        help="required for learned-policy mode; unused by --oracle")
     parser.add_argument("--registration", type=Path, required=True)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--observation-source", choices=("dataset", "simulation"),
@@ -155,13 +189,33 @@ def main() -> int:
         ),
     )
     parser.add_argument("--capture-every", type=int, default=2)
+    parser.add_argument(
+        "--no-video", action="store_true",
+        help=(
+            "skip all camera rendering and write only the JSON report; intended "
+            "for local multi-episode recorded-oracle gates"
+        ),
+    )
     parser.add_argument("--tracking-time-margin", type=float, default=1.0,
                         help="simulation-only multiplier after required dynamic retiming")
+    parser.add_argument(
+        "--grip-preload-m", type=float, default=0.0,
+        help=(
+            "simulation-only under-closure for near-closed gap targets; "
+            "dataset labels remain unchanged"
+        ),
+    )
+    parser.add_argument(
+        "--grip-preload-activation-gap-m", type=float, default=0.055,
+        help="apply grip preload only at or below this target gap",
+    )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--real-config", type=Path, default=DEFAULT_REAL_CONFIG)
     parser.add_argument("--out", type=Path, required=True,
                         help="output .gif; a JSON report is written beside it")
     args = parser.parse_args()
+    if not args.oracle and args.policy_ckpt is None:
+        raise SystemExit("--policy-ckpt is required unless --oracle is used")
     if args.device != "cpu":
         raise SystemExit("this local diagnostic currently requires --device cpu")
     if args.out.suffix.lower() != ".gif":
@@ -171,7 +225,11 @@ def main() -> int:
         raise SystemExit("output already exists")
     if (args.cycles <= 0 or args.execute_steps <= 0 or args.capture_every <= 0
             or not np.isfinite(args.tracking_time_margin)
-            or args.tracking_time_margin < 1.0):
+            or args.tracking_time_margin < 1.0
+            or not np.isfinite(args.grip_preload_m)
+            or args.grip_preload_m < 0.0
+            or not np.isfinite(args.grip_preload_activation_gap_m)
+            or args.grip_preload_activation_gap_m <= 0.0):
         raise SystemExit("cycles, execute-steps and capture-every must be positive")
 
     registration = _registration(args.registration)
@@ -179,10 +237,20 @@ def main() -> int:
     object_xyz = _episode_object_xyz(registration, representative)
     episode = _episode(args.data, representative)
     initial_gap = float(episode["proprio"][0, -1, 9])
-    policy = RelativeChunkBCPolicy(args.policy_ckpt, device="cpu")
-    if int(policy.meta["observation_horizon"]) != 2:
+    if args.oracle:
+        dataset_meta = json.loads(
+            (args.data / "dataset.json").read_text(encoding="utf-8"))
+        runtime_meta = dataset_meta
+        policy = None
+    else:
+        # Keep torch entirely outside recorded-oracle diagnostics.  Replaying
+        # labels does not need a network or a GPU-capable Python environment.
+        from policy.relative_chunk_bc import RelativeChunkBCPolicy
+        policy = RelativeChunkBCPolicy(args.policy_ckpt, device="cpu")
+        runtime_meta = policy.meta
+    if int(runtime_meta["observation_horizon"]) != 2:
         raise ValueError("diagnostic currently requires observation_horizon=2")
-    action_horizon = int(policy.meta["action_horizon"])
+    action_horizon = int(runtime_meta["action_horizon"])
     validation_horizon = (
         action_horizon if args.validation_horizon_steps is None
         else int(args.validation_horizon_steps)
@@ -199,6 +267,8 @@ def main() -> int:
     cfg["task"]["object"]["half_size_m"] = (
         registration["object_size_m"] / 2.0).tolist()
     cfg["task"]["object"]["init_pos"] = object_xyz.tolist()
+    cfg["task"]["table"]["half_size_m"][:2] = (
+        registration["table_half_size_xy_m"].tolist())
     real = real_limits(args.real_config)
     ranges = arm_ranges(real)
     start_arm = registration["start_arm_rad"]
@@ -207,7 +277,7 @@ def main() -> int:
     curve = cfg["grasp"]["gap_curve"]
     initial_q = np.r_[start_arm, invert_gap_curve(initial_gap, curve)]
     object_xy = tuple(float(value) for value in object_xyz[:2])
-    source_period = 1.0 / float(policy.meta["rate_hz"])
+    source_period = 1.0 / float(runtime_meta["rate_hz"])
 
     frames: list[np.ndarray] = []
     time_scales: list[float] = []
@@ -221,10 +291,12 @@ def main() -> int:
     simulation_ticks = 0
     max_tracking_error = 0.0
     max_endpoint_tracking_error = 0.0
+    max_lift_height = 0.0
+    min_lift_height = 0.0
     cycle_trace: list[dict[str, object]] = []
 
     with MujocoPickEnv(
-        cfg, render=True, object_jitter_m=0.0,
+        cfg, render=not args.no_video, object_jitter_m=0.0,
         max_ticks=max(1, args.cycles * args.execute_steps * 20),
     ) as env:
         observation = env.reset(seed=0, object_xy=object_xy, initial_q_rad=initial_q)
@@ -245,28 +317,34 @@ def main() -> int:
         debug_camera.distance = 0.62
         debug_camera.azimuth = 135
         debug_camera.elevation = -25
-        with mujoco.Renderer(env.model, height=448, width=448) as renderer:
+        renderer_context = (
+            nullcontext(None)
+            if args.no_video else
+            mujoco.Renderer(env.model, height=448, width=448)
+        )
+        with renderer_context as renderer:
             initial_xy, initial_3d = env.pinch_to_object_m()
             closest_xy, closest_3d = initial_xy, initial_3d
-            initial_policy_image = (
-                episode["image"][0, -1]
-                if args.observation_source == "dataset"
-                else observation.images["cam_wrist"]
-            )
-            wrist = np.transpose(initial_policy_image, (1, 2, 0))
-            wrist = np.asarray(Image.fromarray(wrist).resize((448, 448)))
-            renderer.update_scene(env.data, camera=debug_camera)
-            external = renderer.render().copy()
-            canvas = Image.new("RGB", (896, 484), "white")
-            canvas.paste(Image.fromarray(wrist), (0, 36))
-            canvas.paste(Image.fromarray(external), (448, 36))
-            ImageDraw.Draw(canvas).text(
-                (8, 8),
-                f"initial  xy={initial_xy*1000:.1f}mm "
-                f"3d={initial_3d*1000:.1f}mm contacts={env.jaw_contacts()}",
-                fill="black",
-            )
-            frames.append(np.asarray(canvas))
+            if renderer is not None:
+                initial_policy_image = (
+                    episode["image"][0, -1]
+                    if args.observation_source == "dataset"
+                    else observation.images["cam_wrist"]
+                )
+                wrist = np.transpose(initial_policy_image, (1, 2, 0))
+                wrist = np.asarray(Image.fromarray(wrist).resize((448, 448)))
+                renderer.update_scene(env.data, camera=debug_camera)
+                external = renderer.render().copy()
+                canvas = Image.new("RGB", (896, 484), "white")
+                canvas.paste(Image.fromarray(wrist), (0, 36))
+                canvas.paste(Image.fromarray(external), (448, 36))
+                ImageDraw.Draw(canvas).text(
+                    (8, 8),
+                    f"initial  xy={initial_xy*1000:.1f}mm "
+                    f"3d={initial_3d*1000:.1f}mm contacts={env.jaw_contacts()}",
+                    fill="black",
+                )
+                frames.append(np.asarray(canvas))
             cycle_count = (
                 min(args.cycles, len(episode["action"]))
                 if args.observation_source == "dataset" or args.oracle
@@ -290,6 +368,12 @@ def main() -> int:
                     FixedActionPolicy(episode["action"][row])
                     if args.oracle else policy
                 )
+                if args.grip_preload_m > 0.0:
+                    base_candidate = _GapPreloadPolicy(
+                        base_candidate,
+                        preload_m=args.grip_preload_m,
+                        activation_gap_m=args.grip_preload_activation_gap_m,
+                    )
                 candidate = base_candidate
                 if validation_horizon < action_horizon and not final_oracle_tail:
                     candidate = _ValidationPrefixPolicy(
@@ -387,11 +471,15 @@ def main() -> int:
                                 env.joint_positions()[:5]
                                 - command.arm_positions_rad))))
                         xy, d3 = env.pinch_to_object_m()
+                        lift = env.lift_height()
                         closest_xy = min(closest_xy, xy)
                         closest_3d = min(closest_3d, d3)
+                        max_lift_height = max(max_lift_height, lift)
+                        min_lift_height = min(min_lift_height, lift)
                         if first_contact_cycle is None and env.jaw_contacts() > 0:
                             first_contact_cycle = cycle
-                        if simulation_ticks % args.capture_every == 0:
+                        if (renderer is not None
+                                and simulation_ticks % args.capture_every == 0):
                             policy_image = runtime_obs["image"][-1]
                             wrist = np.transpose(policy_image, (1, 2, 0))
                             wrist = np.asarray(Image.fromarray(wrist).resize((448, 448)))
@@ -444,8 +532,10 @@ def main() -> int:
         result = {
             "status": "LOCAL_CAMERA_MATCHED_DIAGNOSTIC_NOT_HARDWARE_VALIDATION",
             "dataset": str(args.data),
-            "checkpoint": str(args.policy_ckpt),
+            "checkpoint": (str(args.policy_ckpt)
+                           if args.policy_ckpt is not None else None),
             "mode": "recorded_oracle" if args.oracle else "learned_policy",
+            "video_generated": not args.no_video,
             "observation_source": args.observation_source,
             "closed_loop_visual_feedback": (
                 args.observation_source == "simulation" and not args.oracle),
@@ -469,10 +559,15 @@ def main() -> int:
                 [float(value) for value in np.percentile(periods, [0, 50, 95, 100])]
                 if periods else [None, None, None, None]),
             "simulation_tracking_time_margin": args.tracking_time_margin,
+            "simulation_grip_preload_m": args.grip_preload_m,
+            "simulation_grip_preload_activation_gap_m": (
+                args.grip_preload_activation_gap_m),
             "closest_pinch_xy_m": closest_xy,
             "closest_pinch_3d_m": closest_3d,
             "first_contact_cycle": first_contact_cycle,
             "lift_height_m": env.lift_height(),
+            "max_lift_height_m": max_lift_height,
+            "min_lift_height_m": min_lift_height,
             "jaw_contacts_final": env.jaw_contacts(),
             "success": env.is_success(),
             "max_arm_tracking_error_rad": max_tracking_error,
@@ -487,12 +582,15 @@ def main() -> int:
                 "same predicted waypoints; robot-time timestamps uniformly stretched; "
                 "source dataset timestamps and labels unchanged"),
         }
-    _save_gif(frames, args.out, fps=max(1, round(
-        float(cfg["control"]["rate_hz"]) / args.capture_every)))
+    if not args.no_video:
+        _save_gif(frames, args.out, fps=max(1, round(
+            float(cfg["control"]["rate_hz"]) / args.capture_every)))
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    print(f"video: {args.out}")
+    if not args.no_video:
+        print(f"video: {args.out}")
     print(f"report: {report_path}")
     return 0
 

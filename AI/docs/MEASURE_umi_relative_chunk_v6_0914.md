@@ -514,3 +514,106 @@ combined geometry+scene: 0/27 = 0%
 아직 없다. 따라서 v9를 성공한 rollout이나 확정 robot-base 등록으로 보고하지
 않는다. v9 계약과 8-step 실행 의미는 Track A/B 합의 및 `S15P21A103-171` 결과
 전까지 잠정 상태다.
+
+첫 v9 탐색은 데이터 child frame만 v9로 바꾸고 MuJoCo `cam_wrist`는 v8
+top-down extrinsic을 유지한 채 실행한 결함이 있었다. 이 때문에 실제 시연에서는
+물체가 보이는데 초기 가시성 판정은 2/14에 그쳤다. camera proxy를 동일한 v9
+side-grasp extrinsic에서 다시 계산한 값으로 교체했다.
+
+```text
+cam_wrist pos: [0.0014, -0.07747884, 0.05422045]
+cam_wrist x axis: [1, 0, 0]
+cam_wrist y axis: [0, 0.96592583, 0.25881905]
+```
+
+또한 첫 결과에서 접촉 IK가 존재한 7편은 양쪽 pad 중심 정렬이 모두 통과했고
+중심 높이 오차도 사실상 0이었다. `pad_centered=7/14`는 패드 형상 오차가 아니라
+나머지 7편의 접촉 IK 부재가 false로 합산된 결과다. 이후 보고에서는 접촉 IK
+가용률과 `접촉 IK가 있을 때의 pad 정렬률`을 분리한다.
+
+## 0915 후속: 카메라 up 축, 테이블 범위, 대표 시연 및 접촉 preload 검증
+
+평행 jaw는 축 부호를 뒤집어도 같은 접촉면을 만들지만 손목 카메라의 up 방향은
+부호까지 보존해야 한다. 등록 탐색에 세계 up 목표 `[0, 0, 1]`과 15도 허용오차를
+추가하고, 카메라 proxy도 v9 side-grasp extrinsic으로 통일했다. 또한 탐색기가
+사용한 테이블 반폭 `0.4 x 0.4m`를 결과 계약에 기록하고 renderer가 같은 크기를
+강제하도록 했다. 이전 renderer의 기본 반폭은 `0.3 x 0.3m`여서 탐색에서 유효했던
+물체가 재생 시 테이블 가장자리 밖으로 나가는 불일치가 있었다.
+
+대표 시연은 화면 중심 오차만 최소화하지 않고 `scene_constraints_ok`이면서 sampled
+oracle chunk를 실제로 통과한 횟수를 우선하도록 선정 기준을 바꿨다. 32개 후보를
+다시 탐색한 결과는 다음과 같다.
+
+```text
+result: out/relative_chunk_v9_registration_search32_side_body_grasp_cam_upfix_repselect.json
+selected candidate: 6
+representative episode: rec_20260911_150943
+combined geometry+scene: 5/27 = 18.5%
+oracle geometry: 10/27 = 37.0%
+all scene constraints: 3/14 = 21.4%
+jaw yaw aligned: 13/14 = 92.9%
+horizontal approach aligned: 13/14 = 92.9%
+camera up aligned: 14/14 = 100%
+side-grasp direction: 13/14 = 92.9%
+representative sampled oracle chunks: 2/2
+```
+
+선택된 등록값은 `configs/real/umi_so101_registration_provisional.json`에 반영했지만
+상태는 계속 `PROVISIONAL_NOT_PHYSICAL_CALIBRATION`이다. 결합 통과율이 18.5%에
+불과하고 실제 robot-base/workspace를 계측한 값도 아니므로 실물 명령에 사용하지
+않는다.
+
+기록 정답 oracle을 로컬 MuJoCo에서 재생하면 `rec_20260911_150943`은 물체 위에서
+내려오는 인형뽑기 자세가 아니라, 세로로 선 과자 케이스의 양옆 몸통으로 수평 접근한다.
+UMI gap은 aperture만 나타내고 접촉력은 기록하지 않기 때문에, 시뮬레이션 접촉 모델에
+한정해 near-closed 구간에 1mm under-closure preload를 적용했다. 데이터셋과 학습
+라벨은 변경하지 않았다.
+
+```text
+video: out/relative_chunk_v9_oracle_representative_preload1mm.gif
+report: out/relative_chunk_v9_oracle_representative_preload1mm.json
+mode: recorded_oracle (learned policy/checkpoint bypassed)
+closest pinch XY: 4.18 mm
+first contact: cycle 10
+object lift: 55.82 mm
+final jaw contacts: 2
+success: true
+simulation-only grip preload: 1 mm
+```
+
+장면 조건을 통과한 나머지 두 편도 같은 조건으로 재생했다. `150833`은 접촉과
+16.19mm 리프트까지 갔지만 final tail의 두 번째 명령이 5-DoF IK에서 탈락했고,
+`150948`은 접근·폐쇄 과정에서 물체를 먼저 밀어 넘어뜨렸다. `150948`은 preload를
+2mm로 늘리거나 실행 시간 여유를 2배로 늘려도 실패가 재현됐다. 즉 현재 동적 oracle
+성공은 1/3이며, 1편의 성공은 좌표계·측면 접근·접촉 가능성을 확인한 진단 결과일 뿐
+등록의 에피소드 일반화나 학습 정책 성공을 증명하지 않는다. 다음 단계는 실패
+에피소드의 접촉 후 상대 궤적과 5-DoF IK 오차를 분리하고, 등록 후보를 최종 확정하기
+전에 다중 에피소드 동적 oracle 게이트를 적용하는 것이다.
+
+이를 반복 가능한 로컬 검사로 만들기 위해 `tools/gate_relative_chunk_oracle.py`를
+추가했다. 등록 탐색 결과의 `scene_constraints_ok=true` 에피소드를 자동 선택하고,
+렌더링 없이 기록 정답만 재생해 접촉·최대/최소 리프트·IK 오류·전도를 집계한다.
+기본 합격선은 80%이며 학습 정책을 로드하지 않는다.
+
+```bash
+python tools/gate_relative_chunk_oracle.py \
+  --data datasets/umi_real_relative_20260911_v9 \
+  --registration out/relative_chunk_v9_registration_search32_side_body_grasp_cam_upfix_repselect.json \
+  --cycles 30 \
+  --grip-preload-m 0.001 \
+  --min-success-fraction 0.8 \
+  --out out/relative_chunk_v9_dynamic_oracle_gate_scene_valid_v2.json
+```
+
+```text
+status: FAIL_LOCAL_DYNAMIC_ORACLE_GATE
+contacts: 3/3
+successes: 1/3 = 33.3% (required 80%)
+150833: ik_reject_after_contact, max lift 20.18mm
+150943: success, max lift 68.36mm
+150948: object_displaced_or_tipped, max lift 55.07mm then final -18.85mm
+```
+
+따라서 현재 등록값은 대표 영상 생성에는 쓸 수 있지만 학습 정책 rollout의 기준
+등록값으로 확정할 수 없다. 다음 등록 후보 탐색에서는 kinematic 순위 뒤에 이 동적
+게이트를 적용하고, 80%를 넘는 후보가 없으면 등록을 실패로 유지한다.

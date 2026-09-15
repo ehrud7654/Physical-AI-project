@@ -74,16 +74,14 @@ cameras:
     # gripper 로컬축 실측: local -z = 손가락 방향, local +x = 월드 위쪽, TCP = local (-0.0079,0,-0.0981)
     # 그리퍼 메시 hull(중심 local(-0.0098,0,-0.0282), rbound 0.0843) 바깥으로 빼야 한다.
     # 안쪽에 두면 렌더 화면이 노란 메시로 꽉 찬다 — 실측으로 확인됨.
-    # 2026-09-11 S22 UMI 시연 시점을 재현한 **평가용 프록시**.
-    # T_gripper_camera = T_gripper_pinch @ inverse(T_camera_pinch_GL).
-    # 70편 폐쇄 프레임의 중력 방향으로 검정해 supplied child +z(위)를 정책
-    # canonical pinch +z(손끝/아래)로 뒤집었다. +x 개폐축을 보존하는 proper
-    # rotation이므로 y도 함께 뒤집는다. 이 child-frame 치환을 생략하면 톱다운
-    # 접촉에서 카메라가 파지점보다 77.5mm 아래에 놓이는 비물리 결과가 난다.
+    # 2026-09-11 S22 UMI의 **수평 몸통 측면 파지** 시점을 재현한 평가용 프록시.
+    # T_gripper_camera = T_gripper_pinch @ inverse(T_camera_side_pinch_GL).
+    # v9 canonical pinch는 +X=jaw, +Y=up, +Z=수평 접근축이다. 이전 값은 v8
+    # top-down child frame을 사용해 초기 물체 가시성 검사를 잘못 수행했다.
     # Hand-eye 원점은 여전히 마커중점 기준 잠정값이다.
     # ⚠️ 로봇용 IMX708 실측 extrinsic 이 아니다. HW 장착값이 오면 교체하고 재평가한다.
-    pos: [0.0014, 0.13422045, -0.00252116]
-    xyaxes: [1.0, 0.0, 0.0, 0.0, 0.25881905, -0.96592583]
+    pos: [0.0014, -0.07747884, 0.05422045]
+    xyaxes: [1.0, 0.0, 0.0, 0.0, 0.96592583, 0.25881905]
     fovy: 70
 
 # 그리퍼 접촉 패드 — 시뮬 전용. 실물에는 대응물이 없다.
