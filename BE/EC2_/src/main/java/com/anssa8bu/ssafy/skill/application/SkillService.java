@@ -1,6 +1,7 @@
 package com.anssa8bu.ssafy.skill.application;
 
 import static com.anssa8bu.ssafy.skill.dto.SkillApiModels.CreateCustomSkillRequest;
+import static com.anssa8bu.ssafy.skill.dto.SkillApiModels.UpdateSkillDescriptionRequest;
 import static com.anssa8bu.ssafy.skill.dto.SkillResponses.SkillResponse;
 import static com.anssa8bu.ssafy.skill.dto.SkillResponses.SkillOverviewResponse;
 
@@ -67,6 +68,7 @@ public class SkillService {
     return visibleSkills.stream().map(skill -> {
       SkillVersion latest = latestVersions.get(skill.getId());
       return new SkillOverviewResponse(
+          skill.getId(),
           skill.getDisplayName(),
           skill.getDescription(),
           latest == null ? null : latest.getVersion(),
@@ -109,6 +111,16 @@ public class SkillService {
             displayName,
             request.description(),
             null));
+  }
+
+  @Transactional
+  public SkillResponse updateDescription(
+      UUID ownerId, UUID skillId, UpdateSkillDescriptionRequest request) {
+    Skill skill = skills.findById(skillId)
+        .filter(candidate -> candidate.getOwnerId() == null || ownerId.equals(candidate.getOwnerId()))
+        .orElseThrow(() -> new ResourceNotFoundException("Skill"));
+    skill.updateDescription(request.description());
+    return toResponse(skill);
   }
 
   public Skill requireVisible(UUID ownerId, String skillKey) {

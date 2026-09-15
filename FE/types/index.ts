@@ -168,6 +168,7 @@ export interface TrainingSkill {
 }
 
 export interface SkillOverview {
+  id: string;
   displayName: string;
   description: string | null;
   latestVersion: number | null;

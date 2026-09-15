@@ -8,4 +8,6 @@ public final class SkillApiModels {
 
   public record CreateCustomSkillRequest(
       @NotBlank @Size(max = 150) String displayName, @Size(max = 2000) String description) {}
+
+  public record UpdateSkillDescriptionRequest(@Size(max = 2000) String description) {}
 }

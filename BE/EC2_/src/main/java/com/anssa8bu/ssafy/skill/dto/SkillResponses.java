@@ -31,6 +31,7 @@ public final class SkillResponses {
       Instant createdAt) {}
 
   public record SkillOverviewResponse(
+      UUID id,
       String displayName,
       String description,
       Integer latestVersion,

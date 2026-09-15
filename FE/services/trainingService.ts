@@ -77,6 +77,16 @@ export async function createCustomSkill(input: {
   });
 }
 
+export async function updateSkillDescription(
+  skillId: string,
+  description: string,
+): Promise<TrainingSkill> {
+  return apiRequest<ApiSkill>(`/skills/${skillId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ description: description.trim() || null }),
+  });
+}
+
 export async function createTrainingJob(input: {
   skillKey?: string;
   newSkill?: {

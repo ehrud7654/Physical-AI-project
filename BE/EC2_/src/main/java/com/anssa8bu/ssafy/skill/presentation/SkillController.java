@@ -8,6 +8,7 @@ import com.anssa8bu.ssafy.model.entity.*;
 import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.skill.application.SkillService;
 import com.anssa8bu.ssafy.skill.dto.SkillApiModels.CreateCustomSkillRequest;
+import com.anssa8bu.ssafy.skill.dto.SkillApiModels.UpdateSkillDescriptionRequest;
 import com.anssa8bu.ssafy.skill.entity.Skill;
 import com.anssa8bu.ssafy.skill.repository.SkillRepository;
 import jakarta.validation.Valid;
@@ -50,6 +51,14 @@ public class SkillController {
     SkillResponse result = service.create(owner(jwt), idempotencyKey, request);
     return ResponseEntity.created(URI.create("/api/v1/skills/" + result.id()))
         .body(ApiResponse.of(result));
+  }
+
+  @PatchMapping("/{skillId}")
+  public ApiResponse<SkillResponse> updateDescription(
+      @AuthenticationPrincipal Jwt jwt,
+      @PathVariable UUID skillId,
+      @Valid @RequestBody UpdateSkillDescriptionRequest request) {
+    return ApiResponse.of(service.updateDescription(owner(jwt), skillId, request));
   }
 
   @GetMapping("/{skillId}/versions/latest")
