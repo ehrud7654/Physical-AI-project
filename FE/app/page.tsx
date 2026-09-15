@@ -6,7 +6,7 @@ import type { AuthenticatedUser, BlockKind, DashboardData, DashboardRobotStatus,
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
-import { createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
+import { createCustomSkill, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, type DeviceEnrollment } from '@/services';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -121,7 +121,7 @@ function HomeInner() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const captureView = new URLSearchParams(window.location.search).get('figmaView') as View | null;
-    if (captureView && ['dashboard', 'data', 'library', 'devices', 'robot-detail', 'training', 'learn', 'work', 'admin'].includes(captureView)) {
+    if (captureView && ['dashboard', 'data', 'skills', 'library', 'devices', 'robot-detail', 'training', 'learn', 'work', 'admin'].includes(captureView)) {
       setView(captureView);
       setAuthenticated(true);
       setEntered(true);
@@ -179,6 +179,7 @@ function HomeInner() {
         {!loading && !loadError && <>
           {view === 'dashboard' && <DashboardView onNavigate={navigateTo} onOpenDevices={(tab) => { setDeviceTab(tab); setView('devices'); }} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} />}
           {view === 'data' && <DataView />}
+          {view === 'skills' && <SkillListView onToast={showToast} />}
           {view === 'library' && <WorkflowLibraryView onEdit={editWork} onToast={showToast} />}
           {view === 'devices' && <DevicesView initialTab={deviceTab} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} onToast={showToast} />}
           {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={navigateTo} onToast={showToast} />}
@@ -280,10 +281,11 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
   </main>;
 }
 
-function NavIcon({ name }: { name: 'dashboard' | 'data' | 'learning' | 'work' | 'devices' }) {
+function NavIcon({ name }: { name: 'dashboard' | 'data' | 'skills' | 'learning' | 'work' | 'devices' }) {
   const paths = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></>,
     data: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" /></>,
+    skills: <><path d="M5 4h14v16H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
     learning: <><path d="M3 5.5 12 2l9 3.5-9 3.5-9-3.5Z" /><path d="M6 8v6.5c0 1.7 2.7 3.5 6 3.5s6-1.8 6-3.5V8" /><path d="M21 6v7" /></>,
     work: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V2h6v2M8.5 10h7M8.5 15h5" /></>,
     devices: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /><circle cx="12" cy="10.5" r="2.5" /></>,
@@ -325,6 +327,7 @@ function GlobalHeader({ authenticated, activeView, onHome, onNavigate, onAuth, v
     <nav ref={menuRef} className={`global-nav${menuOpen ? ' open' : ''}`} aria-label="플랫폼 메뉴">
       <div className="global-nav-item"><button className={activeView === 'dashboard' ? 'active' : ''} onClick={() => goTo('dashboard')}><NavIcon name="dashboard" />대시 보드</button></div>
       <div className="global-nav-item"><button className={activeView === 'data' ? 'active' : ''} onClick={() => goTo('data')}><NavIcon name="data" />데이터</button></div>
+      <div className="global-nav-item"><button className={activeView === 'skills' ? 'active' : ''} onClick={() => goTo('skills')}><NavIcon name="skills" />동작 목록</button></div>
       <div className={`global-nav-item has-submenu${expandedSections.learning ? ' expanded' : ''}`}><button className={activeView === 'training' || activeView === 'learn' ? 'active' : ''} aria-expanded={variant === 'sidebar' ? expandedSections.learning : undefined} onClick={() => handleSection('learning', 'training')}><NavIcon name="learning" />학습 <span className="nav-chevron" aria-hidden="true" /></button><div className="global-submenu"><button onClick={() => goTo('training')}>학습 목록</button><button onClick={() => goTo('learn')}>학습 생성</button></div></div>
       <div className={`global-nav-item has-submenu${expandedSections.work ? ' expanded' : ''}`}><button className={activeView === 'library' || activeView === 'work' ? 'active' : ''} aria-expanded={variant === 'sidebar' ? expandedSections.work : undefined} onClick={() => handleSection('work', 'library')}><NavIcon name="work" />작업 <span className="nav-chevron" aria-hidden="true" /></button><div className="global-submenu"><button onClick={() => goTo('library')}>작업 목록</button><button onClick={() => goTo('work')}>작업 생성</button></div></div>
       <div className="global-nav-item"><button className={activeView === 'devices' || activeView === 'robot-detail' ? 'active' : ''} onClick={() => goTo('devices')}><NavIcon name="devices" />장치 관리</button></div>
@@ -783,6 +786,94 @@ function DataView() {
       </div>
     </section>
     {detail && <div className="modal-backdrop" onMouseDown={() => { setDetail(null); setPreview(null); }}><section className="register-modal data-detail-modal" role="dialog" aria-modal="true" aria-label="데이터 상세" onMouseDown={e => e.stopPropagation()}><div className="modal-heading data-modal-heading"><div><p>데이터 상세</p><div className="data-modal-title"><h2>데이터 {String(detail.seq).padStart(3, '0')}</h2><span className={`dataset-status ${datasetStatusMeta[detail.status].className}`}><i />{datasetStatusMeta[detail.status].label}</span></div></div><button className="close-button" aria-label="닫기" onClick={() => { setDetail(null); setPreview(null); }}>×</button></div><dl className="data-detail-grid"><div><dt>학습 동작</dt><dd>{detail.skillName}</dd></div><div><dt>사용 장치</dt><dd>{detail.umiId}</dd></div><div><dt>촬영 정보</dt><dd>{detail.duration}<small>{detail.size}</small></dd></div><div><dt>학습 사용</dt><dd>{detail.trainable ? '사용 가능' : '사용할 수 없음'}</dd></div></dl>{detail.blockingReasons.length > 0 && <div className="validation-error" role="alert"><strong>확인이 필요한 이유</strong><ul>{detail.blockingReasons.map(reason => <li key={reason.code}>{reason.message}</li>)}</ul><p>{recoveryActionLabel[detail.recoveryAction]}</p></div>}{detail.status !== 'READY' && !detail.blockingReasons.length && <p className="validation-progress" role="status">상태가 바뀌면 이 화면에 자동으로 반영됩니다.</p>}{preview && <div className={`video-stage ${detail.tone}`} role="img" aria-label="데이터 프레임 미리보기"><span className="big-play">▦</span><p>프레임 미리보기 준비 완료</p></div>}{previewError && <p className="form-error" role="alert">{previewError}</p>}{(preview || (detail.status === 'READY' && !preview)) && <div className="data-modal-footer"><p className="modal-note">{preview ? `미리보기는 ${new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(preview.expiresAt))}까지 열 수 있어요.` : ''}</p>{detail.status === 'READY' && !preview && <button className="secondary-button" disabled={previewLoading} onClick={() => void openPreview()}>{previewLoading ? '준비 중...' : '데이터 미리보기'}</button>}</div>}</section></div>}
+  </>;
+}
+
+function SkillListView({ onToast }: { onToast: (message: string) => void }) {
+  const [skills, setSkills] = useState<TrainingSkill[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [description, setDescription] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const loadSkills = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setSkills(await fetchTrainingSkills());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '동작 목록을 불러오지 못했어요.');
+      onToast('동작 목록을 불러오지 못했어요.');
+    } finally {
+      setLoading(false);
+    }
+  }, [onToast]);
+
+  useEffect(() => {
+    void loadSkills();
+  }, [loadSkills]);
+
+  const submitSkill = async (event: FormEvent) => {
+    event.preventDefault();
+    const name = displayName.trim();
+    if (!name) {
+      setCreateError('동작 이름을 입력해 주세요.');
+      return;
+    }
+    setCreating(true);
+    setCreateError('');
+    try {
+      const created = await createCustomSkill({ displayName: name, description });
+      setSkills((current) => [...current, created]);
+      setCreateOpen(false);
+      setDisplayName('');
+      setDescription('');
+      onToast('동작이 추가되었어요.');
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : '동작을 추가하지 못했어요.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return <>
+    <div className="page-heading data-page-heading">
+      <div>
+        <h1>동작 목록</h1>
+        {loading && <p role="status">등록된 동작을 불러오는 중이에요.</p>}
+        {error && <p className="form-error" role="alert">동작 목록을 불러오지 못했어요. <button className="text-button" type="button" onClick={() => void loadSkills()}>다시 시도</button></p>}
+      </div>
+      <button className="primary-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button>
+    </div>
+    <section className="card episode-panel data-table-panel">
+      <div className="episode-table" role="table" aria-label="동작 목록">
+        <div className="episode-row skill-list-row header" role="row">
+          <span>동작 ID</span><span>동작 키</span><span>표시 이름</span><span>분류</span><span>상태</span><span>설명</span>
+        </div>
+        {skills.map((skill) => <div className="episode-row skill-list-row" role="row" key={skill.id}>
+          <span data-label="동작 ID" title={skill.id}><code>{skill.id}</code></span>
+          <span data-label="동작 키">{skill.skillKey}</span>
+          <span data-label="표시 이름">{skill.displayName}</span>
+          <span data-label="분류">{skill.tier}</span>
+          <span data-label="상태">{skill.status}</span>
+          <span data-label="설명">{skill.description || '-'}</span>
+        </div>)}
+        {!loading && !error && !skills.length && <div className="table-empty"><p>등록된 동작이 없어요.</p></div>}
+      </div>
+    </section>
+    {createOpen && <div className="modal-backdrop" onMouseDown={() => !creating && setCreateOpen(false)}>
+      <form className="register-modal skill-create-modal" role="dialog" aria-modal="true" aria-label="동작 추가" onSubmit={submitSkill} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-heading"><div><p>새로운 커스텀 동작</p><h2>동작 추가</h2></div><button className="close-button" type="button" aria-label="닫기" disabled={creating} onClick={() => setCreateOpen(false)}>×</button></div>
+        <label>동작 이름 <strong aria-hidden="true">*</strong><input maxLength={150} value={displayName} onChange={(event) => { setDisplayName(event.target.value); setCreateError(''); }} placeholder="예: 백기잡기" autoFocus required /></label>
+        <label>설명 <textarea maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="동작에 대한 설명을 입력해 주세요. (선택)" rows={5} /></label>
+        <p className="modal-note">동작 키, 분류와 상태는 서버에서 자동으로 생성됩니다.</p>
+        {createError && <p className="form-error" role="alert">{createError}</p>}
+        <div className="modal-actions"><button className="secondary-button" type="button" disabled={creating} onClick={() => setCreateOpen(false)}>취소</button><button className="primary-button" disabled={creating}>{creating ? '추가 중...' : '추가'}</button></div>
+      </form>
+    </div>}
   </>;
 }
 

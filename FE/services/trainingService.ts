@@ -59,6 +59,20 @@ export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
   return apiRequest<ApiSkill[]>('/skills');
 }
 
+export async function createCustomSkill(input: {
+  displayName: string;
+  description?: string;
+}): Promise<TrainingSkill> {
+  return apiRequest<ApiSkill>('/skills', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      displayName: input.displayName.trim(),
+      description: input.description?.trim() || null,
+    }),
+  });
+}
+
 export async function createTrainingJob(input: {
   skillKey?: string;
   newSkill?: {
