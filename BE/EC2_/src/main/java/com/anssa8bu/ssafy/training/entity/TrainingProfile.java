@@ -92,4 +92,5 @@ public class TrainingProfile extends CreatedEntity {
   public String getConfigSha256() {
     return configSha256;
   }
+  public String getAlgorithm() { return algorithm; }
 }

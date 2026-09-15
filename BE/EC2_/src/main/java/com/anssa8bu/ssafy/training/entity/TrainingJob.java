@@ -278,4 +278,92 @@ public class TrainingJob extends AuditableEntity {
   public void softDelete(Instant deletedAt) {
     if (this.deletedAt == null) this.deletedAt = Objects.requireNonNull(deletedAt);
   }
+
+  public void claim(String workerId, UUID storageNodeId, int gpuIndex, String gitRev,
+      String leaseHash, Instant leaseExpiresAt) {
+    if (status != TrainingJobStatus.QUEUED && status != TrainingJobStatus.CREATED)
+      throw new IllegalStateException("claim할 수 없는 학습 상태입니다.");
+    this.assignedWorkerId = Objects.requireNonNull(workerId);
+    this.assignedStorageNodeId = storageNodeId;
+    this.gpuIndex = gpuIndex;
+    this.gitRev = gitRev;
+    this.leaseTokenHash = Objects.requireNonNull(leaseHash);
+    this.leaseExpiresAt = Objects.requireNonNull(leaseExpiresAt);
+    this.status = inputMode == TrainingInputMode.COLLECT_NEW
+        ? TrainingJobStatus.COLLECTING : TrainingJobStatus.PREPARING;
+  }
+
+  public void renewLease(Instant expiresAt) { this.leaseExpiresAt = Objects.requireNonNull(expiresAt); }
+  public void rotateLease(String leaseHash, Instant expiresAt) {
+    this.leaseTokenHash = Objects.requireNonNull(leaseHash);
+    this.leaseExpiresAt = Objects.requireNonNull(expiresAt);
+  }
+
+  public void applyProgress(String stage, BigDecimal percent, Integer epoch, Integer totalEpochs) {
+    this.status = TrainingJobStatus.RUNNING;
+    if (startedAt == null) startedAt = Instant.now();
+    this.progressStage = stage;
+    this.progressPercent = percent == null ? this.progressPercent : percent;
+    this.currentEpoch = epoch;
+    this.totalEpochs = totalEpochs;
+  }
+
+  public void start(Instant at) {
+    status = TrainingJobStatus.RUNNING;
+    if (startedAt == null) startedAt = at;
+  }
+
+  public void markModelUploading(Instant completedAt) {
+    status = TrainingJobStatus.MODEL_UPLOADING;
+    modelCompletedAt = completedAt;
+  }
+
+  public void markModelValidating() { status = TrainingJobStatus.MODEL_VALIDATING; }
+
+  public void complete(UUID skillVersionId, Instant at) {
+    resultSkillVersionId = Objects.requireNonNull(skillVersionId);
+    status = TrainingJobStatus.SUCCEEDED;
+    progressPercent = new BigDecimal("100.00");
+    finishedAt = at;
+  }
+
+  public void fail(String code, String message, Instant at) {
+    status = TrainingJobStatus.FAILED;
+    errorCode = code;
+    errorMessage = message;
+    finishedAt = at;
+  }
+
+  public void cancel(Instant at) { status = TrainingJobStatus.CANCELED; finishedAt = at; }
+
+  public void releaseAssignment() {
+    assignedWorkerId=null; assignedStorageNodeId=null; gpuIndex=null; gitRev=null;
+    leaseTokenHash=null; leaseExpiresAt=null;
+  }
+
+  public void recoverExpiredLease(int maxAttempts, Instant at) {
+    if (leaseExpiresAt==null || leaseExpiresAt.isAfter(at))
+      throw new IllegalStateException("lease가 만료되지 않았습니다.");
+    if (status==TrainingJobStatus.CANCEL_REQUESTED) {
+      cancel(at); releaseAssignment(); return;
+    }
+    if (attempt>=maxAttempts) {
+      fail("TRAINING_LEASE_EXHAUSTED","학습 Worker lease 재시도 한도를 초과했습니다.",at);
+      releaseAssignment(); return;
+    }
+    attempt++;
+    status=inputMode==TrainingInputMode.COLLECT_NEW?TrainingJobStatus.CREATED:TrainingJobStatus.QUEUED;
+    progressStage="재할당 대기";
+    releaseAssignment();
+  }
+
+  public String getAssignedWorkerId() { return assignedWorkerId; }
+  public UUID getAssignedStorageNodeId() { return assignedStorageNodeId; }
+  public int getAttempt() { return attempt; }
+  public String getLeaseTokenHash() { return leaseTokenHash; }
+  public Instant getLeaseExpiresAt() { return leaseExpiresAt; }
+  public String getTrainingConfigSha256() { return trainingConfigSha256; }
+  public Map<String, Object> getDatasetQuery() { return datasetQuery; }
+  public String getInputSnapshotSha256() { return inputSnapshotSha256; }
+  public Instant getModelCompletedAt() { return modelCompletedAt; }
 }

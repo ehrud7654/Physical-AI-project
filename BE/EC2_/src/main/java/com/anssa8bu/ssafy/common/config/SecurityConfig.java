@@ -54,6 +54,11 @@ public class SecurityConfig {
                     .requestMatchers(PUBLIC_ENDPOINTS)
                     .permitAll()
                     .requestMatchers(
+                        "/internal/training-jobs/**",
+                        "/internal/skill-versions/**",
+                        "/internal/storage-nodes/**")
+                    .permitAll()
+                    .requestMatchers(
                         "/api/v1/episode",
                         "/api/v1/episode/**")
                     .hasAuthority("SCOPE_device")

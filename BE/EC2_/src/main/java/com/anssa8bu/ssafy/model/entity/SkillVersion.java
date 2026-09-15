@@ -114,6 +114,48 @@ public class SkillVersion extends CreatedEntity {
 
   protected SkillVersion() {}
 
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId, UUID trainingProfileId,
+      String trainingConfigSha256, UUID robotProfileId, int version, String bucket, String key,
+      String sha256, long bytes, String architecture, String framework, String frameworkVersion,
+      String contractVersion, ActionSpace actionSpace, long parameterCount,
+      BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
+      Map<String, Object> outputSchema) {
+    this.id = Objects.requireNonNull(id);
+    this.skillId = Objects.requireNonNull(skillId);
+    this.trainingJobId = Objects.requireNonNull(trainingJobId);
+    this.trainingProfileId = Objects.requireNonNull(trainingProfileId);
+    this.trainingConfigSha256 = Objects.requireNonNull(trainingConfigSha256);
+    this.robotProfileId = Objects.requireNonNull(robotProfileId);
+    this.version = version;
+    this.status = SkillVersionStatus.UPLOADING;
+    this.checkpointBucket = Objects.requireNonNull(bucket);
+    this.checkpointKey = Objects.requireNonNull(key);
+    this.checkpointSha256 = Objects.requireNonNull(sha256);
+    this.checkpointBytes = bytes;
+    this.architecture = Objects.requireNonNull(architecture);
+    this.framework = Objects.requireNonNull(framework);
+    this.frameworkVersion = Objects.requireNonNull(frameworkVersion);
+    this.contractVersion = Objects.requireNonNull(contractVersion);
+    this.actionSpace = Objects.requireNonNull(actionSpace);
+    this.parameterCount = parameterCount;
+    this.controlRateHz = Objects.requireNonNull(controlRateHz);
+    this.cameraNames = List.copyOf(cameraNames);
+    this.inputSchema = Map.copyOf(inputSchema);
+    this.outputSchema = Map.copyOf(outputSchema);
+  }
+
+  public void beginValidation() { status = SkillVersionStatus.VALIDATING; }
+  public void markReady(Instant at) { status = SkillVersionStatus.READY; validatedAt = at; }
+  public void markFailed(Instant at) { status = SkillVersionStatus.FAILED; validatedAt = at; }
+  public void recordGate(String metric, int n, int runs, double value, double low, double high,
+      Instant measuredAt) {
+    this.gateMetric = metric; this.gateN = n; this.gateRuns = runs; this.gateValue = value;
+    this.gateCiLow = low; this.gateCiHigh = high; this.gateMeasuredAt = measuredAt;
+  }
+  public UUID getTrainingJobId() { return trainingJobId; }
+  public UUID getTrainingProfileId() { return trainingProfileId; }
+  public String getTrainingConfigSha256() { return trainingConfigSha256; }
+
   public boolean isGatePassed() {
     return gatePassed;
   }

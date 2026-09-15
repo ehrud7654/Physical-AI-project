@@ -66,4 +66,9 @@ public class TrainingJobEvent {
   public Map<String, Object> getPayload() {
     return payload;
   }
+
+  public String getEventId() { return eventId; }
+  public long getSequence() { return sequence; }
+  public String getEventType() { return eventType; }
+  public int getAttempt() { return attempt; }
 }

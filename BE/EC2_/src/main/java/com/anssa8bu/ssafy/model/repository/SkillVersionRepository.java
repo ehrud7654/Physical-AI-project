@@ -13,4 +13,7 @@ public interface SkillVersionRepository extends JpaRepository<SkillVersion, UUID
 
   Optional<SkillVersion> findFirstBySkillIdAndStatusAndGatePassedTrueOrderByVersionDesc(
       UUID skillId, SkillVersionStatus status);
+
+  Optional<SkillVersion> findByTrainingJobId(UUID trainingJobId);
+  Optional<SkillVersion> findFirstBySkillIdOrderByVersionDesc(UUID skillId);
 }

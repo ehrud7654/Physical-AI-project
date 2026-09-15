@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 public interface SkillRepository extends JpaRepository<Skill, UUID> {
   List<Skill> findAllByOrderByDisplayNameAsc();
@@ -25,4 +27,8 @@ public interface SkillRepository extends JpaRepository<Skill, UUID> {
       "select s from Skill s where s.skillKey = :skillKey and (s.ownerId is null or s.ownerId = :ownerId)")
   Optional<Skill> findBySkillKeyAndVisibleToOwner(
       @Param("skillKey") String skillKey, @Param("ownerId") UUID ownerId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select s from Skill s where s.id=:id")
+  Optional<Skill> findByIdForUpdate(@Param("id") UUID id);
 }
