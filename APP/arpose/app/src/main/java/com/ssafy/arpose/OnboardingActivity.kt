@@ -18,8 +18,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
-import org.json.JSONObject
-import java.util.UUID
+import android.net.Uri
 import java.util.concurrent.Executors
 
 /**
@@ -39,6 +38,10 @@ class OnboardingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 이미 등록됨(장치 secret 보유) → 재스캔 없이 바로 촬영 화면 (S15P21A103-168, 최초 1회).
+        if (Prefs.deviceSecret(this).isNotBlank()) {
+            startActivity(Intent(this, MainActivity::class.java)); finish(); return
+        }
         setContentView(R.layout.activity_onboarding)
         previewView = findViewById(R.id.previewView)
         status = findViewById(R.id.scanStatus)
@@ -91,23 +94,28 @@ class OnboardingActivity : ComponentActivity() {
             .addOnCompleteListener { proxy.close() }
     }
 
+    /** QR = umi://enroll?enrollmentId=..&registrationToken=.. (계약 §6.0). enroll 교환 후 촬영 화면. */
     private fun onQr(raw: String) {
-        try {
-            val j = JSONObject(raw)
-            val server = j.optString("server_url", "")
-            val user = j.optString("user_id", "")
-            var session = j.optString("session_id", "")
-            val skill = j.optString("skill_id", "")
-            if (session.isBlank()) session = "sess_" + UUID.randomUUID().toString().take(8)
-            Prefs.setSession(this, server, user, session, skill)
-            runOnUiThread {
-                status.text = "연동 완료: ${user.ifBlank { "(user 없음)" }} · $session"
-                goMain()
-            }
-        } catch (e: Exception) {
-            handled = false   // JSON 아니면 계속 스캔
-            runOnUiThread { status.text = "QR 형식(JSON) 아님 — 다시 비춰주세요" }
+        val u = Uri.parse(raw)
+        val enrollmentId = u.getQueryParameter("enrollmentId") ?: ""
+        val regToken = u.getQueryParameter("registrationToken") ?: ""
+        if (enrollmentId.isBlank() || regToken.isBlank()) {
+            handled = false   // 등록 QR 아님 → 계속 스캔
+            runOnUiThread { status.text = "등록 QR 아님 — 다시 비춰주세요" }
+            return
         }
+        runOnUiThread { status.text = "장치 등록 중…" }
+        Thread {
+            val ok = DeviceAuth.enroll(this, enrollmentId, regToken)
+            runOnUiThread {
+                if (ok) { status.text = "등록 완료"; goMain() }
+                else {
+                    status.text = "등록 실패 — 네트워크 확인 후 다시 비춰주세요"
+                    // 실패 시 즉시 재스캔하면 같은 QR 로 초당 수십회 폭주 → 2초 쿨다운 후 재개.
+                    previewView.postDelayed({ handled = false }, 2000)
+                }
+            }
+        }.start()
     }
 
     private fun goMain() {
