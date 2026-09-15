@@ -30,6 +30,15 @@ public final class SkillResponses {
       boolean gatePassed,
       Instant createdAt) {}
 
+  public record SkillOverviewResponse(
+      UUID id,
+      String displayName,
+      String description,
+      Integer latestVersion,
+      Instant latestVersionCreatedAt,
+      SkillStatus deploymentStatus,
+      Instant latestTrainingRequestedAt) {}
+
   public record TrainingRequirementsResponse(
       UUID skillId,
       String skillKey,

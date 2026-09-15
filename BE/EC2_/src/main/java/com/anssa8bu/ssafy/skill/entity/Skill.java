@@ -119,4 +119,8 @@ public class Skill extends AuditableEntity {
   public String getPersona() {
     return persona;
   }
+
+  public void updateDescription(String description) {
+    this.description = description == null || description.isBlank() ? null : description.trim();
+  }
 }

@@ -1,4 +1,4 @@
-export type View = 'dashboard' | 'data' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
+export type View = 'dashboard' | 'data' | 'skills' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
 
 export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
@@ -165,6 +165,16 @@ export interface TrainingSkill {
   description: string | null;
   tier: 'TUTORIAL' | 'DEMO' | 'CUSTOM';
   status: string;
+}
+
+export interface SkillOverview {
+  id: string;
+  displayName: string;
+  description: string | null;
+  latestVersion: number | null;
+  latestVersionCreatedAt: string | null;
+  deploymentStatus: 'PLANNED' | 'COLLECTING' | 'TRAINING' | 'GATE_FAILED' | 'DEPLOYED';
+  latestTrainingRequestedAt: string | null;
 }
 
 export type TaskReadiness = 'PREPARING' | 'READY' | 'BLOCKED' | 'UNKNOWN';

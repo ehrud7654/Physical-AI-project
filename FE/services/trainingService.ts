@@ -1,4 +1,4 @@
-import type { Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
+import type { SkillOverview, Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
 import { apiRequest } from './client';
 
 type ApiTrainingStatus =
@@ -57,6 +57,34 @@ export async function fetchTrainingRequirements(skillKey: string): Promise<Train
 
 export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
   return apiRequest<ApiSkill[]>('/skills');
+}
+
+export async function fetchSkillOverviews(): Promise<SkillOverview[]> {
+  return apiRequest<SkillOverview[]>('/skills/overview');
+}
+
+export async function createCustomSkill(input: {
+  displayName: string;
+  description?: string;
+}): Promise<TrainingSkill> {
+  return apiRequest<ApiSkill>('/skills', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      displayName: input.displayName.trim(),
+      description: input.description?.trim() || null,
+    }),
+  });
+}
+
+export async function updateSkillDescription(
+  skillId: string,
+  description: string,
+): Promise<TrainingSkill> {
+  return apiRequest<ApiSkill>(`/skills/${skillId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ description: description.trim() || null }),
+  });
 }
 
 export async function createTrainingJob(input: {
