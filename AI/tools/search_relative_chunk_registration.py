@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -34,10 +35,14 @@ from tools.umi_mujoco import (
     DEFAULT_CONFIG,
     DEFAULT_SCENE,
     MujocoIK,
+    apply_kinematic_grasp,
     build_model,
     load_config,
 )
-from tools.run_umi_regression import is_shared_gpu_server
+from tools.gate_relative_chunk_oracle import (
+    _aggregate as aggregate_dynamic_oracle,
+    _run_recorded_oracle_episode,
+)
 from umi.convert import invert_gap_curve
 from umi.ik import matrix_to_quat, quat_to_matrix
 from umi.relative_dataset import vector_to_transform
@@ -48,6 +53,128 @@ DEFAULT_REAL_CONFIG = AI_ROOT / "configs" / "real" / "so101_ver1.json"
 DEFAULT_REGISTRATION = (
     AI_ROOT / "configs" / "real" / "umi_so101_registration_provisional.json"
 )
+PROGRESS_SCHEMA = "umi_registration_search_progress/0.1.0"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value.resolve())
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    return value
+
+
+def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _progress_signature(*, args: argparse.Namespace,
+                        candidates: list[np.ndarray],
+                        validation_ids: list[str],
+                        screen_ids: list[str]) -> tuple[str, dict[str, Any]]:
+    ignored = {"out", "progress", "resume"}
+    arguments = {
+        key: _jsonable(value)
+        for key, value in vars(args).items()
+        if key not in ignored
+    }
+    input_paths = {
+        "dataset_index": args.data / "dataset.json",
+        "registration": args.registration,
+        "real_config": args.real_config,
+        "sim_config": args.config,
+        "scene": args.scene,
+        "search_code": Path(__file__),
+        "oracle_gate_code": AI_ROOT / "tools" / "gate_relative_chunk_oracle.py",
+        "rollout_code": AI_ROOT / "tools" / "render_relative_chunk_rollout.py",
+        "ik_code": AI_ROOT / "tools" / "umi_mujoco.py",
+    }
+    if args.preflight is not None:
+        input_paths["preflight"] = args.preflight
+    if args.kinematic_grasp is not None:
+        input_paths["kinematic_grasp"] = args.kinematic_grasp
+    fingerprints = {
+        name: {"path": str(path.resolve()), "sha256": _sha256(path)}
+        for name, path in input_paths.items()
+    }
+    payload = {
+        "arguments": arguments,
+        "inputs": fingerprints,
+        "validation_episodes": validation_ids,
+        "screen_episodes": screen_ids,
+        "candidate_start_arm_rad": [
+            np.asarray(value, dtype=float).tolist() for value in candidates
+        ],
+    }
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest(), payload
+
+
+def _load_progress(*, path: Path, resume: bool, signature: str,
+                   signature_payload: dict[str, Any]) -> dict[str, Any]:
+    if path.exists():
+        if not resume:
+            raise ValueError(
+                f"progress already exists: {path}; pass --resume or choose another path")
+        state = json.loads(path.read_text(encoding="utf-8"))
+        if state.get("schema") != PROGRESS_SCHEMA:
+            raise ValueError(f"unsupported progress schema: {state.get('schema')!r}")
+        if state.get("signature") != signature:
+            raise ValueError(
+                "progress signature differs from the current data, code, model or arguments")
+        return state
+    if resume:
+        raise ValueError(f"cannot resume because progress is absent: {path}")
+    state = {
+        "schema": PROGRESS_SCHEMA,
+        "signature": signature,
+        "signature_payload": signature_payload,
+        "stages": {"screen": {}, "refine": {}, "final": {}, "dynamic": {}},
+        "complete": False,
+    }
+    _atomic_json(path, state)
+    return state
+
+
+def _cached_candidate(*, state: dict[str, Any], stage: str,
+                      candidate_id: int, arm: np.ndarray) -> dict[str, Any] | None:
+    row = state["stages"][stage].get(str(candidate_id))
+    if row is None:
+        return None
+    stored = np.asarray(row.get("start_arm_rad"), dtype=float)
+    if stored.shape != (5,) or not np.allclose(
+            stored, np.asarray(arm, dtype=float), atol=1e-12, rtol=0):
+        raise ValueError(
+            f"progress {stage} candidate {candidate_id} has a different arm seed")
+    return row
+
+
+def _save_candidate(*, state: dict[str, Any], progress_path: Path,
+                    stage: str, report: dict[str, Any]) -> None:
+    candidate_id = str(int(report["candidate_id"]))
+    state["stages"][stage][candidate_id] = report
+    _atomic_json(progress_path, state)
 
 
 class NumpyRelativeDataset:
@@ -116,9 +243,20 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
     lo, hi = ranges[:, 0], ranges[:, 1]
     margin = 0.08 * (hi - lo)
     lower, upper = lo + margin, hi - margin
-    centre = np.clip(np.asarray(current, dtype=float), lower, upper)
+    source = np.asarray(current, dtype=float)
+    if source.shape != (5,) or not np.isfinite(source).all():
+        raise ValueError("source registration arm must be finite shape (5,)")
+    if np.any(source < lo) or np.any(source > hi):
+        raise ValueError("source registration arm exceeds real joint limits")
+    # Preserve the source registration exactly.  It can legitimately sit inside
+    # the real limit but outside the random-search safety margin.  Clipping it
+    # silently changed the known 150943-successful seed and made the log line
+    # 'source registration 1' false.
+    centre = np.clip(source, lower, upper)
     rng = np.random.default_rng(seed)
-    candidates = [centre]
+    candidates = [source.copy()]
+    if count == 1:
+        return candidates, 0
 
     # Random joint configurations almost never land in the task's required side
     # approach orientation. Build candidates around the declared task-frame
@@ -126,6 +264,22 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
     # handled by the wrist-roll symmetry; approach sign is not interchangeable.
     rotation = np.asarray(targeted_start_rotation, dtype=float)
     target_count = max(0, int(round((count - 1) * 0.65)))
+    target_quat = matrix_to_quat(rotation)
+    source_q = np.r_[source, invert_gap_curve(
+        initial_gap_m, ik.cfg["grasp"]["gap_curve"])]
+    source_pos, _ = ik.forward_pose(source_q)
+    directed_source = ik.solve(
+        source_pos, target_quat, initial_gap_m, q_init=source_q)
+    directed_arm = np.asarray(directed_source.q_rad[:5], dtype=float)
+    if (
+        directed_source.converged
+        and directed_source.pos_error_m <= 0.005
+        and directed_source.axis_error_deg <= 5.0
+        and np.all(directed_arm >= ranges[:, 0])
+        and np.all(directed_arm <= ranges[:, 1])
+        and np.linalg.norm(directed_arm - source) > 1e-3
+    ):
+        candidates.append(directed_arm)
     xs = np.linspace(0.10, 0.32, 4)
     ys = np.linspace(-0.20, 0.20, 5)
     # The standing case centre is 38.35 mm above the table and the configured
@@ -138,8 +292,10 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
     rng.shuffle(targets)
     for x, y, z, rotation in targets:
         target_xyz = np.asarray([x, y, z])
-        target_quat = matrix_to_quat(rotation)
-        solution = ik.solve(target_xyz, target_quat, initial_gap_m, q_init=None)
+        seed_q = np.r_[centre, invert_gap_curve(
+            initial_gap_m, ik.cfg["grasp"]["gap_curve"])]
+        solution = ik.solve(
+            target_xyz, target_quat, initial_gap_m, q_init=seed_q)
         # A parallel jaw is unchanged by 180 degrees about the approach axis,
         # but the attached wrist camera is not.  The generic IK intentionally
         # folds that symmetry.  For registration candidate generation, test
@@ -192,6 +348,36 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
     return candidates, targeted_count
 
 
+def _refined_starts(*, seeds: list[np.ndarray], ranges: np.ndarray,
+                    existing: list[np.ndarray], count: int,
+                    sigma_fraction: float, seed: int) -> list[np.ndarray]:
+    """Sample small joint-space neighbourhoods around promising static seeds."""
+    if count <= 0:
+        return []
+    if not seeds:
+        raise ValueError("refinement requires at least one seed")
+    lo, hi = ranges[:, 0], ranges[:, 1]
+    sigma = float(sigma_fraction) * (hi - lo)
+    rng = np.random.default_rng(seed)
+    refined: list[np.ndarray] = []
+    attempts = 0
+    max_attempts = max(100, count * 100)
+    while len(refined) < count and attempts < max_attempts:
+        base = np.asarray(seeds[len(refined) % len(seeds)], dtype=float)
+        # Refinement is deliberately local around a verified real-limit seed.
+        # Applying the broad-search 8% margin here would move a valid seed by a
+        # large amount before the small perturbation is even evaluated.
+        arm = np.clip(base + rng.normal(0.0, sigma), lo, hi)
+        attempts += 1
+        if all(np.linalg.norm(arm - value) > 1e-4
+               for value in [*existing, *refined]):
+            refined.append(arm)
+    if len(refined) != count:
+        raise RuntimeError(
+            f"could generate only {len(refined)}/{count} unique refinements")
+    return refined
+
+
 def _collision_counts(model: Any, data: Any) -> tuple[int, int]:
     object_geom = mujoco.mj_name2id(
         model, mujoco.mjtObj.mjOBJ_GEOM, "target_object_geom")
@@ -210,6 +396,163 @@ def _collision_counts(model: Any, data: Any) -> tuple[int, int]:
                 and object_geom not in (geom1, geom2)):
             self_collision += 1
     return table_robot, self_collision
+
+
+def _jaw_object_contact_details(model: Any, data: Any,
+                                object_xyz: np.ndarray) -> list[dict[str, Any]]:
+    """Describe static contacts between the two active jaws and the object."""
+    object_geom = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_GEOM, "target_object_geom")
+    jaw_bodies = {
+        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+        for name in ("gripper", "moving_jaw_so101_v1")
+    }
+    jaw_geoms = {
+        geom_id for geom_id in range(model.ngeom)
+        if int(model.geom_bodyid[geom_id]) in jaw_bodies
+        and int(model.geom_contype[geom_id]) != 0
+    }
+    details = []
+    for index in range(data.ncon):
+        contact = data.contact[index]
+        pair = {int(contact.geom1), int(contact.geom2)}
+        if object_geom not in pair or not pair & jaw_geoms:
+            continue
+        jaw_geom = next(iter(pair & jaw_geoms))
+        position = np.asarray(contact.pos, dtype=float).copy()
+        details.append({
+            "jaw_geom": mujoco.mj_id2name(
+                model, mujoco.mjtObj.mjOBJ_GEOM, jaw_geom),
+            "position_world_m": position.tolist(),
+            "position_minus_object_m": (
+                position - np.asarray(object_xyz, dtype=float)).tolist(),
+            "distance_m": float(contact.dist),
+        })
+    return details
+
+
+def _jaw_object_contacts(model: Any, data: Any) -> int:
+    """Count static contacts between the two active jaw bodies and the object."""
+    object_body = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_BODY, "target_object")
+    return len(_jaw_object_contact_details(
+        model, data, np.asarray(data.xpos[object_body], dtype=float)))
+
+
+def _set_static_object_pose(model: Any, data: Any,
+                            object_xyz: np.ndarray) -> None:
+    """Place the free object at one inferred episode position without stepping."""
+    joint_id = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_JOINT, "target_object_free")
+    if joint_id < 0:
+        raise ValueError("required target_object_free joint is missing")
+    qpos_address = int(model.jnt_qposadr[joint_id])
+    data.qpos[qpos_address:qpos_address + 3] = np.asarray(
+        object_xyz, dtype=float)
+    data.qpos[qpos_address + 3:qpos_address + 7] = [1.0, 0.0, 0.0, 0.0]
+
+
+def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
+                            arms: list[np.ndarray | None], gaps: np.ndarray,
+                            contact_row: int, object_xyz: np.ndarray,
+                            curve: Any, interpolation_substeps: int,
+                            max_pinch_xy_m: float,
+                            desired_world_approach_axis: np.ndarray,
+                            max_body_depth_offset_m: float) -> dict[str, Any]:
+    """Measure the first swept jaw contact before the near-closed pose.
+
+    Dataset rows are only 10 Hz, while MuJoCo executes continuously between
+    commands. Interpolating joint targets catches an off-centre collision that
+    occurs between recorded rows without a dynamic rollout for every candidate.
+    """
+    if interpolation_substeps <= 0:
+        raise ValueError("interpolation_substeps must be positive")
+    _set_static_object_pose(model, data, object_xyz)
+    previous_q: np.ndarray | None = None
+    previous_gap: float | None = None
+    checked = 0
+    for row in range(min(contact_row, len(gaps) - 1) + 1):
+        arm = arms[row]
+        if arm is None:
+            previous_q = None
+            previous_gap = None
+            continue
+        gap = float(gaps[row])
+        q = np.r_[arm, invert_gap_curve(gap, curve)]
+        if previous_q is None:
+            samples = [(0, q, gap)]
+        else:
+            samples = [
+                (
+                    substep,
+                    previous_q + (q - previous_q) *
+                    (substep / interpolation_substeps),
+                    float(previous_gap + (gap - previous_gap) *
+                          (substep / interpolation_substeps)),
+                )
+                for substep in range(1, interpolation_substeps + 1)
+            ]
+        for substep, sample_q, sample_gap in samples:
+            data.qpos[:6] = sample_q
+            mujoco.mj_forward(model, data)
+            checked += 1
+            contact_details = _jaw_object_contact_details(
+                model, data, object_xyz)
+            if not contact_details:
+                continue
+            pinch_xyz, _ = ik.forward_pose(sample_q)
+            offset = np.asarray(pinch_xyz, dtype=float) - object_xyz
+            xy = float(np.linalg.norm(offset[:2]))
+            contact_centre_offset = np.mean([
+                np.asarray(value["position_minus_object_m"], dtype=float)
+                for value in contact_details
+            ], axis=0)
+            body_depth_offset = float(np.dot(
+                contact_centre_offset, desired_world_approach_axis))
+            return {
+                "detected": True,
+                "row": row,
+                "substep": substep,
+                "interpolation_substeps": interpolation_substeps,
+                "samples_checked": checked,
+                "gap_m": sample_gap,
+                "contacts": len(contact_details),
+                "contact_details": contact_details,
+                "pinch_xyz_m": np.asarray(pinch_xyz, dtype=float).tolist(),
+                "pinch_minus_object_m": offset.tolist(),
+                "pinch_xy_offset_m": xy,
+                "pinch_3d_offset_m": float(np.linalg.norm(offset)),
+                "max_pinch_xy_m": max_pinch_xy_m,
+                "centered": xy <= max_pinch_xy_m,
+                "contact_centre_minus_object_m": (
+                    contact_centre_offset.tolist()),
+                "body_depth_offset_m": body_depth_offset,
+                "max_body_depth_offset_m": max_body_depth_offset_m,
+                "body_depth_centered": (
+                    abs(body_depth_offset) <= max_body_depth_offset_m),
+            }
+        previous_q = q
+        previous_gap = gap
+    return {
+        "detected": False,
+        "row": None,
+        "substep": None,
+        "interpolation_substeps": interpolation_substeps,
+        "samples_checked": checked,
+        "gap_m": None,
+        "contacts": 0,
+        "contact_details": [],
+        "pinch_xyz_m": None,
+        "pinch_minus_object_m": None,
+        "pinch_xy_offset_m": None,
+        "pinch_3d_offset_m": None,
+        "max_pinch_xy_m": max_pinch_xy_m,
+        "centered": False,
+        "contact_centre_minus_object_m": None,
+        "body_depth_offset_m": None,
+        "max_body_depth_offset_m": max_body_depth_offset_m,
+        "body_depth_centered": False,
+    }
 
 
 def _camera_metrics(model: Any, data: Any,
@@ -258,12 +601,50 @@ def _mean(rows: list[bool]) -> float:
     return float(np.mean(rows)) if rows else 0.0
 
 
+def _table_placement_metrics(*, object_xyz: np.ndarray,
+                             object_size_m: np.ndarray,
+                             table_xy: np.ndarray,
+                             table_half_xy: np.ndarray,
+                             edge_margin_m: float) -> dict[str, Any]:
+    """Measure full object-footprint clearance from every table edge."""
+    object_xyz = np.asarray(object_xyz, dtype=float)
+    object_size_m = np.asarray(object_size_m, dtype=float)
+    table_xy = np.asarray(table_xy, dtype=float)
+    table_half_xy = np.asarray(table_half_xy, dtype=float)
+    if (object_xyz.shape != (3,) or object_size_m.shape != (3,)
+            or table_xy.shape != (2,) or table_half_xy.shape != (2,)
+            or not np.isfinite(object_xyz).all()
+            or not np.isfinite(object_size_m).all()
+            or not np.isfinite(table_xy).all()
+            or not np.isfinite(table_half_xy).all()
+            or np.any(object_size_m <= 0.0)
+            or np.any(table_half_xy <= 0.0)
+            or not np.isfinite(edge_margin_m) or edge_margin_m < 0.0):
+        raise ValueError("invalid object/table placement geometry")
+    object_half_xy = object_size_m[:2] / 2.0
+    centre_offset = np.abs(object_xyz[:2] - table_xy)
+    clearance = table_half_xy - centre_offset - object_half_xy
+    usable_half = table_half_xy - object_half_xy - float(edge_margin_m)
+    if np.any(usable_half <= 0.0):
+        centre_distance = float("inf")
+    else:
+        centre_distance = float(np.linalg.norm(centre_offset / usable_half))
+    return {
+        "object_on_table_with_margin": bool(
+            np.all(clearance >= float(edge_margin_m))),
+        "table_edge_clearance_xy_m": clearance.tolist(),
+        "minimum_table_edge_clearance_m": float(np.min(clearance)),
+        "table_centre_distance_norm": centre_distance,
+    }
+
+
 def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                         dataset: NumpyRelativeDataset,
                         episode_indices: list[int], samples_per_episode: int,
                         model: Any, ik: MujocoIK, cfg: dict[str, Any],
                         ranges: np.ndarray, real: dict[str, Any],
-                        object_height_m: float,
+                        object_size_m: np.ndarray,
+                        object_edge_margin_m: float,
                         pad_center_margin_m: float,
                         desired_world_jaw_axis: np.ndarray,
                         jaw_yaw_tolerance_deg: float,
@@ -271,7 +652,13 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                         approach_axis_tolerance_deg: float,
                         desired_world_up_axis: np.ndarray,
                         up_axis_tolerance_deg: float,
-                        body_midheight_tolerance_m: float) -> dict[str, Any]:
+                        body_midheight_tolerance_m: float,
+                        first_contact_max_pinch_xy_m: float,
+                        first_contact_max_body_depth_offset_m: float,
+                        approach_contact_substeps: int,
+                        object_approach_offset_m: float,
+                        kinematic_only: bool = False,
+                        camera_screen_available: bool = True) -> dict[str, Any]:
     curve = cfg["grasp"]["gap_curve"]
     data = mujoco.MjData(model)
     first_episode = dataset.episodes[episode_indices[0]]
@@ -287,9 +674,10 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
 
     table = cfg["task"]["table"]
     table_top = float(table["pos"][2]) + float(table["half_size_m"][2])
-    object_z = table_top + object_height_m / 2.0
+    object_size_m = np.asarray(object_size_m, dtype=float)
+    object_z = table_top + float(object_size_m[2]) / 2.0
     object_bottom = table_top
-    object_top = table_top + object_height_m
+    object_top = table_top + float(object_size_m[2])
     episode_reports: list[dict[str, Any]] = []
     total_samples = anchor_accepted = geometry_accepted = combined_accepted = 0
     geometry_rejections: Counter[str] = Counter()
@@ -303,8 +691,28 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             arm_start=arm_start, ranges=ranges)
         contact = _contact_row(gaps)
         contact_pose = poses[contact]
-        object_xyz = np.asarray(
-            [contact_pose[0, 3], contact_pose[1, 3], object_z], dtype=float)
+        object_xyz = np.asarray(contact_pose[:3, 3], dtype=float).copy()
+        object_xyz += desired_world_approach_axis * object_approach_offset_m
+        object_xyz[2] = object_z
+        if kinematic_only:
+            first_approach_contact = {
+                "available": False,
+                "reason": "ver1 collision geometry is absent",
+                "detected": None,
+                "centered": None,
+                "body_depth_centered": None,
+                "pinch_xy_offset_m": None,
+            }
+        else:
+            first_approach_contact = _first_approach_contact(
+                model=model, data=data, ik=ik, arms=arms, gaps=gaps,
+                contact_row=contact, object_xyz=object_xyz, curve=curve,
+                interpolation_substeps=approach_contact_substeps,
+                max_pinch_xy_m=first_contact_max_pinch_xy_m,
+                desired_world_approach_axis=desired_world_approach_axis,
+                max_body_depth_offset_m=(
+                    first_contact_max_body_depth_offset_m),
+            )
 
         data.qpos[:6] = q_start
         mujoco.mj_forward(model, data)
@@ -337,9 +745,14 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             and approach_axis_aligned
             and up_axis_aligned
         )
-        half_xy = np.asarray(table["half_size_m"][:2], dtype=float)
-        table_xy = np.asarray(table["pos"][:2], dtype=float)
-        object_on_table = bool(np.all(np.abs(object_xyz[:2] - table_xy) <= half_xy - 0.02))
+        placement = _table_placement_metrics(
+            object_xyz=object_xyz,
+            object_size_m=object_size_m,
+            table_xy=np.asarray(table["pos"][:2], dtype=float),
+            table_half_xy=np.asarray(table["half_size_m"][:2], dtype=float),
+            edge_margin_m=object_edge_margin_m,
+        )
+        object_on_table = bool(placement["object_on_table_with_margin"])
         grasp_height_error = abs(float(contact_pose[2, 3]) - object_z)
         pinch_z = float(contact_pose[2, 3])
         body_midheight_aligned = (
@@ -350,7 +763,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         pad_vertical_overlaps = {"pad_fixed": 0.0, "pad_moving": 0.0}
         pad_center_offsets = {"pad_fixed": None, "pad_moving": None}
         object_center_inside_both_pads = False
-        if contact_ik_available:
+        if contact_ik_available and not kinematic_only:
             data.qpos[:6] = np.r_[
                 arms[contact], invert_gap_curve(float(gaps[contact]), curve)]
             mujoco.mj_forward(model, data)
@@ -373,27 +786,32 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         contact_collision_free = bool(contact_collision_free)
         start_collision_free = bool(
             start_table_contacts == 0 and start_self_contacts == 0)
-        scene_components = (
-            start_collision_free,
-            bool(camera["visible"]),
-            camera_above_table,
-            side_body_grasp,
-            jaw_yaw_aligned,
-            up_axis_aligned,
-            object_on_table,
-            body_midheight_aligned,
-            object_center_inside_both_pads,
-            contact_collision_free,
-        )
+        if kinematic_only:
+            scene_components = (
+                side_body_grasp, jaw_yaw_aligned, up_axis_aligned,
+                object_on_table, body_midheight_aligned,
+                contact_ik_available,
+            )
+            if camera_screen_available:
+                scene_components = (
+                    bool(camera["visible"]), camera_above_table,
+                    *scene_components,
+                )
+        else:
+            scene_components = (
+                start_collision_free,
+                bool(camera["visible"]),
+                camera_above_table,
+                side_body_grasp,
+                jaw_yaw_aligned,
+                up_axis_aligned,
+                object_on_table,
+                body_midheight_aligned,
+                object_center_inside_both_pads,
+                contact_collision_free,
+            )
         scene_component_fraction = float(np.mean(scene_components))
-        scene_ok = bool(
-            start_collision_free
-            and camera["visible"] and camera_above_table and side_body_grasp
-            and jaw_yaw_aligned and up_axis_aligned
-            and object_on_table and body_midheight_aligned
-            and object_center_inside_both_pads
-            and contact_collision_free
-        )
+        scene_ok = bool(all(scene_components))
         episode_anchor = episode_geometry = episode_combined = 0
         for row in rows:
             total_samples += 1
@@ -431,7 +849,9 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             "combined_accepted": episode_combined,
             "contact_row": contact,
             "object_xyz_m": object_xyz.tolist(),
+            "object_approach_offset_m": object_approach_offset_m,
             "first_view": camera,
+            "camera_screen_available": camera_screen_available,
             "camera_above_table": camera_above_table,
             "jaw_vertical_abs": jaw_vertical,
             "approach_vertical_abs": abs(float(approach_axis[2])),
@@ -452,6 +872,13 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             "jaw_yaw_tolerance_deg": jaw_yaw_tolerance_deg,
             "jaw_yaw_aligned": jaw_yaw_aligned,
             "object_on_table": object_on_table,
+            "object_edge_margin_required_m": object_edge_margin_m,
+            "table_edge_clearance_xy_m": placement[
+                "table_edge_clearance_xy_m"],
+            "minimum_table_edge_clearance_m": placement[
+                "minimum_table_edge_clearance_m"],
+            "table_centre_distance_norm": placement[
+                "table_centre_distance_norm"],
             "contact_pinch_z_m": pinch_z,
             "grasp_height_error_m": grasp_height_error,
             "body_midheight_tolerance_m": body_midheight_tolerance_m,
@@ -464,8 +891,13 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                 object_center_inside_both_pads),
             "contact_table_contacts": table_contacts,
             "contact_self_contacts": self_contacts,
+            "first_approach_contact": first_approach_contact,
             "scene_component_fraction": scene_component_fraction,
             "scene_constraints_ok": scene_ok,
+            "screen_mode": (
+                "KINEMATIC_ONLY_NO_VER1_COLLISION_OR_OPTICAL_EXTRINSIC"
+                if kinematic_only else "LEGACY_DYNAMIC_MODEL"
+            ),
         })
 
     scene_fraction = _mean([
@@ -490,6 +922,13 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
     contact_ik_reports = [
         report for report in episode_reports if report["contact_ik_available"]]
     contact_ik_fraction = len(contact_ik_reports) / len(episode_reports)
+    table_margin_fraction = _mean([
+        bool(report["object_on_table"]) for report in episode_reports])
+    minimum_table_clearance = min(
+        float(report["minimum_table_edge_clearance_m"])
+        for report in episode_reports)
+    mean_table_centre_distance = float(np.mean([
+        report["table_centre_distance_norm"] for report in episode_reports]))
     centered_given_contact_ik = _mean([
         bool(report["object_center_inside_both_pads_with_margin"])
         for report in contact_ik_reports])
@@ -497,6 +936,20 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         report["contact_table_contacts"] == 0
         and report["contact_self_contacts"] == 0
         for report in contact_ik_reports])
+    first_contact_detected_fraction = _mean([
+        bool(report["first_approach_contact"]["detected"])
+        for report in episode_reports])
+    first_contact_centered_fraction = _mean([
+        bool(report["first_approach_contact"]["centered"])
+        for report in episode_reports])
+    first_contact_body_depth_centered_fraction = _mean([
+        bool(report["first_approach_contact"]["body_depth_centered"])
+        for report in episode_reports])
+    first_contact_offsets = [
+        float(report["first_approach_contact"]["pinch_xy_offset_m"])
+        for report in episode_reports
+        if report["first_approach_contact"]["pinch_xy_offset_m"] is not None
+    ]
     # Prefer an episode that passes both the scene contract and at least one
     # sampled full-chunk geometry check. Choosing only by camera centring can
     # produce a neat view whose recorded tail is not executable.
@@ -513,13 +966,20 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         key=lambda report: (
             -report["combined_accepted"],
             -report["oracle_geometry_accepted"],
-            report["first_view"]["centre_error_norm"]
-            if report["first_view"]["centre_error_norm"] is not None else 1e9,
+            report["table_centre_distance_norm"],
+            (report["first_view"]["centre_error_norm"]
+             if camera_screen_available
+             and report["first_view"]["centre_error_norm"] is not None
+             else 0.0),
             report["episode"],
         ),
     )
     return {
         "candidate_id": candidate_id,
+        "screen_mode": (
+            "KINEMATIC_ONLY_NO_VER1_COLLISION_OR_OPTICAL_EXTRINSIC"
+            if kinematic_only else "LEGACY_DYNAMIC_MODEL"
+        ),
         "start_arm_rad": arm_start.tolist(),
         "start_pose": start_pose.tolist(),
         "start_table_contacts": start_table_contacts,
@@ -541,19 +1001,121 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         "initial_object_visible_episode_fraction": visible_fraction,
         "pad_centered_episode_fraction": centered_fraction,
         "contact_ik_available_episode_fraction": contact_ik_fraction,
+        "object_table_margin_episode_fraction": table_margin_fraction,
+        "minimum_table_edge_clearance_m": minimum_table_clearance,
+        "mean_table_centre_distance_norm": mean_table_centre_distance,
         "pad_centered_given_contact_ik_fraction": centered_given_contact_ik,
         "collision_free_given_contact_ik_fraction": (
             collision_free_given_contact_ik),
+        "first_approach_contact_detected_episode_fraction": (
+            first_contact_detected_fraction),
+        "first_approach_contact_centered_episode_fraction": (
+            first_contact_centered_fraction),
+        "first_approach_contact_body_depth_centered_episode_fraction": (
+            first_contact_body_depth_centered_fraction),
+        "first_approach_contact_pinch_xy_m_mean": (
+            float(np.mean(first_contact_offsets)) if first_contact_offsets else None),
+        "first_approach_contact_pinch_xy_m_max": (
+            float(np.max(first_contact_offsets)) if first_contact_offsets else None),
+        "object_approach_offset_m": object_approach_offset_m,
         "representative_episode": representative["episode"],
         "representative_object_xyz_m": representative["object_xyz_m"],
         "per_episode": episode_reports,
     }
 
 
+def _evaluate_dynamic_finalist(
+        *, report: dict[str, Any], episode_ids: list[str], data_root: Path,
+        output_root: Path, object_size: np.ndarray, table_half_xy: list[float],
+        cycles: int, tracking_time_margin: float, grip_preload_m: float,
+        grip_preload_activation_gap_m: float, threshold: float,
+        config: Path, real_config: Path,
+        kinematic_grasp: dict[str, Any] | None) -> dict[str, Any]:
+    """Replay fixed challenge episodes so IK rejects and tipping affect rank."""
+    candidate_id = int(report["candidate_id"])
+    candidate_root = output_root / f"candidate_{candidate_id:03d}"
+    retry = 0
+    while candidate_root.exists():
+        retry += 1
+        candidate_root = output_root / (
+            f"candidate_{candidate_id:03d}_retry_{retry:03d}")
+    candidate_root.mkdir(parents=True, exist_ok=False)
+    registration_path = candidate_root / "registration.json"
+    registration = {
+        "status": "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
+        "source": "registration-search dynamic finalist",
+        "purpose": "local recorded-oracle candidate comparison only",
+        "start_arm_rad": report["start_arm_rad"],
+        "object_xyz_m": report["representative_object_xyz_m"],
+        "object_size_m": object_size.tolist(),
+        "table_half_size_xy_m": table_half_xy,
+        "representative_episode": report["representative_episode"],
+        "selected": report,
+    }
+    if kinematic_grasp is not None:
+        registration["kinematic_grasp"] = kinematic_grasp
+    registration_path.write_text(
+        json.dumps(registration, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    static_by_episode = {
+        str(row["episode"]): row for row in report["per_episode"]
+    }
+    rows: list[dict[str, Any]] = []
+    for episode_id in episode_ids:
+        static = static_by_episode[episode_id]
+        if static["scene_constraints_ok"] is not True:
+            row = {
+                "episode": episode_id,
+                "classification": "static_scene_reject",
+                "success": False,
+                "first_contact_cycle": None,
+                "static_scene_component_fraction": static[
+                    "scene_component_fraction"],
+            }
+        else:
+            row = _run_recorded_oracle_episode(
+                data=data_root, registration_path=registration_path,
+                episode=episode_id, report_dir=candidate_root,
+                cycles=cycles, tracking_time_margin=tracking_time_margin,
+                grip_preload_m=grip_preload_m,
+                grip_preload_activation_gap_m=(
+                    grip_preload_activation_gap_m),
+                config=config, real_config=real_config)
+        rows.append(row)
+    aggregate = aggregate_dynamic_oracle(rows, threshold=threshold)
+    lifts = [
+        float(row["max_lift_height_m"])
+        for row in rows if row.get("max_lift_height_m") is not None
+    ]
+    return {
+        **{key: value for key, value in aggregate.items() if key != "passed"},
+        "passed": bool(aggregate["passed"]),
+        "mean_max_lift_height_m": float(np.mean(lifts)) if lifts else 0.0,
+        "candidate_registration": str(registration_path),
+        "per_episode": rows,
+    }
+
+
+def _dynamic_rank(report: dict[str, Any],
+                  static_rank: tuple[Any, ...]) -> tuple[Any, ...]:
+    """Rank with non-exclusive dynamic failure counts before static quality."""
+    dynamic = report["dynamic_oracle"]
+    counts = dynamic["failure_counts"]
+    return (
+        dynamic["passed"],
+        dynamic["success_fraction"],
+        -dynamic["runner_errors"],
+        -counts.get("ik_reject_after_contact", 0),
+        -counts.get("object_tipped", 0),
+        -counts.get("object_displaced", 0),
+        -counts.get("static_scene_reject", 0),
+        dynamic["contacts"],
+        dynamic["mean_max_lift_height_m"],
+        *static_rank,
+    )
+
+
 def main() -> int:
-    if is_shared_gpu_server():
-        raise SystemExit(
-            "Shared GPU server is training-only; run registration search locally")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--preflight", type=Path,
@@ -563,13 +1125,50 @@ def main() -> int:
     parser.add_argument("--registration", type=Path, default=DEFAULT_REGISTRATION)
     parser.add_argument("--real-config", type=Path, default=DEFAULT_REAL_CONFIG)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--kinematic-grasp", type=Path,
+        help=(
+            "reviewed kinematic-only TCP/jaw-frame overlay; this does not "
+            "replace MuJoCo collision or inertia"
+        ),
+    )
     parser.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
     parser.add_argument("--candidates", type=int, default=64)
+    parser.add_argument(
+        "--candidate-ik-max-iters", type=int, default=80,
+        help="maximum IK iterations during start-candidate generation",
+    )
     parser.add_argument("--samples-per-episode", type=int, default=2)
     parser.add_argument("--screen-episodes", type=int, default=3,
                         help="episode count for the cheap first-stage screen")
+    parser.add_argument(
+        "--refine-candidates", type=int, default=0,
+        help="additional local candidates sampled around top first-stage seeds",
+    )
+    parser.add_argument("--refine-seeds", type=int, default=2)
+    parser.add_argument("--refine-sigma-fraction", type=float, default=0.01)
     parser.add_argument("--finalists", type=int, default=4,
                         help="top candidates evaluated on every selected episode")
+    parser.add_argument(
+        "--dynamic-finalists", type=int, default=0,
+        help=(
+            "top full-screen finalists replayed dynamically before selection; "
+            "zero keeps the legacy static-only search"
+        ),
+    )
+    parser.add_argument(
+        "--dynamic-episodes", nargs="*",
+        help=(
+            "fixed challenge episodes for every dynamic finalist; required when "
+            "--dynamic-finalists is positive"
+        ),
+    )
+    parser.add_argument("--dynamic-cycles", type=int, default=30)
+    parser.add_argument("--dynamic-tracking-time-margin", type=float, default=1.0)
+    parser.add_argument("--dynamic-grip-preload-m", type=float, default=0.001)
+    parser.add_argument(
+        "--dynamic-grip-preload-activation-gap-m", type=float, default=0.055)
+    parser.add_argument("--min-dynamic-success-fraction", type=float, default=0.8)
     parser.add_argument(
         "--pad-center-margin-m", type=float, default=0.005,
         help=(
@@ -577,16 +1176,90 @@ def main() -> int:
             "end of the fixed pad (default: 5 mm)"
         ),
     )
+    parser.add_argument(
+        "--object-edge-margin-m", type=float, default=0.03,
+        help=(
+            "minimum clearance from the full object footprint to every table "
+            "edge (default: 30 mm)"
+        ),
+    )
+    parser.add_argument(
+        "--first-contact-max-pinch-xy-m", type=float, default=0.008,
+        help=(
+            "provisional maximum horizontal pinch-centre error at the first "
+            "swept jaw/object contact (default: 8 mm)"
+        ),
+    )
+    parser.add_argument(
+        "--first-contact-max-body-depth-offset-m", type=float, default=0.010,
+        help=(
+            "maximum approach-axis offset of the first pad/object contact "
+            "from the upright object's side-body centre (default: 10 mm)"
+        ),
+    )
+    parser.add_argument(
+        "--object-approach-offset-m", type=float,
+        help=(
+            "inferred object-centre offset from the near-closed pinch along "
+            "desired_world_approach_axis; defaults to the registration value "
+            "or zero"
+        ),
+    )
+    parser.add_argument(
+        "--approach-contact-substeps", type=int, default=5,
+        help="joint-space interpolation samples per 10 Hz approach interval",
+    )
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--progress", type=Path,
+        help="candidate checkpoint JSON; defaults beside --out",
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="reuse candidate stages only when the saved run signature matches",
+    )
     args = parser.parse_args()
-    if (args.candidates <= 0 or args.samples_per_episode <= 0
+    if (args.candidates <= 0 or args.candidate_ik_max_iters <= 0
+            or args.samples_per_episode <= 0
             or args.screen_episodes <= 0 or args.finalists <= 0
-            or args.finalists > args.candidates
-            or args.pad_center_margin_m < 0.0):
+            or args.finalists > args.candidates + args.refine_candidates
+            or args.refine_candidates < 0 or args.refine_seeds <= 0
+            or args.refine_sigma_fraction <= 0.0
+            or args.dynamic_finalists < 0
+            or args.dynamic_finalists > args.finalists
+            or args.dynamic_cycles <= 0
+            or args.pad_center_margin_m < 0.0
+            or args.object_edge_margin_m < 0.0
+            or args.first_contact_max_pinch_xy_m <= 0.0
+            or args.first_contact_max_body_depth_offset_m <= 0.0
+            or args.approach_contact_substeps <= 0
+            or args.dynamic_tracking_time_margin < 1.0
+            or args.dynamic_grip_preload_m < 0.0
+            or args.dynamic_grip_preload_activation_gap_m <= 0.0
+            or not 0.0 <= args.min_dynamic_success_fraction <= 1.0):
         raise SystemExit("candidate and sample counts must be positive")
+    if args.dynamic_finalists > 0 and not args.dynamic_episodes:
+        raise SystemExit(
+            "--dynamic-episodes is required when --dynamic-finalists is positive")
+    if args.dynamic_finalists == 0 and args.dynamic_episodes:
+        raise SystemExit(
+            "--dynamic-episodes requires a positive --dynamic-finalists")
     if args.out.exists():
         raise SystemExit(f"output already exists: {args.out}")
+    progress_path = (
+        args.progress if args.progress is not None
+        else args.out.with_name(args.out.stem + ".progress.json")
+    )
+    if progress_path.resolve() == args.out.resolve():
+        raise SystemExit("--progress and --out must be different paths")
+    dynamic_output_root = (
+        args.out.parent / f"{args.out.stem}_dynamic_finalists"
+    )
+    if (args.dynamic_finalists > 0 and dynamic_output_root.exists()
+            and not args.resume):
+        raise SystemExit(
+            f"dynamic finalist output already exists: {dynamic_output_root}")
 
     source_registration = json.loads(
         args.registration.read_text(encoding="utf-8"))
@@ -641,6 +1314,13 @@ def main() -> int:
         source_registration.get("body_midheight_tolerance_m", 0.012))
     if body_midheight_tolerance <= 0.0:
         raise ValueError("body_midheight_tolerance_m must be positive")
+    object_approach_offset = float(
+        source_registration.get("object_approach_offset_m", 0.0)
+        if args.object_approach_offset_m is None
+        else args.object_approach_offset_m
+    )
+    if not np.isfinite(object_approach_offset):
+        raise ValueError("object_approach_offset_m must be finite")
 
     dataset = NumpyRelativeDataset(args.data)
     if args.episodes:
@@ -659,6 +1339,14 @@ def main() -> int:
     if missing:
         raise ValueError(f"validation episodes missing from dataset: {missing}")
     episode_indices = [episode_by_id[value] for value in validation_ids]
+    dynamic_episode_ids = [str(value) for value in (args.dynamic_episodes or [])]
+    if len(set(dynamic_episode_ids)) != len(dynamic_episode_ids):
+        raise ValueError("dynamic episode ids must be unique")
+    dynamic_missing = sorted(set(dynamic_episode_ids) - set(validation_ids))
+    if dynamic_missing:
+        raise ValueError(
+            "dynamic episodes must be included in the selected validation set: "
+            + ", ".join(dynamic_missing))
 
     mean_contact_rotation = _mean_contact_rotation(dataset, episode_indices)
     lateral = np.cross(desired_approach, desired_jaw)
@@ -668,6 +1356,19 @@ def main() -> int:
         desired_contact_rotation @ mean_contact_rotation.T)
 
     cfg = load_config(args.config)
+    kinematic_grasp = None
+    if args.kinematic_grasp is not None:
+        kinematic_grasp = json.loads(
+            args.kinematic_grasp.read_text(encoding="utf-8"))
+        apply_kinematic_grasp(cfg, kinematic_grasp)
+        if args.dynamic_finalists > 0:
+            raise ValueError(
+                "dynamic finalists are forbidden with a kinematic-only ver1 "
+                "overlay because its collision/inertia model is absent")
+    camera_screen_available = bool(
+        kinematic_grasp is None
+        or kinematic_grasp.get("camera_optical_extrinsic_present") is True
+    )
     cfg["task"]["object"]["half_size_m"] = (object_size / 2.0).tolist()
     if "table_half_size_xy_m" in source_registration:
         cfg["task"]["table"]["half_size_m"][:2] = [
@@ -677,6 +1378,8 @@ def main() -> int:
     cfg["task"]["object"]["init_pos"][2] = table_top + float(object_size[2]) / 2.0
     model = build_model(cfg, args.scene)
     ik = MujocoIK(model, cfg)
+    full_ik_max_iters = ik.max_iters
+    ik.max_iters = args.candidate_ik_max_iters
     real = real_limits(args.real_config)
     ranges = arm_ranges(real)
     first_selected_episode = dataset.episodes[episode_indices[0]]
@@ -685,6 +1388,7 @@ def main() -> int:
         current, ranges, count=args.candidates, seed=args.seed, ik=ik,
         initial_gap_m=initial_gap,
         targeted_start_rotation=targeted_start_rotation)
+    ik.max_iters = full_ik_max_iters
     print(
         f"candidate generation: side-grasp IK {targeted_candidate_count}, "
         f"random/local {len(candidates) - targeted_candidate_count - 1}, "
@@ -695,38 +1399,30 @@ def main() -> int:
     screen_positions = np.unique(np.linspace(
         0, len(episode_indices) - 1, screen_count, dtype=int))
     screen_indices = [episode_indices[int(value)] for value in screen_positions]
-    screen_reports = []
-    for candidate_id, arm in enumerate(candidates):
-        report = _evaluate_candidate(
-            candidate_id=candidate_id, arm_start=arm,
-            dataset=dataset, episode_indices=screen_indices,
-            samples_per_episode=1,
-            model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
-            object_height_m=float(object_size[2]),
-            pad_center_margin_m=args.pad_center_margin_m,
-            desired_world_jaw_axis=desired_jaw,
-            jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
-            desired_world_approach_axis=desired_approach,
-            approach_axis_tolerance_deg=approach_axis_tolerance,
-            desired_world_up_axis=desired_up,
-            up_axis_tolerance_deg=up_axis_tolerance,
-            body_midheight_tolerance_m=body_midheight_tolerance,
-        )
-        screen_reports.append(report)
-        print(
-            f"screen {candidate_id + 1:3d}/{len(candidates)} "
-            f"combined={report['combined_accepted_fraction']:.1%} "
-            f"geometry={report['oracle_geometry_accepted_fraction']:.1%} "
-            f"scene={report['scene_constraint_episode_fraction']:.1%} "
-            f"side={report['side_grasp_episode_fraction']:.1%} "
-            f"partial={report['scene_component_fraction']:.1%}",
-            flush=True,
-        )
+    # Fixed dynamic challenge episodes must also participate in the cheap
+    # screen. Otherwise a candidate can be discarded on unrelated evenly
+    # spaced episodes before the failures we are trying to improve are seen.
+    for episode_id in dynamic_episode_ids:
+        episode_index = episode_by_id[episode_id]
+        if episode_index not in screen_indices:
+            screen_indices.append(episode_index)
+    screen_ids = [dataset.episode_ids[index] for index in screen_indices]
+    signature, signature_payload = _progress_signature(
+        args=args, candidates=candidates, validation_ids=validation_ids,
+        screen_ids=screen_ids,
+    )
+    progress = _load_progress(
+        path=progress_path, resume=args.resume, signature=signature,
+        signature_payload=signature_payload,
+    )
 
     def rank(report: dict[str, Any]) -> tuple[Any, ...]:
         return (
             report["combined_accepted_fraction"],
             report["scene_constraint_episode_fraction"],
+            report["object_table_margin_episode_fraction"],
+            -report["mean_table_centre_distance_norm"],
+            report["minimum_table_edge_clearance_m"],
             report["pad_centered_episode_fraction"],
             report["contact_ik_available_episode_fraction"],
             report["pad_centered_given_contact_ik_fraction"],
@@ -742,48 +1438,250 @@ def main() -> int:
             -report["candidate_id"],
         )
 
+    screen_reports = []
+    for candidate_id, arm in enumerate(candidates):
+        report = _cached_candidate(
+            state=progress, stage="screen", candidate_id=candidate_id, arm=arm)
+        resumed = report is not None
+        if report is None:
+            report = _evaluate_candidate(
+                candidate_id=candidate_id, arm_start=arm,
+                dataset=dataset, episode_indices=screen_indices,
+                samples_per_episode=1,
+                model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
+                object_size_m=object_size,
+                object_edge_margin_m=args.object_edge_margin_m,
+                pad_center_margin_m=args.pad_center_margin_m,
+                desired_world_jaw_axis=desired_jaw,
+                jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
+                desired_world_approach_axis=desired_approach,
+                approach_axis_tolerance_deg=approach_axis_tolerance,
+                desired_world_up_axis=desired_up,
+                up_axis_tolerance_deg=up_axis_tolerance,
+                body_midheight_tolerance_m=body_midheight_tolerance,
+                first_contact_max_pinch_xy_m=(
+                    args.first_contact_max_pinch_xy_m),
+                first_contact_max_body_depth_offset_m=(
+                    args.first_contact_max_body_depth_offset_m),
+                approach_contact_substeps=args.approach_contact_substeps,
+                object_approach_offset_m=object_approach_offset,
+                kinematic_only=kinematic_grasp is not None,
+                camera_screen_available=camera_screen_available,
+            )
+            _save_candidate(
+                state=progress, progress_path=progress_path,
+                stage="screen", report=report)
+        screen_reports.append(report)
+        print(
+            f"screen {candidate_id + 1:3d}/{len(candidates)} "
+            f"{'[resume] ' if resumed else ''}"
+            f"combined={report['combined_accepted_fraction']:.1%} "
+            f"geometry={report['oracle_geometry_accepted_fraction']:.1%} "
+            f"scene={report['scene_constraint_episode_fraction']:.1%} "
+            f"side-contact-centred="
+            f"{report['first_approach_contact_body_depth_centered_episode_fraction']:.1%} "
+            f"side={report['side_grasp_episode_fraction']:.1%} "
+            f"partial={report['scene_component_fraction']:.1%}",
+            flush=True,
+        )
+
+    if args.refine_candidates > 0:
+        seed_reports = sorted(screen_reports, key=rank, reverse=True)[
+            :min(args.refine_seeds, len(screen_reports))]
+        refinements = _refined_starts(
+            seeds=[np.asarray(report["start_arm_rad"], dtype=float)
+                   for report in seed_reports],
+            ranges=ranges, existing=candidates,
+            count=args.refine_candidates,
+            sigma_fraction=args.refine_sigma_fraction,
+            seed=args.seed + 1,
+        )
+        for refinement_index, arm in enumerate(refinements, start=1):
+            candidate_id = len(candidates)
+            candidates.append(arm)
+            report = _cached_candidate(
+                state=progress, stage="refine", candidate_id=candidate_id,
+                arm=arm)
+            resumed = report is not None
+            if report is None:
+                report = _evaluate_candidate(
+                    candidate_id=candidate_id, arm_start=arm,
+                    dataset=dataset, episode_indices=screen_indices,
+                    samples_per_episode=1,
+                    model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
+                    object_size_m=object_size,
+                    object_edge_margin_m=args.object_edge_margin_m,
+                    pad_center_margin_m=args.pad_center_margin_m,
+                    desired_world_jaw_axis=desired_jaw,
+                    jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
+                    desired_world_approach_axis=desired_approach,
+                    approach_axis_tolerance_deg=approach_axis_tolerance,
+                    desired_world_up_axis=desired_up,
+                    up_axis_tolerance_deg=up_axis_tolerance,
+                    body_midheight_tolerance_m=body_midheight_tolerance,
+                    first_contact_max_pinch_xy_m=(
+                        args.first_contact_max_pinch_xy_m),
+                    first_contact_max_body_depth_offset_m=(
+                        args.first_contact_max_body_depth_offset_m),
+                    approach_contact_substeps=args.approach_contact_substeps,
+                    object_approach_offset_m=object_approach_offset,
+                    kinematic_only=kinematic_grasp is not None,
+                    camera_screen_available=camera_screen_available,
+                )
+                _save_candidate(
+                    state=progress, progress_path=progress_path,
+                    stage="refine", report=report)
+            screen_reports.append(report)
+            print(
+                f"refine {refinement_index:3d}/{len(refinements)} "
+                f"candidate={candidate_id} "
+                f"{'[resume] ' if resumed else ''}"
+                f"combined={report['combined_accepted_fraction']:.1%} "
+                f"geometry={report['oracle_geometry_accepted_fraction']:.1%} "
+                f"scene={report['scene_constraint_episode_fraction']:.1%} "
+                f"side-contact-centred="
+                f"{report['first_approach_contact_body_depth_centered_episode_fraction']:.1%} "
+                f"side={report['side_grasp_episode_fraction']:.1%} "
+                f"partial={report['scene_component_fraction']:.1%}",
+                flush=True,
+            )
+
     screen_reports.sort(key=rank, reverse=True)
     finalist_ids = [int(report["candidate_id"])
                     for report in screen_reports[:args.finalists]]
+    # Always retain the exact source registration as a measured baseline.  It
+    # may fail the cheap screen while remaining the only candidate with a known
+    # dynamic success on a challenge episode.
+    if args.finalists > 1 and 0 not in finalist_ids:
+        finalist_ids[-1] = 0
     reports = []
     for finalist_index, candidate_id in enumerate(finalist_ids):
-        report = _evaluate_candidate(
-            candidate_id=candidate_id, arm_start=candidates[candidate_id],
-            dataset=dataset, episode_indices=episode_indices,
-            samples_per_episode=args.samples_per_episode,
-            model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
-            object_height_m=float(object_size[2]),
-            pad_center_margin_m=args.pad_center_margin_m,
-            desired_world_jaw_axis=desired_jaw,
-            jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
-            desired_world_approach_axis=desired_approach,
-            approach_axis_tolerance_deg=approach_axis_tolerance,
-            desired_world_up_axis=desired_up,
-            up_axis_tolerance_deg=up_axis_tolerance,
-            body_midheight_tolerance_m=body_midheight_tolerance,
-        )
+        arm = candidates[candidate_id]
+        report = _cached_candidate(
+            state=progress, stage="final", candidate_id=candidate_id, arm=arm)
+        resumed = report is not None
+        if report is None:
+            report = _evaluate_candidate(
+                candidate_id=candidate_id, arm_start=arm,
+                dataset=dataset, episode_indices=episode_indices,
+                samples_per_episode=args.samples_per_episode,
+                model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
+                object_size_m=object_size,
+                object_edge_margin_m=args.object_edge_margin_m,
+                pad_center_margin_m=args.pad_center_margin_m,
+                desired_world_jaw_axis=desired_jaw,
+                jaw_yaw_tolerance_deg=jaw_yaw_tolerance,
+                desired_world_approach_axis=desired_approach,
+                approach_axis_tolerance_deg=approach_axis_tolerance,
+                desired_world_up_axis=desired_up,
+                up_axis_tolerance_deg=up_axis_tolerance,
+                body_midheight_tolerance_m=body_midheight_tolerance,
+                first_contact_max_pinch_xy_m=(
+                    args.first_contact_max_pinch_xy_m),
+                first_contact_max_body_depth_offset_m=(
+                    args.first_contact_max_body_depth_offset_m),
+                approach_contact_substeps=args.approach_contact_substeps,
+                object_approach_offset_m=object_approach_offset,
+                kinematic_only=kinematic_grasp is not None,
+                camera_screen_available=camera_screen_available,
+            )
+            _save_candidate(
+                state=progress, progress_path=progress_path,
+                stage="final", report=report)
         reports.append(report)
         print(
             f"final {finalist_index + 1:2d}/{len(finalist_ids)} "
             f"candidate={candidate_id} "
+            f"{'[resume] ' if resumed else ''}"
             f"combined={report['combined_accepted_fraction']:.1%} "
             f"geometry={report['oracle_geometry_accepted_fraction']:.1%} "
             f"scene={report['scene_constraint_episode_fraction']:.1%} "
+            f"side-contact-centred="
+            f"{report['first_approach_contact_body_depth_centered_episode_fraction']:.1%} "
             f"side={report['side_grasp_episode_fraction']:.1%} "
             f"partial={report['scene_component_fraction']:.1%}",
             flush=True,
         )
     reports.sort(key=rank, reverse=True)
+    static_finalists = reports.copy()
+    if args.dynamic_finalists > 0:
+        dynamic_output_root.mkdir(parents=True, exist_ok=args.resume)
+        dynamic_reports = []
+        for dynamic_index, report in enumerate(
+                reports[:args.dynamic_finalists], start=1):
+            candidate_id = int(report["candidate_id"])
+            cached = _cached_candidate(
+                state=progress, stage="dynamic", candidate_id=candidate_id,
+                arm=np.asarray(report["start_arm_rad"], dtype=float))
+            resumed = cached is not None
+            if cached is None:
+                dynamic = _evaluate_dynamic_finalist(
+                    report=report, episode_ids=dynamic_episode_ids,
+                    data_root=args.data, output_root=dynamic_output_root,
+                    object_size=object_size,
+                    table_half_xy=[
+                        float(value)
+                        for value in cfg["task"]["table"]["half_size_m"][:2]
+                    ],
+                    cycles=args.dynamic_cycles,
+                    tracking_time_margin=args.dynamic_tracking_time_margin,
+                    grip_preload_m=args.dynamic_grip_preload_m,
+                    grip_preload_activation_gap_m=(
+                        args.dynamic_grip_preload_activation_gap_m),
+                    threshold=args.min_dynamic_success_fraction,
+                    config=args.config, real_config=args.real_config,
+                    kinematic_grasp=kinematic_grasp,
+                )
+                completed_report = {**report, "dynamic_oracle": dynamic}
+                _save_candidate(
+                    state=progress, progress_path=progress_path,
+                    stage="dynamic", report=completed_report)
+            else:
+                completed_report = cached
+                dynamic = completed_report["dynamic_oracle"]
+            dynamic_reports.append(completed_report)
+            counts = dynamic["failure_counts"]
+            print(
+                f"dynamic {dynamic_index:2d}/{args.dynamic_finalists} "
+                f"candidate={candidate_id} "
+                f"{'[resume] ' if resumed else ''}"
+                f"success={dynamic['successes']}/{dynamic['episodes']} "
+                f"ik_after={counts.get('ik_reject_after_contact', 0)} "
+                f"tipped={counts.get('object_tipped', 0)} "
+                f"displaced={counts.get('object_displaced', 0)} "
+                f"static_reject={counts.get('static_scene_reject', 0)}",
+                flush=True,
+            )
+
+        reports = sorted(
+            dynamic_reports,
+            key=lambda report: _dynamic_rank(report, rank(report)),
+            reverse=True,
+        )
+
     selected = reports[0]
-    accepted = bool(
+    static_accepted = bool(
         selected["combined_accepted_fraction"] > 0.0
         and selected["scene_constraint_episode_fraction"] > 0.0
     )
+    dynamic_accepted = bool(
+        args.dynamic_finalists == 0
+        or selected["dynamic_oracle"]["passed"])
+    accepted = static_accepted and dynamic_accepted
+    if accepted and kinematic_grasp is not None:
+        status = (
+            "KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED"
+            if not camera_screen_available
+            else "KINEMATIC_REGISTRATION_CANDIDATE_NOT_DYNAMIC_READY"
+        )
+    elif accepted:
+        status = "PROVISIONAL_NOT_PHYSICAL_CALIBRATION"
+    elif static_accepted and args.dynamic_finalists > 0:
+        status = "REJECTED_DYNAMIC_ORACLE_GATE"
+    else:
+        status = "REJECTED_NO_VALID_REGISTRATION"
     result = {
-        "status": (
-            "PROVISIONAL_NOT_PHYSICAL_CALIBRATION"
-            if accepted else "REJECTED_NO_VALID_REGISTRATION"
-        ),
+        "status": status,
         "source": source,
         "purpose": (
             "Multi-episode recorded-oracle registration search for offline IK "
@@ -795,6 +1693,7 @@ def main() -> int:
         "table_half_size_xy_m": [
             float(value) for value in cfg["task"]["table"]["half_size_m"][:2]
         ],
+        "object_edge_margin_m": args.object_edge_margin_m,
         "desired_world_jaw_axis": desired_jaw.tolist(),
         "jaw_yaw_tolerance_deg": jaw_yaw_tolerance,
         "desired_world_approach_axis": desired_approach.tolist(),
@@ -802,6 +1701,13 @@ def main() -> int:
         "desired_world_up_axis": desired_up.tolist(),
         "up_axis_tolerance_deg": up_axis_tolerance,
         "body_midheight_tolerance_m": body_midheight_tolerance,
+        "first_contact_max_pinch_xy_m": args.first_contact_max_pinch_xy_m,
+        "first_contact_max_body_depth_offset_m": (
+            args.first_contact_max_body_depth_offset_m),
+        "approach_contact_substeps": args.approach_contact_substeps,
+        "object_approach_offset_m": object_approach_offset,
+        "kinematic_grasp": kinematic_grasp,
+        "camera_screen_available": camera_screen_available,
         "grasp_mode": source_registration.get("grasp_mode"),
         "axis_source": source_registration.get("axis_source"),
         "mean_start_to_contact_rotation": mean_contact_rotation.tolist(),
@@ -809,18 +1715,43 @@ def main() -> int:
         "representative_episode": selected["representative_episode"],
         "selection": {
             "validation_episodes": validation_ids,
-            "candidates": args.candidates,
+            "candidates": len(candidates),
+            "base_candidates": args.candidates,
+            "refine_candidates": args.refine_candidates,
+            "refine_seeds": args.refine_seeds,
+            "refine_sigma_fraction": args.refine_sigma_fraction,
             "side_grasp_ik_candidates": targeted_candidate_count,
             "screen_episodes": [dataset.episode_ids[index]
                                 for index in screen_indices],
             "finalists": args.finalists,
+            "dynamic_finalists": args.dynamic_finalists,
+            "dynamic_episodes": dynamic_episode_ids,
+            "dynamic_cycles": args.dynamic_cycles,
+            "dynamic_tracking_time_margin": args.dynamic_tracking_time_margin,
+            "dynamic_grip_preload_m": args.dynamic_grip_preload_m,
+            "dynamic_grip_preload_activation_gap_m": (
+                args.dynamic_grip_preload_activation_gap_m),
+            "min_dynamic_success_fraction": (
+                args.min_dynamic_success_fraction),
             "samples_per_episode": args.samples_per_episode,
             "pad_center_margin_m": args.pad_center_margin_m,
+            "object_edge_margin_m": args.object_edge_margin_m,
+            "first_contact_max_pinch_xy_m": (
+                args.first_contact_max_pinch_xy_m),
+            "first_contact_max_body_depth_offset_m": (
+                args.first_contact_max_body_depth_offset_m),
+            "approach_contact_substeps": args.approach_contact_substeps,
+            "object_approach_offset_m": object_approach_offset,
             "seed": args.seed,
             "ranking": (
+                "dynamic gate pass/success first, then separate post-contact IK, "
+                "object-tip and static-scene penalties; static geometry+scene "
+                "ranking breaks ties"
+                if args.dynamic_finalists > 0 else
                 "combined oracle geometry+scene fraction, exact scene fraction, "
-                "object-centred pad grasp, side-approach task fidelity, partial scene "
-                "constraints, oracle geometry and anchor reachability"
+                "full-footprint table margin, table centrality, object-centred "
+                "pad grasp, side-approach task fidelity, partial "
+                "scene constraints, oracle geometry and anchor reachability"
             ),
         },
         "screened_candidates": [{
@@ -837,25 +1768,54 @@ def main() -> int:
                 "initial_object_visible_episode_fraction",
                 "pad_centered_episode_fraction",
                 "contact_ik_available_episode_fraction",
+                "object_table_margin_episode_fraction",
+                "minimum_table_edge_clearance_m",
+                "mean_table_centre_distance_norm",
                 "pad_centered_given_contact_ik_fraction",
                 "collision_free_given_contact_ik_fraction",
+                "first_approach_contact_detected_episode_fraction",
+                "first_approach_contact_centered_episode_fraction",
+                "first_approach_contact_body_depth_centered_episode_fraction",
+                "first_approach_contact_pinch_xy_m_mean",
+                "first_approach_contact_pinch_xy_m_max",
+                "object_approach_offset_m",
             )
         } for report in screen_reports],
         "selected": selected,
+        "static_finalists": static_finalists,
         "top10": reports[:10],
         "limitations": [
             "Search registration, not measured robot-base/workspace calibration.",
-            "Object locations are inferred from each episode's near-closed pinch pose.",
+            "Object locations are inferred from each episode's near-closed pinch "
+            "pose plus the explicitly reported provisional approach-axis offset.",
+            "Table placement requires the full object footprint plus the configured "
+            "edge margin; centrality is a tie-breaker, not a measured object label.",
+            "Swept first-contact metrics are diagnostic only and do not by "
+            "themselves establish a measured marker-to-pad offset.",
             "Marker-midpoint hand-eye and object geometry remain provisional.",
             "Collision checks are kinematic MuJoCo screens, not hardware approval.",
+            "A kinematic gripper overlay does not replace the legacy MuJoCo "
+            "collision, inertia or actuator model.",
+            "Kinematic-only candidate statuses must not be passed to rollout "
+            "or a dynamic oracle gate.",
             "Must not be used for real motor commands.",
             "A rejected status must not be passed to policy preflight.",
+            "Dynamic finalist replay uses fixed challenge episodes so candidates "
+            "cannot win by making difficult episodes fail the static scene screen.",
         ],
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
+    progress["complete"] = True
+    progress["result"] = {
+        "path": str(args.out.resolve()),
+        "sha256": _sha256(args.out),
+        "status": status,
+        "selected_candidate_id": int(selected["candidate_id"]),
+    }
+    _atomic_json(progress_path, progress)
     print(json.dumps({
         "status": result["status"],
         "selected_candidate": selected["candidate_id"],
@@ -876,6 +1836,7 @@ def main() -> int:
             "up_axis_aligned_episode_fraction"],
         "side_grasp_episode_fraction": selected[
             "side_grasp_episode_fraction"],
+        "dynamic_oracle": selected.get("dynamic_oracle"),
     }, ensure_ascii=False, indent=2))
     return 0
 

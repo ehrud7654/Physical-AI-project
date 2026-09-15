@@ -62,6 +62,7 @@ class Tests(unittest.TestCase):
                 canonical = json.loads(normalized.read("episode.json"))
                 self.assertEqual(canonical["schema"], "umi_raw/0.1.0")
                 self.assertEqual(canonical["skill_id"], "pick_place")
+                self.assertEqual(canonical["camera"]["rotate_to_canonical_deg"], 180)
                 self.assertEqual(len(canonical["source"]["delivery_sha256"]), 64)
                 self.assertEqual(len(canonical["source"]["episode_json_sha256"]), 64)
                 self.assertEqual(normalized.read("frames/000000.jpg"), images["000000.jpg"])

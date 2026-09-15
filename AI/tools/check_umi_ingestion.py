@@ -48,6 +48,7 @@ class Tests(unittest.TestCase):
             def decoder(data):
                 with Image.open(io.BytesIO(data)) as img: return np.array(img.convert('RGB'))
             args=dict(bundle=path,t_cam_to_pinch=pinch,t_arcore_world_to_base=base,
+                t_cam_to_pinch_axes='+X right, +Y up, -Z forward (ARCore/OpenGL)',
                 calibration_id='synthetic-only',tracking_valid_values=['TRACKING'],warmup_s=3.,
                 usable_segments=[[0,8]],frames_dropped=0,image_decoder=decoder)
             args.update(overrides)
@@ -148,6 +149,7 @@ class Tests(unittest.TestCase):
 
     def test_calibration_and_policy_required(self):
         for overrides in [dict(calibration_id=''),dict(warmup_s=0),dict(tracking_valid_values=None),
+                          dict(t_cam_to_pinch_axes='+X right, +Y down, +Z forward (OpenCV)'),
                           dict(t_cam_to_pinch=np.zeros((4,4))),dict(usable_segments=[[0,99]])]:
             with self.subTest(overrides=overrides),self.assertRaises(ValueError): self.decode(self.fixture(),**overrides)
 

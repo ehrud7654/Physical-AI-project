@@ -98,6 +98,8 @@ def _canonical_meta(source: dict, producer_sha: str, delivery_sha: str,
             "ois": "off", "vdis": "off",
             "intrinsics": {key: intrinsics[key] for key in ("fx", "fy", "cx", "cy")},
             "distortion": None,
+            "stored_image_orientation": "180deg from canonical upright",
+            "rotate_to_canonical_deg": 180,
         },
         "pose": {
             "provider": "ARCore", "pose_is": contract["pose_frame"],

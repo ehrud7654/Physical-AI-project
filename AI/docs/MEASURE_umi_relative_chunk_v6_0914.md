@@ -392,8 +392,10 @@ waypoint가 5-DoF IK에서 탈락하므로 성공으로 보고하지 않는다.
 
 v6 체크포인트는 v8과 이미지가 같아도 상대 pose target의 표현 frame이 다르므로
 v8 정책 평가에 사용할 수 없다. v8은 별도 smoke 재학습 후 로컬 이미지 의존성 검사와
-MuJoCo learned-policy 진단을 해야 한다. 공유 GPU 서버는 이 **학습만** 수행하고,
-추론·probe·preflight·등록 탐색·MuJoCo는 계속 로컬 CPU에서만 실행한다.
+MuJoCo learned-policy 진단을 해야 한다. 당시에는 공유 GPU 서버에서 학습만
+허용했다. 0915 합의 후에는 학습 정책을 불러오지 않는 recorded-oracle MuJoCo와
+등록 탐색도 서버에서 허용하지만, 체크포인트 추론·probe·policy preflight는 계속
+금지한다.
 
 전달용 v8 묶음은 다음과 같다.
 
@@ -612,8 +614,273 @@ successes: 1/3 = 33.3% (required 80%)
 150833: ik_reject_after_contact, max lift 20.18mm
 150943: success, max lift 68.36mm
 150948: object_displaced_or_tipped, max lift 55.07mm then final -18.85mm
+
+## 0915 후속: 동적 실패를 후보 선택에 반영한 64개/33개 재탐색
+
+기존 등록 탐색은 정적 기하·카메라·장면 조건으로 finalist를 고른 뒤 동적 oracle
+gate를 별도로 실행했다. 이 구조에서는 `rec_20260911_150833`의 접촉 후 IK 거부와
+`rec_20260911_150948`의 전도/이탈이 후보 순위에 전혀 반영되지 않았다.
+
+`tools/search_relative_chunk_registration.py`에 다음 최종 단계를 추가했다.
+
+- 모든 finalist를 동일한 고정 challenge episode에서 비교한다.
+- `ik_reject_after_contact`, `object_displaced_or_tipped`,
+  `static_scene_reject`, `runner_error`를 서로 다른 실패로 기록한다.
+- 동적 성공률을 최우선으로 하고 각 실패 수와 접촉·최대 lift를 차례로 비교한다.
+- 동적 성공률이 기준보다 낮으면 결과 상태를
+  `REJECTED_DYNAMIC_ORACLE_GATE`로 기록한다.
+- 고정 challenge episode는 값이 쉬운 편만 scene-valid가 되도록 후보가 유리하게
+  바뀌는 것을 막기 위해 1차 screen에도 반드시 포함한다.
+
+첫 64개 재탐색은 기존과 같은 7개 측면 IK 후보와 무작위/로컬 후보를 늘린
+실험이었다.
+
+```text
+result: out/relative_chunk_v9_registration_search64_dynamic_challenge3.json
+selected: candidate 6 (기존 선택과 동일)
+dynamic: 1/3 = 33.3%, required 80%
+150833: ik_reject_after_contact
+150943: success
+150948: object_displaced_or_tipped
+status: REJECTED_DYNAMIC_ORACLE_GATE
 ```
+
+후보 수만 늘려서는 개선되지 않았다. 실패 후보 대부분은 물체 몸통 중앙과 패드
+중앙 높이를 함께 만족하지 못했다. 이 과정에서 `_candidate_starts()`가 소스 등록을
+8% 탐색 margin 안으로 clip하면서, 로그와 달리 기존 성공 자세를 정확히 보존하지
+않는 버그도 찾았다. 소스 등록은 real joint limit 안이면 그대로 보존하고, 국소
+refinement도 broad-search margin을 적용하지 않도록 수정했다. 고정 도전 편을
+screen에 포함하고 원본 등록을 finalist에 항상 남기는 회귀 조건도 추가했다.
+
+정확한 소스 등록 주변에 32개 작은 관절 perturbation을 만든 총 33개 재탐색 결과는
+다음과 같다.
+
+```text
+result: out/relative_chunk_v9_registration_search33_source_refined_dynamic_challenge3.json
+base candidates: 1 exact source registration
+refined candidates: 32, sigma_fraction=0.003
+selected: candidate 4
+start arm: [0.02371975, 0.72752479, 0.78653879, -1.50176976, 1.61533093]
+static combined: 25.9% (기존 18.5%)
+static scene: 28.6% (기존 21.4%)
+side grasp: 92.9%
+dynamic: 1/3 = 33.3%, required 80%
+status: REJECTED_DYNAMIC_ORACLE_GATE
+```
+
+정적 최고 후보는 combined 37.0%, scene 42.9%까지 개선됐지만 동적 결과는 0/3으로
+오히려 나빴다. 동적 순위를 적용한 candidate 4와 기존 기준선 candidate 0은 모두
+1/3이었다. 즉 시작 등록의 작은 보정은 정적 도달 범위를 넓혔지만 두 동적 실패를
+제거하지 못했다.
+
+`150833` 상세 진단에서는 cycle 14까지 접촉 5개와 lift 14.44mm를 유지한 뒤 다음
+목표에서 아래 결과로 중단됐다.
+
+```text
+solver converged: true
+solver stayed within limits: false
+position error: 4.66591mm / external budget 5mm
+axis error: 0.863904deg / external budget 5deg
+roll error: 0deg / external budget 5deg
+```
+
+외부 실행 예산 안에서 수렴했지만 solver 반복 중 관절 한계를 한 번 건드려
+`within_limits=false`가 된 경우다. 기존 오류 메시지가 이를 `converged=false`로
+합쳐 표시하던 문제를 수정해 두 조건을 분리했다. 이는 허용치를 바로 완화할 근거가
+아니며, 관절 한계를 건드리지 않는 등록 또는 IK branch가 필요하다는 결과다.
+
+`150948`은 cycle 13까지 접촉 6개와 lift 9.89mm를 유지한다. 마지막 청크의 step 0
+까지는 접촉 3개로 약 50mm를 들지만 step 1에서 상대 이동 목표가 약 39mm에서
+80mm로 커지는 순간 접촉을 모두 잃고 89.5도로 넘어졌다. 전체 실행 중 최대 수평
+이동은 58.80mm, 최대 기울기는 106.44도다. 실행을 2배 느리게 하고 preload를
+2~3mm로 늘려도 step 0에서 접촉을 더 일찍 잃었다. 따라서 단순 속도 또는 preload
+보정으로 해결되지 않는다.
+
+따라서 새 등록값도 승인하지 않는다. 다음 단계는 `150833`에서 solver가 관절 한계를
+건드리지 않는 IK branch를 찾고, `150948`의 마지막 상승 청크가 물체를 유지할 수
+있는지 접촉 모델과 궤적 실행을 분리 검증하는 것이다.
 
 따라서 현재 등록값은 대표 영상 생성에는 쓸 수 있지만 학습 정책 rollout의 기준
 등록값으로 확정할 수 없다. 다음 등록 후보 탐색에서는 kinematic 순위 뒤에 이 동적
 게이트를 적용하고, 80%를 넘는 후보가 없으면 등록을 실패로 유지한다.
+
+## 0915 후속: 실패 다중 집계와 넓은 33개 재탐색
+
+물체 위치뿐 아니라 회전행렬을 매 simulation tick에서 읽어 초기 자세 대비 물체
+기울기와 수평 이동을 기록했다. 30도 이상 기울면 `object_tipped`, 물체 폭 절반
+이상 수평 이동하고 최종 jaw 접촉을 잃으면 `object_displaced`로 판정한다. 성공은
+여전히 최우선 판정이라, 정상적으로 물체를 든 채 옮긴 이동은 실패로 바뀌지 않는다.
+
+실패는 배타적이지 않다. 예를 들어 넓은 탐색의 candidate 16에서 `150833`은 IK
+거절과 전도가 함께 발생했다. 따라서 단일 `classification_counts`만으로 순위를
+매기지 않고 `failure_counts`에서 접촉 후 IK 거절·전도·이탈을 각각 모두 센다.
+
+기존 등록 주변을 더 넓게 총 33개로 다시 탐색했다.
+
+```text
+result: out/relative_chunk_v9_registration_search33_failure_aware_wide.json
+base candidates: 1 exact source registration
+refined candidates: 32, sigma_fraction=0.01
+static best screen combined: 57.1%
+dynamic challenge episodes: 150833, 150943, 150948
+best dynamic success: 1/3 = 33.3%, required 80%
+status: REJECTED_DYNAMIC_ORACLE_GATE
+```
+
+검색 실행 당시의 배타적 분류 순위는 candidate 16을 선택했지만, 같은 결과를 수정된
+다중 실패 순위로 다시 계산하면 기존 source candidate 0이 가장 낫다. candidate 16은
+성공 수는 같지만 전도·이탈이 각각 2건이라 과대평가됐기 때문이다. 즉 넓은 시작 자세
+보정도 기존 등록보다 동적 결과를 개선하지 못했으며 새 등록값은 승인하지 않는다.
+
+수정된 집계로 source candidate 0을 다시 실행한 정본 진단은
+`out/relative_chunk_v9_source_candidate_dynamic_gate_multifailure_v2.json`이다.
+결과는 성공 1/3, 접촉 후 IK 거절 1건, 전도 1건, 이탈 1건이다. 전도와 이탈은 같은
+`150948`에서 동시에 발생했기 때문에 성공·실패 분류 합계와 다중 실패 합계는 서로
+다를 수 있다.
+
+관련 회귀검사는 다음을 보장한다.
+
+- 소스 등록이 탐색 margin으로 몰래 clip되지 않는다.
+- 관절 한계 접촉과 solver 수렴을 별도 원인으로 보고한다.
+- 한 에피소드에서 IK 거절과 전도가 동시에 발생해도 두 실패를 모두 집계한다.
+- 다중 실패가 더 많은 후보는 정적 점수가 높아도 동적 순위에서 뒤로 간다.
+
+## 0915 후속: 접근 접촉과 waypoint 시간 확대 실행 검증
+
+기존 정적 탐색은 near-closed 한 시점만 검사해 접근 중 접촉을 보지 않았다. 10Hz
+관절 목표 사이를 10개로 보간해 물체와 jaw의 첫 정적 접촉을 계측했다. 기존 source
+등록에서 세 도전 편 모두 첫 접촉의 pinch 수평 오차는 1.5~3.1mm로 작았지만,
+접촉점은 물체 접근축 방향 중앙이 아니라 앞 모서리에서 약 19mm 떨어진 곳이었다.
+성공 편 `150943`에도 같은 모서리 접촉이 있어 이 값만으로 `150948` 전도를
+분류할 수 없었다. 따라서 첫 접촉 수치는 진단으로 기록하되 후보 탈락 조건이나
+순위에는 사용하지 않는다.
+
+미실측 marker-midpoint→pad-centre 깊이 오프셋 가능성을 확인하려고 물체 중심을
+접근축으로 -19mm와 -30mm 이동한 정적 검사도 수행했다. -19mm에서는 세 편 모두
+여전히 앞 모서리에 닿았고, -30mm에서는 한 편만 몸통 중앙 접촉 조건을 만족했다.
+단일 오프셋이 세 편을 일관되게 개선하지 않았으므로 새 오프셋이나 등록값은
+채택하지 않는다.
+
+동적 실행기에서는 더 중요한 오류를 찾았다. `uniform_time_schedule`로 waypoint
+시간을 늘려도 최종 관절 목표를 즉시 명령하고 같은 목표를 여러 simulation tick 동안
+반복하고 있었다. 이는 시간 확대가 아니라 목표 도달 대기다. 수정 후에는 각 예정된
+tick마다 팔 관절과 gap 목표를 선형 보간해 실제 명령 속도를 낮춘다. 보고서에는
+`simulation_waypoint_execution`과 각 명령의 target/actual pinch pose도 기록한다.
+
+수정된 source candidate 0의 세 편 결과는 다음과 같다.
+
+```text
+report: out/relative_chunk_v9_source_candidate_dynamic_gate_interpolated.json
+tracking margin: 1.0
+preload: 1mm
+150833: ik_reject_after_contact
+150943: success
+150948: object_tipped + object_displaced
+success: 1/3, required 80%
+```
+
+`150948`의 최대 수평 이탈은 기존 71.23mm에서 37.68mm로 줄었지만 전도는 남았다.
+tracking margin 2.0은 접촉 상태의 옆힘이 더 오래 작용해 `150943`까지 전도시켰고
+0/3이었다. margin 1.0에서 preload를 0으로 바꿔도 1/3으로 동일했다. 따라서 현재
+근거로는 감속 배율이나 preload를 추가 보정값으로 채택하지 않는다.
+
+목표 pinch 궤적을 직접 기록한 결과 `150948`은 접촉을 유지한 cycle 13 이후 다음
+목표가 물체 초기 위치 대비 z=9.7mm에서 48.9mm로 한 번에 증가했고, 그 구간에서
+접촉을 잃었다. 성공 편 `150943`은 같은 구간에서 z=0.6mm에서 21.3mm로 먼저
+이동한 뒤 다음 step에서 60.4mm로 올라갔다. 즉 전체 궤적 최대 이동량만 볼 것이
+아니라, 하중을 잡은 직후의 waypoint 간 상승 변화와 접촉 유지성을 함께 검사해야
+한다. 현재 동적 게이트는 여전히 실패이며 새 등록값을 승인하지 않는다.
+
+## 0915 후속: ver1 phone-holder handoff와 재개 가능한 등록 탐색
+
+HW handoff archive SHA-256은
+`5386a22ea54729215cb544b844079621150a1ff4d751b54daf9f031a9c077d8b`이며,
+패키지 내부 40개 파일의 SHA-256을 모두 대조했다. 최신 URDF의
+`wrist_roll -> custom_hand -> gripper_tcp` 고정 변환을 합성하면 TCP 원점은
+기존 MuJoCo gripper body 기준 약 `(0.00000021, -0.00000056, -0.15811882)m`이다.
+턱축은 약 `(-0.04866, 0.99882, 0)`, 접근축은 약 `(0, 0, -1)`이다.
+
+기존 MuJoCo 설정은 pinch가 `-0.080m`, 턱축이 body `+X`인 비대칭 구형
+그리퍼였다. 새 ver1은 대칭 평행 턱이며 턱축이 거의 body `+Y`이므로, 기존
+등록 탐색은 실제 장착 그리퍼보다 파지점이 약 78mm 짧고 턱 방향이 약 90도
+다른 모델을 사용했다. 이 차이를
+`configs/real/so101_ver1_phone_holder_kinematic.json`의 기구학 전용 overlay로
+분리했다. overlay FK↔IK 왕복검사 12개 목표에서 미수렴 0건, 위치 오차 중앙
+0.0088mm, 최대 0.0098mm였다. 이 검사는 좌표계·부호의 자기일관성만 확인하며
+실행 가능성이나 동역학을 승인하지 않는다.
+
+등록 탐색은 후보별로 `screen/refine/final/dynamic` 결과를 progress JSON에
+원자적으로 저장한다. 데이터, 설정, scene, 코드와 후보 목록 해시가 모두 같은
+경우에만 `--resume`을 허용한다. 16개 광역 후보와 상위 2개 주변 16개 국소 후보를
+기존과 같은 14개 validation episode에서 검사한 결과는 다음과 같다.
+
+```text
+result: out/relative_chunk_v9_ver1_kinematic_registration_search32_refined_val14_20260915.json
+progress: out/relative_chunk_v9_ver1_kinematic_registration_search32_refined_val14_20260915.progress.json
+selected candidate: 1
+side grasp: 13/14 = 92.9%
+kinematic scene constraints: 8/14 = 57.1%
+sampled chunk geometry: 16/27 = 59.3%
+combined: 11/27 = 40.7%
+status: KINEMATIC_REGISTRATION_CANDIDATE_NOT_DYNAMIC_READY
+```
+
+이 실행 당시 첫 화면 가시성은 기존 임시 `cam_wrist` proxy로 계산됐다. handoff에는
+실제 렌즈 optical transform이 없으므로 이 카메라 수치는 ver1 holder 검증으로
+인용하지 않는다. 이후 코드는 optical extrinsic이 없는 기구학 overlay에서 카메라
+조건을 합격 기준에서 제외하고 결과 상태를
+`KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED`로 제한한다.
+
+또한 handoff에는 검증된 custom inertia, collision-safe limit와 동역학용 ver1
+collision model이 없다. 따라서 구형 MuJoCo 패드의 접촉·전도 결과를 새 ver1
+그리퍼 결과로 재사용하지 않는다. 다음 필수 입력은 (1) 렌즈 optical frame의
+실장착 변환과 (2) 단순화해도 실제 접촉면 위치·대칭 개폐를 보존한 ver1 collision
+model이다. 이 둘 전에는 추가 learned-policy rollout보다 기구학 후보와 데이터
+계약 검증만 유효하다.
+
+## 0915 후속: 물체 외곽 여유와 대표 시연 선택 보정
+
+첫 ver1 기구학 영상에서 대표 시연 `150948`의 물체가 테이블 끝에 걸쳐 보였다.
+수치를 확인하면 테이블 X 끝은 `0.55m`, 물체 바깥 면은 `0.5459m`로 실제 남은
+여유가 약 `4.1mm`뿐이었다. 기존 검사는 물체 중심에 고정 `20mm` margin만 적용해
+물체 크기를 명시적으로 빼지 않았고, 실제 optical extrinsic이 없는데도 임시
+카메라 중앙 점수를 대표 시연 선택에 사용했다.
+
+등록 탐색을 다음과 같이 수정했다.
+
+- `table_half - abs(object_center - table_center) - object_half_size`로 물체 전체
+  외곽부터 각 테이블 끝까지의 여유를 계산한다.
+- 기본 `--object-edge-margin-m 0.03`으로 모든 축에서 최소 30mm를 요구한다.
+- 후보 동률 시 테이블 중심 정규화 거리를 사용한다.
+- optical extrinsic이 없으면 대표 시연 선택에서 임시 카메라 중앙 점수를 제외한다.
+- 후보별 X/Y 여유, 최소 여유, 중심 거리를 결과 JSON에 보존한다.
+
+16개 광역 후보와 16개 국소 후보를 빠른 1편 screen 후 같은 14개 validation
+episode에서 상위 4개를 재검증했다.
+
+```text
+result: out/relative_chunk_v9_ver1_registration_search32_margin30mm_val14_20260915.json
+progress: out/relative_chunk_v9_ver1_registration_search32_margin30mm_val14_20260915.progress.json
+selected candidate: 1
+table margin pass: 6/14 = 42.9%
+full kinematic scene pass: 5/14 = 35.7%
+side grasp: 13/14 = 92.9%
+sampled chunk geometry: 16/27 = 59.3%
+combined: 6/27 = 22.2%
+representative episode: rec_20260911_150034
+representative object xyz: (0.40189, -0.00453, 0.03835)m
+representative minimum table-edge clearance: 128.6mm
+status: KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED
+```
+
+새 대표 영상은
+`out/relative_chunk_v9_ver1_candidate1_150034_margin30mm_kinematic.gif`이다.
+15개 행짜리 기존 `150948` 대신 4개 행짜리 `150034`가 선택돼 동작 길이는 짧지만,
+물체가 테이블 안쪽에 놓이고 ver1 턱이 몸통 측면을 향하는 것을 확인했다. 정책
+추론과 접촉 동역학은 실행하지 않았다. 전체 UMI 회귀검사는 `25/25 PASS`다.
+
+이 보정은 대표 영상의 가장자리 문제를 해결했지만 등록을 확정하지 않는다. 같은
+후보에서 30mm 테이블 여유를 만족한 편은 6/14뿐이고, ver1 collision과 optical
+extrinsic도 여전히 없다. 따라서 다음 판단은 더 많은 학습이 아니라 실제 ver1
+collision proxy를 추가한 recorded-oracle과, 실패 편을 포함할 수 있는 작업대/로봇
+base 등록 자유도의 재검토다.

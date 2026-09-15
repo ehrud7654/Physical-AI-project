@@ -25,6 +25,7 @@ instead; the simulator dependency lives here, at the call site, not in the seam.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -109,25 +110,92 @@ def gap_from_angle(angle_rad: float, curve: Sequence[Sequence[float]]) -> float:
     return float(np.interp(float(angle_rad), table[:, 0], table[:, 1] / 100.0))
 
 
+def apply_kinematic_grasp(
+    cfg: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply a reviewed kinematic-only gripper frame to one runtime config.
+
+    This changes FK/IK geometry only.  It does not replace the MuJoCo visual,
+    collision, inertia or actuator model, and callers must preserve that
+    limitation in every result produced with the overlay.
+    """
+    if payload.get("schema") != "so101_kinematic_grasp/0.1.0":
+        raise ValueError("unsupported kinematic grasp schema")
+    if payload.get("dynamic_mujoco_ready") is not False:
+        raise ValueError(
+            "kinematic grasp payload must explicitly declare dynamic_mujoco_ready=false")
+    offset = np.asarray(payload.get("pinch_offset_local_m"), dtype=float)
+    axes = payload.get("eef_frame_local")
+    if offset.shape != (3,) or not np.isfinite(offset).all():
+        raise ValueError("pinch_offset_local_m must be a finite 3-vector")
+    if not isinstance(axes, dict):
+        raise ValueError("eef_frame_local is required")
+    frame = np.column_stack([
+        np.asarray(axes.get("jaw_axis"), dtype=float),
+        np.asarray(axes.get("up_axis"), dtype=float),
+        np.asarray(axes.get("approach_axis"), dtype=float),
+    ])
+    if frame.shape != (3, 3) or not np.isfinite(frame).all():
+        raise ValueError("eef_frame_local axes must be finite 3-vectors")
+    gram = frame.T @ frame
+    if not np.allclose(gram, np.eye(3), atol=1e-6, rtol=0.0):
+        raise ValueError("eef_frame_local axes must be orthonormal")
+    if not np.isclose(np.linalg.det(frame), 1.0, atol=1e-6, rtol=0.0):
+        raise ValueError("eef_frame_local must be right-handed")
+    if payload.get("gap_midpoint_kind") != "symmetric_parallel_jaw":
+        raise ValueError("only a symmetric parallel-jaw kinematic overlay is supported")
+
+    grasp = cfg["grasp"]
+    grasp["pinch_offset_local"] = offset.tolist()
+    grasp["eef_frame_local"] = {
+        "jaw_axis": frame[:, 0].tolist(),
+        "up_axis": frame[:, 1].tolist(),
+        "approach_axis": frame[:, 2].tolist(),
+    }
+    grasp["gap_dependent_pinch_midpoint"] = {
+        "kind": "symmetric_parallel_jaw",
+    }
+    grasp["kinematic_overlay"] = {
+        "schema": payload["schema"],
+        "source_archive_sha256": payload.get("source_archive_sha256"),
+        "camera_optical_extrinsic_present": payload.get(
+            "camera_optical_extrinsic_present") is True,
+        "dynamic_mujoco_ready": False,
+    }
+    return cfg
+
+
+def _eef_frame_local(grasp_cfg: dict[str, Any] | None) -> np.ndarray:
+    if grasp_cfg is None or "eef_frame_local" not in grasp_cfg:
+        return np.diag([1.0, -1.0, -1.0])
+    axes = grasp_cfg["eef_frame_local"]
+    return np.column_stack([
+        np.asarray(axes["jaw_axis"], dtype=float),
+        np.asarray(axes["up_axis"], dtype=float),
+        np.asarray(axes["approach_axis"], dtype=float),
+    ])
+
+
 def eef_pose_from_joints(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     q_rad: np.ndarray,
     pinch_offset_local: np.ndarray,
+    grasp_cfg: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Forward kinematics to the raw schema's EEF pose: pinch position and orientation.
     raw 스키마의 EEF pose 로 가는 순기구학. 파지점 위치와 자세.
 
-    The orientation follows `umi/raw.py`'s convention, and the sign flips are the
-    whole point of writing it out:
+    The orientation follows `umi/raw.py`'s convention.  The legacy model uses:
 
         R[:, 2] = approach axis = **minus** the gripper body's local z 🟢
         R[:, 0] = jaw axis      = the gripper body's local x
         R[:, 1] = z x x         = minus the body's local y (keeps it right-handed)
 
-    자세는 `umi/raw.py` 규약을 따르고, 부호 반전이 이 함수를 따로 쓰는 이유다.
-    실측상 손가락은 gripper body 로컬 **-z** 를 향한다. 부호를 틀리면 IK 가
-    반대편에서 접근하고, 증상은 "IK 가 좀 안 맞네" 로만 보인다.
+    A reviewed `eef_frame_local` overlay replaces all three local axes together;
+    mixing one overlay axis with the legacy signs is rejected upstream.
+    자세는 `umi/raw.py` 규약을 따른다. 검토된 `eef_frame_local` overlay가 있으면
+    로컬 세 축을 한꺼번에 교체한다. overlay 한 축과 레거시 부호를 섞지 않는다.
 
     Position is the pinch point, not the TCP site -- the same point
     `solve_pose_ik` aims at, so the round trip compares like with like.
@@ -139,9 +207,12 @@ def eef_pose_from_joints(
     pos = grasp_point(model, data, np.asarray(pinch_offset_local, dtype=float))
     bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, GRIPPER_BODY)
     rot = data.xmat[bid].reshape(3, 3)
-    r_eef = np.column_stack([rot[:, 0], -rot[:, 1], -rot[:, 2]])
+    local_frame = _eef_frame_local(grasp_cfg)
+    r_eef = rot @ local_frame
     # 규약 자기검사: 이 행렬의 z열은 sim 의 approach_axis 와 같아야 한다.
-    if not np.allclose(r_eef[:, 2], approach_axis(model, data), atol=1e-12):
+    if not np.allclose(
+            r_eef[:, 2], approach_axis(model, data, local_frame[:, 2]),
+            atol=1e-12):
         raise ConversionError("EEF 규약과 sim.approach_axis 가 불일치 — 부호 규약을 다시 봐라")
     return np.asarray(pos, dtype=float).copy(), matrix_to_quat(r_eef)
 
@@ -194,7 +265,7 @@ class MujocoArmAdapter:
                                 gripper_width_m, q_init=seed)
         return ArmSolution(sol.q_rad[:5].copy(), sol.pos_error_m,
                            sol.axis_error_deg, sol.roll_residual_deg,
-                           sol.converged and sol.within_limits)
+                           sol.converged, sol.within_limits)
 
 
 class MujocoIK:
@@ -283,6 +354,7 @@ class MujocoIK:
         실측: 다양체 밖 + 다중시작이 스텝당 8배 x 500반복으로 170초 타임아웃을 냈다."""
         self.data = mujoco.MjData(model)
         self.pinch = np.asarray(cfg["grasp"]["pinch_offset_local"], dtype=float)
+        self.eef_frame_local = _eef_frame_local(cfg["grasp"])
         self.ranges = joint_ranges(cfg)
         if crosscheck:
             self._crosscheck()
@@ -295,7 +367,8 @@ class MujocoIK:
         """FK using the same gap-dependent pinch point used by IK."""
         q = np.asarray(q_rad, dtype=float)
         gap = gap_from_angle(float(q[5]), self.cfg["grasp"]["gap_curve"])
-        return eef_pose_from_joints(self.model, self.data, q, self.pinch_for_gap(gap))
+        return eef_pose_from_joints(
+            self.model, self.data, q, self.pinch_for_gap(gap), self.cfg["grasp"])
 
     def _crosscheck(self) -> None:
         """Fail now if the config, the compiled model and the two normalisations disagree.
@@ -380,6 +453,7 @@ class MujocoIK:
                 target_xyz=np.asarray(pos_m, dtype=float),
                 offset_local=pinch_offset,
                 desired_axis=desired_axis,
+                approach_axis_local=self.eef_frame_local[:, 2],
                 q_init=seed,
                 wrist_roll=held_roll if self.match_roll else None,
                 pos_tol=self.pos_tol_m,
@@ -404,7 +478,8 @@ class MujocoIK:
         mujoco.mj_forward(self.model, self.data)
         bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, GRIPPER_BODY)
         rot = self.data.xmat[bid].reshape(3, 3)
-        return -rot[:, 2], rot[:, 0]
+        frame = rot @ self.eef_frame_local
+        return frame[:, 2], frame[:, 0]
 
     def _roll_for(self, q: np.ndarray, quat_wxyz: np.ndarray) -> float:
         """The `wrist_roll` value that puts the jaws where the demonstration had them.
@@ -463,10 +538,12 @@ class MujocoIK:
                 target_xyz=np.asarray(pos_m, dtype=float),
                 offset_local=pinch_offset,
                 desired_axis=desired_axis,
+                approach_axis_local=self.eef_frame_local[:, 2],
                 q_init=seed,
                 wrist_roll=held_roll if self.match_roll else None,
                 pos_tol=self.pos_tol_m,
                 axis_tol_deg=self.axis_tol_deg,
+                max_iters=self.max_iters,
             )
         q = np.asarray(res.qpos, dtype=float).copy()
         q[5] = gripper_angle
@@ -484,6 +561,7 @@ class MujocoIK:
                     target_xyz=np.asarray(pos_m, dtype=float),
                     offset_local=pinch_offset,
                     desired_axis=desired_axis,
+                    approach_axis_local=self.eef_frame_local[:, 2],
                     q_init=q,
                     wrist_roll=float(q[WRIST_ROLL_IDX]),
                     pos_tol=self.pos_tol_m,
@@ -547,6 +625,10 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=90)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    ap.add_argument(
+        "--kinematic-grasp", type=Path,
+        help="optional reviewed kinematic-only TCP/jaw-frame overlay",
+    )
     ap.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
     ap.add_argument("--pos-tol-m", type=float, default=1e-5,
                     help="솔버 정지 허용오차. sim 기본값은 1e-3 이고 그게 왕복 오차의 천장이었다")
@@ -554,6 +636,11 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    if args.kinematic_grasp is not None:
+        apply_kinematic_grasp(
+            cfg,
+            json.loads(args.kinematic_grasp.read_text(encoding="utf-8")),
+        )
     model = build_model(cfg, args.scene)
     ik = MujocoIK(model, cfg, pos_tol_m=args.pos_tol_m, axis_tol_deg=args.axis_tol_deg)
     data = mujoco.MjData(model)

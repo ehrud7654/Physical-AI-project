@@ -1,0 +1,30 @@
+{
+  "schema": "so101_kinematic_grasp/0.1.0",
+  "source_archive": "handoff.zip",
+  "source_archive_sha256": "5386a22ea54729215cb544b844079621150a1ff4d751b54daf9f031a9c077d8b",
+  "source_robot_name": "so101_ver1_phone_holder_v010",
+  "source_chain": [
+    "wrist_roll",
+    "custom_hand_fixed",
+    "gripper_tcp_fixed"
+  ],
+  "frame": "legacy_mujoco_gripper_body_wrist_roll_frame",
+  "pinch_offset_local_m": [
+    2.099999999976391e-7,
+    -5.640000000008504e-7,
+    -0.158118819
+  ],
+  "eef_frame_local": {
+    "jaw_axis": [-0.048656744, 0.998815559, -0.000003629],
+    "up_axis": [0.998815559, 0.048656744, 0.000000910],
+    "approach_axis": [0.000001085, -0.000003580, -1.0]
+  },
+  "gap_midpoint_kind": "symmetric_parallel_jaw",
+  "camera_optical_extrinsic_present": false,
+  "dynamic_mujoco_ready": false,
+  "limitations": [
+    "This overlay contains kinematics only; it does not replace MuJoCo visual, collision, inertia or actuator geometry.",
+    "The handoff declares camera optical extrinsic, validated custom inertias and collision-safe limits unavailable.",
+    "Do not use this file as physical robot calibration or motor-safety approval."
+  ]
+}

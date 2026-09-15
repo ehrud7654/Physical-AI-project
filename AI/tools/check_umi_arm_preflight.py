@@ -22,11 +22,13 @@ class Solver:
     def __init__(self):
         self.poses, self.seeds = [], []
         self.error = 0
+        self.within_limits = True
 
     def solve(self, target_pose, *, seed_rad, gripper_width_m):
         self.poses.append(target_pose.copy())
         self.seeds.append(seed_rad.copy())
-        return ArmSolution(seed_rad + 0.01, self.error, 0, 0, True)
+        return ArmSolution(
+            seed_rad + 0.01, self.error, 0, 0, True, self.within_limits)
 
 
 class FakeDriver:
@@ -87,6 +89,11 @@ class Tests(unittest.TestCase):
     def test_arm_jump_rejected(self):
         self.args['max_step_rad'] = 0.005
         with self.assertRaisesRegex(ValueError, 'arm range'): self.run_chunk()
+
+    def test_solver_limit_hit_is_reported_separately(self):
+        self.solver.within_limits = False
+        with self.assertRaisesRegex(ValueError, 'within_limits=False'):
+            self.run_chunk()
 
     def test_invalid_initial_state_rejected_before_inference(self):
         self.args['arm_current_rad'][0] = np.nan

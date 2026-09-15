@@ -140,10 +140,15 @@ gap acceleration <= 0.3 m/s^2
 - `umi/timing.py`: 균일 시간 확대율과 실행 timestamp 계산
 
 현재 v9 파일럿은 70개 episode, 1,248개 anchor이며 데이터 계약 위반은 0건이다.
-그러나 32개 MuJoCo 등록 후보 탐색 결과는
-`REJECTED_NO_VALID_REGISTRATION`이다. 측면 파지 방향·몸통 중앙 높이는 13/14
-validation episode에서 만족했지만, 장면 조건과 IK를 동시에 만족한 candidate는
-없었다. 따라서 데이터 계약 검증 완료를 정책·시뮬레이션 성공으로 해석하지 않는다.
+최초 32개 MuJoCo 등록 후보 탐색은 `REJECTED_NO_VALID_REGISTRATION`이었다.
+이후 HW handoff에서 실제 ver1 TCP가 기존 MuJoCo보다 약 78mm 길고 턱축이 약
+90도 다름을 확인했다. 기구학 전용 overlay를 적용한 32개 재탐색에서는 14개
+validation episode 중 측면 파지 13개, 기구학 장면 조건 8개, sampled chunk
+기하·등록 동시 통과 11/27을 얻었다. 그러나 handoff에 렌즈 optical extrinsic과
+검증된 ver1 collision/inertia가 없으므로 결과 상태는
+`KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED`로 제한한다.
+따라서 데이터 계약 검증 완료나 기구학 후보 발견을 정책·시뮬레이션 성공으로
+해석하지 않는다.
 
 ## 8. 합의가 필요한 항목
 
@@ -155,5 +160,9 @@ validation episode에서 만족했지만, 장면 조건과 IK를 동시에 만�
 4. chunk 경계에서 시간 확대에 따른 관측 지연 계측
 5. robot-base/workspace 및 실물 pinch extrinsic 확정
 
-공유 GPU 서버에서는 학습만 수행한다. 추론, probe, preflight, 등록 탐색,
-MuJoCo와 rollout은 로컬 CPU에서 수행한다.
+공유 GPU 서버에서는 학습과 **학습 정책을 불러오지 않는** MuJoCo 시뮬레이션을
+수행할 수 있다. recorded-oracle replay, 등록 탐색과 동적 oracle gate가 이에
+해당한다. 체크포인트를 불러오는 정책 추론, 이미지 probe와 policy preflight는
+공유 GPU 서버에서 수행하지 않는다. MuJoCo 물리 계산은 CPU이며, EGL
+오프스크린 렌더를 사용할 때만 GPU 렌더 결과가 관여한다. 렌더 백엔드가 바뀌면
+기존 성공률과 직접 비교하지 않는다.

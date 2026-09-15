@@ -1,4 +1,4 @@
-"""Local-only camera-matched MuJoCo diagnostic for a relative UMI policy.
+"""Camera-matched MuJoCo diagnostic for a relative UMI policy.
 
 This is not a hardware validation or a deployment rollout.  The policy sees
 only wrist RGB history and relative proprio history.  Simulator object state is
@@ -24,7 +24,12 @@ from PIL import Image, ImageDraw
 from sim.mujoco.build_scene import load_config, normalize
 from sim.mujoco.env import MujocoPickEnv
 from tools.run_umi_regression import is_shared_gpu_server
-from tools.umi_mujoco import MujocoArmAdapter, MujocoIK, gap_from_angle
+from tools.umi_mujoco import (
+    MujocoArmAdapter,
+    MujocoIK,
+    apply_kinematic_grasp,
+    gap_from_angle,
+)
 from umi.arm_preflight import prepare_arm_commands
 from umi.convert import invert_gap_curve
 from umi.relative_dataset import relative_vector
@@ -99,6 +104,26 @@ def _policy_observation(images: deque[np.ndarray], poses: deque[np.ndarray],
     return {"image": np.stack(images).astype(np.uint8), "proprio": proprio}
 
 
+def _interpolated_joint_target(*, segment_start_q: np.ndarray,
+                               target_arm_rad: np.ndarray,
+                               segment_start_gap_m: float,
+                               target_gap_m: float, alpha: float,
+                               curve) -> np.ndarray:
+    """Interpolate one scheduled motor target, including gap in metric space."""
+    start = np.asarray(segment_start_q, dtype=float)
+    target_arm = np.asarray(target_arm_rad, dtype=float)
+    if (start.shape != (6,) or target_arm.shape != (5,)
+            or not np.isfinite(start).all() or not np.isfinite(target_arm).all()
+            or not np.isfinite(alpha) or not 0.0 < alpha <= 1.0):
+        raise ValueError("invalid scheduled interpolation input")
+    arm = start[:5] + (target_arm - start[:5]) * alpha
+    gap = float(
+        segment_start_gap_m
+        + (target_gap_m - segment_start_gap_m) * alpha
+    )
+    return np.r_[arm, invert_gap_curve(gap, curve)]
+
+
 class _ValidationPrefixPolicy:
     """Restrict validation to the commands this local diagnostic will execute.
 
@@ -156,9 +181,6 @@ def _save_gif(frames: list[np.ndarray], path: Path, fps: int) -> None:
 
 
 def main() -> int:
-    if is_shared_gpu_server():
-        raise SystemExit(
-            "Shared GPU server is training-only; run MuJoCo rollout locally")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--policy-ckpt", type=Path,
@@ -214,6 +236,10 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True,
                         help="output .gif; a JSON report is written beside it")
     args = parser.parse_args()
+    if is_shared_gpu_server() and not args.oracle:
+        raise SystemExit(
+            "Learned-policy inference is forbidden on the shared GPU server; "
+            "use --oracle for recorded-target MuJoCo simulation")
     if not args.oracle and args.policy_ckpt is None:
         raise SystemExit("--policy-ckpt is required unless --oracle is used")
     if args.device != "cpu":
@@ -264,6 +290,8 @@ def main() -> int:
         raise SystemExit("--execute-final-oracle-tail requires --oracle")
 
     cfg = copy.deepcopy(load_config(args.config))
+    if registration.get("kinematic_grasp") is not None:
+        apply_kinematic_grasp(cfg, registration["kinematic_grasp"])
     cfg["task"]["object"]["half_size_m"] = (
         registration["object_size_m"] / 2.0).tolist()
     cfg["task"]["object"]["init_pos"] = object_xyz.tolist()
@@ -293,7 +321,10 @@ def main() -> int:
     max_endpoint_tracking_error = 0.0
     max_lift_height = 0.0
     min_lift_height = 0.0
+    max_object_xy_displacement = 0.0
+    max_object_tilt_deg = 0.0
     cycle_trace: list[dict[str, object]] = []
+    command_trace: list[dict[str, object]] = []
 
     with MujocoPickEnv(
         cfg, render=not args.no_video, object_jitter_m=0.0,
@@ -305,6 +336,11 @@ def main() -> int:
         current_q = env.joint_positions()
         current_pose = matrix_from_fk(env.model, ik, current_q)
         current_gap = gap_from_angle(float(current_q[5]), curve)
+        initial_object_xyz = env.object_position()
+        initial_object_up = env.object_rotation()[:, 2]
+        object_xy_displacement_threshold = max(
+            0.01, 0.5 * float(np.min(registration["object_size_m"][:2])))
+        object_tilt_threshold_deg = 30.0
         images: deque[np.ndarray] = deque(
             [observation.images["cam_wrist"].copy()] * 2, maxlen=2)
         poses: deque[np.ndarray] = deque(
@@ -454,28 +490,52 @@ def main() -> int:
                 )
                 if final_oracle_tail:
                     final_oracle_tail_commands = len(executed_cycle_commands)
-                for command in executed_cycle_commands:
+                for chunk_step, command in enumerate(executed_cycle_commands):
                     raw_target = np.r_[
                         command.arm_positions_rad,
                         invert_gap_curve(command.gripper_width_m, curve),
                     ]
-                    action = normalize(raw_target, cfg, clip=True)
+                    target_pinch_xyz, target_pinch_quat = ik.forward_pose(
+                        raw_target)
                     ticks = max(1, int(np.ceil(
                         command_period * env.control_rate_hz)))
-                    for _ in range(ticks):
+                    segment_start_q = env.joint_positions()
+                    segment_start_gap = gap_from_angle(
+                        float(segment_start_q[5]), curve)
+                    for tick_index in range(ticks):
+                        alpha = (tick_index + 1) / ticks
+                        interpolated_target = _interpolated_joint_target(
+                            segment_start_q=segment_start_q,
+                            target_arm_rad=command.arm_positions_rad,
+                            segment_start_gap_m=segment_start_gap,
+                            target_gap_m=command.gripper_width_m,
+                            alpha=alpha, curve=curve,
+                        )
+                        interpolated_arm = interpolated_target[:5]
+                        action = normalize(interpolated_target, cfg, clip=True)
                         observation = env.step(action)
                         simulation_ticks += 1
                         max_tracking_error = max(
                             max_tracking_error,
                             float(np.max(np.abs(
                                 env.joint_positions()[:5]
-                                - command.arm_positions_rad))))
+                                - interpolated_arm))))
                         xy, d3 = env.pinch_to_object_m()
                         lift = env.lift_height()
+                        object_xyz_now = env.object_position()
+                        object_xy_displacement = float(np.linalg.norm(
+                            object_xyz_now[:2] - initial_object_xyz[:2]))
+                        object_up_now = env.object_rotation()[:, 2]
+                        object_tilt_deg = float(np.degrees(np.arccos(np.clip(
+                            np.dot(initial_object_up, object_up_now), -1.0, 1.0))))
                         closest_xy = min(closest_xy, xy)
                         closest_3d = min(closest_3d, d3)
                         max_lift_height = max(max_lift_height, lift)
                         min_lift_height = min(min_lift_height, lift)
+                        max_object_xy_displacement = max(
+                            max_object_xy_displacement, object_xy_displacement)
+                        max_object_tilt_deg = max(
+                            max_object_tilt_deg, object_tilt_deg)
                         if first_contact_cycle is None and env.jaw_contacts() > 0:
                             first_contact_cycle = cycle
                         if (renderer is not None
@@ -496,6 +556,43 @@ def main() -> int:
                                 fill="black",
                             )
                             frames.append(np.asarray(canvas))
+                    command_object_xyz = env.object_position()
+                    command_object_xy_displacement = float(np.linalg.norm(
+                        command_object_xyz[:2] - initial_object_xyz[:2]))
+                    command_object_up = env.object_rotation()[:, 2]
+                    command_object_tilt_deg = float(np.degrees(np.arccos(np.clip(
+                        np.dot(initial_object_up, command_object_up), -1.0, 1.0))))
+                    actual_pinch_xyz, actual_pinch_quat = ik.forward_pose(
+                        env.joint_positions())
+                    command_trace.append({
+                        "cycle": cycle,
+                        "dataset_row": row,
+                        "chunk_step": chunk_step,
+                        "target_arm_rad": command.arm_positions_rad.tolist(),
+                        "actual_arm_rad": env.joint_positions()[:5].tolist(),
+                        "target_pinch_xyz_m": np.asarray(
+                            target_pinch_xyz, dtype=float).tolist(),
+                        "target_pinch_quat_xyzw": np.asarray(
+                            target_pinch_quat, dtype=float).tolist(),
+                        "actual_pinch_xyz_m": np.asarray(
+                            actual_pinch_xyz, dtype=float).tolist(),
+                        "actual_pinch_quat_xyzw": np.asarray(
+                            actual_pinch_quat, dtype=float).tolist(),
+                        "target_pinch_minus_initial_object_m": (
+                            np.asarray(target_pinch_xyz, dtype=float)
+                            - initial_object_xyz).tolist(),
+                        "target_gap_m": command.gripper_width_m,
+                        "actual_gap_m": gap_from_angle(
+                            float(env.joint_positions()[5]), curve),
+                        "pinch_xy_m": xy,
+                        "pinch_3d_m": d3,
+                        "object_lift_m": lift,
+                        "object_xyz_m": command_object_xyz.tolist(),
+                        "object_xy_displacement_m": (
+                            command_object_xy_displacement),
+                        "object_tilt_deg": command_object_tilt_deg,
+                        "jaw_contacts": env.jaw_contacts(),
+                    })
                     executed_commands += 1
                     if env.is_success():
                         break
@@ -508,6 +605,12 @@ def main() -> int:
                 max_endpoint_tracking_error = max(
                     max_endpoint_tracking_error, endpoint_error)
                 cycle_xy, cycle_3d = env.pinch_to_object_m()
+                cycle_object_xyz = env.object_position()
+                cycle_object_xy_displacement = float(np.linalg.norm(
+                    cycle_object_xyz[:2] - initial_object_xyz[:2]))
+                cycle_object_up = env.object_rotation()[:, 2]
+                cycle_object_tilt_deg = float(np.degrees(np.arccos(np.clip(
+                    np.dot(initial_object_up, cycle_object_up), -1.0, 1.0))))
                 cycle_trace.append({
                     "cycle": cycle,
                     "dataset_row": row,
@@ -521,6 +624,9 @@ def main() -> int:
                     "pinch_xy_m": cycle_xy,
                     "pinch_3d_m": cycle_3d,
                     "object_lift_m": env.lift_height(),
+                    "object_xyz_m": cycle_object_xyz.tolist(),
+                    "object_xy_displacement_m": cycle_object_xy_displacement,
+                    "object_tilt_deg": cycle_object_tilt_deg,
                     "jaw_contacts": env.jaw_contacts(),
                 })
                 images.append(observation.images["cam_wrist"].copy())
@@ -559,6 +665,9 @@ def main() -> int:
                 [float(value) for value in np.percentile(periods, [0, 50, 95, 100])]
                 if periods else [None, None, None, None]),
             "simulation_tracking_time_margin": args.tracking_time_margin,
+            "simulation_waypoint_execution": (
+                "linear arm-and-gap target interpolation across scheduled ticks"
+            ),
             "simulation_grip_preload_m": args.grip_preload_m,
             "simulation_grip_preload_activation_gap_m": (
                 args.grip_preload_activation_gap_m),
@@ -568,11 +677,26 @@ def main() -> int:
             "lift_height_m": env.lift_height(),
             "max_lift_height_m": max_lift_height,
             "min_lift_height_m": min_lift_height,
+            "initial_object_xyz_m": initial_object_xyz.tolist(),
+            "final_object_xyz_m": env.object_position().tolist(),
+            "max_object_xy_displacement_m": max_object_xy_displacement,
+            "object_xy_displacement_threshold_m": (
+                object_xy_displacement_threshold),
+            "max_object_tilt_deg": max_object_tilt_deg,
+            "object_tilt_threshold_deg": object_tilt_threshold_deg,
+            "object_xy_motion_exceeded_threshold": (
+                max_object_xy_displacement >= object_xy_displacement_threshold),
+            "object_displaced": (
+                env.jaw_contacts() == 0
+                and max_object_xy_displacement
+                >= object_xy_displacement_threshold),
+            "object_tipped": max_object_tilt_deg >= object_tilt_threshold_deg,
             "jaw_contacts_final": env.jaw_contacts(),
             "success": env.is_success(),
             "max_arm_tracking_error_rad": max_tracking_error,
             "max_endpoint_arm_tracking_error_rad": max_endpoint_tracking_error,
             "cycle_trace": cycle_trace,
+            "command_trace": command_trace,
             "policy_input": (
                 "recorded target chunk; policy bypassed"
                 if args.oracle else

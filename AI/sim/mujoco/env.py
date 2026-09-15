@@ -181,6 +181,11 @@ class MujocoPickEnv:
         물체의 정답 위치. 특권 정보이며 시뮬에만 존재한다."""
         return self.data.xpos[self._obj_body].copy()
 
+    def object_rotation(self) -> np.ndarray:
+        """Ground-truth object rotation matrix — privileged, simulator only.
+        물체의 정답 회전행렬. 특권 정보이며 시뮬에만 존재한다."""
+        return self.data.xmat[self._obj_body].reshape(3, 3).copy()
+
     @property
     def gripper_index(self) -> int:
         """Index of the gripper in the action vector, from the hardware config.

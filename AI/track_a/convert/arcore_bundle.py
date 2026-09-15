@@ -20,12 +20,21 @@ def rigid(value):
     return m
 
 
-def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
+ARCORE_CAMERA_AXES = "+X right, +Y up, -Z forward (ARCore/OpenGL)"
+
+
+def decode_bundle(*, bundle, t_camera_pinch, t_camera_pinch_axes,
+                  t_base_world, calibration_id,
                   recording_id, skill_id, tracking_valid_values, warmup_s,
                   usable_segments, frames_dropped, image_decoder,
                   stabilized_at_s=None, demo_start_s=None,
                   pre_stabilized=False):
     camera_pinch, base_world = rigid(t_camera_pinch), rigid(t_base_world)
+    if t_camera_pinch_axes != ARCORE_CAMERA_AXES:
+        raise ValueError(
+            "t_camera_pinch must be expressed in ARCore/OpenGL camera axes; "
+            "convert OpenCV calibration with diag(1,-1,-1,1) @ T_cv first"
+        )
     if not isinstance(calibration_id, str) or not calibration_id.strip():
         raise ValueError('calibration_id required')
     if type(pre_stabilized) is not bool:
@@ -169,6 +178,7 @@ def decode_bundle(*, bundle, t_camera_pinch, t_base_world, calibration_id,
                 'gripper_producer':producer, 'summary_original':summary,
                 'source_files_sha256':hashes,
                 't_base_world':base_world.tolist(), 't_camera_pinch':camera_pinch.tolist(),
+                't_camera_pinch_axes':t_camera_pinch_axes,
                 'logical_camera':'cam_wrist'}), np.array(xyzs),np.array(quats),np.array(gaps),
             np.array(statuses,dtype='<U1'),times,{'cam_wrist':np.stack(images)},{'cam_wrist':times.copy()})
         problems = validate_raw(result)

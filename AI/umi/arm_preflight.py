@@ -21,6 +21,7 @@ class ArmSolution:
     axis_error_deg: float
     roll_error_deg: float
     converged: bool
+    within_limits: bool = True
 
 
 class ArmSolver(Protocol):
@@ -78,10 +79,21 @@ def prepare_arm_commands(policy, observation, *, t_current, arm_current_rad,
         joints = np.array(solution.positions_rad, dtype=float, copy=True)
         errors = np.array([solution.position_error_m, solution.axis_error_deg,
                            solution.roll_error_deg], dtype=float)
-        if (not solution.converged or joints.shape != (5,)
+        if (not solution.converged or not solution.within_limits
+                or joints.shape != (5,)
                 or not np.isfinite(joints).all() or not np.isfinite(errors).all()
                 or np.any(errors < 0) or np.any(errors > budgets)):
-            raise ValueError(f'step {i}: invalid arm IK solution')
+            raise ValueError(
+                f'step {i}: invalid arm IK solution '
+                f'(converged={solution.converged}, '
+                f'within_limits={solution.within_limits}, '
+                f'position_error_m={solution.position_error_m:.6g}/'
+                f'{max_position_error_m:.6g}, '
+                f'axis_error_deg={solution.axis_error_deg:.6g}/'
+                f'{max_axis_error_deg:.6g}, '
+                f'roll_error_deg={solution.roll_error_deg:.6g}/'
+                f'{max_roll_error_deg:.6g})'
+            )
         if (np.any(joints < limits[:, 0]) or np.any(joints > limits[:, 1])
                 or np.any(abs(joints - previous) > step)):
             raise ValueError(f'step {i}: arm range or jump exceeded')

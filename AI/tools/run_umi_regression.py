@@ -1,7 +1,8 @@
 """Run the complete hardware-free UMI regression suite on a local PC.
 
-This is intentionally forbidden on the shared Jupyter GPU server: team policy
-reserves that host for device-2 training only.
+This broad suite remains local-only because it includes policy-level probes.
+The shared host may run training and explicitly no-policy MuJoCo simulations,
+but not learned-policy inference or this mixed regression suite.
 """
 from __future__ import annotations
 
@@ -26,6 +27,19 @@ CHECKS = (
     "check_umi_ros_adapter.py",
     "check_umi_handover_edges.py",
     "check_umi_ingestion.py",
+    "check_gripper_gap.py",
+    "check_arpose_delivery_adapter.py",
+    "check_umi_camera_frames.py",
+    "check_umi_relative_audit.py",
+    "check_umi_real_placement.py",
+    "check_umi_real_ik_diagnosis.py",
+    "check_umi_axis_projection.py",
+    "check_umi_trajectory_rate_limit.py",
+    "check_umi_episode_physics.py",
+    "check_umi_object_registration.py",
+    "check_sim_gripper_contract.py",
+    "check_relative_chunk_oracle_gate.py",
+    "check_relative_chunk_registration_search.py",
     "check_umi_action_roundtrip.py",
 )
 
@@ -43,7 +57,9 @@ def main() -> int:
         print("\n".join(CHECKS))
         return 0
     if is_shared_gpu_server():
-        print("거부: 이 회귀검사는 로컬 PC 전용이다. GPU 서버는 device 2 학습만 허용한다.")
+        print(
+            "거부: 정책 검사가 섞인 전체 회귀검사는 로컬 전용이다. "
+            "공유 서버는 학습과 명시적인 no-policy MuJoCo만 허용한다.")
         return 2
 
     env = os.environ.copy()

@@ -4,10 +4,31 @@ from __future__ import annotations
 
 import unittest
 
-from gate_relative_chunk_oracle import _classification, _scene_valid_episodes
+import numpy as np
+
+from gate_relative_chunk_oracle import (
+    _aggregate,
+    _classification,
+    _scene_valid_episodes,
+)
+from render_relative_chunk_rollout import _interpolated_joint_target
 
 
 class Tests(unittest.TestCase):
+    def test_scheduled_target_interpolates_arm_and_metric_gap(self) -> None:
+        curve = [[-1.0, 0.0], [1.0, 10.0]]
+        result = _interpolated_joint_target(
+            segment_start_q=np.asarray([0, 1, 2, 3, 4, -0.2], dtype=float),
+            target_arm_rad=np.asarray([2, 3, 4, 5, 6], dtype=float),
+            segment_start_gap_m=0.04,
+            target_gap_m=0.06,
+            alpha=0.5,
+            curve=curve,
+        )
+        np.testing.assert_allclose(result[:5], [1, 2, 3, 4, 5])
+        # Curve widths are centimetres; 5 cm maps to angle 0 in this fixture.
+        self.assertAlmostEqual(float(result[5]), 0.0)
+
     def test_scene_valid_episode_selection(self) -> None:
         payload = {"selected": {"per_episode": [
             {"episode": "ok-a", "scene_constraints_ok": True},
@@ -43,6 +64,16 @@ class Tests(unittest.TestCase):
         }
         self.assertEqual(_classification({
             **common,
+            "object_tipped": True,
+            "object_displaced": True,
+        }), "object_tipped")
+        self.assertEqual(_classification({
+            **common,
+            "object_tipped": False,
+            "object_displaced": True,
+        }), "object_displaced")
+        self.assertEqual(_classification({
+            **common,
             "lift_height_m": -0.02,
             "min_lift_height_m": -0.02,
             "max_lift_height_m": 0.04,
@@ -66,6 +97,41 @@ class Tests(unittest.TestCase):
             "first_contact_cycle": None,
             "geometry_error": None,
         }), "no_contact")
+
+    def test_aggregate_preserves_failure_types(self) -> None:
+        rows = [
+            {
+                "classification": "success", "success": True,
+                "first_contact_cycle": 2,
+            },
+            {
+                "classification": "ik_reject_after_contact", "success": False,
+                "first_contact_cycle": 3, "object_tipped": True,
+                "object_displaced": True,
+            },
+            {
+                "classification": "object_displaced_or_tipped", "success": False,
+                "first_contact_cycle": 1,
+            },
+        ]
+        result = _aggregate(rows, threshold=0.8)
+        self.assertEqual(result["episodes"], 3)
+        self.assertEqual(result["contacts"], 3)
+        self.assertEqual(result["successes"], 1)
+        self.assertAlmostEqual(result["success_fraction"], 1 / 3)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["classification_counts"], {
+            "ik_reject_after_contact": 1,
+            "object_displaced_or_tipped": 1,
+            "success": 1,
+        })
+        self.assertEqual(result["failure_counts"], {
+            "runner_error": 0,
+            "ik_reject_after_contact": 1,
+            "object_tipped": 1,
+            "object_displaced": 1,
+            "static_scene_reject": 0,
+        })
 
 
 if __name__ == "__main__":

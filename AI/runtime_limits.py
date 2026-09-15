@@ -264,8 +264,9 @@ def claim(name: str, stale_ok: bool = False) -> None:
     hostname = platform.node().lower()
     if hostname.startswith("jupyter"):
         raise SystemExit(
-            "Shared GPU server is training-only; run diagnostics, inference, "
-            "MuJoCo, and rollout locally"
+            "This diagnostic is local-only. Shared GPU hosts allow training "
+            "and only MuJoCo tools that explicitly declare no learned-policy "
+            "inference."
         )
 
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
