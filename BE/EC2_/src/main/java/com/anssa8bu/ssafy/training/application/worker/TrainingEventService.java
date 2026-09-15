@@ -4,6 +4,7 @@ import static com.anssa8bu.ssafy.training.dto.internal.GpuTrainingApiModels.*;
 import com.anssa8bu.ssafy.common.exception.*;
 import com.anssa8bu.ssafy.event.application.*;
 import com.anssa8bu.ssafy.event.repository.OutboxEventRepository;
+import com.anssa8bu.ssafy.common.redis.repository.TrainingLeaseCacheRepository;
 import com.anssa8bu.ssafy.training.entity.*;
 import com.anssa8bu.ssafy.training.repository.*;
 import java.math.BigDecimal;
@@ -17,11 +18,12 @@ public class TrainingEventService {
   private final TrainingJobRepository jobs; private final TrainingJobEventRepository events;
   private final TrainingLeaseValidator leases; private final OutboxEventFactory outboxFactory;
   private final OutboxEventRepository outbox; private final Clock clock;
+  private final TrainingLeaseCacheRepository leaseCache;
   public TrainingEventService(TrainingJobRepository jobs, TrainingJobEventRepository events,
       TrainingLeaseValidator leases, OutboxEventFactory outboxFactory,
-      OutboxEventRepository outbox, Clock clock) {
+      OutboxEventRepository outbox, Clock clock, TrainingLeaseCacheRepository leaseCache) {
     this.jobs=jobs; this.events=events; this.leases=leases; this.outboxFactory=outboxFactory;
-    this.outbox=outbox; this.clock=clock;
+    this.outbox=outbox; this.clock=clock;this.leaseCache=leaseCache;
   }
   @Transactional
   public EventResponse accept(UUID id, EventRequest request) {
@@ -45,6 +47,10 @@ public class TrainingEventService {
         "TRAINING_"+request.type(), "TRAINING_JOB", id.toString(), job.getOwnerId(), now,
         request.payload());
     outbox.save(outboxFactory.create(payload, request.sequence()));
+    if (job.getStatus()==TrainingJobStatus.FAILED || job.getStatus()==TrainingJobStatus.CANCELED) {
+      job.releaseAssignment();
+      try { leaseCache.delete(job.getId()); } catch (RuntimeException ignored) { }
+    }
     return new EventResponse(true, job.getStatus(), request.sequence());
   }
   private void apply(TrainingJob job, EventRequest event, Instant now) {

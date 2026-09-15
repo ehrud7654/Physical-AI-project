@@ -336,6 +336,27 @@ public class TrainingJob extends AuditableEntity {
 
   public void cancel(Instant at) { status = TrainingJobStatus.CANCELED; finishedAt = at; }
 
+  public void releaseAssignment() {
+    assignedWorkerId=null; assignedStorageNodeId=null; gpuIndex=null; gitRev=null;
+    leaseTokenHash=null; leaseExpiresAt=null;
+  }
+
+  public void recoverExpiredLease(int maxAttempts, Instant at) {
+    if (leaseExpiresAt==null || leaseExpiresAt.isAfter(at))
+      throw new IllegalStateException("lease가 만료되지 않았습니다.");
+    if (status==TrainingJobStatus.CANCEL_REQUESTED) {
+      cancel(at); releaseAssignment(); return;
+    }
+    if (attempt>=maxAttempts) {
+      fail("TRAINING_LEASE_EXHAUSTED","학습 Worker lease 재시도 한도를 초과했습니다.",at);
+      releaseAssignment(); return;
+    }
+    attempt++;
+    status=inputMode==TrainingInputMode.COLLECT_NEW?TrainingJobStatus.CREATED:TrainingJobStatus.QUEUED;
+    progressStage="재할당 대기";
+    releaseAssignment();
+  }
+
   public String getAssignedWorkerId() { return assignedWorkerId; }
   public UUID getAssignedStorageNodeId() { return assignedStorageNodeId; }
   public int getAttempt() { return attempt; }

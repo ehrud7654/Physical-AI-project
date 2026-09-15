@@ -11,7 +11,7 @@ public final class GpuTrainingApiModels {
   private GpuTrainingApiModels() {}
 
   public record ClaimRequest(@NotBlank String workerId, @NotNull @PositiveOrZero Integer gpuIndex,
-      String gitRev, UUID storageNodeId, String ingestBaseUrl,
+      String gitRev, @NotNull UUID storageNodeId, String ingestBaseUrl,
       @NotEmpty Set<String> supportedAlgorithms, @PositiveOrZero Long availableMemoryMiB,
       @PositiveOrZero Long storageCapacityBytes, @PositiveOrZero Long storageAvailableBytes) {}
   public record TrainingProfileData(String profileKey, int profileVersion, String algorithm,
@@ -23,7 +23,7 @@ public final class GpuTrainingApiModels {
   public record JobData(UUID id, String skillKey, TrainingInputMode inputMode,
       TrainingProfileData trainingProfile, Map<String,Object> datasetQuery,
       String inputSnapshotSha256, List<EpisodeData> episodes) {}
-  public record ClaimResponse(JobData job, String leaseToken, Instant leaseExpiresAt,
+  public record ClaimResponse(JobData job, int attempt, String leaseToken, Instant leaseExpiresAt,
       int heartbeatIntervalSeconds) {}
 
   public record HeartbeatRequest(@NotBlank String workerId, UUID storageNodeId,

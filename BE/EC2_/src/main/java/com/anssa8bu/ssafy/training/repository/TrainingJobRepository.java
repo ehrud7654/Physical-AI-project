@@ -24,4 +24,16 @@ public interface TrainingJobRepository extends JpaRepository<TrainingJob, UUID> 
 
   Optional<TrainingJob> findFirstByAssignedWorkerIdAndLeaseExpiresAtAfterAndStatusInOrderByCreatedAt(
       String workerId, java.time.Instant now, Collection<TrainingJobStatus> statuses);
+
+  Optional<TrainingJob> findFirstByAssignedWorkerIdAndGpuIndexAndLeaseExpiresAtAfterAndStatusInOrderByCreatedAt(
+      String workerId, Integer gpuIndex, java.time.Instant now,
+      Collection<TrainingJobStatus> statuses);
+
+  long countByAssignedWorkerIdAndStatusIn(String workerId, Collection<TrainingJobStatus> statuses);
+
+  boolean existsByAssignedWorkerIdAndGpuIndexAndStatusIn(
+      String workerId, Integer gpuIndex, Collection<TrainingJobStatus> statuses);
+
+  @Query(value = "SELECT id FROM training_jobs WHERE lease_expires_at<=:now AND status IN ('COLLECTING','PREPARING','RUNNING','MODEL_UPLOADING','CANCEL_REQUESTED') ORDER BY lease_expires_at FOR UPDATE SKIP LOCKED LIMIT :batch", nativeQuery = true)
+  List<UUID> lockExpiredLeaseIds(@Param("now") java.time.Instant now, @Param("batch") int batch);
 }

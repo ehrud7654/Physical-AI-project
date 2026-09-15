@@ -7,6 +7,7 @@ import com.anssa8bu.ssafy.model.entity.SkillVersion;
 import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.training.entity.TrainingJob;
 import com.anssa8bu.ssafy.training.repository.TrainingJobRepository;
+import com.anssa8bu.ssafy.common.redis.repository.TrainingLeaseCacheRepository;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -17,10 +18,11 @@ public class CheckpointValidationService {
   private final SkillVersionRepository versions; private final TrainingJobRepository jobs;
   private final ObjectVerificationService objects; private final OutboxEventFactory factory;
   private final OutboxEventRepository outbox; private final Clock clock;
+  private final TrainingLeaseCacheRepository leaseCache;
   public CheckpointValidationService(SkillVersionRepository versions, TrainingJobRepository jobs,
       ObjectVerificationService objects, OutboxEventFactory factory, OutboxEventRepository outbox,
-      Clock clock) { this.versions=versions;this.jobs=jobs;this.objects=objects;this.factory=factory;
-    this.outbox=outbox;this.clock=clock; }
+      Clock clock, TrainingLeaseCacheRepository leaseCache) { this.versions=versions;this.jobs=jobs;this.objects=objects;this.factory=factory;
+    this.outbox=outbox;this.clock=clock;this.leaseCache=leaseCache; }
   @Transactional
   public void validate(UUID id) {
     SkillVersion version=versions.findById(id).orElseThrow();
@@ -39,5 +41,7 @@ public class CheckpointValidationService {
           "TRAINING_FAILED", "TRAINING_JOB", job.getId().toString(), job.getOwnerId(), now,
           Map.of("code", "CHECKPOINT_VALIDATION_FAILED")), null));
     }
+    job.releaseAssignment();
+    try { leaseCache.delete(job.getId()); } catch (RuntimeException ignored) { }
   }
 }
