@@ -12,6 +12,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.lifecycle.Observer
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import java.io.File
 
 /**
@@ -26,14 +29,12 @@ class HistoryActivity : Activity() {
 
     companion object { private const val PAGE_SIZE = 20 }
 
-    // BE(SKILL-01/TRAIN-02) 연동 전 스텁 학습 목록 (촬영 화면과 동일).
-    private val stubCatalog = listOf(
-        Triple("job_pick_place", "pick_place", "집기·놓기"),
-        Triple("job_sort_two", "sort_two", "둘 분류"),
-        Triple("job_align_fixture", "align_fixture", "지그 정렬"),
-        Triple("job_present_inspect", "present_inspect", "검사 제시"),
-        Triple("job_line_up", "line_up", "줄 세우기")
-    )
+    // 업로드 워커(arpose-upload) 상태를 관찰 → 전송 완료 시 목록을 바로 새로고침(대기→완료).
+    // plain Activity 라 LifecycleOwner 가 없어 observeForever + onDestroy 해제.
+    private val uploadWork by lazy {
+        WorkManager.getInstance(this).getWorkInfosForUniqueWorkLiveData(UploadQueue.WORK_NAME)
+    }
+    private val uploadObserver = Observer<List<WorkInfo>> { populate() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +42,12 @@ class HistoryActivity : Activity() {
         findViewById<ImageButton>(R.id.backBtn).setOnClickListener { finish() }
         findViewById<Button>(R.id.sendBtn).setOnClickListener { sendSelected() }
         populate()
+        uploadWork.observeForever(uploadObserver)   // 전송 완료되면 목록 자동 갱신
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        uploadWork.removeObserver(uploadObserver)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -81,46 +88,83 @@ class HistoryActivity : Activity() {
         pager.addView(arrow("›", page < totalPages - 1) { page++; populate(); scrollTop() })
     }
 
-    /** 선택 → 목적지(학습) 확인 → .queued 마킹 후 업로드 큐. 라이트 커스텀 시트(스톡 다이얼로그 대신). */
+    /** 촬영 때 stamp된 skillKey(.upload_skill 우선, 없으면 meta active_skill_key). 미분류/없으면 "". */
+    private fun stampedSkillKey(dir: File): String {
+        File(dir, ".upload_skill").let { if (it.exists()) it.readText().trim().let { s -> if (s.isNotEmpty()) return s } }
+        val meta = File(dir, "meta.txt")
+        if (!meta.exists()) return ""
+        return meta.readLines().firstOrNull { it.startsWith("active_skill_key=") }
+            ?.substringAfter("=")?.trim() ?: ""
+    }
+
+    /** 선택분에 학습을 지정하고 큐에 넣는다. */
+    private fun queueSelected(jobId: String, skillKey: String, label: String, dialog: android.app.Dialog) {
+        val rootDir = getExternalFilesDir(null)
+        selected.forEach { name ->
+            val d = File(rootDir, name)
+            if (d.isDirectory) {
+                File(d, ".upload_job").writeText(jobId)
+                File(d, ".upload_skill").writeText(skillKey)
+                File(d, ".queued").writeText("1")
+            }
+        }
+        UploadQueue.enqueue(this)
+        Toast.makeText(this, "${selected.size}편 전송 대기 → $label", Toast.LENGTH_SHORT).show()
+        selected.clear(); dialog.dismiss(); populate()
+    }
+
+    /**
+     * 선택 전송. 기본은 촬영 때 stamp된 학습으로 원탭 전송(#2), 바꿀 때만 목록에서 변경.
+     * 학습 목록이 없으면(오프라인·미동기화) 실제 학습을 지정할 수 없어 전송 차단(#f, 미배정 방지).
+     */
     private fun sendSelected() {
         if (selected.isEmpty()) { Toast.makeText(this, "전송할 촬영을 선택하세요", Toast.LENGTH_SHORT).show(); return }
-        val activeName = Prefs.activeSkillName(this)
+        val catalog = DeviceSkills.cached
+        if (catalog.isEmpty()) {
+            Toast.makeText(this, "학습 목록이 없어 전송할 수 없습니다. 온라인 연결 후 다시 시도하세요.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val rootDir = getExternalFilesDir(null)
+        val stamped = selected.map { stampedSkillKey(File(rootDir, it)) }.distinct()
+        val default = if (stamped.size == 1 && stamped[0].isNotEmpty())
+            catalog.firstOrNull { it.skillKey == stamped[0] } else null
+
         val dialog = android.app.Dialog(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(TextView(this).apply {
-            text = "${selected.size}편 전송 → 학습 선택"; setTextColor(0xFF1A1F2E.toInt()); textSize = 18f
-            setPadding(dp(2), 0, dp(2), dp(4))
+            text = "${selected.size}편 전송"; setTextColor(0xFF1A1F2E.toInt()); textSize = 18f
+            setPadding(dp(2), 0, dp(2), dp(8))
         })
-        if (activeName.isNotBlank()) root.addView(TextView(this).apply {
-            text = "현재 학습: $activeName"; setTextColor(0xFF8A909E.toInt()); textSize = 13f
-            setPadding(dp(2), 0, dp(2), dp(10))
-        })
-        // 서버 카탈로그 우선(없으면 스텁). 선택한 skillKey 를 폴더에 기록 → 업로드가 이 값을 쓴다.
-        val catalog = DeviceSkills.cached.takeIf { it.isNotEmpty() }
-            ?.map { Triple(it.id, it.skillKey, it.displayName) } ?: stubCatalog
-        for ((jobId, skillKey, label) in catalog) {
+
+        fun row(label: String, sub: String, primary: Boolean, onTap: () -> Unit) {
             root.addView(TextView(this).apply {
-                text = label; setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
-                setBackgroundResource(R.drawable.bg_pick_row_light)
+                text = if (sub.isBlank()) label else "$label   ·   $sub"
+                setTextColor(if (primary) 0xFFFFFFFF.toInt() else 0xFF1A1F2E.toInt()); textSize = 16f
+                setBackgroundResource(if (primary) R.drawable.bg_btn_azure else R.drawable.bg_pick_row_light)
                 setPadding(dp(14), dp(14), dp(14), dp(14))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { topMargin = dp(8) }
-                setOnClickListener {
-                    val rootDir = getExternalFilesDir(null)
-                    selected.forEach { name ->
-                        val d = File(rootDir, name)
-                        if (d.isDirectory) {
-                            File(d, ".upload_job").writeText(jobId)
-                            File(d, ".upload_skill").writeText(skillKey)
-                            File(d, ".queued").writeText("1")
-                        }
-                    }
-                    UploadQueue.enqueue(this@HistoryActivity)
-                    Toast.makeText(this@HistoryActivity, "${selected.size}편 전송 대기 → $label", Toast.LENGTH_SHORT).show()
-                    selected.clear(); dialog.dismiss(); populate()
-                }
+                setOnClickListener { onTap() }
             })
+        }
+
+        if (default != null) {
+            row("${default.displayName} 으로 전송", "촬영 때 지정", true) {
+                queueSelected(default.id, default.skillKey, default.displayName, dialog)
+            }
+            root.addView(TextView(this).apply {
+                text = "다른 학습으로 변경"; setTextColor(0xFF8A909E.toInt()); textSize = 13f
+                setPadding(dp(2), dp(12), dp(2), dp(2))
+            })
+        } else {
+            root.addView(TextView(this).apply {
+                text = "학습을 지정하세요 (미분류 편 포함)"; setTextColor(0xFF8A909E.toInt()); textSize = 13f
+                setPadding(dp(2), 0, dp(2), dp(6))
+            })
+        }
+        for (s in catalog) row(s.displayName, "", false) {
+            queueSelected(s.id, s.skillKey, s.displayName, dialog)
         }
         root.addView(TextView(this).apply {
             text = "취소"; setTextColor(0xFF6B7280.toInt()); textSize = 15f; gravity = Gravity.CENTER
@@ -134,7 +178,8 @@ class HistoryActivity : Activity() {
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.show()
         val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
-        dialog.window?.setLayout(dp(360), minOf(dp(70 + catalog.size * 64 + 60), maxH))
+        val rows = catalog.size + (if (default != null) 1 else 0)
+        dialog.window?.setLayout(dp(360), minOf(dp(80 + rows * 64 + 60), maxH))
     }
 
     /** 삭제 확인 — 라이트 커스텀 다이얼로그. */
@@ -300,15 +345,21 @@ class HistoryActivity : Activity() {
             }
         }
         header.addView(left)
-        learnLabel(dir)?.let { name -> header.addView(TextView(this).apply {
-            text = name; setTextColor(0xFF4F9CF9.toInt()); textSize = 12f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(10), dp(5), dp(10), dp(5))
-            background = GradientDrawable().apply { cornerRadius = dp(999).toFloat(); setColor(0x1A4F9CF9) }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { marginEnd = dp(8) }
-        }) }
+        learnLabel(dir)?.let { lbl ->
+            // 미분류 = 앰버(지정 필요 신호), 지정되면 azure 실제 스킬명. 지정 후 자동으로 바뀜.
+            val amber = lbl == "미분류"
+            val fg = if (amber) 0xFFE0A44E.toInt() else 0xFF4F9CF9.toInt()
+            val bg = if (amber) 0x1AE0A44E else 0x1A4F9CF9
+            header.addView(TextView(this).apply {
+                text = lbl; setTextColor(fg); textSize = 12f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(10), dp(5), dp(10), dp(5))
+                background = GradientDrawable().apply { cornerRadius = dp(999).toFloat(); setColor(bg) }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(8) }
+            })
+        }
         header.addView(check)
         card.addView(header)
 
@@ -375,12 +426,11 @@ class HistoryActivity : Activity() {
         // 전송 때 재선택한 skillKey(.upload_skill)가 있으면 그게 우선.
         val picked = File(dir, ".upload_skill").let { if (it.exists()) it.readText().trim() else "" }
         val useKey = picked.ifBlank { key }
+        if (useKey.isBlank() && (job == Prefs.UNASSIGNED_JOB || job.isBlank())) return "미분류"
         val raw = useKey.ifBlank { job }
         if (raw.isBlank()) return null
-        // 서버 카탈로그로 displayName 매핑(청기잡기 등). 없으면 스텁, 그것도 없으면 raw key.
-        return DeviceSkills.cached.firstOrNull { it.skillKey == useKey }?.displayName
-            ?: stubCatalog.firstOrNull { it.second == useKey || it.first == job }?.third
-            ?: raw
+        // 서버 카탈로그로 displayName 매핑(청기잡기 등). 없으면 raw key.
+        return DeviceSkills.cached.firstOrNull { it.skillKey == useKey }?.displayName ?: raw
     }
 
     /** marker_qc.txt(detected/total) → 검출률(%). 없으면 null(옛 촬영·계산 전). */

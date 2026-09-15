@@ -199,14 +199,6 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
 
     private fun aeName() = if (aeLock) "LOCK" else "AUTO"
 
-    // BE(SKILL-01/TRAIN-02) 연동 전 스텁 학습 목록. 라이브 붙으면 이 목록만 교체.
-    private val stubCatalog = listOf(
-        Triple("job_pick_place", "pick_place", "집기·놓기"),
-        Triple("job_sort_two", "sort_two", "둘 분류"),
-        Triple("job_align_fixture", "align_fixture", "지그 정렬"),
-        Triple("job_present_inspect", "present_inspect", "검사 제시"),
-        Triple("job_line_up", "line_up", "줄 세우기")
-    )
 
     /** 배지 텍스트 = 활성 학습 + 해당 학습으로 찍은 편수(오배정 조기 인지용). */
     private fun updateLearnBadge() {
@@ -267,17 +259,23 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             root.addView(row)
         }
 
-        // 서버 카탈로그(DeviceSkills) 우선, 못 받았으면 스텁. id 를 로컬 편수 그룹키(jobId)로 쓴다.
-        val catalog = DeviceSkills.cached.takeIf { it.isNotEmpty() }
-            ?.map { Triple(it.id, it.skillKey, it.displayName) } ?: stubCatalog
+        // 서버에서 받아 디스크에 캐시된 스킬 목록. id 를 로컬 편수 그룹키(jobId)로 쓴다.
+        val catalog = DeviceSkills.cached.map { Triple(it.id, it.skillKey, it.displayName) }
         for ((jobId, skillKey, label) in catalog) {
             addCard(label, "${episodeCount(jobId)}편", jobId == activeJob) {
                 Prefs.setActiveLearning(this, jobId, skillKey, label)
             }
         }
-        addCard("학습 없이 촬영", "", activeJob.isBlank()) {
-            Prefs.setActiveLearning(this, "", "", "")
+        // 미분류: 오프라인·목록 없음에도 촬영 가능. 전송 때 실제 학습으로 지정 강제.
+        addCard("미분류 (나중에 지정)", "${episodeCount(Prefs.UNASSIGNED_JOB)}편",
+            activeJob == Prefs.UNASSIGNED_JOB) {
+            Prefs.setActiveLearning(this, Prefs.UNASSIGNED_JOB, "", "미분류")
         }
+        if (catalog.isEmpty()) root.addView(TextView(this).apply {
+            text = "학습 목록은 온라인 연결 시 동기화됩니다"
+            setTextColor(0xFF8A909E.toInt()); textSize = 12f
+            setPadding(dp(4), dp(6), dp(4), 0)
+        })
 
         val scroll = android.widget.ScrollView(this).apply {
             setBackgroundResource(R.drawable.bg_menu_dark)
@@ -358,7 +356,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         // AF 바뀌면 ARCore focusMode 도 재적용. (기존엔 최초 생성 때만 applyConfig 해서 토글이 안 먹던 버그)
         if (afChanged) session?.let { try { applyConfig(it) } catch (e: Exception) { Log.e(TAG, "AF 재적용 실패", e) } }
         updateLearnBadge()   // 학습 배지·편수 갱신
-        // 서버 스킬 카탈로그 새로고침(백그라운드). 성공하면 다음 피커 열 때 반영.
+        // 디스크 캐시 먼저 로드(오프라인·재시작에도 목록 유지) → 온라인이면 백그라운드 새로고침.
+        DeviceSkills.load(this)
         if (DeviceSkills.cached.isEmpty()) Thread { DeviceSkills.refresh(this) }.start()
         gridOverlay.visibility = if (Prefs.gridGuide(this)) View.VISIBLE else View.GONE
         poseText.visibility = if (Prefs.showDetail(this)) View.VISIBLE else View.GONE
@@ -575,6 +574,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     // ---------------- 녹화 ----------------
 
     private fun startRecording() {
+        // 학습 미선택이면 촬영 대신 학습 피커를 띄운다 — 미배정 데이터 양산 방지(미분류도 명시 선택).
+        if (Prefs.activeSkillName(this).isBlank()) {
+            Toast.makeText(this, "학습을 먼저 선택하세요 (미분류 포함)", Toast.LENGTH_SHORT).show()
+            showLearningPicker()
+            return
+        }
         val rec = recorder
         if (rec != null && !rec.hasStartSpace()) {
             val msg = "저장 공간 부족 - 녹화를 시작할 수 없음\n" +
@@ -632,6 +637,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             recBtn.setBackgroundResource(R.drawable.bg_shutter)
             recTimer.visibility = View.GONE
             dropWarn.visibility = View.GONE
+            updateLearnBadge()   // 방금 찍은 편이 편수에 바로 반영되게 (다른 화면 안 갔다와도)
         }
         Log.i(TAG, "저장 완료: ${dir?.absolutePath} 프레임=$saved 드롭=$dropped 점프=$jumps AF=${focusName()}")
 

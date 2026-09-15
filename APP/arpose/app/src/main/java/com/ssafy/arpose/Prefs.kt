@@ -32,6 +32,11 @@ object Prefs {
     private const val KEY_ACTIVE_SKILL_KEY = "active_skill_key"
     private const val KEY_ACTIVE_SKILL_NAME = "active_skill_name"
 
+    // 스킬 카탈로그 디스크 캐시(JSON) — 온라인에서 받은 목록을 저장해 오프라인·재시작에도 씀.
+    private const val KEY_SKILL_CATALOG = "skill_catalog"
+    // 미분류(학습 미지정) 촬영 그룹키. 전송 때 실제 학습으로 지정 강제.
+    const val UNASSIGNED_JOB = "__unassigned__"
+
     private fun sp(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     fun afAuto(ctx: Context) = sp(ctx).getBoolean(KEY_AF_AUTO, false)
@@ -73,6 +78,10 @@ object Prefs {
     fun activeJobId(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_JOB, "") ?: ""
     fun activeSkillKey(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_SKILL_KEY, "") ?: ""
     fun activeSkillName(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_SKILL_NAME, "") ?: ""
+
+    fun skillCatalog(ctx: Context) = sp(ctx).getString(KEY_SKILL_CATALOG, "") ?: ""
+    fun setSkillCatalog(ctx: Context, json: String) =
+        sp(ctx).edit().putString(KEY_SKILL_CATALOG, json).apply()
 
     /** 활성 학습 선택(배지). 목록은 BE(SKILL-01/TRAIN-02) 연동 전까지 스텁. */
     fun setActiveLearning(ctx: Context, jobId: String, skillKey: String, skillName: String) =
