@@ -79,15 +79,12 @@ public class TrainingJobService {
                 () ->
                     new BusinessConflictException("ACTIVE_PROFILE_NOT_FOUND", "활성 학습 프로필이 없습니다."));
     List<Episode> selected = selectEpisodes(owner, skill, request);
-    int expected =
-        request.inputMode() == TrainingInputMode.COLLECT_NEW
-            ? Optional.ofNullable(request.expectedEpisodeCount()).orElse(0)
-            : selected.size();
+    int expected = selected.size();
     if (expected < 1)
       throw new BusinessConflictException("INVALID_EPISODE_COUNT", "Episode 수는 1 이상이어야 합니다.");
     Map<String, Object> query = new LinkedHashMap<>();
     query.put("skillKey", skill.getSkillKey());
-    query.put("inputMode", request.inputMode().name());
+    query.put("inputMode", TrainingInputMode.EXISTING_EPISODES.name());
     TrainingJob job =
         jobs.save(
             new TrainingJob(
@@ -96,7 +93,7 @@ public class TrainingJobService {
                 skill.getId(),
                 device.getId(),
                 profile.getId(),
-                request.inputMode(),
+                TrainingInputMode.EXISTING_EPISODES,
                 profile.getHyperparameters(),
                 profile.getConfigSha256(),
                 query,
@@ -141,37 +138,6 @@ public class TrainingJobService {
     return map(job, skill(job.getSkillId()));
   }
 
-  @Transactional
-  public JobResponse updateInputPlan(UUID owner, UUID id, InputPlanUpdateRequest request) {
-    TrainingJob job = owned(owner, id);
-    try {
-      job.updateExpectedEpisodeCount(request.expectedEpisodeCount());
-    } catch (IllegalStateException e) {
-      throw new BusinessConflictException("STATE_CONFLICT", e.getMessage());
-    }
-    return map(job, skill(job.getSkillId()));
-  }
-
-  @Transactional
-  public InputCompleteResponse completeInput(
-      UUID owner, UUID id, String key, InputCompleteRequest request) {
-    String path = "/api/v1/training-jobs/" + id + "/input-complete";
-    var claim = idempotency.claim(owner, "POST", path, key, request);
-    if (claim.existingResourceId() != null) {
-      TrainingJob existing = owned(owner, claim.existingResourceId());
-      return new InputCompleteResponse(existing.getId(), existing.getStatus());
-    }
-    TrainingJob job = owned(owner, id);
-    try {
-      job.beginInputValidation(request.receivedEpisodeCount());
-    } catch (IllegalStateException e) {
-      String code = e.getMessage().contains("일치") ? "INPUT_COUNT_MISMATCH" : "STATE_CONFLICT";
-      throw new BusinessConflictException(code, e.getMessage());
-    }
-    idempotency.complete(owner, "POST", path, claim, 202, "TRAINING_JOB", job.getId());
-    return new InputCompleteResponse(job.getId(), job.getStatus());
-  }
-
   @Transactional(readOnly = true)
   public List<EpisodeInputResponse> inputEpisodes(UUID owner, UUID id) {
     owned(owner, id);
@@ -195,11 +161,6 @@ public class TrainingJobService {
   }
 
   private List<Episode> selectEpisodes(UUID owner, Skill skill, CreateRequest request) {
-    if (request.inputMode() == TrainingInputMode.COLLECT_NEW) {
-      if (request.episodeIds() != null && !request.episodeIds().isEmpty())
-        throw new BusinessConflictException("FIELD_NOT_ALLOWED", "신규 수집에는 episodeIds를 사용할 수 없습니다.");
-      return List.of();
-    }
     if (request.episodeIds() == null
         || request.episodeIds().isEmpty()
         || new HashSet<>(request.episodeIds()).size() != request.episodeIds().size())

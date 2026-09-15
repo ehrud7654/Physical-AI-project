@@ -15,8 +15,6 @@ public final class TrainingJobApiModels {
       String skillKey,
       @Valid CreateCustomSkillRequest newSkill,
       @NotNull UUID umiDeviceId,
-      @NotNull TrainingInputMode inputMode,
-      @Positive Integer expectedEpisodeCount,
       List<UUID> episodeIds) {}
 
   public record JobResponse(
@@ -43,9 +41,4 @@ public final class TrainingJobApiModels {
 
   public record EpisodeInputResponse(UUID episodeId, int inputOrder) {}
 
-  public record InputPlanUpdateRequest(@NotNull @Positive Integer expectedEpisodeCount) {}
-
-  public record InputCompleteRequest(@NotNull @Positive Integer receivedEpisodeCount) {}
-
-  public record InputCompleteResponse(UUID trainingJobId, TrainingJobStatus status) {}
 }

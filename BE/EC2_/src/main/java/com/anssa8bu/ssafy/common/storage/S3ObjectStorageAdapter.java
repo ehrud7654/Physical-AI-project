@@ -50,4 +50,12 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
         .key(key).checksumMode(ChecksumMode.ENABLED).build());
     return new StoredObject(response.contentLength(), response.checksumSHA256());
   }
+
+  @Override
+  public byte[] readPrefix(String bucket, String key, int length) {
+    if (length < 1) throw new IllegalArgumentException("length must be positive");
+    var request=GetObjectRequest.builder().bucket(bucket).key(key)
+        .range("bytes=0-"+(length-1)).build();
+    return client.getObjectAsBytes(request).asByteArray();
+  }
 }

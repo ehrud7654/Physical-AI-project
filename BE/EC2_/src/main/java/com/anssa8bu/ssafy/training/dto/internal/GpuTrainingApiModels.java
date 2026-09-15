@@ -29,7 +29,7 @@ public final class GpuTrainingApiModels {
   public record HeartbeatRequest(@NotBlank String workerId, UUID storageNodeId,
       @Positive int attempt, @NotBlank String leaseToken, @PositiveOrZero Long storageAvailableBytes) {}
   public record HeartbeatResponse(Instant leaseExpiresAt, boolean cancelRequested,
-      boolean closeInputRequested, Instant serverTime) {}
+      Instant serverTime) {}
 
   public record EventRequest(@Positive int attempt, @NotBlank String leaseToken,
       @NotBlank String eventId, @Positive long sequence,
