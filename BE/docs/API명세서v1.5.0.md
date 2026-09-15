@@ -158,14 +158,14 @@ Jetson → 자신의 pending Deployment manifest 요청
 | 공개 | 인증 전 사용자·장치 | 없음 또는 사전 발급 secret | 로그인·장치 토큰 발급·UMI 스킬 목록 조회 |
 | 사용자 | 웹 클라이언트 | `Authorization: Bearer <userAccessToken>` | 자신 소유 리소스 |
 | UMI | 데이터 수집 장치 | `Authorization: Bearer <deviceAccessToken>` | 자신에게 허용된 학습 입력 전송과 Episode 등록 |
-| GPU | 학습·수집 워커 | `Authorization: Bearer <serviceAccessToken>` | 자신에게 할당된 작업 |
+| GPU | 학습 워커 | 별도 Service Token을 사용하지 않음 | `workerId`, 현재 `attempt`, `leaseToken`으로 할당 작업 검증 |
 | Jetson | 로봇 실행 장치 | `Authorization: Bearer <deviceAccessToken>` | 자신과 연결된 Robot의 배포 |
 | 내부 | EC2 내부 작업 | 서비스 인증 + 네트워크 제한 | S3 검증·상태 전이 |
 
 - 다른 사용자 리소스는 존재 여부가 드러나지 않도록 `404 RESOURCE_NOT_FOUND`로 응답한다.
 - UMI와 Jetson 토큰은 `deviceType`과 `deviceId` 범위를 포함한다.
-- GPU 서비스 토큰은 등록된 `workerId` 범위와 일치해야 한다.
-- GPU ingest token은 한 TrainingJob, 한 UMI, 한 StorageNode, 제한 시간에만 유효하다.
+- GPU → EC2 내부 API에는 `Authorization` 헤더와 Spring Security authority를 요구하지 않는다. EC2는 관련 경로에 GPU Service Token 인증 설정을 추가하지 않는다.
+- Claim 이후의 변경 요청은 서버가 발급한 현재 `attempt`와 `leaseToken` 및 할당된 `workerId`를 대조한다. 전송 구간은 HTTPS와 인프라 네트워크 접근 제어를 적용한다.
 - 핸들 번호를 안다는 이유만으로 데이터 업로드 또는 CKPT 다운로드를 허용하지 않는다.
 
 ### 2.2 요청·응답 형식
@@ -1506,10 +1506,10 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
           "sessionId": "01J7ABCDEF123456789XYZW000",
           "qualityStatus": "VALID",
           "archive": {
-            "storageKey": "episodes/7b5fba32-8852-4cff-a8af-761e91c6c031/20260902T071042Z/550e8400-e29b-41d4-a716-446655440000.zip",
+            "downloadUrl": "https://s3.example.com/presigned-get-url",
+            "expiresAt": "2026-09-15T01:15:00Z",
             "contentType": "application/zip",
-            "compressionMethod": "STORE",
-            "sizeBytes": 524288000,
+            "sizeBytes": 10485760,
             "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           }
         }
@@ -1529,7 +1529,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - 해시 입력은 profile 식별자와 상태를 제외한 `{"algorithm": ..., "hyperparameters": ...}` 객체이며 합의된 canonical JSON UTF-8 bytes를 사용한다.
 - `COLLECT_NEW` 할당 시 `assignedWorkerId`, `assignedStorageNodeId`를 설정하고 `COLLECTING`으로 변경한다.
 - `EXISTING_EPISODES` 할당 시 `assignedWorkerId`를 설정하고 `PREPARING`으로 변경한다.
-- 내부 claim 응답에만 논리 storage key를 포함한다. worker는 자신의 설정에 있는 storage root와 조합하며 임의 절대 경로를 사용하지 않는다.
+- Claim 응답은 내부 S3 key 대신 Episode별 제한 시간 Presigned GET `downloadUrl`과 `expiresAt`을 제공한다. GPU는 URL을 변경하지 않고 만료 전에 다운로드하며 URL을 로그나 영속 journal에 저장하지 않는다.
 - 작업 없음 `204`.
 - 같은 worker에 유효한 기존 할당이 있으면 같은 작업을 반환한다.
 - 초안은 worker당 활성 작업 하나를 가정한다.
@@ -1766,7 +1766,7 @@ AND ciLow > 0.20
 
 ### GPU-06 StorageNode 등록
 
-- `POST /internal/storage-nodes/register` · GPU service token
+- `POST /internal/storage-nodes/register` · GPU, 별도 Service Token 없음
 - 요청:
 
 ```json
@@ -1780,7 +1780,7 @@ AND ciLow > 0.20
 }
 ```
 
-- service token의 `workerId`와 요청 값이 일치해야 한다.
+- `workerId`는 요청 식별자로 사용한다. 이 API를 포함한 GPU → EC2 내부 경로에는 Service Token 또는 관련 Spring Security authority를 적용하지 않는다.
 - 실제 mount root는 worker 설정에만 두고 요청 또는 DB에 전송하지 않는다.
 - 동일한 `(workerId, nodeKey)` 재등록은 기존 StorageNode를 `200`으로 반환한다.
 - 성공 `201`: `StorageNode`.

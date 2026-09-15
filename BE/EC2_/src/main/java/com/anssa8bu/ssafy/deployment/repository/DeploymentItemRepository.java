@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface DeploymentItemRepository extends JpaRepository<DeploymentItem, UUID> {
   List<DeploymentItem> findAllByDeploymentId(UUID deploymentId);
+  boolean existsBySkillVersionId(UUID skillVersionId);
 }

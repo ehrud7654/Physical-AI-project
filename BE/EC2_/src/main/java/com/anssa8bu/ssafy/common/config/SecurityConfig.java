@@ -53,6 +53,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(PUBLIC_ENDPOINTS)
                     .permitAll()
+                    .requestMatchers("/internal/training-jobs/**", "/internal/skill-versions/**")
+                    .permitAll()
                     .requestMatchers(
                         "/api/v1/episode",
                         "/api/v1/episode/**")
