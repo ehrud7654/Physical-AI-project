@@ -47,6 +47,9 @@ interface AppStore {
   users: AdminUser[];
   permissions: Record<string, string[]>;
   datasets: Dataset[];
+  datasetRefreshing: boolean;
+  datasetRefreshError: boolean;
+  refreshDatasets: () => Promise<boolean>;
   /** 장치 등록. 중복 ID면 Error를 던진다. */
   addDevice: (input: RegisterDeviceInput) => Promise<string>;
   refreshDevices: () => Promise<void>;
@@ -102,6 +105,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [robots, setRobots] = useState<Robot[]>([]);
   const [umis, setUmis] = useState<Umi[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [datasetRefreshing, setDatasetRefreshing] = useState(false);
+  const [datasetRefreshError, setDatasetRefreshError] = useState(false);
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [trainingRefreshing, setTrainingRefreshing] = useState(false);
   const [trainingRefreshError, setTrainingRefreshError] = useState(false);
@@ -163,6 +168,20 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setRobots(next.robots);
     setUmis(next.umis);
     return next.registeredDeviceId;
+  }, []);
+
+  const refreshDatasets = useCallback(async () => {
+    setDatasetRefreshing(true);
+    setDatasetRefreshError(false);
+    try {
+      setDatasets(await fetchDatasets());
+      return true;
+    } catch {
+      setDatasetRefreshError(true);
+      return false;
+    } finally {
+      setDatasetRefreshing(false);
+    }
   }, []);
 
   const refreshDevices = useCallback(async () => {
@@ -237,6 +256,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       users: initialUsers,
       permissions,
       datasets,
+      datasetRefreshing,
+      datasetRefreshError,
+      refreshDatasets,
       addDevice,
       refreshDevices,
       deleteDevicesById,
@@ -250,7 +272,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       saveWorkflow,
       saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, datasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, refreshDevices, deleteDevicesById, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, datasetRefreshing, datasetRefreshError, refreshDatasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, refreshDevices, deleteDevicesById, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

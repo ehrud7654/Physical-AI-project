@@ -708,7 +708,7 @@ const recoveryActionLabel: Record<Dataset['recoveryAction'], string> = {
 };
 
 function DataView() {
-  const { datasets } = useAppStore();
+  const { datasets, datasetRefreshing, datasetRefreshError, refreshDatasets } = useAppStore();
   const [sortMode, setSortMode] = useState<'latest' | 'oldest' | 'retention'>('latest');
   const [statusFilter, setStatusFilter] = useState('');
   const [detail, setDetail] = useState<Dataset | null>(null);
@@ -720,6 +720,9 @@ function DataView() {
   const filtered = datasets.filter(matchesStatus).sort((a, b) => sortMode === 'retention' ? a.retentionDays - b.retentionDays : sortMode === 'oldest' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
   const statusCount = (status: string) => datasets.filter(item => item.status === status).length;
   const processingCount = datasets.filter(item => processingStatuses.includes(item.status)).length;
+  useEffect(() => {
+    void refreshDatasets();
+  }, [refreshDatasets]);
   const openPreview = async () => {
     if (!detail) return;
     setPreviewLoading(true); setPreviewError('');
@@ -728,7 +731,7 @@ function DataView() {
     finally { setPreviewLoading(false); }
   };
   return <>
-    <div className="page-heading data-page-heading"><div><h1>데이터</h1></div><div className="data-list-controls"><select aria-label="데이터 상태" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">전체 ({datasets.length})</option><option value="READY">학습 가능 ({statusCount('READY')})</option><option value="PROCESSING">처리 중 ({processingCount})</option><option value="INVALID">확인 실패 ({statusCount('INVALID')})</option></select><select aria-label="데이터 정렬" value={sortMode} onChange={e => setSortMode(e.target.value as typeof sortMode)}><option value="latest">최신 등록순</option><option value="oldest">오래된 등록순</option><option value="retention">보관 만료 임박순</option></select></div></div>
+    <div className="page-heading data-page-heading"><div><h1>데이터</h1>{datasetRefreshing && <p role="status">저장된 데이터를 불러오는 중이에요.</p>}{datasetRefreshError && <p className="form-error" role="alert">데이터 목록을 불러오지 못했어요. <button className="text-button" type="button" onClick={() => void refreshDatasets()}>다시 시도</button></p>}</div><div className="data-list-controls"><select aria-label="데이터 상태" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">전체 ({datasets.length})</option><option value="READY">학습 가능 ({statusCount('READY')})</option><option value="PROCESSING">처리 중 ({processingCount})</option><option value="INVALID">확인 실패 ({statusCount('INVALID')})</option></select><select aria-label="데이터 정렬" value={sortMode} onChange={e => setSortMode(e.target.value as typeof sortMode)}><option value="latest">최신 등록순</option><option value="oldest">오래된 등록순</option><option value="retention">보관 만료 임박순</option></select></div></div>
     <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table">
         <div className="episode-row header" role="row"><span>데이터 번호</span><span>학습 동작</span><span>사용 장치</span><span>확인 결과</span><span>보관 기간</span><span>학습 가능 여부</span></div>
