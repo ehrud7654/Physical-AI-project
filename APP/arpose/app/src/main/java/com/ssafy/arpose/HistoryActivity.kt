@@ -35,7 +35,11 @@ class HistoryActivity : Activity() {
     private val uploadWork by lazy {
         WorkManager.getInstance(this).getWorkInfosForUniqueWorkLiveData(UploadQueue.WORK_NAME)
     }
-    private val uploadObserver = Observer<List<WorkInfo>> { populate() }
+    private var workObserved = false
+    private val uploadObserver = Observer<List<WorkInfo>> {
+        if (!workObserved) { workObserved = true; return@Observer }  // 등록 즉시 오는 최초 값은 무시(중복 populate 방지)
+        populate()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -424,7 +428,13 @@ class HistoryActivity : Activity() {
             else "${m["duration_sec"] ?: "?"}s · ${m["frames_saved"] ?: "?"}프레임"
         detail.addView(detailRow("길이", dur))
         detail.addView(detailRow("마커 검출", mkRate?.let { "$it%" } ?: "—"))
-        detail.addView(detailRow("추적", vLabel))
+        // vLabel 은 전체 판정 사유(마커/구멍/점프/좋음). 판정에 따라 행 라벨을 명확히.
+        val verdictRowLabel = when (icon) {
+            "✗" -> "재촬영 사유"
+            "⚠" -> "확인 사유"
+            else -> "판정"
+        }
+        detail.addView(detailRow(verdictRowLabel, vLabel))
 
         val del = TextView(this).apply {
             text = "삭제"
