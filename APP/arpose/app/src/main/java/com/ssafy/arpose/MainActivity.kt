@@ -285,8 +285,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         dialog.setContentView(scroll)
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.show()
-        // 창을 화면 안(≤90%)에 맞추고 내용이 넘치면 내부에서만 스크롤 — 창 자체는 안 움직이게 높이 고정.
-        val approxPx = dp(44 + (catalog.size + 1) * 66 + 32)
+        // 창을 화면 안(≤90%)에 맞추고 내용이 넘치면 내부에서만 스크롤. 추정 높이를 넉넉히 잡아 잘림 방지.
+        val rows = catalog.size + 1                          // 실제 스킬 + 미분류
+        val emptyHint = if (catalog.isEmpty()) dp(68) else 0 // 목록 없을 때 안내문까지 보이게
+        val approxPx = dp(88) + rows * dp(74) + emptyHint
         val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
         dialog.window?.setLayout(dp(340), minOf(approxPx, maxH))
     }
@@ -301,7 +303,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             setPadding(px(6), px(6), px(6), px(6))
         }
         val pop = PopupWindow(
-            container, px(230), LinearLayout.LayoutParams.WRAP_CONTENT, true
+            container, px(180), LinearLayout.LayoutParams.WRAP_CONTENT, true
         ).apply { isOutsideTouchable = true; elevation = px(8).toFloat() }
 
         fun guardNav(cls: Class<*>) {
