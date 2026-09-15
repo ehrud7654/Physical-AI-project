@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -41,9 +42,17 @@ class HistoryActivity : Activity() {
         setContentView(R.layout.activity_history)
         findViewById<ImageButton>(R.id.backBtn).setOnClickListener { finish() }
         findViewById<Button>(R.id.sendBtn).setOnClickListener { sendSelected() }
-        findViewById<TextView>(R.id.selectAllBtn).setOnClickListener { toggleSelectAll() }
+        findViewById<TextView>(R.id.selectAllBtn).apply {
+            // 칩 느낌(옅은 azure 틴트+테두리)으로 눈에 띄게.
+            background = GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat(); setColor(0x1A4F9CF9); setStroke(dp(1), 0x554F9CF9)
+            }
+            setOnClickListener { toggleSelectAll() }
+        }
         findViewById<TextView>(R.id.deleteSelectedBtn).apply {
-            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xFFE0685E.toInt()) }
+            // 파괴적 액션은 은은하게 — 빨강 텍스트 + 옅은 틴트(채움 아님).
+            setTextColor(0xFFE0685E.toInt())
+            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0x1AE0685E) }
             setOnClickListener { confirmDeleteSelected() }
         }
         populate()
@@ -253,25 +262,19 @@ class HistoryActivity : Activity() {
         else -> Triple("미전송", 0xFF8A909E.toInt(), true)
     }
 
+    /** 선택 상태에 따라 하단 액션바·제목·전체선택 갱신 (패턴 B). */
     private fun updateSendBtn() {
-        val btn = findViewById<Button>(R.id.sendBtn)
-        if (selected.isEmpty()) {
-            btn.text = "전송"
-            btn.setBackgroundResource(R.drawable.bg_btn_azure_disabled)
-            btn.isEnabled = false
-        } else {
-            btn.text = "${selected.size}편 전송"
-            btn.setBackgroundResource(R.drawable.bg_btn_azure)
-            btn.isEnabled = true
-        }
-        // 선택 액션 바: 선택 삭제 버튼(있을 때만) + 전체 선택/해제 토글 라벨.
-        findViewById<TextView>(R.id.deleteSelectedBtn).apply {
-            text = "선택 삭제 (${selected.size})"
-            visibility = if (selected.isEmpty()) View.GONE else View.VISIBLE
-        }
+        val has = selected.isNotEmpty()
+        findViewById<View>(R.id.actionBar).visibility = if (has) View.VISIBLE else View.GONE
+        findViewById<Button>(R.id.sendBtn).text = if (has) "전송 (${selected.size})" else "전송"
+        findViewById<TextView>(R.id.deleteSelectedBtn).text = "선택 삭제 (${selected.size})"
+        findViewById<TextView>(R.id.titleText).text = if (has) "${selected.size}개 선택" else "기록"
+        // 전체 선택/해제: 기록이 있을 때만 노출.
         val all = allRecNames()
-        findViewById<TextView>(R.id.selectAllBtn).text =
-            if (all.isNotEmpty() && selected.containsAll(all)) "전체 해제" else "전체 선택"
+        findViewById<TextView>(R.id.selectAllBtn).apply {
+            visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+            text = if (all.isNotEmpty() && selected.containsAll(all)) "전체 해제" else "전체 선택"
+        }
     }
 
     private fun populate() {
@@ -331,58 +334,16 @@ class HistoryActivity : Activity() {
             ).apply { bottomMargin = dp(8) }
         }
 
-        // ---- 헤더 (탭 = 펼치기) ----
+        // ---- 헤더: 시간 · 학습 태그 · 선택 원 ----
         val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        val left = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        header.addView(TextView(this).apply {
+            text = prettyName(name); setTextColor(0xFF1A1F2E.toInt()); textSize = 16f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val time = TextView(this).apply {
-            text = prettyName(name)
-            setTextColor(0xFF1A1F2E.toInt())
-            textSize = 16f
-        }
-        val statusRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, 0)
-        }
-        val usable = TextView(this).apply {
-            text = usableLabel
-            setTextColor(usableColor)
-            textSize = 13f
-            setPadding(0, 0, dp(10), 0)
-        }
-        val pill = TextView(this).apply {
-            text = stText
-            setTextColor(stColor)
-            textSize = 12f
-            setPadding(dp(10), dp(3), dp(10), dp(3))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(999).toFloat()
-                setColor((stColor and 0x00FFFFFF) or 0x1A000000)   // 옅은 배경
-            }
-        }
-        statusRow.addView(usable); statusRow.addView(pill)
-        left.addView(time); left.addView(statusRow)
-
-        // 선택 체크 어포던스 (오른쪽) — 탭 = 선택 토글
-        val check = TextView(this).apply {
-            text = if (selected.contains(name)) "☑" else "☐"
-            setTextColor(if (selected.contains(name)) 0xFF4F9CF9.toInt() else 0xFF8A909E.toInt())
-            textSize = 24f
-            setPadding(dp(10), dp(4), dp(4), dp(4))
-            setOnClickListener {
-                if (selected.contains(name)) selected.remove(name) else selected.add(name)
-                populate()
-            }
-        }
-        header.addView(left)
+        })
         learnLabel(dir)?.let { lbl ->
-            // 미분류 = 앰버(지정 필요 신호), 지정되면 azure 실제 스킬명. 지정 후 자동으로 바뀜.
+            // 미분류 = 앰버(지정 필요 신호), 지정되면 azure 실제 스킬명. 카드의 유일한 색 pill.
             val amber = lbl == "미분류"
             val fg = if (amber) 0xFFE0A44E.toInt() else 0xFF4F9CF9.toInt()
             val bg = if (amber) 0x1AE0A44E else 0x1A4F9CF9
@@ -396,28 +357,81 @@ class HistoryActivity : Activity() {
                 ).apply { marginEnd = dp(8) }
             })
         }
-        header.addView(check)
+        val sel = selected.contains(name)
+        header.addView(TextView(this).apply {   // 선택 인디케이터(원형). 토글은 카드 전체 탭이 처리.
+            text = if (sel) "✓" else ""
+            setTextColor(0xFFFFFFFF.toInt()); textSize = 15f; gravity = Gravity.CENTER
+            val sz = dp(26)
+            layoutParams = LinearLayout.LayoutParams(sz, sz)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                if (sel) setColor(0xFF4F9CF9.toInt())
+                else { setColor(0x00000000); setStroke(dp(2), 0xFF9AA2B4.toInt()) }
+            }
+        })
         card.addView(header)
 
-        // ---- 상세 (펼쳐졌을 때만) ----
+        // ---- 상태줄: (품질 · 전송) 점+색텍스트 ···· 상세/접기 토글(고정 위치) ----
+        fun dotText(label: String, color: Int) = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(View(this@HistoryActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply { marginEnd = dp(5) }
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+            })
+            addView(TextView(this@HistoryActivity).apply {
+                text = label; setTextColor(color); textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+        }
+        val statusLeft = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(dotText(usableLabel, usableColor))
+            addView(dotText(stText, stColor).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(14) }
+            })
+        }
+        val expandedNow = expanded.contains(name)
+        val toggleText = TextView(this).apply {
+            text = if (expandedNow) "접기" else "상세"
+            setTextColor(0xFF8A909E.toInt()); textSize = 13f
+        }
+        val chevron = ImageView(this).apply {
+            setImageResource(R.drawable.ic_chevron_down)
+            rotation = if (expandedNow) 180f else 0f
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(3) }
+        }
+        val toggle = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(4), 0, dp(4))
+            addView(toggleText); addView(chevron)
+        }
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)   // 시간줄과 간격
+            addView(statusLeft); addView(toggle)
+        })
+
+        // ---- 상세 (토글 아래, 펼침 시만) ----
         val detail = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(12), 0, 0)
-            visibility = if (expanded.contains(name)) View.VISIBLE else View.GONE
+            setPadding(0, dp(10), 0, 0)
+            visibility = if (expandedNow) View.VISIBLE else View.GONE
         }
         val dur = if (m.isEmpty()) "요약 없음 (녹화 미완료 가능)"
             else "${m["duration_sec"] ?: "?"}s · ${m["frames_saved"] ?: "?"}프레임"
         detail.addView(detailRow("길이", dur))
         detail.addView(detailRow("마커 검출", mkRate?.let { "$it%" } ?: "—"))
         detail.addView(detailRow("추적", vLabel))
-        detail.addView(detailRow("전송", stText))
 
         val del = TextView(this).apply {
             text = "삭제"
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(0xFFE0685E.toInt())
             textSize = 14f
-            setPadding(dp(20), dp(9), dp(20), dp(9))
-            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xFFE0685E.toInt()) }
+            setPadding(dp(18), dp(9), dp(18), dp(9))
+            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0x1AE0685E) }
             setOnClickListener { confirmDelete(dir, name) }
         }
         detail.addView(LinearLayout(this).apply {
@@ -429,9 +443,17 @@ class HistoryActivity : Activity() {
         })
         card.addView(detail)
 
-        header.setOnClickListener {
-            if (expanded.contains(name)) expanded.remove(name) else expanded.add(name)
-            detail.visibility = if (expanded.contains(name)) View.VISIBLE else View.GONE
+        // 카드 전체 탭 = 선택. 상세는 상태줄 우측 토글로만(탭 소비해 선택과 분리).
+        card.setOnClickListener {
+            if (selected.contains(name)) selected.remove(name) else selected.add(name)
+            populate()
+        }
+        toggle.setOnClickListener {
+            val exp = !expanded.contains(name)
+            if (exp) expanded.add(name) else expanded.remove(name)
+            detail.visibility = if (exp) View.VISIBLE else View.GONE
+            toggleText.text = if (exp) "접기" else "상세"
+            chevron.rotation = if (exp) 180f else 0f
         }
         return card
     }
