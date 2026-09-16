@@ -113,6 +113,8 @@ function HomeInner() {
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
   const [workEditorRevision, setWorkEditorRevision] = useState(0);
+  const [trainingHomeRevision, setTrainingHomeRevision] = useState(0);
+  const [workLibraryRevision, setWorkLibraryRevision] = useState(0);
   const [suggestedSkillName, setSuggestedSkillName] = useState<string | null>(null);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, entered]);
   const [toast, setToast] = useState('');
@@ -156,6 +158,12 @@ function HomeInner() {
       setEditingWorkId(null);
       setWorkEditorRevision((revision) => revision + 1);
     }
+    if (target === 'training') {
+      setTrainingHomeRevision((revision) => revision + 1);
+    }
+    if (target === 'library') {
+      setWorkLibraryRevision((revision) => revision + 1);
+    }
     setView(target);
   };
   const editWork = (workId: string) => {
@@ -192,10 +200,10 @@ function HomeInner() {
           {view === 'dashboard' && <DashboardView onNavigate={navigateTo} onOpenDevices={(tab) => { setDeviceTab(tab); setView('devices'); }} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} />}
           {view === 'data' && <DataView />}
           {view === 'skills' && <SkillListView onToast={showToast} />}
-          {view === 'library' && <WorkflowLibraryView onEdit={editWork} onToast={showToast} />}
+          {view === 'library' && <WorkflowLibraryView key={workLibraryRevision} onEdit={editWork} onToast={showToast} />}
           {view === 'devices' && <DevicesView initialTab={deviceTab} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} onToast={showToast} />}
           {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={navigateTo} onToast={showToast} />}
-          {view === 'training' && <TrainingStatusView onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
+          {view === 'training' && <TrainingStatusView key={trainingHomeRevision} onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'learn' && <LearnView onNavigate={navigateTo} onToast={showToast} />}
           {view === 'work' && <WorkView key={`${editingWorkId ?? 'new'}-${workEditorRevision}`} suggestedSkillName={suggestedSkillName} editingWorkId={editingWorkId} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'admin' && <AdminView onToast={showToast} />}
