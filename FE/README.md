@@ -2,62 +2,66 @@
 
 S.S.A.F.Y(Show Simply Arm Follows You)는 UMI로 수집한 동작 데이터를 학습하고, 학습된 동작과 제어 블록을 조합해 로봇 작업을 만드는 웹 플랫폼입니다.
 
-현재 프론트엔드는 **React 19 + TypeScript + Vinext/Vite** 기반입니다. 백엔드 연결 전에도 전체 흐름을 검토할 수 있도록 화면과 상태 변경은 Mock 서비스로 동작합니다.
+프론트엔드는 **React 19 + TypeScript + Next.js App Router(vinext/Vite 런타임)** 기반이며, 화면 데이터는 모두 백엔드 REST API(`/api/v1`)에서 가져옵니다. 관리자 화면과 회원가입 모달만 아직 UI 목업입니다.
 
 ## 사용자 흐름
 
 ```text
 랜딩·로그인
 → 대시보드에서 장치와 학습 상태 확인
-→ UMI 데이터 확인 또는 새 학습 생성
-→ 동작과 데이터 준비 방식 선택
+→ UMI 데이터(Episode) 확인 또는 새 학습 생성
+→ 동작과 데이터 준비 방식 선택 후 학습 요청
 → 학습 진행·결과 확인
-→ 학습 동작과 제어 블록으로 작업 구성
-→ 로봇을 선택해 작업 배포·실행
+→ 학습 동작과 제어 블록으로 작업 구성·저장
+→ 로봇을 선택해 작업 배포·실행·중지
 ```
 
-학습과 작업은 사용 빈도가 높은 `목록 → 생성` 순서로 제공합니다. 데스크톱에서는 왼쪽 사이드바의 학습·작업 메뉴가 커서를 올렸을 때 펼쳐지고, 모바일에서는 메뉴 버튼과 하위 메뉴를 눌러 이동합니다.
+## 화면과 라우트
 
-## 화면 구성
-
-| 메뉴 | 주요 기능 |
-|---|---|
-| 대시보드 | UMI·로봇·학습·최근 작업 요약과 상세 화면 이동 |
-| 데이터 | 상태 필터, 등록일·보관 기간 정렬, 데이터 상세와 미리보기 |
-| 학습 목록 | 상태별 진행 현황, 새로고침, 상세, 재시도·취소, 작업 생성 연결 |
-| 학습 생성 | 동작·데이터 방식·데이터 선택, 내용 확인, 진행, 결과 확인 |
-| 작업 목록 | 작업명·포함 블록 검색, 작업 상세와 편집 이동 |
-| 작업 생성 | 학습 동작·직접 제어·반복 블록 구성, 저장, 배포와 실행 |
-| 장치 관리 | UMI·로봇 목록, 최근/오래된 사용순 정렬, 장치 등록, 로봇 상세·설정 |
-
-### 현재 구현된 동작
-
-- 랜딩, 로그인·회원가입 모달과 탭 단위 Mock 로그인 상태
-- 데스크톱 사이드바와 모바일 햄버거 메뉴
-- 대시보드 카드에서 UMI·로봇 탭 및 상세 화면으로 이동
-- Robot·UMI 등록, 목록 정렬, 로봇 정보 수정
-- 데이터 전송·검증 상태, 실패 사유, 보관 기간과 상세 미리보기
-- 데이터 상태 필터(`전체`, `학습 가능`, `처리 중`, `확인 실패`)
-- 데이터 정렬(`최신 등록순`, `오래된 등록순`, `보관 만료 임박순`)
-- 단계형 학습 생성, 학습 초안 보존, 진행·완료 처리
-- 큰 상태 요약 영역과 상태별 학습 목록 필터
-- 학습명 선택 시 통일된 상세 모달 표시 및 상태별 재시도·취소
-- 작업명·포함 블록 검색, 상세 확인과 편집
-- 블록 추가·순서 변경·삭제, 모터 범위와 반복 블록 설정
-- 실행 전 유효성 확인, Mock 배포, 실행·중지
-- 공통 로딩·오류·빈 상태·토스트와 반응형 UI
-
-로봇 상세에서는 사용자가 작업 중심으로 판단하도록 모델 설치·교체 UI를 노출하지 않습니다. 현재 모델 정보는 Mock 도메인 데이터에 남아 있으나 실제 제품 노출 범위는 백엔드 정책 확정 후 결정합니다.
-
-## 데이터 상태
-
-| API 상태 | 화면 표시 | 의미 |
+| 라우트 | 화면 | 주요 기능 |
 |---|---|---|
-| `REGISTERED` | 등록 완료 | 파일 업로드 대기 |
-| `UPLOADING` | 업로드 중 | 영상·센서 데이터 전송 중 |
-| `VALIDATING` | 확인 중 | 파일 형식·무결성 확인 중 |
-| `READY` | 학습 가능 | 학습 입력으로 선택 가능 |
-| `INVALID` | 확인 실패 | 실패 사유 확인 후 재수집 필요 |
+| `/` | 랜딩 | 소개, 튜토리얼, 로그인 모달. 로그인 상태면 대시보드로 이동 |
+| `/dashboard` | 대시보드 | 장치·학습·작업 요약, 현재 실행 중인 작업 카드 |
+| `/data` | 데이터 | Episode 상태 필터·정렬, 상세와 미리보기 |
+| `/skills` | 동작 목록 | 동작 검색(이름·설명), 동작 추가, 설명 수정, 최신 버전·배포 상태 |
+| `/learning` | 학습 목록 | 상태별 요약·필터, 새로고침, 상세, 취소·재시도·선택 삭제 |
+| `/learning/new` | 학습 생성 | 동작·데이터 방식·Episode 선택 → 학습 요청 → 진행 확인(초안 보존) |
+| `/work` | 작업 목록 | 작업명·블록 검색, 실행 중 작업 카드, 상세·편집, 선택 삭제 |
+| `/work/new`, `/work/[workId]/edit` | 작업 생성·편집 | 학습 동작·모터·반복 블록 조립, 저장, 배포와 실행 |
+| `/devices`, `/devices/[robotId]` | 장치 관리 | UMI·로봇 목록·정렬, 장치 등록(UMI는 QR 등록), 선택 삭제, 로봇 상세·정보 수정 |
+| `/admin` | 관리자 | 사용자별 로봇 접근 권한 **(UI 목업)** |
+
+목록 화면(동작·학습·작업)은 12개 단위 클라이언트 페이지네이션을 쓰고, 추가 버튼은 페이지 제목 우측에 통일되어 있습니다.
+
+## 인증과 세션
+
+- 로그인: `POST /auth/login`(이메일·비밀번호) → `accessToken`, `expiresIn`, `user`
+- 저장: `localStorage['ssafy:auth-session']`에 토큰·만료 시각·사용자 정보 보존 → 새로고침해도 유지, 만료 시 자동 삭제
+- 요청: `Authorization: Bearer {accessToken}` 헤더를 `services/client.ts`가 자동 부착
+- 만료·401: 세션 만료 이벤트를 발생시켜 랜딩으로 이동
+- 회원가입 모달은 서버 호출 없이 입력값을 로그인 폼으로 넘기는 UI 목업입니다
+- 알려진 한계: 토큰이 `localStorage`에 있어 XSS에 노출될 수 있습니다. httpOnly 쿠키 전환은 BE와 함께 결정할 항목으로 남겨 두었습니다
+
+## 데이터 동기화
+
+SSE는 사용하지 않고 REST 재조회로 맞춥니다.
+
+| 대상 | 방식 |
+|---|---|
+| 초기 데이터(장치·Episode·학습·동작·작업) | 콘솔 진입 시 `useAppStore`가 한 번에 조회, 화면별 새로고침 버튼 |
+| 실행 중인 작업 카드 | 로봇별 실행 목록 5초 폴링 |
+| 학습 상세 | 3초 폴링 |
+| UMI QR 등록 상태 | 2초 폴링 |
+
+## Episode 상태
+
+| API 상태 | 화면 표시 | 화면 필터 |
+|---|---|---|
+| `UPLOADING` | 업로드 중 | 처리 중 |
+| `VALIDATING` | 확인 중 | 처리 중 |
+| `READY` | 학습 가능 | 학습 가능 |
+| `INVALID` | 확인 실패 | 확인 실패 |
+| `DELETING` / `DELETED` / `DELETE_FAILED` | 삭제 중 / 삭제됨 / 삭제 실패 | — |
 
 ## 핵심 용어
 
@@ -65,7 +69,7 @@ S.S.A.F.Y(Show Simply Arm Follows You)는 UMI로 수집한 동작 데이터를 �
 |---|---|---|
 | UMI | 사용자가 보여주는 동작을 수집하는 장치 | UMI, 데이터 수집 장치 |
 | Episode | UMI 동작 1회와 결과 파일 묶음 | 데이터 |
-| Skill | 로봇이 학습한 단일 동작 | 학습 동작 |
+| Skill | 로봇이 학습한 단일 동작 | 동작, 학습 동작 |
 | Task | 학습 동작과 제어 블록을 순서대로 조합한 흐름 | 작업 |
 | Deployment | 저장된 작업 버전을 로봇에 준비하는 과정 | 배포 |
 | Execution | 배포된 작업의 실제 실행 | 작업 실행 |
@@ -75,38 +79,36 @@ S.S.A.F.Y(Show Simply Arm Follows You)는 UMI로 수집한 동작 데이터를 �
 ```text
 FE/
 ├─ app/
-│  ├─ page.tsx          # 화면과 사용자 상호작용
-│  ├─ globals.css       # 디자인 토큰, 공통·반응형 스타일
-│  ├─ layout.tsx        # 메타데이터와 전역 폰트
-│  └─ Tutorial.tsx      # 랜딩 튜토리얼
+│  ├─ page.tsx                 # 랜딩·로그인
+│  ├─ layout.tsx, providers.tsx # 전역 폰트·Provider(인증·스토어·토스트)
+│  ├─ globals.css              # 디자인 토큰, 공통·반응형 스타일
+│  ├─ Tutorial.tsx             # 랜딩 튜토리얼
+│  └─ (console)/               # 로그인 필요 구간
+│     ├─ layout.tsx            #   인증 가드, 사이드바, 로딩·오류 게이트, 모달 스크롤 잠금
+│     ├─ dashboard/ data/ skills/ learning/ work/ devices/ admin/
+│     └─ …/page.tsx            #   라우트 → components/views 연결만 담당
+├─ components/
+│  ├─ views/                   # 화면 단위 컴포넌트(DashboardView, SkillListView …)
+│  ├─ GlobalHeader.tsx         # 사이드바·모바일 메뉴
+│  ├─ ActiveRobotExecutionsCard.tsx
+│  └─ Pagination.tsx
 ├─ hooks/
-│  ├─ useAppStore.tsx   # 공통 상태와 서비스 연결
-│  └─ useTaskDeployment.ts
-├─ mocks/               # 초기 장치·데이터·학습·작업 데이터
-├─ services/            # 인증과 도메인별 Mock 비동기 서비스
-├─ types/               # 공통 TypeScript 타입
-├─ public/              # 로고와 랜딩 이미지
-├─ docs/
-│  ├─ README.md         # 문서 목차
-│  ├─ DESIGN_SPEC.md    # 현재 UI·UX 규칙
-│  └─ TEAM_SETUP.md     # 팀원 개발 환경 안내
-├─ package.json         # 실행 명령과 의존성
-└─ README.md            # 프로젝트 개요
+│  ├─ useAuth.tsx              # 로그인·세션 복원·만료 처리
+│  ├─ useAppStore.tsx          # 공통 도메인 상태와 서비스 호출
+│  ├─ useTaskDeployment.ts     # 배포·실행 상태 흐름
+│  └─ usePagination.ts
+├─ lib/                        # 순수 로직(라우트 매핑, 블록 카탈로그, 페이지 계산, 상태 라벨)
+├─ services/                   # 도메인별 REST 래퍼(client.ts가 base URL·토큰·401 처리)
+├─ types/                      # 공통 TypeScript 타입
+├─ mocks/users.ts              # 관리자 화면 목업 데이터
+├─ public/                     # 로고와 이미지
+├─ docs/                       # UI·UX 명세, 팀 개발 안내, BE 전달사항
+└─ Dockerfile                  # pnpm build → pnpm start
 ```
-
-화면 컴포넌트는 현재 `app/page.tsx`에 모여 있습니다. 기능 확장 시 도메인별 화면과 공통 컴포넌트 분리가 필요합니다.
-
-### 문서 바로가기
-
-- [UI·UX 명세](docs/DESIGN_SPEC.md)
-- [팀 개발 환경 안내](docs/TEAM_SETUP.md)
 
 ## 로컬 실행
 
-### 요구 환경
-
-- Node.js 22.13 이상
-- pnpm 11 권장
+요구 환경: Node.js 22.13 이상, pnpm 11.
 
 ```bash
 git switch fe
@@ -116,67 +118,53 @@ pnpm install
 pnpm dev
 ```
 
-기본 주소는 [http://localhost:3000](http://localhost:3000)입니다.
+기본 주소는 [http://localhost:3000](http://localhost:3000)입니다. 로그인 폼에는 데모 계정(`admin01@ssafy.local` / `12345678`)이 입력되어 있습니다.
 
-```bash
-pnpm lint
-pnpm build
-pnpm start
+### API 주소
+
+`services/client.ts`는 `NEXT_PUBLIC_API_BASE_URL`(기본값 `http://localhost:8080/api/v1`)로 요청합니다. 백엔드를 로컬에 띄우지 않고 배포 서버를 쓰려면 `FE/.env.local`(git 제외)에 다음을 두면 dev 서버가 `/api` 요청을 프록시하고 CORS를 우회합니다.
+
+```env
+NEXT_PUBLIC_API_BASE_URL=/api/v1
+DEV_API_PROXY=http://<배포 서버 호스트>
 ```
 
-두 lock 파일이 존재하지만 팀 개발에서는 `pnpm-lock.yaml`과 pnpm을 기준으로 합니다.
+### 검사·빌드
 
-## Mock 동작
+```bash
+pnpm lint    # ESLint (오류 0 유지, 경고는 기존 <img> 6건)
+pnpm build   # vinext 프로덕션 빌드 → dist/
+pnpm start   # dist/를 Node 서버로 실행(PORT, HOST 환경 변수)
+```
 
-- 로그인 기본값: `admin01` / `12345678`
-- 빈 값이 아니면 Mock 로그인 가능
-- 로그인 상태는 `sessionStorage`에 보존
-- 학습 초안과 새 학습 동작은 `localStorage`에 보존
-- 장치·데이터·학습·작업 변경은 현재 브라우저 메모리 또는 저장소에서만 유지
-- URL에 `?mockError`를 붙이면 통신 오류 UI 확인 가능
+vinext는 빌드 시 타입 검사를 하지 않습니다. `npx tsc --noEmit`으로 확인할 수 있으며, 기존 코드에 남아 있는 타입 오류 23건은 알려진 부채입니다.
 
-브라우저 저장 데이터는 Git에 포함되지 않으므로 다른 팀원은 초기 Mock 상태로 시작합니다.
+## 배포
 
-## 백엔드 연동 원칙
+`FE/Dockerfile`이 `pnpm install --frozen-lockfile` → `pnpm build` → `pnpm start`(3000 포트)를 수행합니다. `BE/EC2_/compose.yaml`이 빌드 인자 `NEXT_PUBLIC_API_BASE_URL=/api/v1`을 넘기고, nginx가 `/api/`는 백엔드로, 나머지는 프론트 컨테이너로 전달하므로 딥링크(`/work/123/edit` 등)가 그대로 동작합니다.
 
-실제 API가 확정되면 화면이 아니라 `services`의 Mock 구현을 HTTP 요청으로 교체합니다.
+## 아직 목업인 범위
 
-- API 기준 경로: `/api/v1`
-- 인증: `Authorization: Bearer {accessToken}`
-- 생성·완료 요청은 필요 시 `Idempotency-Key` 적용
-- 데이터·학습·배포·실행 상태는 SSE 또는 REST 재조회로 동기화
-- API 영문 상태값을 화면용 한글과 낮은 채도의 상태 색으로 변환
-- 권한은 백엔드에서 최종 검증
-- 토큰, 장치 secret, signed URL은 브라우저 로그에 남기지 않음
-
-연동 전에는 API 주소·CORS, 인증 저장 정책, UMI 수집 시작 주체, SSE payload, 상태값과 오류 코드를 FE·BE가 함께 확정해야 합니다. GPU·UMI·Jetson 내부 API는 웹 프론트가 직접 호출하지 않습니다.
-
-## 아직 Mock인 범위
-
-- 실제 인증과 토큰 갱신·만료
-- 장치 등록 및 실시간 연결 상태
-- UMI 데이터 업로드와 파일별 전송률
-- GPU 학습 생성·진행·결과 조회
-- 작업 버전 서버 검증과 생성
-- 로봇 배포 및 작업 실행·중지
-- SSE 실시간 이벤트 구독과 재연결
+- 관리자 화면의 사용자·권한 데이터(`mocks/users.ts`)와 저장 동작
+- 회원가입 모달(서버 호출 없음)
+- Episode 미리보기 세션 URL(`createEpisodePreviewSession`) — BE 엔드포인트 확정 전
+- 동작·작업의 삭제 API(목록 UI는 BE 삭제 API 이후 추가 예정)
 
 ## Git 작업 규칙
 
-최신 `fe`에서 Jira 키를 포함한 브랜치를 만들고 MR 대상은 `fe`로 설정합니다.
+최신 `fe`(또는 지정된 기준 브랜치)에서 Jira 키를 포함한 브랜치를 만들고 MR 대상은 `fe`로 설정합니다.
 
 ```text
-feature/fe/S15P21A103-93-learning-create
+feat/fe/S15P21A103-175-list-ux
 fix/fe/S15P21A103-000-description
-docs/fe/S15P21A103-80-implementation-refresh
 ```
 
-- 기능 단위로 커밋과 MR 생성
-- 커밋 또는 MR 제목에 Jira 키 포함
-- 최소 1명 리뷰 후 병합
-- 이미 `fe`에 병합된 변경은 다른 브랜치에 중복 커밋하지 않음
-- `.vite`, `dist`, `*.tsbuildinfo`, 패키지 캐시 등 생성물은 커밋하지 않음
+- 커밋 메시지는 한 줄 `type: 설명 (S15P21A103-NNN)`
+- 기능 단위로 커밋과 MR 생성, 최소 1명 리뷰 후 병합
+- `dist/`, `.vite/`, `*.tsbuildinfo`, `.env*`, 패키지 캐시 등 생성물은 커밋하지 않음
 
-## 배포 설정
+### 문서 바로가기
 
-Vinext/Vite 설정만 포함하며, 배포는 `Dockerfile`의 `pnpm build` → `pnpm start`(Vinext Node 프로덕션 서버, 3000 포트)로 이뤄집니다. 초기 스캐폴드의 Cloudflare Workers·`.openai/hosting.json` 설정은 사용하지 않아 제거했습니다.
+- [UI·UX 명세](docs/DESIGN_SPEC.md)
+- [팀 개발 환경 안내](docs/TEAM_SETUP.md)
+- [백엔드 API 전달사항](docs/BACKEND_API_HANDOFF.md)
