@@ -2125,35 +2125,8 @@ body,.app-shell>.content{
 .data-list-controls select{padding-right:29px;padding-left:10px}
 
 .device-toolbar .device-sort{margin-left:18px}
-.device-register-action{
-  display:inline-flex;
-  height:34px;
-  margin-bottom:9px;
-  margin-left:auto;
-  padding:0 10px 0 12px;
-  align-items:center;
-  justify-content:center;
-  border:1px solid #aeb7c8;
-  border-radius:8px;
-  color:#4d5d86;
-  background:transparent;
-  font-size:12px;
-  font-weight:600;
-}
-.device-register-action span{
-  margin-left:4px;
-  font-size:22px;
-  font-weight:400;
-  line-height:1;
-  transform:translateY(-2px);
-}
-.device-register-action:hover{
-  border-color:#7f8ba2;
-  color:#2f3b59;
-}
 @media(max-width:680px){
   .device-toolbar .device-sort{margin-left:0}
-  .device-register-action{width:100%;margin-bottom:0;margin-left:0}
 }
 
 /* Group refresh metadata and controls as one compact toolbar. */
@@ -2459,8 +2432,7 @@ body{
 /* Device multi-select follows the same compact delete pattern as other lists. */
 .device-toolbar-actions{display:flex;align-items:center;gap:10px;margin-left:auto;padding-bottom:9px}
 .device-toolbar-actions .device-sort{margin-left:0;padding-bottom:0}
-.device-toolbar-actions .device-sort select,.device-toolbar-actions .device-register-action,.device-delete-action{height:34px!important;min-height:34px!important}
-.device-toolbar-actions .device-register-action{margin-bottom:0}
+.device-toolbar-actions .device-sort select,.device-delete-action{height:34px!important;min-height:34px!important}
 .device-delete-action{width:auto!important;height:34px!important;margin:0!important;padding:0 14px!important;border-radius:9px!important}
 .device-select-all{display:flex;align-items:center;gap:8px;color:var(--product-muted);font-size:12px;white-space:nowrap}
 .device-card{position:relative}
@@ -2472,12 +2444,11 @@ button.device-card-content{cursor:pointer}
 .device-card.selecting .device-card-head{padding-left:28px}
 @media(max-width:900px){
   .device-toolbar-actions{width:100%;flex-wrap:wrap;margin-left:0;padding-bottom:0}
-  .device-toolbar-actions .device-register-action{margin-left:auto}
 }
 @media(max-width:560px){
   .device-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
   .device-select-all{grid-column:1/-1}
-  .device-toolbar-actions .device-sort,.device-toolbar-actions .device-register-action,.device-delete-action{width:100%!important;margin:0!important}
+  .device-toolbar-actions .device-sort,.device-delete-action{width:100%!important;margin:0!important}
 }
 
 /* 목록 페이지네이션 (S15P21A103-175) */
