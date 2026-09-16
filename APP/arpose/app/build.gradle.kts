@@ -8,7 +8,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.ssafy.arpose"
+        applicationId = "com.a103.arpose"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
