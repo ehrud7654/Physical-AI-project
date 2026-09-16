@@ -49,5 +49,11 @@
             android:exported="false"
             android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".TutorialActivity"
+            android:exported="false"
+            android:screenOrientation="reverseLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>
 </manifest>

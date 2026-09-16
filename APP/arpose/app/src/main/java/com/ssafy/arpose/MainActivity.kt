@@ -193,6 +193,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         glView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         glView.setRenderer(this)
         glView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        // 튜토리얼 자동표시는 Onboarding 단계에서 처리(여기서 띄우면 카메라 초기화 중 일시정지로 크래시).
     }
 
     private fun focusName() = if (autoFocus) "AUTO" else "FIXED"
@@ -331,6 +332,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
 
         container.addView(row("기록", R.drawable.ic_history) { guardNav(HistoryActivity::class.java) })
         container.addView(row("설정", R.drawable.ic_tune) { guardNav(SettingsActivity::class.java) })
+        container.addView(row("도움말", R.drawable.ic_help) { guardNav(TutorialActivity::class.java) })
         pop.showAsDropDown(menuBtn)
     }
 

@@ -27,6 +27,9 @@ object Prefs {
     // FIXED 초점 거리(디옵터=1/m). 기본 6.25 ≈ 16cm (파지 10~16cm + ~40cm 를 224 기준으로 커버).
     private const val KEY_FOCUS_DIOPTERS = "focus_diopters"
 
+    // 온보딩 튜토리얼 1회 표시 플래그 (S15P21A103-173).
+    private const val KEY_TUTORIAL_SEEN = "tutorial_seen"
+
     // 활성 학습(TrainingJob). 촬영 시 stamp → 전송 라우팅·오배정 예방 (S15P21A103-164).
     private const val KEY_ACTIVE_JOB = "active_job_id"
     private const val KEY_ACTIVE_SKILL_KEY = "active_skill_key"
@@ -65,6 +68,9 @@ object Prefs {
     fun debugJobId(ctx: Context) = sp(ctx).getString(KEY_DEBUG_JOB, "") ?: ""
     fun focusDiopters(ctx: Context) = sp(ctx).getFloat(KEY_FOCUS_DIOPTERS, 6.25f)
     fun setFocusDiopters(ctx: Context, v: Float) = sp(ctx).edit().putFloat(KEY_FOCUS_DIOPTERS, v).apply()
+
+    fun tutorialSeen(ctx: Context) = sp(ctx).getBoolean(KEY_TUTORIAL_SEEN, false)
+    fun setTutorialSeen(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_TUTORIAL_SEEN, v).apply()
 
     /** 디버그 업로드 설정 저장(토글·jobId·자격). 디버그 빌드 설정 화면에서만 호출. */
     fun setDebug(ctx: Context, enabled: Boolean, jobId: String, deviceId: String, deviceSecret: String) =
