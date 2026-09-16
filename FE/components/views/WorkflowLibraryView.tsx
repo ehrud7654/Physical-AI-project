@@ -65,11 +65,11 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
   };
 
   if (!selectedWork) {
-    return <><div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div></div><ActiveRobotExecutionsCard /><div className="center-panel"><section className="card state-card"><span className="state-icon">i</span><h2>저장된 작업이 없어요</h2><p>첫 작업을 만들어 로봇이 할 일을 구성해 보세요.</p></section></div><div className="skill-list-actions list-create-actions"><button className="primary-button skill-add-button" onClick={() => onEdit('')}>새 작업 생성</button></div></>;
+    return <><div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div><button className="primary-button page-create-button" onClick={() => onEdit('')}>새 작업 생성</button></div><ActiveRobotExecutionsCard /><div className="center-panel"><section className="card state-card"><span className="state-icon">i</span><h2>저장된 작업이 없어요</h2><p>첫 작업을 만들어 로봇이 할 일을 구성해 보세요.</p></section></div></>;
   }
 
   return <>
-    <div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div></div>
+    <div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div><button className="primary-button page-create-button" onClick={() => onEdit('')}>새 작업 생성</button></div>
     <ActiveRobotExecutionsCard />
 
     <section className="workflow-library-toolbar" aria-label="작업 검색">
@@ -111,7 +111,7 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
         </section>
       </aside>
     </div>
-    <div className="skill-list-actions list-create-actions"><button className="primary-button skill-add-button" onClick={() => onEdit('')}>새 작업 생성</button></div>
+    
     {deleteWorksOpen && <div className="modal-backdrop" onMouseDown={() => !deletingWorks && setDeleteWorksOpen(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-label="작업 선택 삭제 확인" onMouseDown={(e) => e.stopPropagation()}><div className="modal-heading"><div><h2>선택한 작업을 삭제할까요?</h2><p>{selectedWorkIds.length}개 작업이 삭제됩니다.</p></div><button className="close-button" onClick={() => setDeleteWorksOpen(false)} aria-label="닫기">×</button></div><div className="card-actions"><button className="secondary-button" disabled={deletingWorks} onClick={() => setDeleteWorksOpen(false)}>돌아가기</button><button className="danger-button" disabled={deletingWorks} onClick={() => void deleteSelectedWorks()}>{deletingWorks ? '삭제 중...' : '삭제'}</button></div></section></div>}
   </>;
 }

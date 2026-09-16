@@ -91,6 +91,7 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
         {loading && <p role="status">등록된 동작을 불러오는 중이에요.</p>}
         {error && <p className="form-error" role="alert">동작 목록을 불러오지 못했어요. <button className="text-button" type="button" onClick={() => void loadSkills()}>다시 시도</button></p>}
       </div>
+      <button className="primary-button page-create-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button>
     </div>
     <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table" aria-label="동작 목록">
@@ -107,7 +108,6 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
         </div>; })}
         {!loading && !error && !skills.length && <div className="table-empty"><p>등록된 동작이 없어요.</p></div>}
       </div>
-      <div className="skill-list-actions"><button className="primary-button skill-add-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button></div>
     </section>
     {createOpen && <div className="modal-backdrop" onMouseDown={() => !creating && setCreateOpen(false)}>
       <form className="register-modal skill-create-modal" role="dialog" aria-modal="true" aria-label="동작 추가" onSubmit={submitSkill} onMouseDown={(event) => event.stopPropagation()}>
