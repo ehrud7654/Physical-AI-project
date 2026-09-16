@@ -1,0 +1,121 @@
+services:
+  gpu-backend:
+    image: ssafy-gpu-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      SERVER_PORT: 8081
+      FASTAPI_BASE_URL: http://training-api:8000
+      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:-local-fastapi-token}
+      FASTAPI_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:-local-callback-token}
+      GPU_SHARED_STORAGE_ROOT: /data/ssafy-gpu
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+    depends_on:
+      training-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  training-api:
+    image: ssafy-gpu-fastapi:local
+    build:
+      context: ./FastAPI_
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:-local-fastapi-token}
+      GPU_SPRING_BASE_URL: http://gpu-backend:8081
+      GPU_SPRING_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:-local-callback-token}
+      WORKER_ID: ${WORKER_ID:-ssafy_gpu_01}
+      STORAGE_NODE_ID: ${STORAGE_NODE_ID:-18000000-0000-4000-8000-000000000002}
+      SHARED_STORAGE_ROOT: /data/ssafy-gpu
+      RUN_JOURNAL_ROOT: /data/ssafy-gpu/journal/training-runs
+      # The host grants this project physical GPU 2 only. Docker exposes that
+      # device as logical CUDA device 0 inside this container.
+      GPU_COUNT: 1
+      CUDA_VISIBLE_DEVICES: 0
+      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      TRAINING_COMMAND_DURATION_SECONDS: ${TRAINING_COMMAND_DURATION_SECONDS:-5}
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+      - model_cache:/home/fastapi/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # Simulation and training share the only GPU assigned to this project.
+  # Start this profile only after pausing training-api workloads:
+  # docker compose --profile simulation up -d simulation-worker
+  simulation-worker:
+    image: ${SIMULATION_WORKER_IMAGE:-ssafy-simulation-worker:local}
+    profiles: ["simulation"]
+    environment:
+      CUDA_VISIBLE_DEVICES: 0
+      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      MUJOCO_GL: egl
+      PYOPENGL_PLATFORM: egl
+      SHARED_STORAGE_ROOT: /data/ssafy-gpu
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+      - model_cache:/root/.cache
+      - simulation_output:/data/ssafy-gpu/simulation-output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]
+              capabilities: [gpu]
+    restart: "no"
+
+  dcgm-exporter:
+    image: ${DCGM_EXPORTER_IMAGE:-nvcr.io/nvidia/k8s/dcgm-exporter:latest}
+    ports:
+      - "127.0.0.1:${DCGM_EXPORTER_PORT:-9400}:9400"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    cap_add:
+      - SYS_ADMIN
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9400/metrics >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  gpu_data:
+  model_cache:
+  simulation_output:
