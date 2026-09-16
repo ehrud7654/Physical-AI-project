@@ -1211,11 +1211,11 @@ select:focus,input:focus{border-color:rgba(89,105,216,.7);box-shadow:0 0 0 4px r
   .new-skill-input-row{grid-template-columns:1fr}
 }
 
-/* Keep one compact page title and place the first content group close to it. */
+/* 페이지 제목은 목록 위계의 최상단이므로 크게 (S15P21A103-175). */
 .app-shell .page-heading h1,
 .app-shell .data-list-title h1,
 .app-shell .robot-detail-hero h1{
-  font-size:24px;
+  font-size:32px;
 }
 .app-shell .page-heading{
   margin-bottom:16px;
@@ -1237,7 +1237,7 @@ select:focus,input:focus{border-color:rgba(89,105,216,.7);box-shadow:0 0 0 4px r
   .app-shell .page-heading h1,
   .app-shell .data-list-title h1,
   .app-shell .robot-detail-hero h1{
-    font-size:22px;
+    font-size:26px;
   }
   .app-shell .page-heading,
   .app-shell .page-heading.title-divider{
@@ -1983,8 +1983,7 @@ body,.app-shell>.content{
   box-shadow:none!important;
 }
 .workflow-library-toolbar .workflow-search{max-width:430px}
-.workflow-library-toolbar .workflow-search input,
-.workflow-library-toolbar .page-create-button{
+.workflow-library-toolbar .workflow-search input{
   height:32px!important;
   min-height:32px!important;
 }
@@ -2056,37 +2055,14 @@ body,.app-shell>.content{
   color:#fff;
   background:#52628f;
 }
+/* 추가 버튼은 .primary-button 그대로(채움), 크기만 눈에 띄게 (S15P21A103-175). */
 .page-create-button{
-  display:inline-flex;
-  align-items:center;
-  justify-content:flex-end;
   width:auto;
   min-width:0;
-  height:34px;
-  padding:0 10px 0 12px;
-  border:1px solid #aeb7c8!important;
-  border-radius:8px;
-  color:#4d5d86;
-  background:transparent!important;
-  box-shadow:none!important;
-  font-size:12px;
-  font-weight:600;
-}
-.page-create-button span{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  margin-left:4px;
-  font-size:22px;
-  font-weight:400;
-  line-height:1;
-  transform:translateY(-2px);
-}
-.page-create-button:hover{
-  border-color:#7f8ba2!important;
-  color:#2f3b59;
-  background:transparent!important;
-  box-shadow:none!important;
+  height:44px;
+  padding:0 22px;
+  font-size:15px;
+  font-weight:700;
 }
 .page-heading.list-page-heading{
   display:flex;
@@ -2096,7 +2072,6 @@ body,.app-shell>.content{
 .page-heading.list-page-heading .page-create-button{
   align-self:center;
 }
-.workflow-library-toolbar .page-create-button{margin-left:auto}
 @media(max-width:680px){
   .page-heading.list-page-heading{
     align-items:stretch;
