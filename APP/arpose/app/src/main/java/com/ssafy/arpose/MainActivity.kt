@@ -170,7 +170,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         recBtn.setOnClickListener {
             when {
                 recorder?.isRecording == true -> pendingToggle = true   // 정지는 항상 허용
-                !trackingOk -> Toast.makeText(this, "위치 잡는 중이에요 — 잠시 후 다시 시도", Toast.LENGTH_SHORT).show()
+                !trackingOk -> Toast.makeText(this, "카메라 안정 중이에요 — 잠시 후 다시 시도", Toast.LENGTH_SHORT).show()
                 !aeLock -> Toast.makeText(this, "밝기를 고정해 주세요 (설정 → 밝기 고정)", Toast.LENGTH_SHORT).show()
                 else -> pendingToggle = true
             }
@@ -834,8 +834,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     // 촬영 신호등 — 개발용 용어 대신 사람 말로
                     when {
                         lowSpaceNotice -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "저장공간 부족 — 녹화 불가" }
-                        trackingOk -> { sigDot.setTextColor(0xFF3FBF87.toInt()); sigText.text = if (recording) "녹화 중" else "촬영 준비 완료" }
-                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "위치 잡는 중 — 천천히 움직이세요" }
+                        trackingOk -> { sigDot.setTextColor(0xFF3FBF87.toInt()); sigText.text = if (recording) "녹화 중" else "동작 촬영 가능" }
+                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "카메라 안정 중 — 천천히 움직이세요" }
                         else -> { sigDot.setTextColor(0xFFE0A44E.toInt()); sigText.text = "준비 중…" }
                     }
                     aeBadge.visibility = if (aeLock) View.GONE else View.VISIBLE
