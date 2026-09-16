@@ -884,3 +884,433 @@ status: KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED
 extrinsic도 여전히 없다. 따라서 다음 판단은 더 많은 학습이 아니라 실제 ver1
 collision proxy를 추가한 recorded-oracle과, 실패 편을 포함할 수 있는 작업대/로봇
 base 등록 자유도의 재검토다.
+
+## 0915 후속: ver1 잠정 양측 collision proxy와 recorded-oracle 접촉 분리
+
+handoff에는 동역학용 collision geometry가 없으므로 실물 검증을 주장하지 않는
+진단 전용 대칭 평행 턱 proxy를 추가했다. 두 패드는 ver1 기구학 overlay의 턱축과
+접근축을 사용하고, 매 MuJoCo substep 전에 현재 gripper qpos를 실측 gap curve로
+변환해 안쪽 면 간격을 동기화한다. 구형 rotary jaw collision은 동시에 비활성화한다.
+박스 반크기 `(5, 12, 40)mm`, 마찰과 물체 폭 39mm는 모두 잠정값이다. 설정에는
+`measured_collision_geometry=false`, `dynamic_mujoco_ready=false`를 유지한다.
+
+기존의 턱-물체 접촉 총합은 한 손가락이 물체를 미는 상태와 양측 파지를 구별하지
+못했다. 따라서 보고서에 패드별 접촉 수, 최초 양측 접촉 cycle, 양측 접촉 tick 수와
+최대 동시 접촉 패드 수를 추가했다. 잠정 proxy에서는 lift 임계값뿐 아니라 양쪽
+패드가 동시에 접촉해야 `MujocoPickEnv.is_success()`가 참이다. 별도로
+`stable_side_grasp_success`는 최대 기울기 30도와 물체 크기 기반 수평 이탈 임계값도
+넘지 않은 경우만 참이다.
+
+학습 정책을 불러오지 않고 v9 recorded target만 실행해 challenge 3편을 preload
+`0/0.5/1/2mm`로 비교했다. preload는 gap이 55mm 이하일 때 시뮬레이터 명령만 더
+닫으며 원본 라벨과 데이터셋은 바꾸지 않는다.
+
+| episode | preload | 양측 접촉 tick | 최대/최종 상승 | 최대 XY 이탈 | 최대 기울기 | 결과 |
+|---|---:|---:|---:|---:|---:|---|
+| 150833 | 0mm | 0 | 0.93/0.93mm | 3.30mm | 2.82도 | 한쪽 접촉 뒤 IK 한계 |
+| 150833 | 2mm | 7 | 2.09/2.09mm | 3.18mm | 2.28도 | 접촉 후 IK 한계, lift 실패 |
+| 150943 | 0mm | 0 | 0.10/0.00mm | 0.40mm | 0.25도 | 양측 파지 없음 |
+| 150943 | 1mm | 22 | 60.14/60.14mm | 9.01mm | 40.84도 | lift했으나 순간 전도 |
+| 150943 | 2mm | 21 | 59.19/59.19mm | 4.56mm | 0.78도 | 잠정 안정 측면 파지 |
+| 150948 | 0mm | 0 | 0.79/0.00mm | 5.79mm | 2.89도 | 양측 파지 없음 |
+| 150948 | 1mm | 34 | 62.34/62.34mm | 11.12mm | 43.77도 | lift했으나 순간 전도 |
+| 150948 | 2mm | 37 | 81.78/81.78mm | 12.51mm | 5.83도 | 잠정 안정 측면 파지 |
+
+이 결과로 실패 원인을 하나로 묶지 않는다. `150943/150948`은 2mm 진입 깊이에서
+양측 접촉과 lift가 성립하므로 무보정 실패에는 접촉 여유가 지배적이다. 반면
+`150833`은 2mm에서도 접촉 직후 다음 목표가 관절 한계를 벗어나므로 5-DoF IK/등록
+한계가 별도 원인이다. 확인 영상은
+`out/ver1_proxy_rec_20260911_150948_preload2mm_oracle.gif`이다.
+
+2mm preload를 실물 보정값이나 최종 시뮬레이션 상수로 승인하지 않는다. 실측
+손가락 collision 형상, 과자 케이스 몸통 폭과 마찰, 카메라 optical extrinsic이
+없기 때문이다. 현재 결론은 (1) ver1 좌우 몸통 파지를 접촉 모델로 재현할 수 있고,
+(2) 등록 탐색은 접촉 이후 전체 궤적 IK 통과율을 별도로 높여야 한다는 진단까지다.
+
+### 측면 후보 우선순위와 접촉 후 IK 국소 보정
+
+잠정 proxy를 포함한 첫 32개 재탐색에서는 cheap screen의 완전 장면 통과율이 모든
+후보에서 0%였다. 이때 기존 정적 순위가 테이블 중앙 배치를 측면 파지축보다 먼저
+비교해, 측면 파지 0%인 candidate 4를 첫 finalist로 골랐다. 해당 장시간 실행은
+후보별 progress를 보존한 뒤 중단했다. 순위를 `완전 통과 -> 측면 task frame 4조건
+-> 최초 몸통 접촉 중심 -> 테이블/IK 부분 지표` 순으로 고쳤으며, zero/zero 동률에서
+중앙 top-down 후보보다 측면 후보가 앞서는 회귀검사를 추가했다.
+
+측면 후보의 물체 X 등록은 테이블 외곽 여유가 약 14mm라 30mm 규칙을 통과하지
+못했다. 상대 궤적과 데이터 라벨은 그대로 두고 `object_approach_offset_m`만
+`-20mm`, `-30mm`로 비교했다. `-20mm`에서는 `150943` 한 편만 장면을 통과해
+양측 접촉 21tick, 최종 상승 59.05mm, 최대 기울기 1.94도로 성공했다. 이 과정에서
+동적 집계기의 상대 출력 경로가 자식 프로세스 cwd에서 `AI/AI/out`로 해석되어 완료
+JSON을 `runner_error`로 오인하는 Windows 경로 버그도 발견해 절대경로로 수정했다.
+
+`-30mm`에서는 challenge 3편 모두 30mm 테이블 여유와 측면 장면 제약을 통과했다.
+기본 측면 후보는 `150943/150948`만 성공하고 `150833`이 접촉 후 관절 한계로
+실패해 2/3이었다. 이 후보 주변 시작 관절을 joint range의 1% 표준편차로 8개
+국소 탐색한 결과 candidate 3이 3/3을 통과했다.
+
+```text
+result: out/relative_chunk_v9_ver1_proxy_side_offset_minus30mm_refine8_dynamic3_20260915.json
+selected candidate: 3
+start arm rad: (0.0495351, 0.702779, 0.834085, -1.513346, 0.0403620)
+object xyz: (0.479759, -0.024126, 0.038350)m
+static scene: 3/3
+sampled geometry: 5/6 = 83.3%
+dynamic stable side grasp: 3/3
+status: DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION
+
+150833: lift 80.53mm, bilateral 47tick, max tilt 5.61deg
+150943: lift 58.72mm, bilateral 21tick, max tilt 2.74deg
+150948: lift 84.44mm, bilateral 32tick, max tilt 3.16deg
+```
+
+`150833`은 물체를 들어 올려 양측 접촉을 유지한 뒤 final tail의 step 4에서 위치
+오차 5.81mm로 5mm IK 기준을 넘었다. 현재 pick-only 게이트는 이미 안정 lift가
+성립한 뒤의 이 후속 reject보다 성공을 우선하지만, 전체 8-step 실행가능성이
+100%라는 뜻은 아니다. 확인 영상은
+`out/ver1_proxy_candidate3_rec_20260911_150833_preload2mm_oracle.gif`이다.
+
+이 결과는 challenge 3편에서 실패 원인을 분리하고 잠정 등록 후보를 찾은 것이다.
+아직 14편 전체 gate, 실측 collision/물체 폭·마찰, optical extrinsic과 실물 명령을
+검증하지 않았으므로 학습 정책 성공률이나 물리 재현 성공으로 인용하지 않는다.
+
+### 정정: 구형 외형과 잠정 collision의 불일치
+
+위 `dynamic stable side grasp: 3/3` 결과를 물리·시각 파지 성공으로 해석한 것은
+잘못이었다. 당시 씬은 기존 SO-101 회전식 집게 메시를 계속 표시하면서, 접촉은 그
+외형과 분리된 두 개의 ver1 잠정 박스가 만들었다. 따라서 영상의 손가락이 과자
+케이스 몸통을 양옆에서 잡지 않아도 보이지 않는 박스가 물체를 들어 올릴 수 있었다.
+위 3/3은 reporter와 접촉 proxy 실행 경로의 진단값으로만 남기며 파지 성공 근거로
+사용하지 않는다.
+
+이를 막기 위해 `handoff.zip/model/assets/ver1`의 좌우 holder/finger와 hand 본체
+메시를 씬에 추가하고 구형 rotary jaw 외형을 숨겼다. 각 잠정 collision pad는
+해당 좌우 finger visual과 **같은 moving body**에 부착했으며, gap 변경 시 body를
+이동시키도록 변경했다. visible-hand 선언이 없는 예전 registration/payload는 이제
+fail-closed로 중단한다. 회귀검사는 다음을 확인한다.
+
+- 구형 집게 visual/collision 네 geom의 alpha 및 contact가 비활성화됨
+- 좌우 pad가 각각 가시 finger mesh 두 개와 같은 body에 속함
+- 손가락 안쪽 면 간격이 5.3/39/79.4mm 명령을 그대로 추종함
+- 두 pad 중심의 중점이 gap과 무관하게 유지됨
+
+수정 후 `rec_20260911_150833`을 같은 candidate 3, preload 2mm로 다시 렌더했다.
+`out/ver1_visible_parallel_candidate3_150833_oracle.gif`에서 실제 ver1 좌우 손가락이
+세로로 선 물체의 몸통 양옆에 위치하고, 접촉과 함께 닫히며 들어 올리는 것을 확인했다.
+이 1편은 visual-collision 불일치를 제거했다는 확인일 뿐이다. proxy 크기·마찰은
+여전히 미실측이고 전체 challenge 3편을 새 visible-hand 필수 계약으로 다시 gate하지
+않았으므로, 앞의 3/3 수치는 계속 철회 상태로 둔다.
+
+### 0916 정정: 하드웨어 패키지 fitted contact patch 반영
+
+`handoff_20260916.zip`의 전체 SO-101/ver1 모델을 현재 overlay와 대조했다. TCP
+고정변환, 양 손가락의 `+-X` 이동축, `0~90mm` 전체 gap과 현재 8개 주요 OBJ는
+일치한다. 따라서 전체 URDF를 교체하지 않고, 접촉 형상만 패키지의 진단용 fitted
+box에 맞췄다.
+
+패키지 `handoff/simulation/robot.py`의 손가락 body-frame 값은 중심
+`(+-3,-65,27)mm`, 반크기 `(3,13,7.7)mm`, 마찰 `(1.2,0.01,0.001)`이다.
+현재 builder는 pad의 두 번째·세 번째 축을 바꾸는 local frame을 사용하므로 설정값은
+동일한 물리 형상을 나타내는 `(3,7.7,13)mm`다. archive SHA-256은
+`fd7e49fe1680bef55e21ab97be71293e22f19a34abef731df0529508971c2ac2`이다.
+
+이 box도 실측 collision geometry가 아니다. 하드웨어 패키지 자체가 fitted box라고
+명시할 뿐 측정 provenance를 제공하지 않으므로 `measured_collision_geometry=false`,
+`dynamic_mujoco_ready=false`를 유지한다. 기존 `(5,12,40)mm` box는 손가락 대부분을
+덮어 접촉을 과대평가할 수 있었으므로, 그 형상으로 얻은 동적 recorded-oracle 성공
+수치는 모두 철회하고 challenge 3편부터 다시 측정한다.
+
+새 fitted patch와 현재 visible-hand payload를 aggregate gate까지 명시적으로 전달해
+candidate 3을 다시 검사했다. 먼저 challenge 3편은 모두 양측 접촉과 안정 lift를
+통과했다. 이는 정책 성능이 아니라 recorded target replay 결과다. `150833`은 lift
+뒤 final tail에서 위치 오차 `5.81mm > 5mm`가 남으므로 전체 궤적 완전 통과로
+해석하지 않는다.
+
+같은 시작 자세와 `object_approach_offset=-30mm`를 바꾸지 않고 기존 validation
+14편으로 확장한 결과는 다음과 같다.
+
+```text
+result: out/relative_chunk_v9_ver1_fitted_patch_candidate3_val14_retry_20260916.json
+side-grasp axes: 13/14
+table edge margin: 10/14
+contact IK available: 10/14
+fitted-pad centred: 4/14
+all static scene constraints: 4/14
+dynamic recorded-oracle: 4/14 success, 10 static-scene reject
+tip/displacement among dynamically replayed episodes: 0/4
+status: REJECTED_DYNAMIC_ORACLE_GATE
+```
+
+동적으로 실행 가능한 4편은 `145912`, `150926`, `150943`, `150948`이며 모두
+양측 접촉 후 `55.7~99.6mm` lift를 보였다. 반면 실패 편 다수의 최초 접촉
+pinch-centre 오차는 약 `22~31mm`로 8mm 기준을 넘었다. 따라서 방향 오류가 다시
+발생한 것이 아니라, 큰 proxy에서 찾은 `-30mm` 접근축 오프셋과 단일 base/world
+평행이동이 작은 tip patch 및 전체 시연 분포에 맞지 않는 것이 현재 지배적 병목이다.
+다음 탐색은 fitted patch를 고정한 채 접근축 오프셋과 base/world 평행이동을 다시
+최적화해야 한다.
+
+### 0916 후속: fitted patch 오프셋 분리와 Cartesian 등록 재탐색
+
+같은 candidate 3과 validation 14편을 고정하고
+`object_approach_offset_m`만 비교했다. 이 값은 로봇/월드 등록을 대신하는 임의의
+물체 이동으로 사용하면 안 되므로, 각 실행에서는 전체 recorded trajectory의 시작
+자세를 동일하게 유지했다.
+
+| 접근축 오프셋 | 전체 정적 장면 | 최초 접촉 몸통 깊이 중심 | 테이블 여유 | contact IK | pad 중심 |
+|---:|---:|---:|---:|---:|---:|
+| -30mm | 4/14 | 4/14 | 10/14 | 10/14 | 4/14 |
+| -20mm | 3/14 | 7/14 | 8/14 | 10/14 | 4/14 |
+| -10mm | 2/14 | 3/14 | 7/14 | 10/14 | 4/14 |
+| 0mm | 1/14 | 1/14 | 7/14 | 10/14 | 4/14 |
+
+`-20mm`는 접촉점의 몸통 깊이 정렬을 가장 많이 살렸지만 전체 장면 통과율은
+낮아졌다. 특히 pad 중심 높이와 contact IK는 오프셋으로 개선되지 않았다. 따라서
+접근축 오프셋 하나로 등록 실패를 덮는 방법은 기각했다.
+
+기존 후보 생성기는 32개 중 측면 자세를 직접 만족하는 Cartesian IK 후보가 2개뿐이고
+나머지를 관절공간 로컬/무작위 값으로 채웠다. 기존의 유효한 측면 회전을 고정한 채
+시작 TCP를 X/Y/Z로 평행이동하는 후보를 먼저 푸는 경로를 추가했다. 단위검사에서는
+후보 순서와 회전 보존을 확인했고, 실제 모델에서는 측면 Cartesian 후보가 2개에서
+8개로 늘었다.
+
+같은 `-20mm`, 같은 validation 14편으로 32개를 다시 검색한 결과 새 후보는 기존
+시작값을 넘지 못했다.
+
+```text
+result: out/relative_chunk_v9_fitted_patch_cartesian_offset_minus20mm_search32_static14_20260916.json
+sha256: 5aed6e8c51e97ca70c577acfee69ab33c28595c1cb3748a27bc9ca8353666326
+side-grasp Cartesian IK candidates: 8/32
+best existing start: full static scene 3/14, combined sampled fraction 22.2%
+best new Cartesian start: full static scene 2/14, combined sampled fraction 14.8%
+dynamic recorded-oracle: not run because the static/contact gate failed
+```
+
+이 결과는 측면 방향을 90도 돌리는 문제가 남았다는 뜻이 아니다. 최고 후보의 측면
+축은 여전히 13/14를 만족한다. 병목은 한 공통 시작 등록에서 시연별 상대 이동을
+로봇 workspace, 고정 테이블 높이와 pad 중심에 동시에 맞추지 못하는 것이다. 다음
+단계는 proxy 확대나 8mm gate 완화가 아니라, 시연별 첫 관측을 공통 시작으로
+재앵커링한 현재 규칙이 물체 배치 분산과 grasp-height 분산을 어떻게 보존하는지
+검사하고, 데이터에서 정당화되는 canonical workspace 등록 규칙을 정의하는 것이다.
+그 전에는 학습 정책이나 동적 finalist를 실행하지 않는다.
+
+선택 후보에서 추론된 접촉 물체 위치는 X `0.372~0.658m`로 28.6cm 퍼졌고,
+contact pinch Z는 `0.0333~0.0487m`였다. 큰 X를 한 공통 변환으로 안쪽에 넣을 수
+있는지 확인하려고 시작 TCP를 `-0.12/-0.16/-0.20m`까지 옮기는 측면 자세 IK도
+시도했지만, 유효한 측면 후보 수는 오히려 2개뿐이었다. SO-101 5-DoF에서 현재
+측면 회전을 유지한 큰 평행이동은 성립하지 않았다. 이 장시간 중복 검색은 screen
+1개 뒤 중단했고 성공 결과로 기록하지 않는다. 후보 생성기는 검증된
+`X=-40/-80/+40mm`, `Y=0/+-40mm`, `Z=0/+-15mm` 로컬 조합으로 되돌렸다.
+
+### 0916 후속: 공통 시작 재앵커링 workspace audit
+
+탐색 결과에 에피소드별 이름 있는 실패 사유와 공통 시작 TCP에서 접촉까지의 변위를
+저장하도록 추가했다. 같은 source registration, `object_approach_offset=-20mm`,
+validation 14편을 정책 없이 재검사한 결과는 다음과 같다.
+
+```text
+result: out/relative_chunk_v9_workspace_audit_source_offset_minus20mm_20260916.json
+sha256: c288b6206680a536e2a04ee7f90c2f5a2b4aef4a3520a0275708129222fdadeb
+side-grasp axes: 13/14
+table edge margin: 8/14
+contact IK available: 10/14
+fitted-pad centred: 4/14
+first swept contact detected: 10/14
+legacy full-XY pinch-centred <=8mm: 0/14
+first swept contact body-depth-centred <=10mm: 7/14
+```
+
+공통 시작 TCP로 재앵커링한 뒤 시작→접촉 변위 span은 X `286.2mm`, Y
+`286.7mm`, Z `15.4mm`다. 추론 물체 위치도 같은 X/Y span을 보인다. 파지 높이
+절대오차는 중앙 `3.32mm`, p95 `7.91mm`, 최대 `10.32mm`이므로 높이보다 수평
+workspace 분산이 더 크다.
+
+14편의 물체 footprint를 테이블 안에 넣는 공통 XY 평행이동 교집합 자체는 존재한다
+(X `[-572.3,-157.5]mm`, Y `[-193.5,+220.9]mm`). 그러나 이는 테이블 배치만
+가능하다는 뜻이며, 5-DoF IK 또는 카메라 시야를 보장하지 않는다. 실제로 4편은
+contact IK가 없고, 10편은 pad 중심 조건을 실패한다. 따라서 후보 수를 늘리기보다
+recorded data로 정당화할 수 있는 canonical workspace 규칙과 실제 배치 허용 범위를
+확정해야 한다. 에피소드별 object-only offset이나 존재하지 않는 robot command를
+만들어 실패를 숨기지 않는다.
+
+기존 `8mm` 계산은 최초 접촉 순간의 **pinch midpoint와 물체 중심 사이 전체 XY
+거리**였다. 측면 접근에서는 표면에 처음 닿을 때 물체 반깊이만큼 접근축 거리가
+남으므로, 이를 lateral centring 오차로 세면 안 된다. 기준값을 늘리거나 삭제하지
+않고, 전체 XY를 `접근축 깊이`와 `접근축에 수직인 planar lateral 오차`로 분해해
+8mm를 lateral 성분에 적용하도록 수정했다. 몸통 깊이는 기존 contact-centroid
+10mm 조건이 별도로 담당한다.
+
+기존 JSON으로 새 정의를 읽기 전용 재계산하면 접촉 검출 10편 중 lateral 8mm 통과가
+9편이며, lateral과 몸통 깊이를 함께 통과한 것은 7편이다. 다른 scene failure까지
+그대로 적용하면 정적 통과 예상값은 `3/14`(`150926`, `150943`, `150948`)다. 이는
+수정 코드로 전체 MuJoCo 재실행하기 전의 파생값이며 최종 결과가 아니다.
+
+### 0916 확정: lateral 8mm와 정적 80% 게이트 재현
+
+수정된 lateral 정의와 정적 scene 최소 통과율 `0.8`을 탐색기 판정에 연결했다.
+이전 코드는 한 편만 정적 통과해도 diagnostic candidate status를 내는 문제가 있었고,
+이제 `scene_constraint_episode_fraction >= 0.8`이 아니면 명시적으로 거부한다.
+
+```text
+result: out/relative_chunk_v9_workspace_audit_lateral8mm_gate80_offset_minus20mm_20260916.json
+sha256: 73676d8bce873e624001d4c4d656d76520e17a7951ed69ffb8ef5cf68cbf8bda
+static threshold: 80%
+static scene pass: 3/14 = 21.4%
+pass episodes: 150926, 150943, 150948
+first contact detected: 10/14
+lateral <=8mm: 9/14 (9/10 detected)
+body-depth <=10mm: 7/14
+contact IK available: 10/14
+pad centred: 4/14
+table margin: 8/14
+status: REJECTED_NO_VALID_REGISTRATION
+```
+
+따라서 `150948`은 fitted patch가 양측 접촉 후 물체를 들 수 있다는 positive fixture로
+유지하지만, 전체 등록 성공이나 학습 정책 성공의 근거가 아니다.
+
+통과 3편에서 추론된 물체 위치 envelope는 X `0.456~0.500m`, Y
+`-0.024~0.051m`다. 그러나 이것은 독립적으로 관측한 물체 pose가 아니라 near-close
+gripper pose에서 역으로 놓은 값이고 표본도 3편뿐이다. 이 범위를 실제 canonical
+workspace 또는 수집 프로토콜로 확정하면 순환 추정이 된다. 현재 0911 raw에는
+테이블 fiducial, 독립 object pose 또는 robot-base extrinsic이 없으므로 하나의 실제
+`T_base_world`는 식별할 수 없다.
+
+다음 진단은 에피소드별 object-only offset이 아니라, **물체와 recorded trajectory
+전체에 동일한 rigid translation을 적용하는 simulation-only canonical replay**로
+제한한다. 이 검사는 상대 궤적/접촉 형상이 workspace 안에서 성립하는지만 분리하며,
+실제 캘리브레이션이나 배포 등록값을 생성하지 않는다. 여기서도 80%를 넘지 못하면
+등록이 아니라 궤적/IK/접촉 모델이 병목이다. 넘으면 독립 object/base 기준을 추가로
+수집하기 전까지 학습 정책 rollout으로 넘어가지 않는다.
+
+### 0916 확정: simulation-only canonical replay도 80% 게이트 실패
+
+진단 구현은 물체만 옮기지 않는다. 각 에피소드에서 추론된 물체 중심을 지정한
+canonical 점으로 옮긴 뒤, **기록된 모든 TCP pose에 동일한 평행이동**을 적용하고
+각 pose의 IK를 처음부터 다시 푼다. 후보 탐색, 동적 rollout 및 정책 추론은 이
+모드에서 금지한다. 통과하더라도 status는
+`DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION`으로만 낼 수 있다.
+
+두 개의 사전 고정 기준점을 검사했다.
+
+| canonical object centre | anchor IK | contact IK | static scene | 결과 |
+|---|---:|---:|---:|---|
+| `(0.30, 0.00, 0.03835)m` | 0.0% | 0/14 | 0/14 | 전 궤적 도달 불가 |
+| `(0.48, 0.00, 0.03835)m` | 40.7% | 9/14 | 0/14 | 접촉 일부 회복, 공통 gate 실패 |
+
+두 번째 점은 물체 가시성과 테이블 margin이 모두 `14/14`, 측면 축이 `13/14`였지만
+시작 pose IK는 `3/14`, pad 중심은 `4/14`, 최초 접촉의 lateral 8mm는 `9/14`,
+몸통 깊이 10mm는 `7/14`에 그쳤다. 접촉 IK가 있는 경우 collision-free는 `9/9`라서
+현재 0%의 직접 원인은 마찰이나 물체 전도가 아니라 궤적/작업공간과 pad 중심이다.
+
+```text
+result 0.30m: out/relative_chunk_v9_canonical_replay_x030_20260916.json
+sha256: 4bfb496088455686f5cfb8f357b12929e45898ed243bca1ebc30b55c7f323ae4
+result 0.48m: out/relative_chunk_v9_canonical_replay_x048_20260916.json
+sha256: 858295161bbe9abca174ed47543cee430e48fa16d20b7cccad2396fef507c498
+status: REJECTED_DIAGNOSTIC_CANONICAL_REPLAY (both)
+```
+
+이 결과를 실제 `T_base_world`로 해석하면 안 된다. canonical replay에서는 시연의
+물체-relative 궤적을 보존하기 위해 시작 TCP도 에피소드마다 함께 이동한다. 반면 실제
+배포는 공통 robot home에서 시작한다. 즉 이 검사는 "한 안전한 작업공간 점으로 전체
+궤적을 옮기면 기하가 살아나는가"만 묻고, 실제 등록값을 식별하지 않는다.
+
+결론적으로 더 많은 무작위 등록 후보를 탐색하기 전에 지원할 **물체 배치/상대 이동
+범위**를 먼저 정해야 한다. 현 14편 시작→접촉 평면 span `286.2×286.7mm` 전체를
+단일 공통 home의 ver1 5-DoF 측면 파지로 80% 재현한다는 전제는 현재 증거와 맞지
+않는다. 다음 검사는 최신 ver1 TCP·측면 자세·collision patch로 도달 가능 영역을
+다시 계측하고, 그 고정된 영역 안에 들어오는 시연 집합을 사전에 정의하는 것이다.
+이는 성공 결과를 보고 편을 고르는 절차가 아니라, 수집·평가 전에 task support를
+고정하는 절차여야 한다.
+
+### 0916 확정: 최신 ver1 측면 작업공간 재계측
+
+과거 `workspace.py`의 `15×35cm` 수치는 top-down 자세와 pre-ver1 TCP 기준이므로
+현재 몸통 측면 파지에 재사용하지 않았다. 별도 정책 없는 진단기
+`tools/probe_ver1_side_workspace.py`를 추가해 다음 조건을 동시에 검사했다.
+
+- handoff ver1 TCP와 수평 jaw/approach/up frame
+- fitted finger patch와 가시 finger가 같은 body에 부착된 현재 모델
+- 40mm gap, 물체 중심 높이 38.35mm, 접근축 오프셋 -20mm
+- IK/관절범위, 테이블·자기충돌 없음, pad 수직 중심, wrist-camera 가시성,
+  물체 footprint 30mm 테이블 여유
+
+50mm coarse grid 72점에서는 `x=0.40/0.45/0.50m, y=0`의 3점만 통과했다.
+그 주변을 25mm로 재계측한 81점에서는 18점이 통과했고 최대 연속 직사각형은
+`x=[0.375,0.500]m`, `y=[-0.025,0.025]m`, 즉 약 `12.5×5cm`였다.
+
+```text
+coarse: out/ver1_side_workspace_coarse_50mm_20260916.json
+sha256: e39a1684faae0907dc10827b5ec86672c3b43e01a443e21236ce6bdb8ed2a378
+refine: out/ver1_side_workspace_refine_25mm_v2_20260916.json
+sha256: fac0d016a00d84a9663e0d7ab161a560e1870fa470959aeb583cda914a72e323
+status: DIAGNOSTIC_VER1_SIDE_WORKSPACE_NOT_PHYSICAL_CALIBRATION
+```
+
+source registration에서 추론한 validation 14편의 물체 중심을 이 직사각형과 단순
+대조하면 2편만 안에 든다. 이 대조는 독립 object pose가 아니므로 에피소드 채택
+정본으로 쓰지 않지만, 시작→접촉 span `28.6×28.7cm`가 현 측면 workspace보다
+넓다는 진단과 일치한다.
+
+이 지도는 정적 상한이다. 양측 접촉·전체 궤적·lift를 보장하지 않고 실제
+`T_base_world`도 아니다. 다음 본수집 전에는 독립적인 object/table/base 기준으로
+실제 배치 허용 범위를 이 영역 안에 정의하고 기록해야 한다. 현재 데이터에 대해서는
+이 결과를 근거로 성공 편만 사후 선택하지 않으며, 정책 학습 rollout도 계속 보류한다.
+
+### 0916 추가: HW `can_side` 배치 envelope와 측면 프레임 분리 진단
+
+HW handoff의 `configs/can_side.yaml`에서 사전에 선언된 시뮬레이션 배치 범위
+`x=[0.385,0.415]m`, `y=[-0.035,0.035]m`를 별도 task-envelope 설정으로
+옮겼다. 이는 YCB 토마토 캔용 시뮬레이션 범위이며 실물 구운감자 케이스의 측정
+배치나 `T_base_world`가 아니다. 최신 ver1 정적 측면 자세로 5mm grid를 검사하면
+105점 중 104점이 IK, 충돌 없음, pad 수직 중심, 잠정 MuJoCo wrist-camera 가시성
+및 테이블 margin을 동시에 통과했다. ver1 optical extrinsic은 없으므로 가시성은
+실물 카메라 검증이 아니다. 최대 연속 직사각형은
+`x=[0.385,0.415]m`, `y=[-0.035,0.030]m`다.
+
+```text
+envelope config: configs/real/ver1_side_task_envelope_can_side_handoff_20260916.json
+result: out/ver1_side_workspace_can_side_envelope_5mm_20260916.json
+sha256: b0f86e02f13a6b758ec137f9cebd1b30df761164b9179307c12168a075c189c2
+accepted: 104/105 (99.0%)
+```
+
+따라서 사전 고정한 시뮬레이션 배치 범위 자체는 정적 canonical 측면 자세를 거의
+모두 지원한다. 다음으로 그 중심 `(0.40,0.00,0.03835)m`에서 같은 14편의 전체
+recorded trajectory를 세 조건으로 비교했다. 회전 및 3D 정렬을 바꾸는 조건은 모두
+명시적인 simulation-only 진단이며 원본 데이터와 학습 라벨은 수정하지 않았다.
+
+| 조건 | anchor geometry | full scene | side frame | pad 중심 | 첫 접촉 |
+|---|---:|---:|---:|---:|---:|
+| 원본 회전 + XY 이동 | 0/27 | 0/14 | 0/14 | 0/14 | 8/14 |
+| 고정 측면 회전 + XY 이동 | 9/27 | 0/14 | 14/14 | 1/14 | 4/14 |
+| 고정 측면 회전 + 접촉점 3D 정렬 | 10/27 | 3/14 | 14/14 | 14/14 | 7/14 |
+
+```text
+raw+xy:
+  out/relative_chunk_v9_canonical_replay_can_side_center_x040_20260916.json
+  sha256 721a189484ba7a6bc6bbe13f2dfb627b71e1b11642fb108fea5e7d62ccbe9df4
+side+xy:
+  out/relative_chunk_v9_canonical_replay_can_side_center_x040_projected_20260916.json
+  sha256 a5c7e736fd689f963f55c12e42661afee7ba31c548e57bea157ed24a543ff2b3
+side+3d:
+  out/relative_chunk_v9_canonical_replay_can_side_center_x040_projected_aligned3d_20260916.json
+  sha256 2c235c7a6c1c3dd4b5b8586662de4d93b0c6f77f314a96820784d25ecf8b6c66
+status: REJECTED_DIAGNOSTIC_CANONICAL_REPLAY (all)
+```
+
+고정 측면 회전으로 side frame이 `14/14`가 된 것은 원본 UMI 회전을 그대로
+SO-101 5-DoF에 요구하는 것이 병목이었음을 보인다. 접촉점을 물체 몸통 중심에 3D로
+맞추면 pad 중심과 contact IK도 `14/14`가 되므로 에피소드별 수직 기준 불일치도
+별도 병목이다. 하지만 이는 측정 캘리브레이션이 아니라 결과를 분해하기 위한 강제
+투영이므로 정본 변환이나 학습 라벨로 승격하지 않는다.
+
+남은 첫 접촉 실패는 gap과 명확히 분리된다. 접촉한 7편의 near-close target gap은
+`34.84~38.15mm`, 접촉하지 않은 7편은 `39.81~41.21mm`로 겹치지 않는다. 현재
+물체 폭 `39mm`와 fitted pad는 잠정값이며 캘리퍼 실측이 아니다. 따라서 다음 물리
+게이트는 무작위 위치 탐색이 아니라 다음 두 값을 독립 측정해 고정하는 것이다.
+
+1. 실제 구운감자 케이스의 파지 방향 몸통 폭
+2. SO-101/ver1의 명령 gap과 양쪽 pad 내측면 사이 실제 거리의 대응
+
+이 둘이 확정되기 전에는 object width나 pad를 성공률에 맞춰 조정하지 않고,
+recorded-oracle 동적 lift 및 학습 정책 rollout도 계속 보류한다.

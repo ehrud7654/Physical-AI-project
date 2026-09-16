@@ -40,6 +40,8 @@ CHECKS = (
     "check_sim_gripper_contract.py",
     "check_relative_chunk_oracle_gate.py",
     "check_relative_chunk_registration_search.py",
+    "check_ver1_collision_proxy.py",
+    "check_ver1_side_workspace.py",
     "check_umi_action_roundtrip.py",
 )
 

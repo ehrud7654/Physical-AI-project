@@ -24,6 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mujoco
 import numpy as np
 
+from sim.mujoco.build_scene import (
+    active_gripper_pad_ids,
+    sync_gripper_collision_proxy,
+)
 from umi.relative_robot_preflight import (
     FixedActionPolicy,
     arm_ranges,
@@ -34,6 +38,7 @@ from umi.relative_robot_preflight import (
 from tools.umi_mujoco import (
     DEFAULT_CONFIG,
     DEFAULT_SCENE,
+    MujocoArmAdapter,
     MujocoIK,
     apply_kinematic_grasp,
     build_model,
@@ -267,19 +272,79 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
     target_quat = matrix_to_quat(rotation)
     source_q = np.r_[source, invert_gap_curve(
         initial_gap_m, ik.cfg["grasp"]["gap_curve"])]
-    source_pos, _ = ik.forward_pose(source_q)
-    directed_source = ik.solve(
-        source_pos, target_quat, initial_gap_m, q_init=source_q)
-    directed_arm = np.asarray(directed_source.q_rad[:5], dtype=float)
-    if (
-        directed_source.converged
-        and directed_source.pos_error_m <= 0.005
-        and directed_source.axis_error_deg <= 5.0
-        and np.all(directed_arm >= ranges[:, 0])
-        and np.all(directed_arm <= ranges[:, 1])
-        and np.linalg.norm(directed_arm - source) > 1e-3
-    ):
-        candidates.append(directed_arm)
+    source_pos, source_quat = ik.forward_pose(source_q)
+
+    # Registration translation is a transform of the complete recorded
+    # trajectory, not an object-only correction.  Preserve the already valid
+    # side-grasp rotation and solve Cartesian translations of the start TCP
+    # before spending candidates on unconstrained joint-space samples.  The
+    # old generator produced only two directed IK seeds out of 32 and filled
+    # the remainder with joint-space samples that almost always lost the
+    # horizontal side-grasp frame.
+    local_translations = [
+        np.asarray([dx, dy, dz], dtype=float)
+        for dx in (-0.04, -0.08, 0.04)
+        for dz in (0.0, -0.015, 0.015)
+        for dy in (0.0, -0.04, 0.04)
+    ]
+    for translation in local_translations:
+        target_xyz = source_pos + translation
+        solution = ik.solve(
+            target_xyz, source_quat, initial_gap_m, q_init=source_q)
+        directed_solutions = [solution]
+        for delta in (np.pi, -np.pi):
+            seed_q = np.asarray(solution.q_rad, dtype=float).copy()
+            seed_q[4] += delta
+            if ranges[4, 0] <= seed_q[4] <= ranges[4, 1]:
+                directed_solutions.append(ik.solve(
+                    target_xyz, source_quat, initial_gap_m, q_init=seed_q))
+
+        source_rotation = quat_to_matrix(source_quat)
+
+        def source_frame_score(value: Any) -> tuple[float, float, float]:
+            _, achieved_quat = ik.forward_pose(value.q_rad)
+            achieved_rotation = quat_to_matrix(achieved_quat)
+            return (
+                float(np.dot(
+                    achieved_rotation[:, 1], source_rotation[:, 1])),
+                -float(value.pos_error_m),
+                -float(value.axis_error_deg),
+            )
+
+        solution = max(directed_solutions, key=source_frame_score)
+        _, achieved_quat = ik.forward_pose(solution.q_rad)
+        achieved_rotation = quat_to_matrix(achieved_quat)
+        directed_up_error = float(np.degrees(np.arccos(np.clip(
+            np.dot(achieved_rotation[:, 1], source_rotation[:, 1]),
+            -1.0, 1.0))))
+        arm = np.asarray(solution.q_rad[:5], dtype=float)
+        valid = bool(
+            solution.converged
+            and solution.pos_error_m <= 0.005
+            and solution.axis_error_deg <= 5.0
+            and directed_up_error <= 5.0
+            and np.all(arm >= ranges[:, 0])
+            and np.all(arm <= ranges[:, 1])
+        )
+        if valid and all(np.linalg.norm(arm - value) > 1e-3
+                         for value in candidates):
+            candidates.append(arm)
+        if len(candidates) >= 1 + target_count:
+            break
+
+    if len(candidates) < 1 + target_count:
+        directed_source = ik.solve(
+            source_pos, target_quat, initial_gap_m, q_init=source_q)
+        directed_arm = np.asarray(directed_source.q_rad[:5], dtype=float)
+        if (
+            directed_source.converged
+            and directed_source.pos_error_m <= 0.005
+            and directed_source.axis_error_deg <= 5.0
+            and np.all(directed_arm >= ranges[:, 0])
+            and np.all(directed_arm <= ranges[:, 1])
+            and np.linalg.norm(directed_arm - source) > 1e-3
+        ):
+            candidates.append(directed_arm)
     xs = np.linspace(0.10, 0.32, 4)
     ys = np.linspace(-0.20, 0.20, 5)
     # The standing case centre is 38.35 mm above the table and the configured
@@ -291,6 +356,8 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
                for z in zs for y in ys for x in xs]
     rng.shuffle(targets)
     for x, y, z, rotation in targets:
+        if len(candidates) >= 1 + target_count:
+            break
         target_xyz = np.asarray([x, y, z])
         seed_q = np.r_[centre, invert_gap_curve(
             initial_gap_m, ik.cfg["grasp"]["gap_curve"])]
@@ -335,9 +402,6 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
         if valid and all(np.linalg.norm(arm - value) > 1e-3
                          for value in candidates):
             candidates.append(arm)
-        if len(candidates) >= 1 + target_count:
-            break
-
     targeted_count = len(candidates) - 1
     local_count = max(0, int(round((count - len(candidates)) * 0.65)))
     sigma = 0.10 * (hi - lo)
@@ -346,6 +410,20 @@ def _candidate_starts(current: np.ndarray, ranges: np.ndarray, *, count: int,
     while len(candidates) < count:
         candidates.append(rng.uniform(lower, upper))
     return candidates, targeted_count
+
+
+def _require_source_registration(registration: dict[str, Any]) -> None:
+    """Accept only source files that explicitly deny physical validation."""
+    accepted = {
+        "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
+        "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+    }
+    status = registration.get("status")
+    if status not in accepted:
+        raise ValueError(
+            "source registration must be an explicitly nonphysical "
+            f"diagnostic, got {status!r}"
+        )
 
 
 def _refined_starts(*, seeds: list[np.ndarray], ranges: np.ndarray,
@@ -398,20 +476,12 @@ def _collision_counts(model: Any, data: Any) -> tuple[int, int]:
     return table_robot, self_collision
 
 
-def _jaw_object_contact_details(model: Any, data: Any,
+def _jaw_object_contact_details(model: Any, data: Any, cfg: dict[str, Any],
                                 object_xyz: np.ndarray) -> list[dict[str, Any]]:
     """Describe static contacts between the two active jaws and the object."""
     object_geom = mujoco.mj_name2id(
         model, mujoco.mjtObj.mjOBJ_GEOM, "target_object_geom")
-    jaw_bodies = {
-        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-        for name in ("gripper", "moving_jaw_so101_v1")
-    }
-    jaw_geoms = {
-        geom_id for geom_id in range(model.ngeom)
-        if int(model.geom_bodyid[geom_id]) in jaw_bodies
-        and int(model.geom_contype[geom_id]) != 0
-    }
+    jaw_geoms = active_gripper_pad_ids(model, cfg)
     details = []
     for index in range(data.ncon):
         contact = data.contact[index]
@@ -431,12 +501,12 @@ def _jaw_object_contact_details(model: Any, data: Any,
     return details
 
 
-def _jaw_object_contacts(model: Any, data: Any) -> int:
+def _jaw_object_contacts(model: Any, data: Any, cfg: dict[str, Any]) -> int:
     """Count static contacts between the two active jaw bodies and the object."""
     object_body = mujoco.mj_name2id(
         model, mujoco.mjtObj.mjOBJ_BODY, "target_object")
     return len(_jaw_object_contact_details(
-        model, data, np.asarray(data.xpos[object_body], dtype=float)))
+        model, data, cfg, np.asarray(data.xpos[object_body], dtype=float)))
 
 
 def _set_static_object_pose(model: Any, data: Any,
@@ -452,7 +522,119 @@ def _set_static_object_pose(model: Any, data: Any,
     data.qpos[qpos_address + 3:qpos_address + 7] = [1.0, 0.0, 0.0, 0.0]
 
 
+def _planar_contact_offsets(offset: np.ndarray,
+                            approach_axis: np.ndarray) -> tuple[float, float]:
+    """Signed approach depth and absolute lateral error in the table plane."""
+    offset = np.asarray(offset, dtype=float)
+    approach_xy = np.asarray(approach_axis, dtype=float)[:2]
+    if (offset.shape != (3,) or not np.isfinite(offset).all()
+            or approach_xy.shape != (2,) or not np.isfinite(approach_xy).all()):
+        raise ValueError("contact offset and approach axis must be finite")
+    norm = float(np.linalg.norm(approach_xy))
+    if norm <= 1e-9:
+        raise ValueError("side-grasp approach axis must have a planar component")
+    approach_xy /= norm
+    lateral_xy = np.asarray([-approach_xy[1], approach_xy[0]])
+    return (
+        float(np.dot(offset[:2], approach_xy)),
+        abs(float(np.dot(offset[:2], lateral_xy))),
+    )
+
+
+def _canonical_replay_translation(
+        *, contact_position_m: np.ndarray,
+        desired_world_approach_axis: np.ndarray,
+        object_approach_offset_m: float,
+        canonical_object_xyz_m: np.ndarray,
+        align_contact_to_body_center_3d: bool,
+) -> np.ndarray:
+    """Return an explicit diagnostic trajectory/object registration shift.
+
+    The default preserves the source vertical trajectory and changes XY only.
+    The optional 3-D mode additionally treats the recorded near-closed pinch
+    as the source object's body centre (modulo the configured approach offset)
+    and aligns it to the canonical on-table object.  That mode isolates missing
+    vertical registration; it is not measured calibration.
+    """
+    contact = np.asarray(contact_position_m, dtype=float)
+    approach = np.asarray(desired_world_approach_axis, dtype=float)
+    canonical = np.asarray(canonical_object_xyz_m, dtype=float)
+    if (contact.shape != (3,) or approach.shape != (3,)
+            or canonical.shape != (3,)
+            or not np.isfinite(contact).all()
+            or not np.isfinite(approach).all()
+            or not np.isfinite(canonical).all()
+            or not np.isfinite(object_approach_offset_m)):
+        raise ValueError("invalid canonical replay alignment inputs")
+    inferred_object = (
+        contact + approach * float(object_approach_offset_m))
+    if not align_contact_to_body_center_3d:
+        inferred_object[2] = canonical[2]
+    return canonical - inferred_object
+
+
+def _translated_episode_anchors(
+        *, poses: list[np.ndarray], gaps: np.ndarray,
+        translation_m: np.ndarray, ik: MujocoIK, curve: Any,
+        ranges: np.ndarray, seed_arm: np.ndarray,
+        rotation_world_eef: np.ndarray | None = None,
+) -> tuple[list[np.ndarray], list[np.ndarray | None]]:
+    """Translate the complete trajectory, optionally project rotation, and solve.
+
+    This is a simulation-only workspace diagnostic. It deliberately translates
+    every recorded pose by the same vector as the inferred object; translating
+    the object alone would manufacture contact and is forbidden.  The optional
+    constant rotation is an explicit 5-DoF side-frame retargeting diagnostic;
+    it must never silently replace the recorded orientation in training data.
+    """
+    translation = np.asarray(translation_m, dtype=float)
+    gaps = np.asarray(gaps, dtype=float)
+    seed = np.asarray(seed_arm, dtype=float).copy()
+    projected_rotation = None
+    if rotation_world_eef is not None:
+        projected_rotation = np.asarray(rotation_world_eef, dtype=float)
+        if (projected_rotation.shape != (3, 3)
+                or not np.isfinite(projected_rotation).all()
+                or not np.allclose(
+                    projected_rotation.T @ projected_rotation,
+                    np.eye(3), rtol=0.0, atol=1e-6)
+                or not np.isclose(
+                    np.linalg.det(projected_rotation), 1.0,
+                    rtol=0.0, atol=1e-6)):
+            raise ValueError(
+                "projected side-frame rotation must be a proper rotation")
+    if (translation.shape != (3,) or not np.isfinite(translation).all()
+            or len(poses) != len(gaps) or seed.shape != (5,)):
+        raise ValueError("invalid canonical replay translation inputs")
+    adapter = MujocoArmAdapter(ik, curve)
+    translated: list[np.ndarray] = []
+    arms: list[np.ndarray | None] = []
+    for pose, gap in zip(poses, gaps, strict=True):
+        target = np.asarray(pose, dtype=float).copy()
+        target[:3, 3] += translation
+        if projected_rotation is not None:
+            target[:3, :3] = projected_rotation
+        translated.append(target)
+        solution = adapter.solve(
+            target, seed_rad=seed, gripper_width_m=float(gap))
+        valid = bool(
+            solution.converged
+            and solution.position_error_m <= 0.005
+            and solution.axis_error_deg <= 5.0
+            and solution.roll_error_deg <= 5.0
+            and np.all(solution.positions_rad >= ranges[:, 0])
+            and np.all(solution.positions_rad <= ranges[:, 1])
+        )
+        if valid:
+            seed = solution.positions_rad.copy()
+            arms.append(seed.copy())
+        else:
+            arms.append(None)
+    return translated, arms
+
+
 def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
+                            cfg: dict[str, Any],
                             arms: list[np.ndarray | None], gaps: np.ndarray,
                             contact_row: int, object_xyz: np.ndarray,
                             curve: Any, interpolation_substeps: int,
@@ -494,15 +676,18 @@ def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
             ]
         for substep, sample_q, sample_gap in samples:
             data.qpos[:6] = sample_q
+            sync_gripper_collision_proxy(model, data, cfg)
             mujoco.mj_forward(model, data)
             checked += 1
             contact_details = _jaw_object_contact_details(
-                model, data, object_xyz)
+                model, data, cfg, object_xyz)
             if not contact_details:
                 continue
             pinch_xyz, _ = ik.forward_pose(sample_q)
             offset = np.asarray(pinch_xyz, dtype=float) - object_xyz
             xy = float(np.linalg.norm(offset[:2]))
+            approach_offset, lateral_offset = _planar_contact_offsets(
+                offset, desired_world_approach_axis)
             contact_centre_offset = np.mean([
                 np.asarray(value["position_minus_object_m"], dtype=float)
                 for value in contact_details
@@ -521,9 +706,14 @@ def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
                 "pinch_xyz_m": np.asarray(pinch_xyz, dtype=float).tolist(),
                 "pinch_minus_object_m": offset.tolist(),
                 "pinch_xy_offset_m": xy,
+                "pinch_approach_offset_m": approach_offset,
+                "pinch_lateral_offset_m": lateral_offset,
                 "pinch_3d_offset_m": float(np.linalg.norm(offset)),
                 "max_pinch_xy_m": max_pinch_xy_m,
-                "centered": xy <= max_pinch_xy_m,
+                "max_pinch_lateral_m": max_pinch_xy_m,
+                "centering_metric": "planar_perpendicular_to_approach_axis",
+                "centered": lateral_offset <= max_pinch_xy_m,
+                "legacy_full_xy_centered": xy <= max_pinch_xy_m,
                 "contact_centre_minus_object_m": (
                     contact_centre_offset.tolist()),
                 "body_depth_offset_m": body_depth_offset,
@@ -545,9 +735,14 @@ def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
         "pinch_xyz_m": None,
         "pinch_minus_object_m": None,
         "pinch_xy_offset_m": None,
+        "pinch_approach_offset_m": None,
+        "pinch_lateral_offset_m": None,
         "pinch_3d_offset_m": None,
         "max_pinch_xy_m": max_pinch_xy_m,
+        "max_pinch_lateral_m": max_pinch_xy_m,
+        "centering_metric": "planar_perpendicular_to_approach_axis",
         "centered": False,
+        "legacy_full_xy_centered": False,
         "contact_centre_minus_object_m": None,
         "body_depth_offset_m": None,
         "max_body_depth_offset_m": max_body_depth_offset_m,
@@ -599,6 +794,127 @@ def _geom_vertical_interval(model: Any, data: Any,
 
 def _mean(rows: list[bool]) -> float:
     return float(np.mean(rows)) if rows else 0.0
+
+
+def _scene_gate(checks: dict[str, bool]) -> tuple[bool, float, list[str]]:
+    """Return the hard scene decision and every failed named constraint."""
+    if not checks:
+        raise ValueError("scene gate requires at least one named constraint")
+    normalised = {str(name): bool(value) for name, value in checks.items()}
+    failed = [name for name, value in normalised.items() if not value]
+    return not failed, float(np.mean(list(normalised.values()))), failed
+
+
+def _workspace_audit(*, episode_reports: list[dict[str, Any]],
+                     table_xy: np.ndarray, table_half_xy: np.ndarray,
+                     object_size_m: np.ndarray,
+                     edge_margin_m: float) -> dict[str, Any]:
+    """Summarise what one common registration can and cannot translate away."""
+    if not episode_reports:
+        raise ValueError("workspace audit requires per-episode reports")
+    object_xyz = np.asarray([
+        report["object_xyz_m"] for report in episode_reports
+    ], dtype=float)
+    displacements = np.asarray([
+        report["contact_displacement_from_common_start_m"]
+        for report in episode_reports
+    ], dtype=float)
+    grasp_height = np.asarray([
+        report["grasp_height_error_m"] for report in episode_reports
+    ], dtype=float)
+    contact_target_gaps = np.asarray([
+        report["contact_target_gap_m"] for report in episode_reports
+    ], dtype=float)
+    minimum_recorded_gaps = np.asarray([
+        report["minimum_recorded_gap_m"] for report in episode_reports
+    ], dtype=float)
+    contact_detected = np.asarray([
+        bool(report["first_approach_contact"]["detected"])
+        for report in episode_reports
+    ], dtype=bool)
+    if (object_xyz.shape != (len(episode_reports), 3)
+            or displacements.shape != (len(episode_reports), 3)
+            or not np.isfinite(object_xyz).all()
+            or not np.isfinite(displacements).all()
+            or not np.isfinite(grasp_height).all()
+            or not np.isfinite(contact_target_gaps).all()
+            or not np.isfinite(minimum_recorded_gaps).all()):
+        raise ValueError("workspace audit received invalid episode geometry")
+
+    table_xy = np.asarray(table_xy, dtype=float)
+    table_half_xy = np.asarray(table_half_xy, dtype=float)
+    object_size_m = np.asarray(object_size_m, dtype=float)
+    usable_half = (
+        table_half_xy - object_size_m[:2] / 2.0 - float(edge_margin_m))
+    lower_per_episode = table_xy - usable_half - object_xyz[:, :2]
+    upper_per_episode = table_xy + usable_half - object_xyz[:, :2]
+    common_lower = np.max(lower_per_episode, axis=0)
+    common_upper = np.min(upper_per_episode, axis=0)
+    common_translation_exists = bool(np.all(common_lower <= common_upper))
+
+    failures: Counter[str] = Counter()
+    for report in episode_reports:
+        failures.update(report.get("scene_failure_reasons", []))
+
+    def distribution(values: np.ndarray) -> dict[str, Any]:
+        return {
+            "min": np.min(values, axis=0).tolist(),
+            "median": np.median(values, axis=0).tolist(),
+            "max": np.max(values, axis=0).tolist(),
+            "span": np.ptp(values, axis=0).tolist(),
+        }
+
+    def scalar_distribution(values: np.ndarray) -> dict[str, float] | None:
+        if not len(values):
+            return None
+        return {
+            "min": float(np.min(values)),
+            "median": float(np.median(values)),
+            "max": float(np.max(values)),
+        }
+
+    return {
+        "anchor_rule": "every episode starts at the same robot TCP pose",
+        "episode_count": len(episode_reports),
+        "contact_displacement_from_common_start_m": distribution(displacements),
+        "inferred_object_xyz_m": distribution(object_xyz),
+        "grasp_height_abs_error_m": {
+            "min": float(np.min(grasp_height)),
+            "median": float(np.median(grasp_height)),
+            "p95": float(np.percentile(grasp_height, 95)),
+            "max": float(np.max(grasp_height)),
+        },
+        "recorded_gap_contact_gate": {
+            "object_width_m": float(object_size_m[1]),
+            "object_width_status": "provisional_not_caliper_measured",
+            "contact_target_gap_m": scalar_distribution(
+                contact_target_gaps),
+            "minimum_recorded_gap_m": scalar_distribution(
+                minimum_recorded_gaps),
+            "contact_detected_episodes": int(np.sum(contact_detected)),
+            "contact_not_detected_episodes": int(np.sum(~contact_detected)),
+            "contact_target_gap_m_when_detected": scalar_distribution(
+                contact_target_gaps[contact_detected]),
+            "contact_target_gap_m_when_not_detected": scalar_distribution(
+                contact_target_gaps[~contact_detected]),
+            "interpretation": (
+                "A gap/contact split diagnoses consistency between the "
+                "recorded gripper gap, provisional object width and fitted "
+                "pad geometry; it does not measure the real object width."
+            ),
+        },
+        "scene_failure_counts": dict(sorted(failures.items())),
+        "common_xy_translation_for_table_margin_m": {
+            "exists": common_translation_exists,
+            "lower": common_lower.tolist(),
+            "upper": common_upper.tolist(),
+        },
+        "interpretation": (
+            "A common XY interval only proves table-footprint feasibility; "
+            "it does not prove 5-DoF IK reachability or justify an "
+            "episode-specific object offset."
+        ),
+    }
 
 
 def _table_placement_metrics(*, object_xyz: np.ndarray,
@@ -657,6 +973,9 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                         first_contact_max_body_depth_offset_m: float,
                         approach_contact_substeps: int,
                         object_approach_offset_m: float,
+                        diagnostic_canonical_object_xyz: np.ndarray | None = None,
+                        diagnostic_project_side_frame: bool = False,
+                        diagnostic_align_contact_3d: bool = False,
                         kinematic_only: bool = False,
                         camera_screen_available: bool = True) -> dict[str, Any]:
     curve = cfg["grasp"]["gap_curve"]
@@ -665,6 +984,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
     first_gap = float(first_episode["proprio"][0, -1, 9])
     q_start = np.r_[arm_start, invert_gap_curve(first_gap, curve)]
     data.qpos[:6] = q_start
+    sync_gripper_collision_proxy(model, data, cfg)
     mujoco.mj_forward(model, data)
     start_table_contacts, start_self_contacts = _collision_counts(model, data)
     start_pos, start_quat = ik.forward_pose(q_start)
@@ -691,9 +1011,45 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             arm_start=arm_start, ranges=ranges)
         contact = _contact_row(gaps)
         contact_pose = poses[contact]
-        object_xyz = np.asarray(contact_pose[:3, 3], dtype=float).copy()
+        contact_position = np.asarray(contact_pose[:3, 3], dtype=float).copy()
+        object_xyz = contact_position.copy()
         object_xyz += desired_world_approach_axis * object_approach_offset_m
         object_xyz[2] = object_z
+        canonical_translation = np.zeros(3, dtype=float)
+        if diagnostic_canonical_object_xyz is not None:
+            canonical_object = np.asarray(
+                diagnostic_canonical_object_xyz, dtype=float)
+            if (canonical_object.shape != (3,)
+                    or not np.isfinite(canonical_object).all()
+                    or not np.isclose(canonical_object[2], object_z,
+                                      rtol=0.0, atol=1e-9)):
+                raise ValueError(
+                    "diagnostic canonical object xyz must be finite and lie "
+                    "on the configured table")
+            canonical_translation = _canonical_replay_translation(
+                contact_position_m=contact_position,
+                desired_world_approach_axis=desired_world_approach_axis,
+                object_approach_offset_m=object_approach_offset_m,
+                canonical_object_xyz_m=canonical_object,
+                align_contact_to_body_center_3d=(
+                    diagnostic_align_contact_3d),
+            )
+            projected_rotation = None
+            if diagnostic_project_side_frame:
+                projected_rotation = np.column_stack([
+                    desired_world_jaw_axis,
+                    desired_world_up_axis,
+                    desired_world_approach_axis,
+                ])
+            poses, arms = _translated_episode_anchors(
+                poses=poses, gaps=gaps,
+                translation_m=canonical_translation,
+                ik=ik, curve=curve, ranges=ranges,
+                seed_arm=arm_start,
+                rotation_world_eef=projected_rotation,
+            )
+            contact_pose = poses[contact]
+            object_xyz = canonical_object.copy()
         if kinematic_only:
             first_approach_contact = {
                 "available": False,
@@ -705,7 +1061,8 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             }
         else:
             first_approach_contact = _first_approach_contact(
-                model=model, data=data, ik=ik, arms=arms, gaps=gaps,
+                model=model, data=data, ik=ik, cfg=cfg,
+                arms=arms, gaps=gaps,
                 contact_row=contact, object_xyz=object_xyz, curve=curve,
                 interpolation_substeps=approach_contact_substeps,
                 max_pinch_xy_m=first_contact_max_pinch_xy_m,
@@ -714,8 +1071,15 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                     first_contact_max_body_depth_offset_m),
             )
 
-        data.qpos[:6] = q_start
+        episode_start_ik_available = arms[0] is not None
+        episode_q_start = (
+            np.r_[arms[0], invert_gap_curve(float(gaps[0]), curve)]
+            if episode_start_ik_available else q_start)
+        data.qpos[:6] = episode_q_start
+        sync_gripper_collision_proxy(model, data, cfg)
         mujoco.mj_forward(model, data)
+        episode_start_table_contacts, episode_start_self_contacts = (
+            _collision_counts(model, data))
         camera = _camera_metrics(model, data, object_xyz)
         camera_world_z = float(data.cam_xpos[
             mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "cam_wrist"), 2]
@@ -760,12 +1124,19 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
 
         contact_ik_available = arms[contact] is not None
         contact_collision_free = False
-        pad_vertical_overlaps = {"pad_fixed": 0.0, "pad_moving": 0.0}
-        pad_center_offsets = {"pad_fixed": None, "pad_moving": None}
+        pad_block = cfg.get("gripper_pads") or {}
+        pad_names = (
+            list(pad_block.get("pad_names", []))
+            if pad_block.get("kind") == "symmetric_parallel_jaw_runtime_proxy"
+            else [str(value["name"]) for value in pad_block.get("pads", [])]
+        )
+        pad_vertical_overlaps = {name: 0.0 for name in pad_names}
+        pad_center_offsets = {name: None for name in pad_names}
         object_center_inside_both_pads = False
         if contact_ik_available and not kinematic_only:
             data.qpos[:6] = np.r_[
                 arms[contact], invert_gap_curve(float(gaps[contact]), curve)]
+            sync_gripper_collision_proxy(model, data, cfg)
             mujoco.mj_forward(model, data)
             table_contacts, self_contacts = _collision_counts(model, data)
             contact_collision_free = table_contacts == 0 and self_contacts == 0
@@ -785,33 +1156,58 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
 
         contact_collision_free = bool(contact_collision_free)
         start_collision_free = bool(
-            start_table_contacts == 0 and start_self_contacts == 0)
+            episode_start_ik_available
+            and episode_start_table_contacts == 0
+            and episode_start_self_contacts == 0)
+        # Use this episode's actual (possibly diagnostic-translated) first
+        # pose.  The common candidate start pose is a registration seed, not
+        # the beginning of the recorded motion.
+        contact_displacement = np.asarray(
+            contact_pose[:3, 3] - poses[0][:3, 3], dtype=float)
         if kinematic_only:
-            scene_components = (
-                side_body_grasp, jaw_yaw_aligned, up_axis_aligned,
-                object_on_table, body_midheight_aligned,
-                contact_ik_available,
-            )
+            scene_checks = {
+                "start_ik_available": episode_start_ik_available,
+                "upright_body_side_grasp": side_body_grasp,
+                "jaw_yaw_aligned": jaw_yaw_aligned,
+                "up_axis_aligned": up_axis_aligned,
+                "object_on_table_with_margin": object_on_table,
+                "body_midheight_aligned": body_midheight_aligned,
+                "contact_ik_available": contact_ik_available,
+            }
             if camera_screen_available:
-                scene_components = (
-                    bool(camera["visible"]), camera_above_table,
-                    *scene_components,
-                )
+                scene_checks = {
+                    "initial_object_visible": bool(camera["visible"]),
+                    "camera_above_table": camera_above_table,
+                    **scene_checks,
+                }
         else:
-            scene_components = (
-                start_collision_free,
-                bool(camera["visible"]),
-                camera_above_table,
-                side_body_grasp,
-                jaw_yaw_aligned,
-                up_axis_aligned,
-                object_on_table,
-                body_midheight_aligned,
-                object_center_inside_both_pads,
-                contact_collision_free,
-            )
-        scene_component_fraction = float(np.mean(scene_components))
-        scene_ok = bool(all(scene_components))
+            scene_checks = {
+                "start_collision_free": start_collision_free,
+                "start_ik_available": episode_start_ik_available,
+                "initial_object_visible": bool(camera["visible"]),
+                "camera_above_table": camera_above_table,
+                "upright_body_side_grasp": side_body_grasp,
+                "jaw_yaw_aligned": jaw_yaw_aligned,
+                "up_axis_aligned": up_axis_aligned,
+                "object_on_table_with_margin": object_on_table,
+                "body_midheight_aligned": body_midheight_aligned,
+                "contact_ik_available": contact_ik_available,
+                "object_center_inside_both_pads_with_margin": (
+                    object_center_inside_both_pads),
+                "contact_collision_free": contact_collision_free,
+                # These swept-contact checks were previously reported and
+                # ranked but were not part of scene_constraints_ok.  That let
+                # every 0911 candidate miss the declared 8 mm centre gate and
+                # still appear static-valid.  Keep the threshold hard.
+                "first_approach_contact_detected": bool(
+                    first_approach_contact["detected"]),
+                "first_approach_contact_centered": bool(
+                    first_approach_contact["centered"]),
+                "first_approach_contact_body_depth_centered": bool(
+                    first_approach_contact["body_depth_centered"]),
+            }
+        scene_ok, scene_component_fraction, scene_failure_reasons = (
+            _scene_gate(scene_checks))
         episode_anchor = episode_geometry = episode_combined = 0
         for row in rows:
             total_samples += 1
@@ -848,7 +1244,21 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             "oracle_geometry_accepted": episode_geometry,
             "combined_accepted": episode_combined,
             "contact_row": contact,
+            "contact_target_gap_m": float(gaps[contact]),
+            "minimum_recorded_gap_m": float(np.min(gaps)),
             "object_xyz_m": object_xyz.tolist(),
+            "diagnostic_canonical_translation_m": (
+                canonical_translation.tolist()),
+            "diagnostic_canonical_replay": bool(
+                diagnostic_canonical_object_xyz is not None),
+            "diagnostic_side_frame_projection": bool(
+                diagnostic_project_side_frame),
+            "diagnostic_contact_to_body_center_3d_alignment": bool(
+                diagnostic_align_contact_3d),
+            "contact_displacement_from_common_start_m": (
+                contact_displacement.tolist()),
+            "contact_displacement_norm_m": float(np.linalg.norm(
+                contact_displacement)),
             "object_approach_offset_m": object_approach_offset_m,
             "first_view": camera,
             "camera_screen_available": camera_screen_available,
@@ -891,7 +1301,12 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                 object_center_inside_both_pads),
             "contact_table_contacts": table_contacts,
             "contact_self_contacts": self_contacts,
+            "start_ik_available": episode_start_ik_available,
+            "start_table_contacts": episode_start_table_contacts,
+            "start_self_contacts": episode_start_self_contacts,
             "first_approach_contact": first_approach_contact,
+            "scene_checks": scene_checks,
+            "scene_failure_reasons": scene_failure_reasons,
             "scene_component_fraction": scene_component_fraction,
             "scene_constraints_ok": scene_ok,
             "screen_mode": (
@@ -950,6 +1365,11 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         for report in episode_reports
         if report["first_approach_contact"]["pinch_xy_offset_m"] is not None
     ]
+    first_contact_lateral_offsets = [
+        float(report["first_approach_contact"]["pinch_lateral_offset_m"])
+        for report in episode_reports
+        if report["first_approach_contact"]["pinch_lateral_offset_m"] is not None
+    ]
     # Prefer an episode that passes both the scene contract and at least one
     # sampled full-chunk geometry check. Choosing only by camera centring can
     # produce a neat view whose recorded tail is not executable.
@@ -973,6 +1393,13 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
              else 0.0),
             report["episode"],
         ),
+    )
+    workspace_audit = _workspace_audit(
+        episode_reports=episode_reports,
+        table_xy=np.asarray(table["pos"][:2], dtype=float),
+        table_half_xy=np.asarray(table["half_size_m"][:2], dtype=float),
+        object_size_m=object_size_m,
+        edge_margin_m=object_edge_margin_m,
     )
     return {
         "candidate_id": candidate_id,
@@ -1017,9 +1444,16 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             float(np.mean(first_contact_offsets)) if first_contact_offsets else None),
         "first_approach_contact_pinch_xy_m_max": (
             float(np.max(first_contact_offsets)) if first_contact_offsets else None),
+        "first_approach_contact_lateral_m_mean": (
+            float(np.mean(first_contact_lateral_offsets))
+            if first_contact_lateral_offsets else None),
+        "first_approach_contact_lateral_m_max": (
+            float(np.max(first_contact_lateral_offsets))
+            if first_contact_lateral_offsets else None),
         "object_approach_offset_m": object_approach_offset_m,
         "representative_episode": representative["episode"],
         "representative_object_xyz_m": representative["object_xyz_m"],
+        "workspace_audit": workspace_audit,
         "per_episode": episode_reports,
     }
 
@@ -1115,6 +1549,55 @@ def _dynamic_rank(report: dict[str, Any],
     )
 
 
+def _static_rank(report: dict[str, Any]) -> tuple[Any, ...]:
+    """Rank registration candidates without sacrificing task semantics.
+
+    When every cheap-screen candidate has zero fully accepted scenes, table
+    centrality used to outrank the required side-grasp axes.  That selected a
+    centred but top-down gripper for expensive finalist evaluation.  Keep the
+    full acceptance metrics first, then require the four task-frame checks to
+    break a zero/zero tie before convenience metrics such as table clearance.
+    """
+    task_frame_fraction = min(
+        report["jaw_yaw_aligned_episode_fraction"],
+        report["approach_axis_aligned_episode_fraction"],
+        report["up_axis_aligned_episode_fraction"],
+        report["side_grasp_episode_fraction"],
+    )
+    return (
+        report["combined_accepted_fraction"],
+        report["scene_constraint_episode_fraction"],
+        task_frame_fraction,
+        report["side_grasp_episode_fraction"],
+        report["jaw_yaw_aligned_episode_fraction"],
+        report["approach_axis_aligned_episode_fraction"],
+        report["up_axis_aligned_episode_fraction"],
+        report["first_approach_contact_body_depth_centered_episode_fraction"],
+        report["object_table_margin_episode_fraction"],
+        -report["mean_table_centre_distance_norm"],
+        report["minimum_table_edge_clearance_m"],
+        report["pad_centered_episode_fraction"],
+        report["contact_ik_available_episode_fraction"],
+        report["pad_centered_given_contact_ik_fraction"],
+        report["scene_component_fraction"],
+        report["oracle_geometry_accepted_fraction"],
+        report["anchor_accepted_fraction"],
+        -report["start_table_contacts"],
+        -report["start_self_contacts"],
+        -report["candidate_id"],
+    )
+
+
+def _static_gate_passed(report: dict[str, Any], threshold: float) -> bool:
+    """Require the configured episode fraction, not merely one lucky episode."""
+    if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        raise ValueError("static scene threshold must be within [0, 1]")
+    return bool(
+        report["combined_accepted_fraction"] > 0.0
+        and report["scene_constraint_episode_fraction"] >= threshold
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
@@ -1170,6 +1653,10 @@ def main() -> int:
         "--dynamic-grip-preload-activation-gap-m", type=float, default=0.055)
     parser.add_argument("--min-dynamic-success-fraction", type=float, default=0.8)
     parser.add_argument(
+        "--min-static-scene-fraction", type=float, default=0.8,
+        help="minimum validation-episode fraction passing every static scene gate",
+    )
+    parser.add_argument(
         "--pad-center-margin-m", type=float, default=0.005,
         help=(
             "required clearance between the inferred object centre and either "
@@ -1186,8 +1673,9 @@ def main() -> int:
     parser.add_argument(
         "--first-contact-max-pinch-xy-m", type=float, default=0.008,
         help=(
-            "provisional maximum horizontal pinch-centre error at the first "
-            "swept jaw/object contact (default: 8 mm)"
+            "provisional maximum planar pinch-centre error perpendicular to "
+            "the approach axis at first swept contact (default: 8 mm; option "
+            "name retained for CLI compatibility)"
         ),
     )
     parser.add_argument(
@@ -1203,6 +1691,36 @@ def main() -> int:
             "inferred object-centre offset from the near-closed pinch along "
             "desired_world_approach_axis; defaults to the registration value "
             "or zero"
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-canonical-object-xyz", type=float, nargs=3,
+        metavar=("X", "Y", "Z"),
+        help=(
+            "simulation-only workspace diagnostic: translate each episode's "
+            "complete recorded TCP trajectory and inferred object by the same "
+            "vector so the object centre is X Y Z; never a physical "
+            "registration or deployment calibration"
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-project-side-frame", action="store_true",
+        help=(
+            "with --diagnostic-canonical-object-xyz only, preserve recorded "
+            "positions/gap/time but replace every TCP rotation with the fixed "
+            "desired jaw/up/approach side frame before re-solving IK; this is "
+            "a simulation-only retargeting diagnostic, never a source-data "
+            "rewrite or physical calibration"
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-align-contact-3d", action="store_true",
+        help=(
+            "with --diagnostic-canonical-object-xyz only, translate the whole "
+            "trajectory in XYZ so its recorded near-closed pinch aligns with "
+            "the canonical object's body centre (plus the configured approach "
+            "offset); isolates missing vertical registration and is never a "
+            "measured physical calibration"
         ),
     )
     parser.add_argument(
@@ -1237,7 +1755,8 @@ def main() -> int:
             or args.dynamic_tracking_time_margin < 1.0
             or args.dynamic_grip_preload_m < 0.0
             or args.dynamic_grip_preload_activation_gap_m <= 0.0
-            or not 0.0 <= args.min_dynamic_success_fraction <= 1.0):
+            or not 0.0 <= args.min_dynamic_success_fraction <= 1.0
+            or not 0.0 <= args.min_static_scene_fraction <= 1.0):
         raise SystemExit("candidate and sample counts must be positive")
     if args.dynamic_finalists > 0 and not args.dynamic_episodes:
         raise SystemExit(
@@ -1245,6 +1764,24 @@ def main() -> int:
     if args.dynamic_finalists == 0 and args.dynamic_episodes:
         raise SystemExit(
             "--dynamic-episodes requires a positive --dynamic-finalists")
+    if (args.diagnostic_canonical_object_xyz is not None
+            and (args.candidates != 1 or args.refine_candidates != 0
+                 or args.finalists != 1 or args.dynamic_finalists != 0)):
+        raise SystemExit(
+            "--diagnostic-canonical-object-xyz requires --candidates 1, "
+            "--refine-candidates 0, --finalists 1 and "
+            "--dynamic-finalists 0; it diagnoses one fixed source seed and "
+            "must not be used as registration search")
+    if (args.diagnostic_project_side_frame
+            and args.diagnostic_canonical_object_xyz is None):
+        raise SystemExit(
+            "--diagnostic-project-side-frame requires "
+            "--diagnostic-canonical-object-xyz")
+    if (args.diagnostic_align_contact_3d
+            and args.diagnostic_canonical_object_xyz is None):
+        raise SystemExit(
+            "--diagnostic-align-contact-3d requires "
+            "--diagnostic-canonical-object-xyz")
     if args.out.exists():
         raise SystemExit(f"output already exists: {args.out}")
     progress_path = (
@@ -1263,8 +1800,7 @@ def main() -> int:
 
     source_registration = json.loads(
         args.registration.read_text(encoding="utf-8"))
-    if source_registration.get("status") != "PROVISIONAL_NOT_PHYSICAL_CALIBRATION":
-        raise ValueError("source registration is not explicitly provisional")
+    _require_source_registration(source_registration)
     current = np.asarray(source_registration["start_arm_rad"], dtype=float)
     object_size = np.asarray(source_registration["object_size_m"], dtype=float)
     if current.shape != (5,) or object_size.shape != (3,):
@@ -1361,10 +1897,17 @@ def main() -> int:
         kinematic_grasp = json.loads(
             args.kinematic_grasp.read_text(encoding="utf-8"))
         apply_kinematic_grasp(cfg, kinematic_grasp)
-        if args.dynamic_finalists > 0:
+        diagnostic_proxy_ready = bool(
+            kinematic_grasp.get("collision_proxy", {}).get(
+                "diagnostic_dynamic_ready") is True
+        )
+        if args.dynamic_finalists > 0 and not diagnostic_proxy_ready:
             raise ValueError(
                 "dynamic finalists are forbidden with a kinematic-only ver1 "
                 "overlay because its collision/inertia model is absent")
+    else:
+        diagnostic_proxy_ready = False
+    kinematic_only = bool(kinematic_grasp is not None and not diagnostic_proxy_ready)
     camera_screen_available = bool(
         kinematic_grasp is None
         or kinematic_grasp.get("camera_optical_extrinsic_present") is True
@@ -1375,7 +1918,19 @@ def main() -> int:
             float(value) for value in source_registration["table_half_size_xy_m"]]
     table_top = (float(cfg["task"]["table"]["pos"][2])
                  + float(cfg["task"]["table"]["half_size_m"][2]))
-    cfg["task"]["object"]["init_pos"][2] = table_top + float(object_size[2]) / 2.0
+    object_z = table_top + float(object_size[2]) / 2.0
+    cfg["task"]["object"]["init_pos"][2] = object_z
+    diagnostic_canonical_object_xyz = None
+    if args.diagnostic_canonical_object_xyz is not None:
+        diagnostic_canonical_object_xyz = np.asarray(
+            args.diagnostic_canonical_object_xyz, dtype=float)
+        if (not np.isfinite(diagnostic_canonical_object_xyz).all()
+                or not np.isclose(
+                    diagnostic_canonical_object_xyz[2], object_z,
+                    rtol=0.0, atol=1e-9)):
+            raise ValueError(
+                "diagnostic canonical Z must equal the configured object "
+                f"centre height {object_z:.9f} m")
     model = build_model(cfg, args.scene)
     ik = MujocoIK(model, cfg)
     full_ik_max_iters = ik.max_iters
@@ -1416,27 +1971,7 @@ def main() -> int:
         signature_payload=signature_payload,
     )
 
-    def rank(report: dict[str, Any]) -> tuple[Any, ...]:
-        return (
-            report["combined_accepted_fraction"],
-            report["scene_constraint_episode_fraction"],
-            report["object_table_margin_episode_fraction"],
-            -report["mean_table_centre_distance_norm"],
-            report["minimum_table_edge_clearance_m"],
-            report["pad_centered_episode_fraction"],
-            report["contact_ik_available_episode_fraction"],
-            report["pad_centered_given_contact_ik_fraction"],
-            report["jaw_yaw_aligned_episode_fraction"],
-            report["approach_axis_aligned_episode_fraction"],
-            report["up_axis_aligned_episode_fraction"],
-            report["side_grasp_episode_fraction"],
-            report["scene_component_fraction"],
-            report["oracle_geometry_accepted_fraction"],
-            report["anchor_accepted_fraction"],
-            -report["start_table_contacts"],
-            -report["start_self_contacts"],
-            -report["candidate_id"],
-        )
+    rank = _static_rank
 
     screen_reports = []
     for candidate_id, arm in enumerate(candidates):
@@ -1465,7 +2000,13 @@ def main() -> int:
                     args.first_contact_max_body_depth_offset_m),
                 approach_contact_substeps=args.approach_contact_substeps,
                 object_approach_offset_m=object_approach_offset,
-                kinematic_only=kinematic_grasp is not None,
+                diagnostic_canonical_object_xyz=(
+                    diagnostic_canonical_object_xyz),
+                diagnostic_project_side_frame=(
+                    args.diagnostic_project_side_frame),
+                diagnostic_align_contact_3d=(
+                    args.diagnostic_align_contact_3d),
+                kinematic_only=kinematic_only,
                 camera_screen_available=camera_screen_available,
             )
             _save_candidate(
@@ -1525,7 +2066,13 @@ def main() -> int:
                         args.first_contact_max_body_depth_offset_m),
                     approach_contact_substeps=args.approach_contact_substeps,
                     object_approach_offset_m=object_approach_offset,
-                    kinematic_only=kinematic_grasp is not None,
+                    diagnostic_canonical_object_xyz=(
+                        diagnostic_canonical_object_xyz),
+                    diagnostic_project_side_frame=(
+                        args.diagnostic_project_side_frame),
+                    diagnostic_align_contact_3d=(
+                        args.diagnostic_align_contact_3d),
+                    kinematic_only=kinematic_only,
                     camera_screen_available=camera_screen_available,
                 )
                 _save_candidate(
@@ -1582,7 +2129,13 @@ def main() -> int:
                     args.first_contact_max_body_depth_offset_m),
                 approach_contact_substeps=args.approach_contact_substeps,
                 object_approach_offset_m=object_approach_offset,
-                kinematic_only=kinematic_grasp is not None,
+                diagnostic_canonical_object_xyz=(
+                    diagnostic_canonical_object_xyz),
+                diagnostic_project_side_frame=(
+                    args.diagnostic_project_side_frame),
+                diagnostic_align_contact_3d=(
+                    args.diagnostic_align_contact_3d),
+                kinematic_only=kinematic_only,
                 camera_screen_available=camera_screen_available,
             )
             _save_candidate(
@@ -1660,15 +2213,20 @@ def main() -> int:
         )
 
     selected = reports[0]
-    static_accepted = bool(
-        selected["combined_accepted_fraction"] > 0.0
-        and selected["scene_constraint_episode_fraction"] > 0.0
-    )
+    static_accepted = _static_gate_passed(
+        selected, args.min_static_scene_fraction)
     dynamic_accepted = bool(
         args.dynamic_finalists == 0
         or selected["dynamic_oracle"]["passed"])
     accepted = static_accepted and dynamic_accepted
-    if accepted and kinematic_grasp is not None:
+    if diagnostic_canonical_object_xyz is not None:
+        status = (
+            "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION"
+            if accepted else "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY"
+        )
+    elif accepted and diagnostic_proxy_ready:
+        status = "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION"
+    elif accepted and kinematic_grasp is not None:
         status = (
             "KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED"
             if not camera_screen_available
@@ -1702,10 +2260,24 @@ def main() -> int:
         "up_axis_tolerance_deg": up_axis_tolerance,
         "body_midheight_tolerance_m": body_midheight_tolerance,
         "first_contact_max_pinch_xy_m": args.first_contact_max_pinch_xy_m,
+        "first_contact_centring_metric": (
+            "planar_perpendicular_to_approach_axis"),
         "first_contact_max_body_depth_offset_m": (
             args.first_contact_max_body_depth_offset_m),
         "approach_contact_substeps": args.approach_contact_substeps,
         "object_approach_offset_m": object_approach_offset,
+        "diagnostic_canonical_object_xyz_m": (
+            None if diagnostic_canonical_object_xyz is None
+            else diagnostic_canonical_object_xyz.tolist()),
+        "diagnostic_canonical_replay": bool(
+            diagnostic_canonical_object_xyz is not None),
+        "diagnostic_side_frame_projection": bool(
+            args.diagnostic_project_side_frame),
+        "diagnostic_contact_to_body_center_3d_alignment": bool(
+            args.diagnostic_align_contact_3d),
+        "diagnostic_side_frame_rotation_world_eef": (
+            desired_contact_rotation.tolist()
+            if args.diagnostic_project_side_frame else None),
         "kinematic_grasp": kinematic_grasp,
         "camera_screen_available": camera_screen_available,
         "grasp_mode": source_registration.get("grasp_mode"),
@@ -1733,15 +2305,25 @@ def main() -> int:
                 args.dynamic_grip_preload_activation_gap_m),
             "min_dynamic_success_fraction": (
                 args.min_dynamic_success_fraction),
+            "min_static_scene_fraction": args.min_static_scene_fraction,
             "samples_per_episode": args.samples_per_episode,
             "pad_center_margin_m": args.pad_center_margin_m,
             "object_edge_margin_m": args.object_edge_margin_m,
             "first_contact_max_pinch_xy_m": (
                 args.first_contact_max_pinch_xy_m),
+            "first_contact_centring_metric": (
+                "planar_perpendicular_to_approach_axis"),
             "first_contact_max_body_depth_offset_m": (
                 args.first_contact_max_body_depth_offset_m),
             "approach_contact_substeps": args.approach_contact_substeps,
             "object_approach_offset_m": object_approach_offset,
+            "diagnostic_canonical_object_xyz_m": (
+                None if diagnostic_canonical_object_xyz is None
+                else diagnostic_canonical_object_xyz.tolist()),
+            "diagnostic_side_frame_projection": bool(
+                args.diagnostic_project_side_frame),
+            "diagnostic_contact_to_body_center_3d_alignment": bool(
+                args.diagnostic_align_contact_3d),
             "seed": args.seed,
             "ranking": (
                 "dynamic gate pass/success first, then separate post-contact IK, "
@@ -1778,6 +2360,8 @@ def main() -> int:
                 "first_approach_contact_body_depth_centered_episode_fraction",
                 "first_approach_contact_pinch_xy_m_mean",
                 "first_approach_contact_pinch_xy_m_max",
+                "first_approach_contact_lateral_m_mean",
+                "first_approach_contact_lateral_m_max",
                 "object_approach_offset_m",
             )
         } for report in screen_reports],
@@ -1786,6 +2370,10 @@ def main() -> int:
         "top10": reports[:10],
         "limitations": [
             "Search registration, not measured robot-base/workspace calibration.",
+            "A diagnostic canonical replay translates the complete recorded "
+            "TCP trajectory and inferred object together. It is only a "
+            "simulation workspace/IK test and can never establish physical "
+            "T_base_world, object pose, deployment calibration or policy success.",
             "Object locations are inferred from each episode's near-closed pinch "
             "pose plus the explicitly reported provisional approach-axis offset.",
             "Table placement requires the full object footprint plus the configured "

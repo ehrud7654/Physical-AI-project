@@ -23,7 +23,14 @@ import mujoco
 import numpy as np
 
 from sim.base import Observation, RobotEnv  # noqa: F401 — 재수출: 하위 호환용 아님, 타입 참조용
-from sim.mujoco.build_scene import build_model, denormalize, load_config, normalize
+from sim.mujoco.build_scene import (
+    active_gripper_pad_ids,
+    build_model,
+    denormalize,
+    load_config,
+    normalize,
+    sync_gripper_collision_proxy,
+)
 from sim.mujoco.domain import DomainRandomizer
 
 
@@ -139,10 +146,14 @@ class MujocoPickEnv:
         )
         self.data.qpos[self._obj_qadr] = xy[0]
         self.data.qpos[self._obj_qadr + 1] = xy[1]
+        sync_gripper_collision_proxy(self.model, self.data, self.cfg)
         mujoco.mj_forward(self.model, self.data)
         self.data.ctrl[:] = self.data.qpos[:6]
         for _ in range(int(0.4 / self.model.opt.timestep)):
+            sync_gripper_collision_proxy(self.model, self.data, self.cfg)
             mujoco.mj_step(self.model, self.data)
+        sync_gripper_collision_proxy(self.model, self.data, self.cfg)
+        mujoco.mj_forward(self.model, self.data)
         self._t0_z = float(self.data.xpos[self._obj_body][2])
         self._ticks = 0
         return self._observe()
@@ -160,7 +171,10 @@ class MujocoPickEnv:
         # 범위 초과 처리 문제는 미결이다 — S15P21A103-27 참조.
         self.data.ctrl[:6] = denormalize(np.clip(action, -1.0, 1.0), self.cfg)
         for _ in range(self._substeps):
+            sync_gripper_collision_proxy(self.model, self.data, self.cfg)
             mujoco.mj_step(self.model, self.data)
+        sync_gripper_collision_proxy(self.model, self.data, self.cfg)
+        mujoco.mj_forward(self.model, self.data)
         self._ticks += 1
         return self._observe()
 
@@ -168,7 +182,13 @@ class MujocoPickEnv:
         """Object lifted past the threshold and still held.
         물체가 기준 높이 이상 올라갔고 아직 잡혀 있는가."""
         lifted = float(self.data.xpos[self._obj_body][2]) - self._t0_z
-        return lifted >= self._success_lift and self._n_jaw_contacts() > 0
+        contact_ok = (
+            self.has_bilateral_jaw_contact()
+            if (self.cfg.get("gripper_pads") or {}).get("kind")
+            == "symmetric_parallel_jaw_runtime_proxy"
+            else self._n_jaw_contacts() > 0
+        )
+        return lifted >= self._success_lift and contact_ok
 
     # ---- simulator-only accessors --------------------------------------
     # A policy must not call these. They exist for scripted baselines and for
@@ -231,6 +251,36 @@ class MujocoPickEnv:
         현재 턱-물체 접촉 수. 특권 정보, 채점용."""
         return self._n_jaw_contacts()
 
+    def jaw_contact_counts(self) -> dict[str, int]:
+        """Per-pad object contact counts — privileged diagnostic state.
+
+        A total contact count cannot distinguish a body pinch from one finger
+        merely pushing the object.  Keep the pad names in the result so ver1
+        recorded-oracle reports can prove that both sides participated.
+        """
+        counts = {
+            str(mujoco.mj_id2name(
+                self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)): 0
+            for geom_id in self._jaw_geoms
+        }
+        for i in range(self.data.ncon):
+            con = self.data.contact[i]
+            if con.geom1 == self._obj_geom and con.geom2 in self._jaw_geoms:
+                geom_id = int(con.geom2)
+            elif con.geom2 == self._obj_geom and con.geom1 in self._jaw_geoms:
+                geom_id = int(con.geom1)
+            else:
+                continue
+            name = mujoco.mj_id2name(
+                self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
+            counts[str(name)] += 1
+        return counts
+
+    def has_bilateral_jaw_contact(self) -> bool:
+        """Whether every configured jaw pad currently contacts the object."""
+        counts = self.jaw_contact_counts()
+        return len(counts) >= 2 and all(value > 0 for value in counts.values())
+
     def lift_height(self) -> float:
         """How far the object has risen from its settled height.
         물체가 안착 높이에서 얼마나 올라갔는가."""
@@ -257,17 +307,7 @@ class MujocoPickEnv:
     # ---- internals ------------------------------------------------------
 
     def _collect_jaw_geoms(self) -> set[int]:
-        ids: set[int] = set()
-        for name in ("gripper", "moving_jaw_so101_v1"):
-            bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
-            if bid < 0:
-                continue
-            ids |= {
-                g
-                for g in range(self.model.ngeom)
-                if self.model.geom_bodyid[g] == bid and self.model.geom_contype[g] != 0
-            }
-        return ids
+        return active_gripper_pad_ids(self.model, self.cfg)
 
     def _n_jaw_contacts(self) -> int:
         n = 0

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 import numpy as np
@@ -9,12 +10,30 @@ import numpy as np
 from gate_relative_chunk_oracle import (
     _aggregate,
     _classification,
+    _kinematic_grasp_args,
+    _require_provisional_registration,
     _scene_valid_episodes,
 )
 from render_relative_chunk_rollout import _interpolated_joint_target
 
 
 class Tests(unittest.TestCase):
+    def test_only_known_explicitly_nonphysical_registrations_are_accepted(self) -> None:
+        for status in (
+            "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
+            "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+        ):
+            _require_provisional_registration({"status": status})
+        with self.assertRaises(ValueError):
+            _require_provisional_registration({"status": "VALIDATED"})
+
+    def test_kinematic_grasp_override_is_forwarded_explicitly(self) -> None:
+        self.assertEqual(_kinematic_grasp_args(None), [])
+        path = Path("configs/real/current-kinematic.json")
+        args = _kinematic_grasp_args(path)
+        self.assertEqual(args[0], "--kinematic-grasp")
+        self.assertTrue(Path(args[1]).is_absolute())
+
     def test_scheduled_target_interpolates_arm_and_metric_gap(self) -> None:
         curve = [[-1.0, 0.0], [1.0, 10.0]]
         result = _interpolated_joint_target(
@@ -43,6 +62,16 @@ class Tests(unittest.TestCase):
             "first_contact_cycle": 1,
             "geometry_error": "late diagnostic",
         }), "success")
+
+    def test_tip_has_priority_over_transient_lift(self) -> None:
+        self.assertEqual(_classification({
+            "success": True,
+            "stable_side_grasp_success": False,
+            "first_contact_cycle": 1,
+            "geometry_error": None,
+            "object_tipped": True,
+            "object_displaced": False,
+        }), "object_tipped")
 
     def test_ik_failure_is_split_by_contact(self) -> None:
         self.assertEqual(_classification({

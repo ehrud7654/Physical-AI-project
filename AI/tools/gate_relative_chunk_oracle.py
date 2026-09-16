@@ -22,6 +22,10 @@ AI_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = AI_ROOT / "configs" / "so101.yaml"
 DEFAULT_REAL_CONFIG = AI_ROOT / "configs" / "real" / "so101_ver1.json"
 RENDER_TOOL = AI_ROOT / "tools" / "render_relative_chunk_rollout.py"
+ACCEPTED_PROVISIONAL_REGISTRATION_STATUSES = {
+    "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
+    "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+}
 
 
 def _scene_valid_episodes(registration: dict[str, Any]) -> list[str]:
@@ -41,8 +45,24 @@ def _scene_valid_episodes(registration: dict[str, Any]) -> list[str]:
     return episodes
 
 
+def _require_provisional_registration(registration: dict[str, Any]) -> None:
+    status = registration.get("status")
+    if status not in ACCEPTED_PROVISIONAL_REGISTRATION_STATUSES:
+        raise ValueError(
+            "registration must be an explicitly accepted provisional "
+            f"diagnostic, got {status!r}"
+        )
+
+
 def _classification(report: dict[str, Any]) -> str:
-    if report.get("success") is True:
+    # A transient lift must not hide a tip or large horizontal shove.  The
+    # dynamic gate is specifically the stable side-grasp gate, while the raw
+    # MuJoCo success bit remains available in each episode report.
+    if report.get("object_tipped") is True:
+        return "object_tipped"
+    if report.get("object_displaced") is True:
+        return "object_displaced"
+    if report.get("stable_side_grasp_success", report.get("success")) is True:
         return "success"
     contacted = report.get("first_contact_cycle") is not None
     geometry_error = report.get("geometry_error")
@@ -50,10 +70,6 @@ def _classification(report: dict[str, Any]) -> str:
         return "ik_reject_after_contact" if contacted else "ik_reject_before_contact"
     if not contacted:
         return "no_contact"
-    if report.get("object_tipped") is True:
-        return "object_tipped"
-    if report.get("object_displaced") is True:
-        return "object_displaced"
     final_lift = float(report.get("lift_height_m", 0.0))
     min_lift = float(report.get("min_lift_height_m", min(0.0, final_lift)))
     max_lift = float(report.get("max_lift_height_m", max(0.0, final_lift)))
@@ -69,6 +85,13 @@ def _finite_nonnegative(name: str, value: float) -> float:
     if not math.isfinite(number) or number < 0.0:
         raise ValueError(f"{name} must be finite and non-negative")
     return number
+
+
+def _kinematic_grasp_args(path: Path | None) -> list[str]:
+    """Build the explicit renderer override without changing old registrations."""
+    if path is None:
+        return []
+    return ["--kinematic-grasp", str(path.resolve())]
 
 
 def _aggregate(rows: list[dict[str, Any]], *, threshold: float) -> dict[str, Any]:
@@ -114,9 +137,14 @@ def _run_recorded_oracle_episode(
         *, data: Path, registration_path: Path, episode: str,
         report_dir: Path, cycles: int, tracking_time_margin: float,
         grip_preload_m: float, grip_preload_activation_gap_m: float,
-        config: Path, real_config: Path) -> dict[str, Any]:
+        config: Path, real_config: Path,
+        kinematic_grasp: Path | None = None) -> dict[str, Any]:
     """Run one local recorded-oracle episode and return its classified report."""
-    pseudo_video = report_dir / f"{episode}.gif"
+    # The child runs with AI_ROOT as cwd.  An output rooted at a relative
+    # `AI/out/...` directory would otherwise become `AI/AI/out/...` on Windows,
+    # while the parent checks the original path and reports a false runner
+    # error even though the child completed successfully.
+    pseudo_video = (report_dir / f"{episode}.gif").resolve()
     command = [
         sys.executable,
         str(RENDER_TOOL),
@@ -140,6 +168,7 @@ def _run_recorded_oracle_episode(
         "--real-config", str(real_config.resolve()),
         "--out", str(pseudo_video),
     ]
+    command.extend(_kinematic_grasp_args(kinematic_grasp))
     completed = subprocess.run(
         command, cwd=AI_ROOT, capture_output=True, text=True, check=False)
     report_path = pseudo_video.with_suffix(".json")
@@ -155,8 +184,13 @@ def _run_recorded_oracle_episode(
     return {
         "episode": episode,
         "classification": _classification(report),
-        "success": bool(report["success"]),
+        "success": bool(report.get(
+            "stable_side_grasp_success", report["success"])),
+        "raw_lift_contact_success": bool(report["success"]),
         "first_contact_cycle": report["first_contact_cycle"],
+        "first_bilateral_contact_cycle": report.get(
+            "first_bilateral_contact_cycle"),
+        "bilateral_contact_ticks": report.get("bilateral_contact_ticks"),
         "closest_pinch_xy_m": report["closest_pinch_xy_m"],
         "final_lift_height_m": report["lift_height_m"],
         "max_lift_height_m": report["max_lift_height_m"],
@@ -169,6 +203,9 @@ def _run_recorded_oracle_episode(
         "object_displaced": report.get("object_displaced"),
         "object_tipped": report.get("object_tipped"),
         "jaw_contacts_final": report["jaw_contacts_final"],
+        "jaw_contact_counts_final": report.get("jaw_contact_counts_final"),
+        "bilateral_jaw_contact_final": report.get(
+            "bilateral_jaw_contact_final"),
         "geometry_error": report["geometry_error"],
         "episode_report": str(report_path),
     }
@@ -187,6 +224,13 @@ def main() -> int:
     parser.add_argument("--min-success-fraction", type=float, default=0.8)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--real-config", type=Path, default=DEFAULT_REAL_CONFIG)
+    parser.add_argument(
+        "--kinematic-grasp", type=Path,
+        help=(
+            "override a stale registration's kinematic block with the current "
+            "visible-hand/collision payload"
+        ),
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -208,8 +252,7 @@ def main() -> int:
 
     registration_path = args.registration.resolve()
     registration = json.loads(registration_path.read_text(encoding="utf-8"))
-    if registration.get("status") != "PROVISIONAL_NOT_PHYSICAL_CALIBRATION":
-        raise ValueError("registration must be explicitly provisional")
+    _require_provisional_registration(registration)
     eligible = _scene_valid_episodes(registration)
     episodes = list(args.episodes) if args.episodes else eligible
     unknown = sorted(set(episodes) - set(eligible))
@@ -234,7 +277,8 @@ def main() -> int:
             episode=episode, report_dir=report_dir, cycles=args.cycles,
             tracking_time_margin=margin, grip_preload_m=preload,
             grip_preload_activation_gap_m=activation,
-            config=args.config, real_config=args.real_config)
+            config=args.config, real_config=args.real_config,
+            kinematic_grasp=args.kinematic_grasp)
         rows.append(row)
         print(
             f"{index}/{len(episodes)} {episode}: {row['classification']}",
@@ -251,6 +295,8 @@ def main() -> int:
         "purpose": "recorded-oracle dynamic registration gate; not policy or hardware validation",
         "dataset": str(args.data),
         "registration": str(args.registration),
+        "kinematic_grasp_override": (
+            str(args.kinematic_grasp) if args.kinematic_grasp else None),
         "eligible_scene_valid_episodes": eligible,
         "evaluated_episodes": episodes,
         "episodes": aggregate["episodes"],

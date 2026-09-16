@@ -49,8 +49,14 @@ DEFAULT_REAL_CONFIG = AI_ROOT / "configs" / "real" / "so101_ver1.json"
 
 def _registration(path: Path) -> dict:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("status") != "PROVISIONAL_NOT_PHYSICAL_CALIBRATION":
-        raise ValueError("registration must be explicitly provisional")
+    allowed = {
+        "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
+        "KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED",
+        "KINEMATIC_REGISTRATION_CANDIDATE_NOT_DYNAMIC_READY",
+        "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+    }
+    if payload.get("status") not in allowed:
+        raise ValueError("registration must be an explicitly provisional candidate")
     arm = np.asarray(payload.get("start_arm_rad"), dtype=float)
     obj = np.asarray(payload.get("object_xyz_m"), dtype=float)
     size = np.asarray(payload.get("object_size_m"), dtype=float)
@@ -232,6 +238,13 @@ def main() -> int:
         help="apply grip preload only at or below this target gap",
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--kinematic-grasp", type=Path,
+        help=(
+            "override the registration's ver1 kinematic block; recorded-oracle "
+            "dynamics require its explicit provisional collision proxy"
+        ),
+    )
     parser.add_argument("--real-config", type=Path, default=DEFAULT_REAL_CONFIG)
     parser.add_argument("--out", type=Path, required=True,
                         help="output .gif; a JSON report is written beside it")
@@ -290,8 +303,22 @@ def main() -> int:
         raise SystemExit("--execute-final-oracle-tail requires --oracle")
 
     cfg = copy.deepcopy(load_config(args.config))
-    if registration.get("kinematic_grasp") is not None:
-        apply_kinematic_grasp(cfg, registration["kinematic_grasp"])
+    kinematic_grasp = registration.get("kinematic_grasp")
+    if args.kinematic_grasp is not None:
+        kinematic_grasp = json.loads(
+            args.kinematic_grasp.read_text(encoding="utf-8"))
+    if kinematic_grasp is not None:
+        apply_kinematic_grasp(cfg, kinematic_grasp)
+    diagnostic_proxy_ready = bool(
+        isinstance(kinematic_grasp, dict)
+        and kinematic_grasp.get("collision_proxy", {}).get(
+            "diagnostic_dynamic_ready") is True
+    )
+    if registration["status"].startswith("KINEMATIC_") and not diagnostic_proxy_ready:
+        raise ValueError(
+            "kinematic-only registration cannot run contact dynamics without "
+            "an explicit provisional collision proxy"
+        )
     cfg["task"]["object"]["half_size_m"] = (
         registration["object_size_m"] / 2.0).tolist()
     cfg["task"]["object"]["init_pos"] = object_xyz.tolist()
@@ -313,6 +340,9 @@ def main() -> int:
     closest_xy = float("inf")
     closest_3d = float("inf")
     first_contact_cycle = None
+    first_bilateral_contact_cycle = None
+    bilateral_contact_ticks = 0
+    max_simultaneous_contact_pads = 0
     geometry_error = None
     final_oracle_tail_commands = 0
     executed_commands = 0
@@ -538,6 +568,17 @@ def main() -> int:
                             max_object_tilt_deg, object_tilt_deg)
                         if first_contact_cycle is None and env.jaw_contacts() > 0:
                             first_contact_cycle = cycle
+                        contact_counts = env.jaw_contact_counts()
+                        simultaneous_contact_pads = sum(
+                            value > 0 for value in contact_counts.values())
+                        max_simultaneous_contact_pads = max(
+                            max_simultaneous_contact_pads,
+                            simultaneous_contact_pads,
+                        )
+                        if env.has_bilateral_jaw_contact():
+                            bilateral_contact_ticks += 1
+                            if first_bilateral_contact_cycle is None:
+                                first_bilateral_contact_cycle = cycle
                         if (renderer is not None
                                 and simulation_ticks % args.capture_every == 0):
                             policy_image = runtime_obs["image"][-1]
@@ -592,6 +633,9 @@ def main() -> int:
                             command_object_xy_displacement),
                         "object_tilt_deg": command_object_tilt_deg,
                         "jaw_contacts": env.jaw_contacts(),
+                        "jaw_contact_counts": env.jaw_contact_counts(),
+                        "bilateral_jaw_contact": (
+                            env.has_bilateral_jaw_contact()),
                     })
                     executed_commands += 1
                     if env.is_success():
@@ -628,6 +672,8 @@ def main() -> int:
                     "object_xy_displacement_m": cycle_object_xy_displacement,
                     "object_tilt_deg": cycle_object_tilt_deg,
                     "jaw_contacts": env.jaw_contacts(),
+                    "jaw_contact_counts": env.jaw_contact_counts(),
+                    "bilateral_jaw_contact": env.has_bilateral_jaw_contact(),
                 })
                 images.append(observation.images["cam_wrist"].copy())
                 poses.append(current_pose.copy())
@@ -646,6 +692,19 @@ def main() -> int:
             "closed_loop_visual_feedback": (
                 args.observation_source == "simulation" and not args.oracle),
             "registration": str(args.registration),
+            "collision_model": (
+                "provisional_ver1_parallel_jaw_proxy"
+                if diagnostic_proxy_ready else "legacy_mujoco_gripper"
+            ),
+            "collision_model_is_measured": False if diagnostic_proxy_ready else None,
+            "visible_gripper_model": (
+                "handoff_ver1_parallel_jaw_meshes"
+                if diagnostic_proxy_ready else "legacy_mujoco_rotary_jaw"
+            ),
+            "visual_collision_alignment": (
+                "same_moving_finger_bodies"
+                if diagnostic_proxy_ready else None
+            ),
             "representative_episode": representative,
             "object_xyz_m": object_xyz.tolist(),
             "initial_gap_m": initial_gap,
@@ -674,6 +733,9 @@ def main() -> int:
             "closest_pinch_xy_m": closest_xy,
             "closest_pinch_3d_m": closest_3d,
             "first_contact_cycle": first_contact_cycle,
+            "first_bilateral_contact_cycle": first_bilateral_contact_cycle,
+            "bilateral_contact_ticks": bilateral_contact_ticks,
+            "max_simultaneous_contact_pads": max_simultaneous_contact_pads,
             "lift_height_m": env.lift_height(),
             "max_lift_height_m": max_lift_height,
             "min_lift_height_m": min_lift_height,
@@ -692,7 +754,14 @@ def main() -> int:
                 >= object_xy_displacement_threshold),
             "object_tipped": max_object_tilt_deg >= object_tilt_threshold_deg,
             "jaw_contacts_final": env.jaw_contacts(),
+            "jaw_contact_counts_final": env.jaw_contact_counts(),
+            "bilateral_jaw_contact_final": env.has_bilateral_jaw_contact(),
             "success": env.is_success(),
+            "stable_side_grasp_success": bool(
+                env.is_success()
+                and max_object_xy_displacement < object_xy_displacement_threshold
+                and max_object_tilt_deg < object_tilt_threshold_deg
+            ),
             "max_arm_tracking_error_rad": max_tracking_error,
             "max_endpoint_arm_tracking_error_rad": max_endpoint_tracking_error,
             "cycle_trace": cycle_trace,

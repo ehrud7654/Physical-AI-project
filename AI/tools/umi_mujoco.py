@@ -162,6 +162,28 @@ def apply_kinematic_grasp(
             "camera_optical_extrinsic_present") is True,
         "dynamic_mujoco_ready": False,
     }
+    collision = payload.get("collision_proxy")
+    if collision is not None:
+        if (not isinstance(collision, dict)
+                or collision.get("schema")
+                != "so101_parallel_jaw_collision_proxy/0.1.0-provisional"
+                or collision.get("diagnostic_dynamic_ready") is not True
+                or collision.get("measured_collision_geometry") is not False):
+            raise ValueError("invalid provisional ver1 collision proxy declaration")
+        cfg["gripper_pads"] = {
+            **collision,
+            "kind": "symmetric_parallel_jaw_runtime_proxy",
+        }
+        visual_model = payload.get("visual_model")
+        if (not isinstance(visual_model, dict)
+                or visual_model.get("schema")
+                != "so101_parallel_jaw_visual/0.1.0-provisional"
+                or visual_model.get("visual_collision_alignment_required") is not True):
+            raise ValueError(
+                "provisional ver1 collision proxy requires its matching visible model"
+            )
+        cfg["gripper_pads"]["visual_model"] = visual_model
+        grasp["kinematic_overlay"]["diagnostic_collision_proxy_ready"] = True
     return cfg
 
 
