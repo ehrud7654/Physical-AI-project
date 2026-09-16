@@ -143,6 +143,33 @@ def _policy_observation(images: deque[np.ndarray], poses: deque[np.ndarray],
     return {"image": np.stack(images).astype(np.uint8), "proprio": proprio}
 
 
+def _perturb_policy_images(
+        image: np.ndarray, *, mode: str, rng: np.random.Generator,
+        frozen: np.ndarray | None, noise_gray: float,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Alter only policy RGB input; rendered/scored simulator state is untouched."""
+    source = np.asarray(image)
+    if source.dtype != np.uint8:
+        raise ValueError("policy image perturbation requires uint8 input")
+    if mode == "none":
+        return source, frozen
+    if mode == "blackout":
+        return np.zeros_like(source), frozen
+    if mode == "noise":
+        noisy = np.clip(
+            source.astype(np.float32)
+            + rng.normal(0.0, noise_gray, size=source.shape),
+            0.0,
+            255.0,
+        ).astype(np.uint8)
+        return noisy, frozen
+    if mode == "freeze":
+        if frozen is None:
+            frozen = source.copy()
+        return frozen.copy(), frozen
+    raise ValueError(f"unsupported image perturbation: {mode}")
+
+
 def _interpolated_joint_target(*, segment_start_q: np.ndarray,
                                target_arm_rad: np.ndarray,
                                segment_start_gap_m: float,
@@ -228,6 +255,13 @@ def main() -> int:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--observation-source", choices=("dataset", "simulation"),
                         default="dataset")
+    parser.add_argument(
+        "--image-perturb", choices=("none", "noise", "blackout", "freeze"),
+        default="none",
+        help="learned-policy inference only; alter RGB without changing state/scoring",
+    )
+    parser.add_argument("--image-noise-gray", type=float, default=96.0)
+    parser.add_argument("--image-perturb-seed", type=int, default=0)
     parser.add_argument("--oracle", action="store_true",
                         help="replay recorded relative targets instead of policy output")
     parser.add_argument("--episode",
@@ -235,8 +269,9 @@ def main() -> int:
     parser.add_argument(
         "--use-registration-approach-start", action="store_true",
         help=(
-            "recorded-oracle only: start at the fixed contact-relative row, "
-            "arm state and executed gap stored by the static diagnostic"
+            "start at the fixed contact-relative row, arm state and executed "
+            "gap stored by the static diagnostic; applies equally to oracle "
+            "and learned-policy diagnostics"
         ),
     )
     parser.add_argument("--cycles", type=int, default=30)
@@ -295,8 +330,8 @@ def main() -> int:
             "use --oracle for recorded-target MuJoCo simulation")
     if not args.oracle and args.policy_ckpt is None:
         raise SystemExit("--policy-ckpt is required unless --oracle is used")
-    if args.use_registration_approach_start and not args.oracle:
-        raise SystemExit("--use-registration-approach-start requires --oracle")
+    if args.oracle and args.image_perturb != "none":
+        raise SystemExit("--image-perturb is meaningless with --oracle")
     if args.device != "cpu":
         raise SystemExit("this local diagnostic currently requires --device cpu")
     if args.out.suffix.lower() != ".gif":
@@ -310,7 +345,9 @@ def main() -> int:
             or not np.isfinite(args.grip_preload_m)
             or args.grip_preload_m < 0.0
             or not np.isfinite(args.grip_preload_activation_gap_m)
-            or args.grip_preload_activation_gap_m <= 0.0):
+            or args.grip_preload_activation_gap_m <= 0.0
+            or not np.isfinite(args.image_noise_gray)
+            or args.image_noise_gray <= 0.0):
         raise SystemExit("cycles, execute-steps and capture-every must be positive")
 
     registration = _registration(args.registration)
@@ -409,6 +446,8 @@ def main() -> int:
     max_object_tilt_deg = 0.0
     cycle_trace: list[dict[str, object]] = []
     command_trace: list[dict[str, object]] = []
+    perturb_rng = np.random.default_rng(args.image_perturb_seed)
+    frozen_policy_images: np.ndarray | None = None
 
     with MujocoPickEnv(
         cfg, render=not args.no_video, object_jitter_m=0.0,
@@ -484,6 +523,15 @@ def main() -> int:
                     if args.observation_source == "dataset"
                     else _policy_observation(images, poses, gaps)
                 )
+                if not args.oracle:
+                    perturbed, frozen_policy_images = _perturb_policy_images(
+                        runtime_obs["image"],
+                        mode=args.image_perturb,
+                        rng=perturb_rng,
+                        frozen=frozen_policy_images,
+                        noise_gray=args.image_noise_gray,
+                    )
+                    runtime_obs["image"] = perturbed
                 base_candidate = (
                     FixedActionPolicy(episode["action"][row])
                     if args.oracle else policy
@@ -750,6 +798,11 @@ def main() -> int:
             "observation_source": args.observation_source,
             "closed_loop_visual_feedback": (
                 args.observation_source == "simulation" and not args.oracle),
+            "image_perturb": args.image_perturb,
+            "image_noise_gray": (
+                args.image_noise_gray if args.image_perturb == "noise" else None),
+            "image_perturb_seed": (
+                args.image_perturb_seed if args.image_perturb == "noise" else None),
             "registration": str(args.registration),
             "collision_model": (
                 "provisional_ver1_parallel_jaw_proxy"

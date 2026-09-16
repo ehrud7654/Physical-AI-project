@@ -1353,3 +1353,62 @@ IK reject / tip / runner error: 0 / 0 / 0
 실물 정합성, 실제 `T_base_world`, 실물 카메라 extrinsic, 학습 정책의 성공률 또는
 모터 안전을 검증하지 않는다. 학습 정책 sanity rollout을 수행하더라도 이 조건을
 simulation-only 진단으로 표기하고, 공유 GPU에서는 학습만 수행한다.
+
+### 0916 후속: v10 계약 재생성 및 첫 learned-policy image gate
+
+기존 v9는 이미지·proprio·action 수치는 맞았지만
+`observation_timestamp (N,)`인 `umi_relative_chunk/0.1.0-provisional`이었다.
+보존된 canonical bundle 70편에서 v10을 다시 생성해 0.2.0 계약으로 올렸다.
+v9와 v10의 `image`, `proprio`, `action`, `action_timestamp`, `source_row`를
+70편 전수 비교했으며 모두 byte-level array equality를 통과했다. 바뀐 것은
+`observation_timestamp`가 history 순서 `[t-1,t]`인 `(N,2)`가 된 것과 메타뿐이다.
+
+```text
+dataset: datasets/umi_real_relative_20260911_v10
+schema: umi_relative_chunk/0.2.0-provisional
+episodes / anchors / contract problems: 70 / 1,248 / 0
+tar bytes: 305,116,160
+tar sha256: c45e2dedf91ec6b067adcf36ab1e3079e93fa78208d52211b4c3201d2625a420
+```
+
+V100에서는 학습만 수행했다. seed 0, 30 epoch 결과의 best validation은 epoch 27의
+`0.39769`였고, 체크포인트는 최신 0.2.0 schema를 기록한다.
+
+```text
+last sha256:
+  72ddb492d6f30b51daf065b96a043b81f4c511a2e1118ba3b6b0758b1d240199
+best-val sha256:
+  5bc8a25de054bc29967ebe387d808d5add0e7ad8f791c60e40b20f3440e6adbb
+```
+
+로컬 CPU에서 같은 best-val 체크포인트를 사용해 고정된 validation 14편을 비교했다.
+모든 조건은 simulation camera closed loop, K=2의 사전 선언 시작행/IK 해,
+simulation-only 2mm preload, `validation_horizon=1`, `execute_steps=1`이다.
+학습 정책도 oracle과 같은 사전 선언 시작점을 쓸 수 있도록 rollout 도구를 확장했고,
+교란은 RGB 정책 입력에만 적용하며 MuJoCo 상태와 scorer는 바꾸지 않는다.
+
+```text
+normal:   stable side-grasp lift 14/14, Wilson 95% [78.5%, 100%]
+blackout: stable side-grasp lift  0/14, Wilson 95% [ 0.0%, 21.5%]
+normal final lift range: 50.3--87.3mm
+normal IK reject / tip: 0 / 0
+normal per-episode max required time scale: 2.85--4.91x
+blackout geometry reject: 14/14
+```
+
+정상과 blackout 구간이 겹치지 않고 성공률이 100%p 하락하므로, 이 체크포인트가
+RGB를 완전히 무시하는 정책이라는 가설은 기각한다. 그러나 blackout은 매우 큰
+분포 외 입력이고, 현재 MuJoCo 손목 화면도 실제 S22 영상과 외형·가림이 다르다.
+따라서 물체 위치를 올바르게 인식한다거나 전체 접근 task를 해결했다고 해석하지
+않는다. 또한 이 결과는 단일 seed, near-contact K=2 시작, 1-step validation,
+미실측 collision proxy와 2mm preload에 한정된다. `noise`와 `freeze`, seed 1/2,
+8-step/8-step 실행, 더 먼 공통 시작점은 아직 미검증이다.
+
+대표 영상과 보고서는 다음과 같다.
+
+```text
+video: out/relative_chunk_v10_bestval_150943_simcam_k2_policy_20260916.gif
+report: out/relative_chunk_v10_bestval_150943_simcam_k2_policy_20260916.json
+normal14: out/relative_chunk_v10_bestval_simcam_k2_normal14_20260916/
+blackout14: out/relative_chunk_v10_bestval_simcam_k2_blackout14_20260916/
+```

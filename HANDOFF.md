@@ -193,6 +193,33 @@ max pre-lift XY displacement: 17.0mm (< 19.5mm gate)
 IK reject / tip / runner error: 0 / 0 / 0
 ```
 
+The dataset was then regenerated from the preserved 70 normalized canonical
+bundles as `umi_real_relative_20260911_v10`.  It has the same 1,248 image,
+proprio, action, action-timestamp and source-row values as v9, but correctly
+uses schema `umi_relative_chunk/0.2.0-provisional` and stores both history
+timestamps as `(N,2)`.  Verification reports zero contract problems.  Archive
+SHA-256 is
+`c45e2dedf91ec6b067adcf36ab1e3079e93fa78208d52211b4c3201d2625a420`.
+
+Seed-0 diagnostic BC training ran on V100; no checkpoint inference ran on the
+shared server.  The 30-epoch best-val checkpoint has SHA-256
+`5bc8a25de054bc29967ebe387d808d5add0e7ad8f791c60e40b20f3440e6adbb`
+(epoch 27, val `0.39769`).  Local same-checkpoint image replacement materially
+changes translation, rotation and gap predictions.
+
+The learned-policy rollout tool now permits the exact predeclared K=2 approach
+start used by the oracle gate and can perturb only inference RGB with
+`noise`, `blackout` or `freeze`.  The simulator/scorer state is not perturbed.
+On the fixed 14 validation episodes, best-val + simulation-camera closed loop
+gave normal `14/14` stable side-grasp lifts versus blackout `0/14`; Wilson 95%
+intervals are `[78.5%,100%]` and `[0%,21.5%]`.  The normal final-lift range was
+50.3--87.3mm with no IK reject or tip.  This rejects the narrow hypothesis that
+the checkpoint ignores RGB completely, but is **not** full-task or hardware
+success: it uses near-contact K=2 starts, one-step validation/execution,
+simulation-only 2mm preload, an unmeasured proxy and 2.85--4.91x execution time
+scales.  Noise/freeze, seeds 1/2, 8-step/8-step execution and a farther common
+start remain pending.
+
 This closes the **local policy-free simulation geometry/contact gate only**. It
 does not validate the 2mm execution preload on hardware, establish a deployable
 world-to-base registration, validate a learned checkpoint, or approve motor

@@ -17,11 +17,37 @@ from gate_relative_chunk_oracle import (
 from render_relative_chunk_rollout import (
     _episode_approach_start,
     _interpolated_joint_target,
+    _perturb_policy_images,
     _stable_side_grasp_success,
 )
 
 
 class Tests(unittest.TestCase):
+    def test_policy_image_perturbations_are_explicit_and_deterministic(self) -> None:
+        image = np.full((2, 3, 4, 5), 128, dtype=np.uint8)
+        rng = np.random.default_rng(7)
+        black, frozen = _perturb_policy_images(
+            image, mode="blackout", rng=rng, frozen=None, noise_gray=32.0)
+        self.assertFalse(np.any(black))
+        self.assertIsNone(frozen)
+
+        first, frozen = _perturb_policy_images(
+            image, mode="freeze", rng=rng, frozen=None, noise_gray=32.0)
+        changed = np.full_like(image, 255)
+        second, frozen = _perturb_policy_images(
+            changed, mode="freeze", rng=rng, frozen=frozen, noise_gray=32.0)
+        np.testing.assert_array_equal(first, image)
+        np.testing.assert_array_equal(second, image)
+
+        noise_a, _ = _perturb_policy_images(
+            image, mode="noise", rng=np.random.default_rng(11),
+            frozen=None, noise_gray=32.0)
+        noise_b, _ = _perturb_policy_images(
+            image, mode="noise", rng=np.random.default_rng(11),
+            frozen=None, noise_gray=32.0)
+        np.testing.assert_array_equal(noise_a, noise_b)
+        self.assertFalse(np.array_equal(noise_a, image))
+
     def test_only_known_explicitly_nonphysical_registrations_are_accepted(self) -> None:
         for status in (
             "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
