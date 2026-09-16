@@ -81,12 +81,6 @@ export interface RobotDetail {
   createdAt: string;
 }
 
-export interface DeployedModel {
-  version: string;
-  name: string;
-  deployedAt: string;
-}
-
 export interface Umi {
   id: string;
   /** 서버 devices.id(UUID). 화면 표시용 핸들 번호인 id와 구분한다. */

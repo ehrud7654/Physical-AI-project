@@ -4,7 +4,7 @@ import { Pagination } from '@/components/Pagination';
 import { usePagination } from '@/hooks/usePagination';
 import { useState } from 'react';
 import type { SavedWork } from '@/types';
-import { blockCatalog } from '@/mocks';
+import { blockCatalog } from '@/lib/blocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { useAppStore } from '@/hooks/useAppStore';
 import { isSkillBlock, flattenWorkflowBlocks, formatWorkDuration, formatUpdatedAt, getWorkflowIssues } from '@/lib/workflow';
