@@ -1650,8 +1650,8 @@ select:focus,input:focus{border-color:#7c8aa8;box-shadow:0 0 0 3px rgba(70,86,12
 .progress-layout .log-card .log-list span{font-size:11px}
 .progress-layout .log-card .log-error p{font-size:12px}
 .progress-layout .log-card .log-error .secondary-button{font-size:11px}
-.training-save-actions{margin-top:24px;padding-top:20px;border-top:1px solid var(--product-line)}
-.training-save-actions .primary-button{width:100%}
+.training-save-actions{display:flex;flex-direction:column;align-items:center;gap:28px;margin-top:24px;padding-top:20px;border-top:1px solid var(--product-line)}
+.training-save-actions .secondary-button,.training-save-actions .primary-button{width:210px;justify-content:center}
 .training-save-actions small{display:block;margin-top:9px;color:var(--product-muted);font-size:12px;text-align:center}
 .confirm-modal .card-actions{justify-content:flex-end;gap:10px}
 .confirm-modal .card-actions .secondary-button,

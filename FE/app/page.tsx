@@ -741,7 +741,6 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
   if (detail) {
     const terminal = ['완료', '실패', '취소됨'].includes(detail.status);
     return <>
-      <button className="back-link" onClick={() => { setDetail(null); void refreshTrainings(); }}>← 학습 목록으로 돌아가기</button>
       <div className="progress-layout">
         <section className="card progress-card">
           <div className="progress-card-actions">{!terminal && <button className="danger-button" disabled={busy} onClick={() => setConfirmFor(detail)}>학습 취소</button>}</div>
@@ -980,7 +979,7 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
     setCatalogLoading(true);
     setCatalogError(false);
     void Promise.all([fetchTrainingSkills(), refreshDatasets()])
-      .then(([skills]) => setCatalog(skills.filter((item) => item.tier !== 'CUSTOM' || item.status !== 'PLANNED')))
+      .then(([skills]) => setCatalog(skills))
       .catch(() => {
         setCatalogError(true);
         onToast('학습 동작과 수집 데이터를 불러오지 못했어요.');
