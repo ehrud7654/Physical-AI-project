@@ -14,7 +14,11 @@ from gate_relative_chunk_oracle import (
     _require_provisional_registration,
     _scene_valid_episodes,
 )
-from render_relative_chunk_rollout import _interpolated_joint_target
+from render_relative_chunk_rollout import (
+    _episode_approach_start,
+    _interpolated_joint_target,
+    _stable_side_grasp_success,
+)
 
 
 class Tests(unittest.TestCase):
@@ -22,10 +26,24 @@ class Tests(unittest.TestCase):
         for status in (
             "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
             "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+            "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION",
         ):
             _require_provisional_registration({"status": status})
         with self.assertRaises(ValueError):
             _require_provisional_registration({"status": "VALIDATED"})
+
+    def test_fixed_approach_start_is_read_without_runtime_search(self) -> None:
+        payload = {"selected": {"per_episode": [{
+            "episode": "episode-a",
+            "scene_constraints_ok": True,
+            "approach_start_row": 7,
+            "approach_start_arm_rad": [0.1, 0.2, 0.3, 0.4, 0.5],
+            "approach_start_executed_gap_m": 0.038,
+        }]}}
+        row, arm, gap = _episode_approach_start(payload, "episode-a")
+        self.assertEqual(row, 7)
+        np.testing.assert_allclose(arm, [0.1, 0.2, 0.3, 0.4, 0.5])
+        self.assertAlmostEqual(gap, 0.038)
 
     def test_kinematic_grasp_override_is_forwarded_explicitly(self) -> None:
         self.assertEqual(_kinematic_grasp_args(None), [])
@@ -47,6 +65,22 @@ class Tests(unittest.TestCase):
         np.testing.assert_allclose(result[:5], [1, 2, 3, 4, 5])
         # Curve widths are centimetres; 5 cm maps to angle 0 in this fixture.
         self.assertAlmostEqual(float(result[5]), 0.0)
+
+    def test_post_lift_transport_is_not_scored_as_tabletop_shove(self) -> None:
+        self.assertTrue(_stable_side_grasp_success(
+            mujoco_success=True,
+            pre_lift_xy_displacement_m=0.010,
+            xy_threshold_m=0.0195,
+            max_tilt_deg=8.0,
+            tilt_threshold_deg=30.0,
+        ))
+        self.assertFalse(_stable_side_grasp_success(
+            mujoco_success=True,
+            pre_lift_xy_displacement_m=0.020,
+            xy_threshold_m=0.0195,
+            max_tilt_deg=8.0,
+            tilt_threshold_deg=30.0,
+        ))
 
     def test_scene_valid_episode_selection(self) -> None:
         payload = {"selected": {"per_episode": [

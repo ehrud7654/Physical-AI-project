@@ -15,10 +15,12 @@ from tools.umi_mujoco import apply_kinematic_grasp
 
 from search_relative_chunk_registration import (
     PROGRESS_SCHEMA,
+    _approach_start_row,
     _cached_candidate,
     _canonical_replay_translation,
     _candidate_starts,
     _dynamic_rank,
+    _apply_grip_preload,
     _load_progress,
     _planar_contact_offsets,
     _refined_starts,
@@ -34,6 +36,24 @@ from search_relative_chunk_registration import (
 
 
 class Tests(unittest.TestCase):
+    def test_approach_start_uses_fixed_lookback_not_reachability(self) -> None:
+        self.assertEqual(
+            _approach_start_row(
+                contact_row=12, episode_length=20, lookback_rows=8), 4)
+        self.assertEqual(
+            _approach_start_row(
+                contact_row=3, episode_length=20, lookback_rows=8), 0)
+        self.assertEqual(
+            _approach_start_row(
+                contact_row=12, episode_length=20, lookback_rows=None), 0)
+
+    def test_grip_preload_changes_execution_copy_only_below_threshold(self) -> None:
+        source = np.asarray([0.060, 0.055, 0.040, 0.001])
+        executed = _apply_grip_preload(
+            source, preload_m=0.002, activation_gap_m=0.055)
+        np.testing.assert_allclose(executed, [0.060, 0.053, 0.038, 0.0])
+        np.testing.assert_allclose(source, [0.060, 0.055, 0.040, 0.001])
+
     def test_diagnostic_candidate_can_be_rechecked_but_validated_cannot(self) -> None:
         _require_source_registration({
             "status": "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION"

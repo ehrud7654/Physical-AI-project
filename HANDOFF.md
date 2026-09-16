@@ -131,14 +131,75 @@ side-frame, pad centring and contact IK `14/14`, but first contact only `7/14`
 and full scene `3/14`. Every condition is marked diagnostic and rejected; no
 dataset or training labels were rewritten.
 
-The remaining first-contact split is strongly associated with recorded gap:
-detected episodes have near-close target gap `34.84--38.15mm`, while missed
-episodes have `39.81--41.21mm`. The configured 39mm snack-case width and fitted
-pad geometry are provisional, not caliper measurements. Do not tune them to the
-result. The next physical gate is independent measurement of (1) snack-case
-body width along the grasp direction and (2) commanded gap versus actual inner
-pad separation. Dynamic lift and learned-policy rollout remain blocked until
-that contract is fixed.
+The remaining first-contact split is strongly associated with recorded gap.
+On 2026-09-16 the user physically measured the snack-case body width along the
+gripper closing axis as `40mm` (measurement tool/repetitions were not recorded),
+so the old provisional 39mm width was replaced. Replaying the unchanged 14
+episodes at 40mm improved detected first contact only from `7/14` to `8/14`;
+the full static scene gate remained `3/14`. Detected target gaps span
+`34.84--39.81mm`; missed episodes span `40.26--41.21mm`. Therefore object width
+was only a partial blocker and must not be tuned further to the simulation
+result. The remaining physical gate is commanded gap versus actual inner-pad
+separation on SO-101/ver1. Dynamic lift and learned-policy rollout remain
+blocked until that contract or an explicitly diagnostic execution-time preload
+is validated without rewriting the source labels.
+
+That simulation-only preload comparison is now complete on the same fixed 14
+episodes, canonical object, side-frame projection and 40mm physical width.
+Recorded gaps stayed unchanged and reports store source/executed gaps
+separately. First swept contact improved from `8/14` at 0mm to `12/14` at 1mm
+and `14/14` at 2mm. The full static scene gate nevertheless stayed `3/14` in
+all three conditions because ten episodes still fail the common-start IK and
+collision checks (one also misses initial camera visibility). Thus 1mm is the
+smallest diagnostic preload meeting the predeclared `>=12/14` contact gate;
+2mm establishes that the remaining static failures are not a gap/contact
+problem. Neither value is a real SO-101 calibration. The next blocker is to
+define a common reachable approach segment/start condition without per-episode
+registration or source-label rewriting, then rerun the policy-free dynamic
+lift gate before any learned checkpoint rollout.
+
+A fixed contact-relative trimming diagnostic is now implemented. It never
+searches for a successful/reachable row per episode: every episode begins at
+exactly `contact_row - K`, clamped only at row zero, while all source arrays stay
+unchanged. With 1mm preload, K=4/8/12 rows produced static scene fractions
+`7/14`, `3/14`, and `3/14`. A follow-up boundary isolation at 2mm preload gave:
+
+- K=0 (contact pose only, not a valid approach task): scene `14/14`, geometry
+  `22/27`, contact `14/14`;
+- K=2 (0.2s at 10Hz; minimum segment retaining two-frame observation history):
+  scene `14/14`, geometry `22/27`, contact `14/14`;
+- K=4: scene `8/14`, geometry `16/27`, contact `14/14`, with all six failures
+  caused by start IK/collision.
+
+K=2 is therefore the only meaningful static-gate survivor, but remains a
+simulation-only canonical replay with an uncalibrated 2mm preload. K=0 is a
+diagnostic lower bound and must not be cited as task success. The next action is
+to replay from each report's fixed K=2 row and corresponding statically solved
+arm state. That policy-free dynamic gate has now been run on all 14 static-valid
+episodes. The first report was `11/14`, but visual and trace inspection showed
+that the scorer incorrectly counted deliberate horizontal transport **after the
+object was lifted** as a tabletop shove. The threshold was not relaxed: the same
+19.5mm limit is now applied only while lift is at most 5mm, and total XY travel
+remains separately recorded. Unit coverage explicitly checks this distinction.
+
+The corrected result is:
+
+```text
+report: AI/out/relative_chunk_v9_width40mm_preload2mm_lookback2_dynamic_gate14_preliftfix_20260916.json
+status: PASS_LOCAL_DYNAMIC_ORACLE_GATE
+episodes/contact/stable lift: 14/14, 14/14, 14/14
+final lift range: 50.8--112.0mm
+max pre-lift XY displacement: 17.0mm (< 19.5mm gate)
+IK reject / tip / runner error: 0 / 0 / 0
+```
+
+This closes the **local policy-free simulation geometry/contact gate only**. It
+does not validate the 2mm execution preload on hardware, establish a deployable
+world-to-base registration, validate a learned checkpoint, or approve motor
+commands. The three inspection GIFs that motivated the scorer correction are
+`rec_20260911_145625`, `145657`, and `145951` with suffix
+`_lookback2_preload2mm_failure_20260916.gif`; all retain bilateral contact and
+lift while carrying the object laterally.
 
 The previous MuJoCo diagnostic falsely reported `3/3` because the scene still
 rendered the legacy SO-101 rotary jaw while two separate, effectively invisible
@@ -247,26 +308,22 @@ AI study/config files unless the user separately asks to commit them.
 
 1. Review this handoff, `git status`, and the current diff; do not recreate the
    ver1 fix.
-2. Keep the fitted tip patch and horizontal side/body axes fixed. Do not run a
-   larger blind registration search: the `-30/-20/-10/0mm` sweep and two 32-way
-   searches did not produce a valid common registration.
-3. Do not run more blind registration candidates. The canonical replay failed
-   `0/14`, and the current ver1 side-workspace map is only `12.5x5cm` while the
-   selected demonstrations span roughly `28.6x28.7cm` in contact displacement.
-4. Freeze a supported **physical** object-placement/relative-motion envelope
-   using independent object/table/base measurements before looking
-   at per-episode success, then report how many 0911 demonstrations lie inside
-   it. Do not infer a physical base transform from the three passing episodes,
-   and do not manufacture per-episode object offsets.
-5. Obtain an independent object/table/base reference for a deployable
-   registration and record the collection placement range in future raw data.
-6. Only after those rules are explicit, rerun the static/contact gate, challenge
-   three, and the same 14-episode recorded-oracle gate. Passing still requires
-   visible bilateral contact, stable lift, no tip/displacement, and at least
-   the configured 80% success fraction.
-7. Commit only the related source, tests, eight OBJ assets and measurement-doc
-   update after this validation. Keep generated `AI/out` artifacts out unless
-   explicitly requested.
+2. Treat the new dynamic `14/14` only as a local simulation gate. Preserve the
+   fitted tip patch, horizontal side/body axes, fixed K=2 start and source labels;
+   do not run more blind registration candidates or tune the 19.5mm threshold.
+3. Decide the next evaluation path explicitly: either (a) obtain the independent
+   object/table/base reference and measured SO-101 gap-to-inner-pad calibration
+   needed for physical transfer, or (b) run a clearly labelled local learned
+   policy sanity check. Path (b) may test software integration but cannot claim
+   physical registration or deployment readiness, and learned inference/rollout
+   must remain off the shared GPU server.
+4. For learned-policy evidence, use one unchanged checkpoint and compare normal
+   rollout against inference-time noise/blackout/freeze; do not substitute the
+   previously misdescribed training-time image corruption experiment.
+5. Continue the teammate's official-UMI conversion from the normalized raw
+   stream in parallel. Do not reinterpret the v9 6D chunks as raw axis-angle.
+6. Commit only the related source/tests/config/handoff update after review. Keep
+   generated `AI/out` artifacts out unless explicitly requested.
 
 Useful local test command on this machine:
 

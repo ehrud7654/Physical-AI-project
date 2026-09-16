@@ -633,10 +633,38 @@ def _translated_episode_anchors(
     return translated, arms
 
 
+def _apply_grip_preload(gaps: np.ndarray, *, preload_m: float,
+                        activation_gap_m: float) -> np.ndarray:
+    """Return simulation execution gaps without mutating recorded labels."""
+    source = np.asarray(gaps, dtype=float)
+    if (source.ndim != 1 or not np.isfinite(source).all()
+            or not np.isfinite(preload_m) or preload_m < 0.0
+            or not np.isfinite(activation_gap_m)
+            or activation_gap_m <= 0.0):
+        raise ValueError("invalid diagnostic grip preload inputs")
+    executed = source.copy()
+    active = source <= float(activation_gap_m)
+    executed[active] = np.maximum(0.0, source[active] - float(preload_m))
+    return executed
+
+
+def _approach_start_row(*, contact_row: int, episode_length: int,
+                        lookback_rows: int | None) -> int:
+    """Choose a fixed pre-contact segment start without success-based search."""
+    if (episode_length <= 0 or contact_row < 0
+            or contact_row >= episode_length
+            or (lookback_rows is not None and lookback_rows < 0)):
+        raise ValueError("invalid diagnostic approach segment inputs")
+    if lookback_rows is None:
+        return 0
+    return max(0, contact_row - int(lookback_rows))
+
+
 def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
                             cfg: dict[str, Any],
                             arms: list[np.ndarray | None], gaps: np.ndarray,
-                            contact_row: int, object_xyz: np.ndarray,
+                            start_row: int, contact_row: int,
+                            object_xyz: np.ndarray,
                             curve: Any, interpolation_substeps: int,
                             max_pinch_xy_m: float,
                             desired_world_approach_axis: np.ndarray,
@@ -649,11 +677,13 @@ def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
     """
     if interpolation_substeps <= 0:
         raise ValueError("interpolation_substeps must be positive")
+    if start_row < 0 or start_row > contact_row or contact_row >= len(gaps):
+        raise ValueError("invalid first-contact approach segment")
     _set_static_object_pose(model, data, object_xyz)
     previous_q: np.ndarray | None = None
     previous_gap: float | None = None
     checked = 0
-    for row in range(min(contact_row, len(gaps) - 1) + 1):
+    for row in range(start_row, min(contact_row, len(gaps) - 1) + 1):
         arm = arms[row]
         if arm is None:
             previous_q = None
@@ -697,6 +727,7 @@ def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
             return {
                 "detected": True,
                 "row": row,
+                "start_row": start_row,
                 "substep": substep,
                 "interpolation_substeps": interpolation_substeps,
                 "samples_checked": checked,
@@ -726,6 +757,7 @@ def _first_approach_contact(*, model: Any, data: Any, ik: MujocoIK,
     return {
         "detected": False,
         "row": None,
+        "start_row": start_row,
         "substep": None,
         "interpolation_substeps": interpolation_substeps,
         "samples_checked": checked,
@@ -808,6 +840,7 @@ def _scene_gate(checks: dict[str, bool]) -> tuple[bool, float, list[str]]:
 def _workspace_audit(*, episode_reports: list[dict[str, Any]],
                      table_xy: np.ndarray, table_half_xy: np.ndarray,
                      object_size_m: np.ndarray,
+                     object_size_evidence: dict[str, Any] | None = None,
                      edge_margin_m: float) -> dict[str, Any]:
     """Summarise what one common registration can and cannot translate away."""
     if not episode_reports:
@@ -825,8 +858,18 @@ def _workspace_audit(*, episode_reports: list[dict[str, Any]],
     contact_target_gaps = np.asarray([
         report["contact_target_gap_m"] for report in episode_reports
     ], dtype=float)
+    executed_contact_target_gaps = np.asarray([
+        report.get("executed_contact_target_gap_m",
+                   report["contact_target_gap_m"])
+        for report in episode_reports
+    ], dtype=float)
     minimum_recorded_gaps = np.asarray([
         report["minimum_recorded_gap_m"] for report in episode_reports
+    ], dtype=float)
+    minimum_executed_gaps = np.asarray([
+        report.get("minimum_executed_gap_m",
+                   report["minimum_recorded_gap_m"])
+        for report in episode_reports
     ], dtype=float)
     contact_detected = np.asarray([
         bool(report["first_approach_contact"]["detected"])
@@ -838,7 +881,9 @@ def _workspace_audit(*, episode_reports: list[dict[str, Any]],
             or not np.isfinite(displacements).all()
             or not np.isfinite(grasp_height).all()
             or not np.isfinite(contact_target_gaps).all()
-            or not np.isfinite(minimum_recorded_gaps).all()):
+            or not np.isfinite(executed_contact_target_gaps).all()
+            or not np.isfinite(minimum_recorded_gaps).all()
+            or not np.isfinite(minimum_executed_gaps).all()):
         raise ValueError("workspace audit received invalid episode geometry")
 
     table_xy = np.asarray(table_xy, dtype=float)
@@ -874,7 +919,13 @@ def _workspace_audit(*, episode_reports: list[dict[str, Any]],
         }
 
     return {
-        "anchor_rule": "every episode starts at the same robot TCP pose",
+        "anchor_rule": (
+            "fixed contact-relative lookback per episode; no reachability- or "
+            "success-based row search"
+            if any(report.get("diagnostic_approach_lookback_rows") is not None
+                   for report in episode_reports)
+            else "full recorded episode start"
+        ),
         "episode_count": len(episode_reports),
         "contact_displacement_from_common_start_m": distribution(displacements),
         "inferred_object_xyz_m": distribution(object_xyz),
@@ -886,21 +937,35 @@ def _workspace_audit(*, episode_reports: list[dict[str, Any]],
         },
         "recorded_gap_contact_gate": {
             "object_width_m": float(object_size_m[1]),
-            "object_width_status": "provisional_not_caliper_measured",
+            "object_width_status": (
+                str(object_size_evidence.get(
+                    "grasp_axis_width_source", "configured_without_source"))
+                if object_size_evidence else "configured_without_source"
+            ),
+            "object_width_evidence": object_size_evidence,
             "contact_target_gap_m": scalar_distribution(
                 contact_target_gaps),
+            "executed_contact_target_gap_m": scalar_distribution(
+                executed_contact_target_gaps),
             "minimum_recorded_gap_m": scalar_distribution(
                 minimum_recorded_gaps),
+            "minimum_executed_gap_m": scalar_distribution(
+                minimum_executed_gaps),
             "contact_detected_episodes": int(np.sum(contact_detected)),
             "contact_not_detected_episodes": int(np.sum(~contact_detected)),
             "contact_target_gap_m_when_detected": scalar_distribution(
                 contact_target_gaps[contact_detected]),
             "contact_target_gap_m_when_not_detected": scalar_distribution(
                 contact_target_gaps[~contact_detected]),
+            "executed_contact_target_gap_m_when_detected": (
+                scalar_distribution(executed_contact_target_gaps[contact_detected])),
+            "executed_contact_target_gap_m_when_not_detected": (
+                scalar_distribution(executed_contact_target_gaps[~contact_detected])),
             "interpretation": (
                 "A gap/contact split diagnoses consistency between the "
-                "recorded gripper gap, provisional object width and fitted "
-                "pad geometry; it does not measure the real object width."
+                "recorded gripper gap, configured object width and fitted "
+                "pad geometry. Object-width provenance is reported "
+                "separately and is not inferred from this diagnostic."
             ),
         },
         "scene_failure_counts": dict(sorted(failures.items())),
@@ -960,6 +1025,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                         model: Any, ik: MujocoIK, cfg: dict[str, Any],
                         ranges: np.ndarray, real: dict[str, Any],
                         object_size_m: np.ndarray,
+                        object_size_evidence: dict[str, Any] | None,
                         object_edge_margin_m: float,
                         pad_center_margin_m: float,
                         desired_world_jaw_axis: np.ndarray,
@@ -973,6 +1039,9 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                         first_contact_max_body_depth_offset_m: float,
                         approach_contact_substeps: int,
                         object_approach_offset_m: float,
+                        diagnostic_grip_preload_m: float = 0.0,
+                        diagnostic_grip_preload_activation_gap_m: float = 0.055,
+                        diagnostic_approach_lookback_rows: int | None = None,
                         diagnostic_canonical_object_xyz: np.ndarray | None = None,
                         diagnostic_project_side_frame: bool = False,
                         diagnostic_align_contact_3d: bool = False,
@@ -1004,12 +1073,20 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
 
     for episode_index in episode_indices:
         episode = dataset.episodes[episode_index]
-        gaps = np.asarray(episode["proprio"][:, -1, 9], dtype=float)
-        rows = _sample_rows(len(gaps), samples_per_episode)
+        source_gaps = np.asarray(
+            episode["proprio"][:, -1, 9], dtype=float)
+        execution_gaps = _apply_grip_preload(
+            source_gaps, preload_m=diagnostic_grip_preload_m,
+            activation_gap_m=diagnostic_grip_preload_activation_gap_m)
         poses, arms = episode_anchors(
             episode, model=model, ik=ik, curve=curve,
             arm_start=arm_start, ranges=ranges)
-        contact = _contact_row(gaps)
+        contact = _contact_row(source_gaps)
+        approach_start = _approach_start_row(
+            contact_row=contact, episode_length=len(source_gaps),
+            lookback_rows=diagnostic_approach_lookback_rows)
+        rows = approach_start + _sample_rows(
+            len(source_gaps) - approach_start, samples_per_episode)
         contact_pose = poses[contact]
         contact_position = np.asarray(contact_pose[:3, 3], dtype=float).copy()
         object_xyz = contact_position.copy()
@@ -1042,7 +1119,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                     desired_world_approach_axis,
                 ])
             poses, arms = _translated_episode_anchors(
-                poses=poses, gaps=gaps,
+                poses=poses, gaps=execution_gaps,
                 translation_m=canonical_translation,
                 ik=ik, curve=curve, ranges=ranges,
                 seed_arm=arm_start,
@@ -1062,8 +1139,9 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         else:
             first_approach_contact = _first_approach_contact(
                 model=model, data=data, ik=ik, cfg=cfg,
-                arms=arms, gaps=gaps,
-                contact_row=contact, object_xyz=object_xyz, curve=curve,
+                arms=arms, gaps=execution_gaps,
+                start_row=approach_start, contact_row=contact,
+                object_xyz=object_xyz, curve=curve,
                 interpolation_substeps=approach_contact_substeps,
                 max_pinch_xy_m=first_contact_max_pinch_xy_m,
                 desired_world_approach_axis=desired_world_approach_axis,
@@ -1071,9 +1149,10 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                     first_contact_max_body_depth_offset_m),
             )
 
-        episode_start_ik_available = arms[0] is not None
+        episode_start_ik_available = arms[approach_start] is not None
         episode_q_start = (
-            np.r_[arms[0], invert_gap_curve(float(gaps[0]), curve)]
+            np.r_[arms[approach_start], invert_gap_curve(
+                float(execution_gaps[approach_start]), curve)]
             if episode_start_ik_available else q_start)
         data.qpos[:6] = episode_q_start
         sync_gripper_collision_proxy(model, data, cfg)
@@ -1135,7 +1214,8 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         object_center_inside_both_pads = False
         if contact_ik_available and not kinematic_only:
             data.qpos[:6] = np.r_[
-                arms[contact], invert_gap_curve(float(gaps[contact]), curve)]
+                arms[contact], invert_gap_curve(
+                    float(execution_gaps[contact]), curve)]
             sync_gripper_collision_proxy(model, data, cfg)
             mujoco.mj_forward(model, data)
             table_contacts, self_contacts = _collision_counts(model, data)
@@ -1163,7 +1243,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         # pose.  The common candidate start pose is a registration seed, not
         # the beginning of the recorded motion.
         contact_displacement = np.asarray(
-            contact_pose[:3, 3] - poses[0][:3, 3], dtype=float)
+            contact_pose[:3, 3] - poses[approach_start][:3, 3], dtype=float)
         if kinematic_only:
             scene_checks = {
                 "start_ik_available": episode_start_ik_available,
@@ -1221,7 +1301,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
                 {},
                 ik=ik, curve=curve, current_pose=poses[int(row)],
                 arm_current=arm_current,
-                current_gap=float(gaps[int(row)]), ranges=ranges,
+                current_gap=float(source_gaps[int(row)]), ranges=ranges,
                 gap_max=float(real["max_gap_m"]), dt=1.0 / dataset.rate_hz,
                 max_arm_speed=float(real["max_speed_rad_s"]),
                 max_arm_accel=float(real["max_accel_rad_s2"]),
@@ -1244,8 +1324,23 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
             "oracle_geometry_accepted": episode_geometry,
             "combined_accepted": episode_combined,
             "contact_row": contact,
-            "contact_target_gap_m": float(gaps[contact]),
-            "minimum_recorded_gap_m": float(np.min(gaps)),
+            "approach_start_row": approach_start,
+            "approach_start_arm_rad": (
+                None if arms[approach_start] is None
+                else np.asarray(arms[approach_start], dtype=float).tolist()),
+            "approach_start_source_gap_m": float(
+                source_gaps[approach_start]),
+            "approach_start_executed_gap_m": float(
+                execution_gaps[approach_start]),
+            "diagnostic_approach_lookback_rows": (
+                diagnostic_approach_lookback_rows),
+            "contact_target_gap_m": float(source_gaps[contact]),
+            "executed_contact_target_gap_m": float(execution_gaps[contact]),
+            "minimum_recorded_gap_m": float(np.min(source_gaps)),
+            "minimum_executed_gap_m": float(np.min(execution_gaps)),
+            "diagnostic_grip_preload_m": diagnostic_grip_preload_m,
+            "diagnostic_grip_preload_activation_gap_m": (
+                diagnostic_grip_preload_activation_gap_m),
             "object_xyz_m": object_xyz.tolist(),
             "diagnostic_canonical_translation_m": (
                 canonical_translation.tolist()),
@@ -1399,6 +1494,7 @@ def _evaluate_candidate(*, candidate_id: int, arm_start: np.ndarray,
         table_xy=np.asarray(table["pos"][:2], dtype=float),
         table_half_xy=np.asarray(table["half_size_m"][:2], dtype=float),
         object_size_m=object_size_m,
+        object_size_evidence=object_size_evidence,
         edge_margin_m=object_edge_margin_m,
     )
     return {
@@ -1724,6 +1820,25 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--diagnostic-grip-preload-m", type=float, default=0.0,
+        help=(
+            "simulation-only under-closure applied to static canonical "
+            "replay; source gap labels remain unchanged"
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-grip-preload-activation-gap-m",
+        type=float, default=0.055,
+        help="apply diagnostic preload only at or below this source gap",
+    )
+    parser.add_argument(
+        "--diagnostic-approach-lookback-rows", type=int,
+        help=(
+            "simulation-only fixed segment start: begin this many 10Hz rows "
+            "before the recorded near-close row; no reachability-based search"
+        ),
+    )
+    parser.add_argument(
         "--approach-contact-substeps", type=int, default=5,
         help="joint-space interpolation samples per 10 Hz approach interval",
     )
@@ -1755,6 +1870,10 @@ def main() -> int:
             or args.dynamic_tracking_time_margin < 1.0
             or args.dynamic_grip_preload_m < 0.0
             or args.dynamic_grip_preload_activation_gap_m <= 0.0
+            or args.diagnostic_grip_preload_m < 0.0
+            or args.diagnostic_grip_preload_activation_gap_m <= 0.0
+            or (args.diagnostic_approach_lookback_rows is not None
+                and args.diagnostic_approach_lookback_rows < 0)
             or not 0.0 <= args.min_dynamic_success_fraction <= 1.0
             or not 0.0 <= args.min_static_scene_fraction <= 1.0):
         raise SystemExit("candidate and sample counts must be positive")
@@ -1782,6 +1901,16 @@ def main() -> int:
         raise SystemExit(
             "--diagnostic-align-contact-3d requires "
             "--diagnostic-canonical-object-xyz")
+    if (args.diagnostic_grip_preload_m > 0.0
+            and args.diagnostic_canonical_object_xyz is None):
+        raise SystemExit(
+            "--diagnostic-grip-preload-m requires "
+            "--diagnostic-canonical-object-xyz")
+    if (args.diagnostic_approach_lookback_rows is not None
+            and args.diagnostic_canonical_object_xyz is None):
+        raise SystemExit(
+            "--diagnostic-approach-lookback-rows requires "
+            "--diagnostic-canonical-object-xyz")
     if args.out.exists():
         raise SystemExit(f"output already exists: {args.out}")
     progress_path = (
@@ -1803,6 +1932,10 @@ def main() -> int:
     _require_source_registration(source_registration)
     current = np.asarray(source_registration["start_arm_rad"], dtype=float)
     object_size = np.asarray(source_registration["object_size_m"], dtype=float)
+    object_size_evidence = source_registration.get("object_size_evidence")
+    if (object_size_evidence is not None
+            and not isinstance(object_size_evidence, dict)):
+        raise ValueError("registration object_size_evidence must be an object")
     if current.shape != (5,) or object_size.shape != (3,):
         raise ValueError("registration start_arm_rad/object_size_m shape mismatch")
     desired_jaw = np.asarray(
@@ -1985,6 +2118,7 @@ def main() -> int:
                 samples_per_episode=1,
                 model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
                 object_size_m=object_size,
+                object_size_evidence=object_size_evidence,
                 object_edge_margin_m=args.object_edge_margin_m,
                 pad_center_margin_m=args.pad_center_margin_m,
                 desired_world_jaw_axis=desired_jaw,
@@ -2000,6 +2134,11 @@ def main() -> int:
                     args.first_contact_max_body_depth_offset_m),
                 approach_contact_substeps=args.approach_contact_substeps,
                 object_approach_offset_m=object_approach_offset,
+                diagnostic_grip_preload_m=args.diagnostic_grip_preload_m,
+                diagnostic_grip_preload_activation_gap_m=(
+                    args.diagnostic_grip_preload_activation_gap_m),
+                diagnostic_approach_lookback_rows=(
+                    args.diagnostic_approach_lookback_rows),
                 diagnostic_canonical_object_xyz=(
                     diagnostic_canonical_object_xyz),
                 diagnostic_project_side_frame=(
@@ -2051,6 +2190,7 @@ def main() -> int:
                     samples_per_episode=1,
                     model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
                     object_size_m=object_size,
+                    object_size_evidence=object_size_evidence,
                     object_edge_margin_m=args.object_edge_margin_m,
                     pad_center_margin_m=args.pad_center_margin_m,
                     desired_world_jaw_axis=desired_jaw,
@@ -2066,6 +2206,11 @@ def main() -> int:
                         args.first_contact_max_body_depth_offset_m),
                     approach_contact_substeps=args.approach_contact_substeps,
                     object_approach_offset_m=object_approach_offset,
+                    diagnostic_grip_preload_m=args.diagnostic_grip_preload_m,
+                    diagnostic_grip_preload_activation_gap_m=(
+                        args.diagnostic_grip_preload_activation_gap_m),
+                    diagnostic_approach_lookback_rows=(
+                        args.diagnostic_approach_lookback_rows),
                     diagnostic_canonical_object_xyz=(
                         diagnostic_canonical_object_xyz),
                     diagnostic_project_side_frame=(
@@ -2114,6 +2259,7 @@ def main() -> int:
                 samples_per_episode=args.samples_per_episode,
                 model=model, ik=ik, cfg=cfg, ranges=ranges, real=real,
                 object_size_m=object_size,
+                object_size_evidence=object_size_evidence,
                 object_edge_margin_m=args.object_edge_margin_m,
                 pad_center_margin_m=args.pad_center_margin_m,
                 desired_world_jaw_axis=desired_jaw,
@@ -2129,6 +2275,11 @@ def main() -> int:
                     args.first_contact_max_body_depth_offset_m),
                 approach_contact_substeps=args.approach_contact_substeps,
                 object_approach_offset_m=object_approach_offset,
+                diagnostic_grip_preload_m=args.diagnostic_grip_preload_m,
+                diagnostic_grip_preload_activation_gap_m=(
+                    args.diagnostic_grip_preload_activation_gap_m),
+                diagnostic_approach_lookback_rows=(
+                    args.diagnostic_approach_lookback_rows),
                 diagnostic_canonical_object_xyz=(
                     diagnostic_canonical_object_xyz),
                 diagnostic_project_side_frame=(
@@ -2275,6 +2426,11 @@ def main() -> int:
             args.diagnostic_project_side_frame),
         "diagnostic_contact_to_body_center_3d_alignment": bool(
             args.diagnostic_align_contact_3d),
+        "diagnostic_grip_preload_m": args.diagnostic_grip_preload_m,
+        "diagnostic_grip_preload_activation_gap_m": (
+            args.diagnostic_grip_preload_activation_gap_m),
+        "diagnostic_approach_lookback_rows": (
+            args.diagnostic_approach_lookback_rows),
         "diagnostic_side_frame_rotation_world_eef": (
             desired_contact_rotation.tolist()
             if args.diagnostic_project_side_frame else None),
@@ -2324,6 +2480,11 @@ def main() -> int:
                 args.diagnostic_project_side_frame),
             "diagnostic_contact_to_body_center_3d_alignment": bool(
                 args.diagnostic_align_contact_3d),
+            "diagnostic_grip_preload_m": args.diagnostic_grip_preload_m,
+            "diagnostic_grip_preload_activation_gap_m": (
+                args.diagnostic_grip_preload_activation_gap_m),
+            "diagnostic_approach_lookback_rows": (
+                args.diagnostic_approach_lookback_rows),
             "seed": args.seed,
             "ranking": (
                 "dynamic gate pass/success first, then separate post-contact IK, "

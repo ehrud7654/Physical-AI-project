@@ -1314,3 +1314,42 @@ SO-101 5-DoF에 요구하는 것이 병목이었음을 보인다. 접촉점을 �
 
 이 둘이 확정되기 전에는 object width나 pad를 성공률에 맞춰 조정하지 않고,
 recorded-oracle 동적 lift 및 학습 정책 rollout도 계속 보류한다.
+
+### 0916 확정: 40mm 폭·고정 K=2 시작의 policy-free 동적 게이트
+
+사용자가 구운감자 케이스의 파지축 몸통 폭을 `40mm`로 실측했다고 회신했다.
+측정 도구·측정 위치·반복 횟수는 전달되지 않았으므로
+`configs/real/baked_potato_case_grasp_width_20260916.json`에 그 한계를 함께
+기록했다. 이 값은 물체 폭만 고정하며 SO-101 명령 gap과 실제 pad 내측 간격을
+보정하지 않는다.
+
+원본 gap 라벨은 바꾸지 않고 실행 사본에만 0/1/2mm preload를 적용한 14편 비교에서
+최초 양측 접촉은 각각 `8/14`, `12/14`, `14/14`였다. 2mm는 gap 병목을 분리하기
+위한 MuJoCo 전용 진단값이며 실물 보정값이 아니다. 접촉행을 결과에서 고르는 대신
+모든 편에 동일한 규칙 `start = contact_row - K`를 적용했고, 10Hz에서 2-frame 관측
+이력을 보존하는 최소값 K=2가 정적 scene `14/14`, geometry `22/27`, contact
+`14/14`를 통과했다. K=0은 접근 과정이 없는 하한 진단이라 성공 근거로 쓰지 않는다.
+
+K=2 시작행·그 행의 정적 IK 해·2mm preload를 보고서에 고정한 뒤 정책 체크포인트를
+전혀 로드하지 않고 14편 recorded-oracle 동적 replay를 실행했다. 첫 집계는
+`11/14`였으나, 실패 세 편의 JSON과 GIF를 확인하자 양측 접촉과 리프트는 모두
+유지됐고 리프트 뒤 수평 운반을 테이블 위 shove로 잘못 합산한 scorer 오류였다.
+19.5mm 임계값은 변경하지 않았다. 대신 물체가 5mm 이하로 들린 구간의 XY 이동만
+pre-lift shove로 판정하고, 전체 XY 이동은 별도 진단 필드로 계속 저장하도록
+수정했다.
+
+```text
+report:
+  out/relative_chunk_v9_width40mm_preload2mm_lookback2_dynamic_gate14_preliftfix_20260916.json
+status: PASS_LOCAL_DYNAMIC_ORACLE_GATE
+bilateral contact / stable lift: 14/14 / 14/14
+final lift: 50.8--112.0mm
+max pre-lift XY displacement: 17.0mm
+pre-lift XY threshold: 19.5mm
+IK reject / tip / runner error: 0 / 0 / 0
+```
+
+이는 **로컬 policy-free 시뮬레이션 geometry/contact gate**만 닫는다. 2mm preload의
+실물 정합성, 실제 `T_base_world`, 실물 카메라 extrinsic, 학습 정책의 성공률 또는
+모터 안전을 검증하지 않는다. 학습 정책 sanity rollout을 수행하더라도 이 조건을
+simulation-only 진단으로 표기하고, 공유 GPU에서는 학습만 수행한다.

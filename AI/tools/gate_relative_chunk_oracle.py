@@ -25,6 +25,7 @@ RENDER_TOOL = AI_ROOT / "tools" / "render_relative_chunk_rollout.py"
 ACCEPTED_PROVISIONAL_REGISTRATION_STATUSES = {
     "PROVISIONAL_NOT_PHYSICAL_CALIBRATION",
     "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+    "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION",
 }
 
 
@@ -138,7 +139,8 @@ def _run_recorded_oracle_episode(
         report_dir: Path, cycles: int, tracking_time_margin: float,
         grip_preload_m: float, grip_preload_activation_gap_m: float,
         config: Path, real_config: Path,
-        kinematic_grasp: Path | None = None) -> dict[str, Any]:
+        kinematic_grasp: Path | None = None,
+        use_registration_approach_start: bool = False) -> dict[str, Any]:
     """Run one local recorded-oracle episode and return its classified report."""
     # The child runs with AI_ROOT as cwd.  An output rooted at a relative
     # `AI/out/...` directory would otherwise become `AI/AI/out/...` on Windows,
@@ -169,6 +171,8 @@ def _run_recorded_oracle_episode(
         "--out", str(pseudo_video),
     ]
     command.extend(_kinematic_grasp_args(kinematic_grasp))
+    if use_registration_approach_start:
+        command.append("--use-registration-approach-start")
     completed = subprocess.run(
         command, cwd=AI_ROOT, capture_output=True, text=True, check=False)
     report_path = pseudo_video.with_suffix(".json")
@@ -197,9 +201,15 @@ def _run_recorded_oracle_episode(
         "min_lift_height_m": report["min_lift_height_m"],
         "max_object_xy_displacement_m": report.get(
             "max_object_xy_displacement_m"),
+        "max_pre_lift_object_xy_displacement_m": report.get(
+            "max_pre_lift_object_xy_displacement_m"),
+        "tabletop_motion_lift_cutoff_m": report.get(
+            "tabletop_motion_lift_cutoff_m"),
         "max_object_tilt_deg": report.get("max_object_tilt_deg"),
         "object_xy_motion_exceeded_threshold": report.get(
             "object_xy_motion_exceeded_threshold"),
+        "total_object_xy_motion_exceeded_threshold": report.get(
+            "total_object_xy_motion_exceeded_threshold"),
         "object_displaced": report.get("object_displaced"),
         "object_tipped": report.get("object_tipped"),
         "jaw_contacts_final": report["jaw_contacts_final"],
@@ -221,6 +231,10 @@ def main() -> int:
     parser.add_argument("--tracking-time-margin", type=float, default=1.0)
     parser.add_argument("--grip-preload-m", type=float, default=0.001)
     parser.add_argument("--grip-preload-activation-gap-m", type=float, default=0.055)
+    parser.add_argument(
+        "--use-registration-approach-start", action="store_true",
+        help="start each oracle replay from its fixed static-gate approach row",
+    )
     parser.add_argument("--min-success-fraction", type=float, default=0.8)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--real-config", type=Path, default=DEFAULT_REAL_CONFIG)
@@ -278,7 +292,9 @@ def main() -> int:
             tracking_time_margin=margin, grip_preload_m=preload,
             grip_preload_activation_gap_m=activation,
             config=args.config, real_config=args.real_config,
-            kinematic_grasp=args.kinematic_grasp)
+            kinematic_grasp=args.kinematic_grasp,
+            use_registration_approach_start=(
+                args.use_registration_approach_start))
         rows.append(row)
         print(
             f"{index}/{len(episodes)} {episode}: {row['classification']}",
@@ -307,6 +323,8 @@ def main() -> int:
         "runner_errors": aggregate["runner_errors"],
         "simulation_grip_preload_m": preload,
         "simulation_grip_preload_activation_gap_m": activation,
+        "registration_approach_start_used": bool(
+            args.use_registration_approach_start),
         "simulation_tracking_time_margin": margin,
         "simulation_waypoint_execution": (
             "linear arm-and-gap target interpolation across scheduled ticks"

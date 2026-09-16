@@ -45,6 +45,7 @@ from umi.timing import uniform_time_schedule
 AI_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = AI_ROOT / "configs" / "so101.yaml"
 DEFAULT_REAL_CONFIG = AI_ROOT / "configs" / "real" / "so101_ver1.json"
+TABLETOP_MOTION_LIFT_CUTOFF_M = 0.005
 
 
 def _registration(path: Path) -> dict:
@@ -54,6 +55,7 @@ def _registration(path: Path) -> dict:
         "KINEMATIC_REGISTRATION_CANDIDATE_CAMERA_AND_DYNAMICS_UNVERIFIED",
         "KINEMATIC_REGISTRATION_CANDIDATE_NOT_DYNAMIC_READY",
         "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
+        "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION",
     }
     if payload.get("status") not in allowed:
         raise ValueError("registration must be an explicitly provisional candidate")
@@ -84,6 +86,37 @@ def _episode_object_xyz(registration: dict, episode_id: str) -> np.ndarray:
     if episode_id == str(registration.get("representative_episode")):
         return np.asarray(registration["object_xyz_m"], dtype=float)
     raise ValueError(f"registration has no object position for {episode_id}")
+
+
+def _episode_approach_start(
+        registration: dict, episode_id: str) -> tuple[int, np.ndarray, float]:
+    """Read one predeclared static-gate start; never search at rollout time."""
+    selected = registration.get("selected", {})
+    for row in selected.get("per_episode", []):
+        if str(row.get("episode")) != episode_id:
+            continue
+        start_row = int(row.get("approach_start_row", -1))
+        arm = np.asarray(row.get("approach_start_arm_rad"), dtype=float)
+        gap = float(row.get("approach_start_executed_gap_m", float("nan")))
+        if (row.get("scene_constraints_ok") is not True or start_row < 0
+                or arm.shape != (5,) or not np.isfinite(arm).all()
+                or not np.isfinite(gap) or gap < 0.0):
+            raise ValueError(
+                f"registration has no valid fixed approach start for {episode_id}")
+        return start_row, arm, gap
+    raise ValueError(f"registration has no per-episode row for {episode_id}")
+
+
+def _stable_side_grasp_success(
+        *, mujoco_success: bool, pre_lift_xy_displacement_m: float,
+        xy_threshold_m: float, max_tilt_deg: float,
+        tilt_threshold_deg: float) -> bool:
+    """Score grasp stability without treating post-lift transport as a shove."""
+    return bool(
+        mujoco_success
+        and pre_lift_xy_displacement_m < xy_threshold_m
+        and max_tilt_deg < tilt_threshold_deg
+    )
 
 
 def _episode(data_root: Path, episode_id: str) -> dict[str, np.ndarray]:
@@ -199,6 +232,13 @@ def main() -> int:
                         help="replay recorded relative targets instead of policy output")
     parser.add_argument("--episode",
                         help="override the registration's representative episode")
+    parser.add_argument(
+        "--use-registration-approach-start", action="store_true",
+        help=(
+            "recorded-oracle only: start at the fixed contact-relative row, "
+            "arm state and executed gap stored by the static diagnostic"
+        ),
+    )
     parser.add_argument("--cycles", type=int, default=30)
     parser.add_argument("--execute-steps", type=int, default=1)
     parser.add_argument(
@@ -255,6 +295,8 @@ def main() -> int:
             "use --oracle for recorded-target MuJoCo simulation")
     if not args.oracle and args.policy_ckpt is None:
         raise SystemExit("--policy-ckpt is required unless --oracle is used")
+    if args.use_registration_approach_start and not args.oracle:
+        raise SystemExit("--use-registration-approach-start requires --oracle")
     if args.device != "cpu":
         raise SystemExit("this local diagnostic currently requires --device cpu")
     if args.out.suffix.lower() != ".gif":
@@ -272,10 +314,22 @@ def main() -> int:
         raise SystemExit("cycles, execute-steps and capture-every must be positive")
 
     registration = _registration(args.registration)
+    if (registration["status"] == "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION"
+            and not args.use_registration_approach_start):
+        raise SystemExit(
+            "diagnostic canonical replay requires "
+            "--use-registration-approach-start")
     representative = str(args.episode or registration["representative_episode"])
     object_xyz = _episode_object_xyz(registration, representative)
     episode = _episode(args.data, representative)
+    start_row = 0
+    start_arm = registration["start_arm_rad"]
     initial_gap = float(episode["proprio"][0, -1, 9])
+    if args.use_registration_approach_start:
+        start_row, start_arm, initial_gap = _episode_approach_start(
+            registration, representative)
+        if start_row >= len(episode["action"]):
+            raise ValueError("fixed approach start is outside the episode")
     if args.oracle:
         dataset_meta = json.loads(
             (args.data / "dataset.json").read_text(encoding="utf-8"))
@@ -326,7 +380,6 @@ def main() -> int:
         registration["table_half_size_xy_m"].tolist())
     real = real_limits(args.real_config)
     ranges = arm_ranges(real)
-    start_arm = registration["start_arm_rad"]
     if np.any(start_arm < ranges[:, 0]) or np.any(start_arm > ranges[:, 1]):
         raise ValueError("registered start arm exceeds real limits")
     curve = cfg["grasp"]["gap_curve"]
@@ -352,6 +405,7 @@ def main() -> int:
     max_lift_height = 0.0
     min_lift_height = 0.0
     max_object_xy_displacement = 0.0
+    max_pre_lift_object_xy_displacement = 0.0
     max_object_tilt_deg = 0.0
     cycle_trace: list[dict[str, object]] = []
     command_trace: list[dict[str, object]] = []
@@ -393,7 +447,7 @@ def main() -> int:
             closest_xy, closest_3d = initial_xy, initial_3d
             if renderer is not None:
                 initial_policy_image = (
-                    episode["image"][0, -1]
+                    episode["image"][start_row, -1]
                     if args.observation_source == "dataset"
                     else observation.images["cam_wrist"]
                 )
@@ -412,12 +466,12 @@ def main() -> int:
                 )
                 frames.append(np.asarray(canvas))
             cycle_count = (
-                min(args.cycles, len(episode["action"]))
+                min(args.cycles, len(episode["action"]) - start_row)
                 if args.observation_source == "dataset" or args.oracle
                 else args.cycles
             )
             for cycle in range(cycle_count):
-                row = min(cycle, len(episode["action"]) - 1)
+                row = min(start_row + cycle, len(episode["action"]) - 1)
                 final_oracle_tail = bool(
                     args.execute_final_oracle_tail
                     and cycle == cycle_count - 1
@@ -564,6 +618,11 @@ def main() -> int:
                         min_lift_height = min(min_lift_height, lift)
                         max_object_xy_displacement = max(
                             max_object_xy_displacement, object_xy_displacement)
+                        if lift <= TABLETOP_MOTION_LIFT_CUTOFF_M:
+                            max_pre_lift_object_xy_displacement = max(
+                                max_pre_lift_object_xy_displacement,
+                                object_xy_displacement,
+                            )
                         max_object_tilt_deg = max(
                             max_object_tilt_deg, object_tilt_deg)
                         if first_contact_cycle is None and env.jaw_contacts() > 0:
@@ -708,6 +767,9 @@ def main() -> int:
             "representative_episode": representative,
             "object_xyz_m": object_xyz.tolist(),
             "initial_gap_m": initial_gap,
+            "episode_start_row": start_row,
+            "registration_approach_start_used": bool(
+                args.use_registration_approach_start),
             "cycles_requested": args.cycles,
             "action_horizon_steps": action_horizon,
             "validation_horizon_steps": validation_horizon,
@@ -742,25 +804,34 @@ def main() -> int:
             "initial_object_xyz_m": initial_object_xyz.tolist(),
             "final_object_xyz_m": env.object_position().tolist(),
             "max_object_xy_displacement_m": max_object_xy_displacement,
+            "max_pre_lift_object_xy_displacement_m": (
+                max_pre_lift_object_xy_displacement),
+            "tabletop_motion_lift_cutoff_m": TABLETOP_MOTION_LIFT_CUTOFF_M,
             "object_xy_displacement_threshold_m": (
                 object_xy_displacement_threshold),
             "max_object_tilt_deg": max_object_tilt_deg,
             "object_tilt_threshold_deg": object_tilt_threshold_deg,
             "object_xy_motion_exceeded_threshold": (
+                max_pre_lift_object_xy_displacement
+                >= object_xy_displacement_threshold),
+            "total_object_xy_motion_exceeded_threshold": (
                 max_object_xy_displacement >= object_xy_displacement_threshold),
             "object_displaced": (
                 env.jaw_contacts() == 0
-                and max_object_xy_displacement
+                and max_pre_lift_object_xy_displacement
                 >= object_xy_displacement_threshold),
             "object_tipped": max_object_tilt_deg >= object_tilt_threshold_deg,
             "jaw_contacts_final": env.jaw_contacts(),
             "jaw_contact_counts_final": env.jaw_contact_counts(),
             "bilateral_jaw_contact_final": env.has_bilateral_jaw_contact(),
             "success": env.is_success(),
-            "stable_side_grasp_success": bool(
-                env.is_success()
-                and max_object_xy_displacement < object_xy_displacement_threshold
-                and max_object_tilt_deg < object_tilt_threshold_deg
+            "stable_side_grasp_success": _stable_side_grasp_success(
+                mujoco_success=env.is_success(),
+                pre_lift_xy_displacement_m=(
+                    max_pre_lift_object_xy_displacement),
+                xy_threshold_m=object_xy_displacement_threshold,
+                max_tilt_deg=max_object_tilt_deg,
+                tilt_threshold_deg=object_tilt_threshold_deg,
             ),
             "max_arm_tracking_error_rad": max_tracking_error,
             "max_endpoint_arm_tracking_error_rad": max_endpoint_tracking_error,
