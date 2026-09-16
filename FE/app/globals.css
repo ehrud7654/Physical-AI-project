@@ -143,6 +143,7 @@ td strong, td small { display: block; }td strong { color: #303949; font-size: 11
 .spinner { display: inline-block; width: 34px; height: 34px; margin-bottom: 14px; border: 3px solid #e8ecf2; border-top-color: var(--orange); border-radius: 50%; animation: spin .8s linear infinite; }
 .state-icon { display: grid; place-items: center; width: 44px; height: 44px; margin: 0 auto 14px; border-radius: 50%; color: #dc2626; background: #fef2f2; font-size: 20px; font-weight: 800; }
 .toast.error span { background: #dc2626; }
+.session-expired-warning { margin: 0 0 18px; padding: 11px 13px; border-radius: 8px; color: #b42318; background: #fef3f2; font-size: 12px; font-weight: 650; line-height: 1.5; }
 .menu-wrap { position: relative; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
 .dropdown-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; display: flex; flex-direction: column; min-width: 132px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: white; box-shadow: 0 12px 30px rgb(15 23 42 / 14%); }

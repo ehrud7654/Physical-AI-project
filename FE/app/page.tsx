@@ -7,6 +7,7 @@ import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 import { createCustomSkill, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchSkillOverviews, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, updateSkillDescription, type DeviceEnrollment } from '@/services';
+import { SESSION_EXPIRED_EVENT } from '@/services/client';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -119,6 +120,7 @@ function HomeInner() {
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, entered]);
   const [toast, setToast] = useState('');
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success');
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState('');
 
   const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     setToast(message);
@@ -149,6 +151,19 @@ function HomeInner() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      clearAuthentication();
+      resetLearningDraft();
+      setCurrentUser(null);
+      setAuthenticated(false);
+      setEntered(false);
+      setSessionExpiredMessage('로그인 시간이 만료되어 자동으로 로그아웃됐어요. 다시 로그인해 주세요.');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, [resetLearningDraft]);
+
   const enterView = (target: View) => { setView(target); setEntered(true); };
   const navigateTo = (target: View) => {
     if (view === 'learn' && target !== 'learn' && learningDraft.step < 5) {
@@ -177,6 +192,7 @@ function HomeInner() {
       setCurrentUserId(user.name);
     } else if (!currentUser) return;
     setAuthenticated(true);
+    setSessionExpiredMessage('');
     enterView(target);
     void refresh();
   };
@@ -186,8 +202,9 @@ function HomeInner() {
     setCurrentUser(null);
     setAuthenticated(false);
     setEntered(false);
+    setSessionExpiredMessage('');
   };
-  if (!entered) return <Landing authenticated={authenticated} onLogin={login} onLogout={logout} />;
+  if (!entered) return <Landing authenticated={authenticated} onLogin={login} onLogout={logout} sessionExpiredMessage={sessionExpiredMessage} />;
 
   return (
     <main className="app-shell">
@@ -214,7 +231,7 @@ function HomeInner() {
   );
 }
 
-function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean; onLogin: (target: View, user?: AuthenticatedUser) => void; onLogout: () => void }) {
+function Landing({ authenticated, onLogin, onLogout, sessionExpiredMessage }: { authenticated: boolean; onLogin: (target: View, user?: AuthenticatedUser) => void; onLogout: () => void; sessionExpiredMessage: string }) {
   const [loginOpen, setLoginOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('figmaView') === 'login');
   const [signupOpen, setSignupOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -250,6 +267,12 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
     document.addEventListener('keydown', handle);
     return () => { document.removeEventListener('keydown', handle); document.body.style.overflow = overflow; previous?.focus(); };
   }, [loginOpen, signupOpen]);
+  useEffect(() => {
+    if (sessionExpiredMessage) {
+      setSignupOpen(false);
+      setLoginOpen(true);
+    }
+  }, [sessionExpiredMessage]);
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!id.trim() || !password) {
@@ -284,6 +307,7 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
     </section>
     {loginOpen && <div className="landing-login-backdrop" onMouseDown={() => setLoginOpen(false)}><form ref={loginForm} role="dialog" aria-modal="true" aria-label="로그인" className="landing-login-card" onSubmit={submitLogin} onMouseDown={(event) => event.stopPropagation()}>
       <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" onClick={() => setLoginOpen(false)} aria-label="로그인 닫기">×</button></div>
+      {sessionExpiredMessage && <p className="session-expired-warning" role="alert">{sessionExpiredMessage}</p>}
       {signupComplete && <p className="signup-success" role="status">회원가입이 완료됐어요. 입력한 아이디로 로그인해 주세요.</p>}
       <label>이메일<input type="email" value={id} onChange={(event) => { setId(event.target.value); setLoginError(''); setSignupComplete(false); }} autoComplete="username" /></label><label htmlFor="login-password">비밀번호</label><div className="password-field"><input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => { setPassword(event.target.value); setLoginError(''); }} autoComplete="current-password" /><button type="button" aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.8-5 9-5 9 5 9 5-3.8 5-9 5-9-5-9-5z" /><circle cx="12" cy="12" r="2.5" />{showPassword && <path d="M4 4l16 16" />}</svg></button></div>{loginError && <p className="field-error" role="alert">{loginError}</p>}
       <button className="primary-button" disabled={loginPending}>{loginPending ? '로그인 중...' : '로그인'}</button>
