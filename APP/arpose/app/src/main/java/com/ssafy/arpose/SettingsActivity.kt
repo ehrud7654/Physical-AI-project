@@ -29,14 +29,6 @@ class SettingsActivity : Activity() {
         aeSwitch.isChecked = Prefs.aeLock(this)
         aeSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setAeLock(this, checked) }
 
-        val gridSwitch = findViewById<Switch>(R.id.gridSwitch)
-        gridSwitch.isChecked = Prefs.gridGuide(this)
-        gridSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setGridGuide(this, checked) }
-
-        val detailSwitch = findViewById<Switch>(R.id.detailSwitch)
-        detailSwitch.isChecked = Prefs.showDetail(this)
-        detailSwitch.setOnCheckedChangeListener { _, checked -> Prefs.setShowDetail(this, checked) }
-
         // 디버그 섹션: 디버그 빌드에서만. QR 연동 전 jobId·자격 직접 입력해 실서버 테스트.
         if (BuildConfig.DEBUG) {
             findViewById<LinearLayout>(R.id.debugSection).visibility = View.VISIBLE

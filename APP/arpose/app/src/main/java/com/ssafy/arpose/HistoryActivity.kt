@@ -424,17 +424,17 @@ class HistoryActivity : Activity() {
             setPadding(0, dp(10), 0, 0)
             visibility = if (expandedNow) View.VISIBLE else View.GONE
         }
-        val dur = if (m.isEmpty()) "요약 없음 (녹화 미완료 가능)"
-            else "${m["duration_sec"] ?: "?"}s · ${m["frames_saved"] ?: "?"}프레임"
+        val secs = m["duration_sec"]?.toDoubleOrNull()?.toInt()
+        val dur = if (secs == null) "요약 없음" else "%d:%02d".format(secs / 60, secs % 60)
         detail.addView(detailRow("길이", dur))
-        detail.addView(detailRow("마커 검출", mkRate?.let { "$it%" } ?: "—"))
-        // vLabel 은 전체 판정 사유(마커/구멍/점프/좋음). 판정에 따라 행 라벨을 명확히.
-        val verdictRowLabel = when (icon) {
-            "✗" -> "재촬영 사유"
-            "⚠" -> "확인 사유"
-            else -> "판정"
+        val statusText = when {
+            icon == "✓" -> "사용 가능"
+            icon == "⚠" -> "움직임이 급함 · 다시 촬영"
+            icon == "✗" && mkRate != null && mkRate < 50 -> "마커가 잘 안 보임 · 다시 촬영"
+            icon == "✗" -> "데이터 누락 · 다시 촬영"
+            else -> "미완료"
         }
-        detail.addView(detailRow(verdictRowLabel, vLabel))
+        detail.addView(detailRow("상태", statusText))
 
         val del = TextView(this).apply {
             text = "삭제"
