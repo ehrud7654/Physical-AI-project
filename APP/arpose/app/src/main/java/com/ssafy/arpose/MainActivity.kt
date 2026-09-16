@@ -200,20 +200,24 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     private fun aeName() = if (aeLock) "LOCK" else "AUTO"
 
 
-    /** 배지 텍스트 = 활성 학습 + 해당 학습으로 찍은 편수(오배정 조기 인지용). */
+    private val COLLECT_GOAL = 50   // 학습별 요구 촬영 수(목표). 배지·피커에 N/목표로 표시.
+
+    /** 배지 텍스트 = 활성 학습 + 사용가능 편수/목표(N/50). 진척·오배정 조기 인지용. */
     private fun updateLearnBadge() {
         if (!::learnBadge.isInitialized) return
         val name = Prefs.activeSkillName(this)
         learnBadge.text = if (name.isBlank()) "학습: 미선택 ▾"
-            else "학습: $name · ${episodeCount(Prefs.activeJobId(this))}편 ▾"
+            else "학습: $name · ${episodeCount(Prefs.activeJobId(this))}/${COLLECT_GOAL}편 ▾"
     }
 
+    /** 해당 학습으로 찍은 "사용 가능(✓)" 편수만 센다 — 재촬영감(마커 실패·점프·구멍)은 제외. */
     private fun episodeCount(jobId: String): Int {
         if (jobId.isBlank()) return 0
         val base = getExternalFilesDir(null) ?: return 0
         return base.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }
             ?.count { d ->
-                File(d, "meta.txt").let { it.exists() && it.readText().contains("training_job_id=$jobId") }
+                File(d, "meta.txt").let { it.exists() && it.readText().contains("training_job_id=$jobId") } &&
+                    EpisodeQc.isUsable(d)
             } ?: 0
     }
 
@@ -262,12 +266,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         // 서버에서 받아 디스크에 캐시된 스킬 목록. id 를 로컬 편수 그룹키(jobId)로 쓴다.
         val catalog = DeviceSkills.cached.map { Triple(it.id, it.skillKey, it.displayName) }
         for ((jobId, skillKey, label) in catalog) {
-            addCard(label, "${episodeCount(jobId)}편", jobId == activeJob) {
+            addCard(label, "${episodeCount(jobId)}/${COLLECT_GOAL}편", jobId == activeJob) {
                 Prefs.setActiveLearning(this, jobId, skillKey, label)
             }
         }
         // 미분류: 오프라인·목록 없음에도 촬영 가능. 전송 때 실제 학습으로 지정 강제.
-        addCard("미분류 (나중에 지정)", "${episodeCount(Prefs.UNASSIGNED_JOB)}편",
+        addCard("미분류 (나중에 지정)", "${episodeCount(Prefs.UNASSIGNED_JOB)}/${COLLECT_GOAL}편",
             activeJob == Prefs.UNASSIGNED_JOB) {
             Prefs.setActiveLearning(this, Prefs.UNASSIGNED_JOB, "", "미분류")
         }

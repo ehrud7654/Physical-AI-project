@@ -25,7 +25,10 @@ object MarkerQc {
     // 마젠타 HSV 범위 (실측 hue 160~178, 고채도·고명도). 조명·노출 바뀌면 이 값만 재조정(knob).
     private val LO = Scalar(140.0, 90.0, 90.0)
     private val HI = Scalar(175.0, 255.0, 255.0)
-    private const val BLOB_MIN_A = 150.0   // 블롭 최소 면적(px^2, 1080p 기준)
+    private const val BLOB_MIN_A = 1500.0      // 블롭 최소 면적 하한(px^2). 원거리·배경 마젠타 컷
+    private const val MIN_AREA_FRAC = 0.0012   // 프레임 면적 대비 최소(해상도 독립). 실제 그리퍼 마커는 훨씬 큼. knob
+    private const val ROI_TOP_FRAC = 0.5       // 저장 프레임 기준 마커는 상단에 옴 → 상단 이 비율 안쪽만 인정. knob
+                                               // (저장본이 아래에 오면 이 게이트를 하단으로 뒤집을 것)
 
     @Volatile private var ready = false
 
@@ -66,8 +69,9 @@ object MarkerQc {
         return Result(detected, picked.size)
     }
 
-    /** 한 프레임에 마젠타 블롭이 2개 이상 보이는지. */
+    /** 한 프레임에 "충분히 크고 상단 ROI 안에 있는" 마젠타 블롭이 2개 이상 보이는지. */
     private fun hasMagentaPair(bgr: Mat): Boolean {
+        val h = bgr.rows(); val w = bgr.cols()
         val hsv = Mat()
         Imgproc.cvtColor(bgr, hsv, Imgproc.COLOR_BGR2HSV)
         val mask = Mat()
@@ -84,9 +88,14 @@ object MarkerQc {
         Imgproc.findContours(mask, cnts, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
         mask.release()
 
+        val minA = maxOf(BLOB_MIN_A, MIN_AREA_FRAC * w * h)
+        val roiY = ROI_TOP_FRAC * h
         var blobs = 0
         for (c in cnts) {
-            if (Imgproc.contourArea(c) >= BLOB_MIN_A) blobs++
+            if (Imgproc.contourArea(c) >= minA) {
+                val r = Imgproc.boundingRect(c)
+                if (r.y + r.height / 2.0 <= roiY) blobs++   // 중심이 상단 ROI 안일 때만
+            }
             c.release()
         }
         return blobs >= 2
