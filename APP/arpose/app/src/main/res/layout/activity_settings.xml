@@ -8,9 +8,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="16dp">
 
-        <!-- 상단바 -->
+        <!-- 상단바 (기록 화면과 위치/크기 통일: 컨테이너 16dp + backBtn -10dp) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -33,7 +33,7 @@
                 android:layout_marginStart="8dp"
                 android:text="설정"
                 android:textColor="@color/inkPrimary"
-                android:textSize="24sp" />
+                android:textSize="22sp" />
         </LinearLayout>
 
         <!-- 촬영 -->
@@ -76,7 +76,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="배경 특징점이 선명해 추적에 유리 · 권장"
+                        android:text="화면이 또렷하게 고정돼요 · 권장"
                         android:textColor="@color/inkMuted"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -122,7 +122,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="밝기·화이트밸런스 고정 · 데이터 일관성 · 권장"
+                        android:text="밝기·색감이 변하지 않아요 · 권장"
                         android:textColor="@color/inkMuted"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -181,7 +181,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="데이터 계약 · 변경 불가"
+                        android:text="고정됨 · 변경 불가"
                         android:textColor="@color/inkMuted"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -195,110 +195,6 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 촬영 보조 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="촬영 보조"
-            android:textColor="@color/inkMuted"
-            android:textSize="12sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:orientation="vertical"
-            android:background="@drawable/bg_card_light"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="18dp"
-                android:paddingVertical="14dp">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="구도 그리드"
-                        android:textColor="@color/inkPrimary"
-                        android:textSize="16sp" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="화면에 3분할 안내선"
-                        android:textColor="@color/inkMuted"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <Switch
-                    android:id="@+id/gridSwitch"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:track="@drawable/switch_track"
-                    android:thumb="@drawable/switch_thumb"
-                    android:switchMinWidth="52dp"
-                    android:thumbTextPadding="0dp"
-                    android:showText="false"
-                    android:textOn=""
-                    android:textOff="" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginHorizontal="18dp"
-                android:background="@color/hairline" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="18dp"
-                android:paddingVertical="14dp">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="상세값 표시"
-                        android:textColor="@color/inkPrimary"
-                        android:textSize="16sp" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="pose·마커 원시값 (개발용)"
-                        android:textColor="@color/inkMuted"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <Switch
-                    android:id="@+id/detailSwitch"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:track="@drawable/switch_track"
-                    android:thumb="@drawable/switch_thumb"
-                    android:switchMinWidth="52dp"
-                    android:thumbTextPadding="0dp"
-                    android:showText="false"
-                    android:textOn=""
-                    android:textOff="" />
-            </LinearLayout>
-        </LinearLayout>
         <!-- 디버그 (테스트 전용, 디버그 빌드에서만 보임) -->
         <LinearLayout
             android:id="@+id/debugSection"

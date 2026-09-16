@@ -2,6 +2,7 @@ package com.ssafy.arpose
 
 import android.content.Context
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -22,7 +23,20 @@ object DeviceSkills {
     @Volatile var cached: List<Skill> = emptyList()
         private set
 
-    /** 목록 새로고침. 네트워크 호출이라 백그라운드 스레드에서 부른다. 성공 시 캐시 갱신·반환. */
+    private fun parse(arr: JSONArray): List<Skill> = (0 until arr.length()).map { i ->
+        val o = arr.getJSONObject(i)
+        Skill(o.getString("id"), o.getString("skillKey"), o.optString("displayName", o.getString("skillKey")))
+    }
+
+    /** 디스크 캐시에서 로드(메모리 비어있을 때만). 오프라인·재시작에도 마지막 동기화 목록을 쓴다. */
+    fun load(ctx: Context) {
+        if (cached.isNotEmpty()) return
+        val json = Prefs.skillCatalog(ctx)
+        if (json.isBlank()) return
+        cached = try { parse(JSONArray(json)) } catch (e: Exception) { emptyList() }
+    }
+
+    /** 목록 새로고침. 네트워크 호출이라 백그라운드 스레드에서 부른다. 성공 시 캐시·디스크 갱신·반환. */
     fun refresh(ctx: Context): List<Skill> {
         // QR 저장 전이면 목 검증용 폴백 자격(DeviceAuth 와 동일).
         val id = Prefs.deviceId(ctx).ifBlank { "test-device" }
@@ -38,11 +52,9 @@ object DeviceSkills {
             conn.outputStream.use { it.write(body.toByteArray()) }
             if (conn.responseCode !in 200..299) { Log.w(TAG, "스킬 목록 HTTP ${conn.responseCode}"); return cached }
             val arr = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("data")
-            val list = (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                Skill(o.getString("id"), o.getString("skillKey"), o.optString("displayName", o.getString("skillKey")))
-            }
+            val list = parse(arr)
             cached = list
+            Prefs.setSkillCatalog(ctx, arr.toString())   // 디스크 캐시 — 오프라인·재시작 대비
             Log.i(TAG, "스킬 목록 ${list.size}건")
             list
         } catch (e: Exception) { Log.w(TAG, "스킬 목록 실패: ${e.message}"); cached }

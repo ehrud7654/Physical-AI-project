@@ -193,35 +193,32 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         glView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         glView.setRenderer(this)
         glView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        // 튜토리얼 자동표시는 Onboarding 단계에서 처리(여기서 띄우면 카메라 초기화 중 일시정지로 크래시).
     }
 
     private fun focusName() = if (autoFocus) "AUTO" else "FIXED"
 
     private fun aeName() = if (aeLock) "LOCK" else "AUTO"
 
-    // BE(SKILL-01/TRAIN-02) 연동 전 스텁 학습 목록. 라이브 붙으면 이 목록만 교체.
-    private val stubCatalog = listOf(
-        Triple("job_pick_place", "pick_place", "집기·놓기"),
-        Triple("job_sort_two", "sort_two", "둘 분류"),
-        Triple("job_align_fixture", "align_fixture", "지그 정렬"),
-        Triple("job_present_inspect", "present_inspect", "검사 제시"),
-        Triple("job_line_up", "line_up", "줄 세우기")
-    )
 
-    /** 배지 텍스트 = 활성 학습 + 해당 학습으로 찍은 편수(오배정 조기 인지용). */
+    private val COLLECT_GOAL = 50   // 학습별 요구 촬영 수(목표). 배지·피커에 N/목표로 표시.
+
+    /** 배지 텍스트 = 활성 학습 + 사용가능 편수/목표(N/50). 진척·오배정 조기 인지용. */
     private fun updateLearnBadge() {
         if (!::learnBadge.isInitialized) return
         val name = Prefs.activeSkillName(this)
         learnBadge.text = if (name.isBlank()) "학습: 미선택 ▾"
-            else "학습: $name · ${episodeCount(Prefs.activeJobId(this))}편 ▾"
+            else "학습: $name · ${episodeCount(Prefs.activeJobId(this))}/${COLLECT_GOAL}편 ▾"
     }
 
+    /** 해당 학습으로 찍은 "사용 가능(✓)" 편수만 센다 — 재촬영감(마커 실패·점프·구멍)은 제외. */
     private fun episodeCount(jobId: String): Int {
         if (jobId.isBlank()) return 0
         val base = getExternalFilesDir(null) ?: return 0
         return base.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }
             ?.count { d ->
-                File(d, "meta.txt").let { it.exists() && it.readText().contains("training_job_id=$jobId") }
+                File(d, "meta.txt").let { it.exists() && it.readText().contains("training_job_id=$jobId") } &&
+                    EpisodeQc.isUsable(d)
             } ?: 0
     }
 
@@ -267,17 +264,23 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             root.addView(row)
         }
 
-        // 서버 카탈로그(DeviceSkills) 우선, 못 받았으면 스텁. id 를 로컬 편수 그룹키(jobId)로 쓴다.
-        val catalog = DeviceSkills.cached.takeIf { it.isNotEmpty() }
-            ?.map { Triple(it.id, it.skillKey, it.displayName) } ?: stubCatalog
+        // 서버에서 받아 디스크에 캐시된 스킬 목록. id 를 로컬 편수 그룹키(jobId)로 쓴다.
+        val catalog = DeviceSkills.cached.map { Triple(it.id, it.skillKey, it.displayName) }
         for ((jobId, skillKey, label) in catalog) {
-            addCard(label, "${episodeCount(jobId)}편", jobId == activeJob) {
+            addCard(label, "${episodeCount(jobId)}/${COLLECT_GOAL}편", jobId == activeJob) {
                 Prefs.setActiveLearning(this, jobId, skillKey, label)
             }
         }
-        addCard("학습 없이 촬영", "", activeJob.isBlank()) {
-            Prefs.setActiveLearning(this, "", "", "")
+        // 미분류: 오프라인·목록 없음에도 촬영 가능. 전송 때 실제 학습으로 지정 강제.
+        addCard("미분류 (나중에 지정)", "${episodeCount(Prefs.UNASSIGNED_JOB)}/${COLLECT_GOAL}편",
+            activeJob == Prefs.UNASSIGNED_JOB) {
+            Prefs.setActiveLearning(this, Prefs.UNASSIGNED_JOB, "", "미분류")
         }
+        if (catalog.isEmpty()) root.addView(TextView(this).apply {
+            text = "학습 목록은 온라인 연결 시 동기화됩니다"
+            setTextColor(0xFF8A909E.toInt()); textSize = 12f
+            setPadding(dp(4), dp(6), dp(4), 0)
+        })
 
         val scroll = android.widget.ScrollView(this).apply {
             setBackgroundResource(R.drawable.bg_menu_dark)
@@ -287,8 +290,10 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         dialog.setContentView(scroll)
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.show()
-        // 창을 화면 안(≤90%)에 맞추고 내용이 넘치면 내부에서만 스크롤 — 창 자체는 안 움직이게 높이 고정.
-        val approxPx = dp(44 + (catalog.size + 1) * 66 + 32)
+        // 창을 화면 안(≤90%)에 맞추고 내용이 넘치면 내부에서만 스크롤. 추정 높이를 넉넉히 잡아 잘림 방지.
+        val rows = catalog.size + 1                          // 실제 스킬 + 미분류
+        val emptyHint = if (catalog.isEmpty()) dp(68) else 0 // 목록 없을 때 안내문까지 보이게
+        val approxPx = dp(88) + rows * dp(74) + emptyHint
         val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
         dialog.window?.setLayout(dp(340), minOf(approxPx, maxH))
     }
@@ -303,7 +308,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             setPadding(px(6), px(6), px(6), px(6))
         }
         val pop = PopupWindow(
-            container, px(230), LinearLayout.LayoutParams.WRAP_CONTENT, true
+            container, px(180), LinearLayout.LayoutParams.WRAP_CONTENT, true
         ).apply { isOutsideTouchable = true; elevation = px(8).toFloat() }
 
         fun guardNav(cls: Class<*>) {
@@ -327,6 +332,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
 
         container.addView(row("기록", R.drawable.ic_history) { guardNav(HistoryActivity::class.java) })
         container.addView(row("설정", R.drawable.ic_tune) { guardNav(SettingsActivity::class.java) })
+        container.addView(row("도움말", R.drawable.ic_help) { guardNav(TutorialActivity::class.java) })
         pop.showAsDropDown(menuBtn)
     }
 
@@ -358,7 +364,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         // AF 바뀌면 ARCore focusMode 도 재적용. (기존엔 최초 생성 때만 applyConfig 해서 토글이 안 먹던 버그)
         if (afChanged) session?.let { try { applyConfig(it) } catch (e: Exception) { Log.e(TAG, "AF 재적용 실패", e) } }
         updateLearnBadge()   // 학습 배지·편수 갱신
-        // 서버 스킬 카탈로그 새로고침(백그라운드). 성공하면 다음 피커 열 때 반영.
+        // 디스크 캐시 먼저 로드(오프라인·재시작에도 목록 유지) → 온라인이면 백그라운드 새로고침.
+        DeviceSkills.load(this)
         if (DeviceSkills.cached.isEmpty()) Thread { DeviceSkills.refresh(this) }.start()
         gridOverlay.visibility = if (Prefs.gridGuide(this)) View.VISIBLE else View.GONE
         poseText.visibility = if (Prefs.showDetail(this)) View.VISIBLE else View.GONE
@@ -575,6 +582,12 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
     // ---------------- 녹화 ----------------
 
     private fun startRecording() {
+        // 학습 미선택이면 촬영 대신 학습 피커를 띄운다 — 미배정 데이터 양산 방지(미분류도 명시 선택).
+        if (Prefs.activeSkillName(this).isBlank()) {
+            Toast.makeText(this, "학습을 먼저 선택하세요 (미분류 포함)", Toast.LENGTH_SHORT).show()
+            showLearningPicker()
+            return
+        }
         val rec = recorder
         if (rec != null && !rec.hasStartSpace()) {
             val msg = "저장 공간 부족 - 녹화를 시작할 수 없음\n" +
@@ -632,6 +645,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
             recBtn.setBackgroundResource(R.drawable.bg_shutter)
             recTimer.visibility = View.GONE
             dropWarn.visibility = View.GONE
+            updateLearnBadge()   // 방금 찍은 편이 편수에 바로 반영되게 (다른 화면 안 갔다와도)
         }
         Log.i(TAG, "저장 완료: ${dir?.absolutePath} 프레임=$saved 드롭=$dropped 점프=$jumps AF=${focusName()}")
 

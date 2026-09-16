@@ -38,9 +38,9 @@ class OnboardingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 이미 등록됨(장치 secret 보유) → 재스캔 없이 바로 촬영 화면 (S15P21A103-168, 최초 1회).
+        // 이미 등록됨(장치 secret 보유) → 재스캔 없이 바로 진입 (S15P21A103-168, 최초 1회).
         if (Prefs.deviceSecret(this).isNotBlank()) {
-            startActivity(Intent(this, MainActivity::class.java)); finish(); return
+            enterApp(); finish(); return
         }
         setContentView(R.layout.activity_onboarding)
         previewView = findViewById(R.id.previewView)
@@ -120,8 +120,16 @@ class OnboardingActivity : ComponentActivity() {
 
     private fun goMain() {
         try { provider?.unbindAll() } catch (_: Exception) {}   // ARCore 전에 카메라 해제
-        startActivity(Intent(this, MainActivity::class.java))
+        enterApp()
         finish()
+    }
+
+    /** 튜토리얼 미시청이면 튜토리얼 먼저(끝나면 Main으로), 봤으면 바로 Main. */
+    private fun enterApp() {
+        val next = if (!Prefs.tutorialSeen(this))
+            Intent(this, TutorialActivity::class.java).putExtra("go_main", true)
+        else Intent(this, MainActivity::class.java)
+        startActivity(next)
     }
 
     override fun onDestroy() {

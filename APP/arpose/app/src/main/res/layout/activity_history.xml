@@ -5,7 +5,7 @@
     android:orientation="vertical"
     android:background="@color/pageLight">
 
-    <!-- 상단바 -->
+    <!-- 상단바: 뒤로 · 제목(기록/N개 선택) · 전체 선택 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -24,6 +24,7 @@
             android:contentDescription="뒤로" />
 
         <TextView
+            android:id="@+id/titleText"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -32,20 +33,16 @@
             android:textColor="@color/inkPrimary"
             android:textSize="22sp" />
 
-        <Button
-            android:id="@+id/sendBtn"
+        <TextView
+            android:id="@+id/selectAllBtn"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="전송"
+            android:text="전체 선택"
             android:textColor="@color/azureInk"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:background="@drawable/bg_btn_azure_disabled"
-            android:paddingHorizontal="22dp"
-            android:paddingVertical="12dp"
-            android:drawableStart="@drawable/ic_send"
-            android:drawablePadding="8dp"
-            android:enabled="false" />
+            android:textSize="14sp"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="8dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <TextView
@@ -81,4 +78,47 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:paddingVertical="8dp" />
+
+    <!-- 하단 액션바: 선택 시만 등장. [선택 삭제] ———— [전송] -->
+    <LinearLayout
+        android:id="@+id/actionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/pageLight"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/deleteSelectedBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="선택 삭제"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:paddingHorizontal="18dp"
+            android:paddingVertical="11dp" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/sendBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="전송"
+            android:textColor="#FFFFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_btn_azure"
+            android:paddingHorizontal="22dp"
+            android:paddingVertical="12dp"
+            android:drawableStart="@drawable/ic_send"
+            android:drawableTint="#FFFFFFFF"
+            android:drawablePadding="8dp" />
+    </LinearLayout>
 </LinearLayout>

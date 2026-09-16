@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
  */
 object UploadQueue {
 
-    private const val WORK_NAME = "arpose-upload"
+    const val WORK_NAME = "arpose-upload"   // History 가 이 작업 상태를 관찰해 목록 갱신
 
     /**
      * 목적지가 로컬이면 네트워크 조건을 걸지 않는다.

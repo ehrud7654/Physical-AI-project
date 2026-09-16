@@ -27,10 +27,18 @@ object Prefs {
     // FIXED 초점 거리(디옵터=1/m). 기본 6.25 ≈ 16cm (파지 10~16cm + ~40cm 를 224 기준으로 커버).
     private const val KEY_FOCUS_DIOPTERS = "focus_diopters"
 
+    // 온보딩 튜토리얼 1회 표시 플래그 (S15P21A103-173).
+    private const val KEY_TUTORIAL_SEEN = "tutorial_seen"
+
     // 활성 학습(TrainingJob). 촬영 시 stamp → 전송 라우팅·오배정 예방 (S15P21A103-164).
     private const val KEY_ACTIVE_JOB = "active_job_id"
     private const val KEY_ACTIVE_SKILL_KEY = "active_skill_key"
     private const val KEY_ACTIVE_SKILL_NAME = "active_skill_name"
+
+    // 스킬 카탈로그 디스크 캐시(JSON) — 온라인에서 받은 목록을 저장해 오프라인·재시작에도 씀.
+    private const val KEY_SKILL_CATALOG = "skill_catalog"
+    // 미분류(학습 미지정) 촬영 그룹키. 전송 때 실제 학습으로 지정 강제.
+    const val UNASSIGNED_JOB = "__unassigned__"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
@@ -61,6 +69,9 @@ object Prefs {
     fun focusDiopters(ctx: Context) = sp(ctx).getFloat(KEY_FOCUS_DIOPTERS, 6.25f)
     fun setFocusDiopters(ctx: Context, v: Float) = sp(ctx).edit().putFloat(KEY_FOCUS_DIOPTERS, v).apply()
 
+    fun tutorialSeen(ctx: Context) = sp(ctx).getBoolean(KEY_TUTORIAL_SEEN, false)
+    fun setTutorialSeen(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean(KEY_TUTORIAL_SEEN, v).apply()
+
     /** 디버그 업로드 설정 저장(토글·jobId·자격). 디버그 빌드 설정 화면에서만 호출. */
     fun setDebug(ctx: Context, enabled: Boolean, jobId: String, deviceId: String, deviceSecret: String) =
         sp(ctx).edit()
@@ -73,6 +84,10 @@ object Prefs {
     fun activeJobId(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_JOB, "") ?: ""
     fun activeSkillKey(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_SKILL_KEY, "") ?: ""
     fun activeSkillName(ctx: Context) = sp(ctx).getString(KEY_ACTIVE_SKILL_NAME, "") ?: ""
+
+    fun skillCatalog(ctx: Context) = sp(ctx).getString(KEY_SKILL_CATALOG, "") ?: ""
+    fun setSkillCatalog(ctx: Context, json: String) =
+        sp(ctx).edit().putString(KEY_SKILL_CATALOG, json).apply()
 
     /** 활성 학습 선택(배지). 목록은 BE(SKILL-01/TRAIN-02) 연동 전까지 스텁. */
     fun setActiveLearning(ctx: Context, jobId: String, skillKey: String, skillName: String) =
