@@ -5,6 +5,8 @@ import { type FormEvent, useState, useEffect, useCallback } from 'react';
 import type { SkillOverview } from '@/types';
 import { createCustomSkill, fetchSkillOverviews, updateSkillDescription } from '@/services';
 import { formatApiDateTimeParts } from '@/lib/workflow';
+import { Pagination } from '@/components/Pagination';
+import { usePagination } from '@/hooks/usePagination';
 export function SkillListView({ onToast }: { onToast: (message: string) => void }) {
   const [skills, setSkills] = useState<SkillOverview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +20,7 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
   const [editDescription, setEditDescription] = useState('');
   const [editError, setEditError] = useState('');
   const [updating, setUpdating] = useState(false);
+  const { page, pageCount, pageItems, setPage } = usePagination(skills);
 
   const loadSkills = useCallback(async () => {
     setLoading(true);
@@ -98,7 +101,7 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
         <div className="episode-row skill-list-row header" role="row">
           <span>동작 이름</span><span>설명</span><span>최신 버전</span><span>버전 생성 시각</span><span>배포 상태</span><span>최근 학습 요청</span>
         </div>
-        {skills.map((skill) => { const deployment = deploymentStatusMeta[skill.deploymentStatus]; const versionCreatedAt = skill.latestVersionCreatedAt ? formatApiDateTimeParts(skill.latestVersionCreatedAt) : null; const latestTrainingRequestedAt = skill.latestTrainingRequestedAt ? formatApiDateTimeParts(skill.latestTrainingRequestedAt) : null; return <div className="episode-row skill-list-row" role="row" key={`${skill.displayName}-${skill.latestVersionCreatedAt ?? 'empty'}`}>
+        {pageItems.map((skill) => { const deployment = deploymentStatusMeta[skill.deploymentStatus]; const versionCreatedAt = skill.latestVersionCreatedAt ? formatApiDateTimeParts(skill.latestVersionCreatedAt) : null; const latestTrainingRequestedAt = skill.latestTrainingRequestedAt ? formatApiDateTimeParts(skill.latestTrainingRequestedAt) : null; return <div className="episode-row skill-list-row" role="row" key={`${skill.displayName}-${skill.latestVersionCreatedAt ?? 'empty'}`}>
           <span className="skill-list-name" data-label="동작 이름"><button className="text-button skill-name-button" type="button" onClick={() => openSkillEditor(skill)}>{skill.displayName}</button></span>
           <span data-label="설명">{skill.description || '-'}</span>
           <span className="skill-list-version" data-label="최신 버전">{skill.latestVersion == null ? '-' : `v${skill.latestVersion}`}</span>
@@ -108,6 +111,7 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
         </div>; })}
         {!loading && !error && !skills.length && <div className="table-empty"><p>등록된 동작이 없어요.</p></div>}
       </div>
+      <Pagination page={page} pageCount={pageCount} onChange={setPage} />
     </section>
     {createOpen && <div className="modal-backdrop" onMouseDown={() => !creating && setCreateOpen(false)}>
       <form className="register-modal skill-create-modal" role="dialog" aria-modal="true" aria-label="동작 추가" onSubmit={submitSkill} onMouseDown={(event) => event.stopPropagation()}>

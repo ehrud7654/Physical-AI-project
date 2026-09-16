@@ -1,5 +1,7 @@
 'use client';
 
+import { Pagination } from '@/components/Pagination';
+import { usePagination } from '@/hooks/usePagination';
 import { useState } from 'react';
 import type { SavedWork } from '@/types';
 import { blockCatalog } from '@/mocks';
@@ -25,6 +27,7 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
     const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR');
     return !normalizedQuery || [work.name, ...blocks.map((block) => block.title)].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery));
   });
+  const { page, pageCount, pageItems, setPage } = usePagination(filteredWorks);
 
   const selectedWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
   const selectedRobot = robots.find((robot) => robot.id === robotId);
@@ -81,7 +84,7 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
     <div className={`workflow-library-layout${mobileDetail ? ' mobile-detail-open' : ''}`}>
       <section className="card saved-work-list" aria-label="저장된 작업 목록">
         <div className="saved-work-columns" aria-hidden="true"><span>작업</span><span>예상 시간</span><span>최근 수정일</span><span className="saved-work-total">전체 {savedWorks.length}개</span></div>
-        {filteredWorks.length ? filteredWorks.map((work) => {
+        {filteredWorks.length ? pageItems.map((work) => {
           const workBlocks = flattenWorkflowBlocks(work.blocks);
           const workSkills = workBlocks.filter(isSkillBlock).length;
           const workControls = workBlocks.length - workSkills;
@@ -92,6 +95,7 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
             <span className="saved-work-chevron">›</span>
           </button></div>;
         }) : <div className="library-empty"><strong>검색 결과가 없어요</strong><p>다른 작업명이나 동작을 검색해 보세요.</p></div>}
+        <Pagination page={page} pageCount={pageCount} onChange={setPage} />
       </section>
 
       <aside className="card saved-work-detail"><button className="text-button mobile-detail-back" onClick={() => setMobileDetail(false)}>← 작업 목록</button>
