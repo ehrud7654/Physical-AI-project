@@ -1,4 +1,24 @@
 services:
+  nginx:
+    image: ssafy-gpu-nginx:local
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "${GPU_NGINX_PORT:-18181}:18181"
+    depends_on:
+      gpu-backend:
+        condition: service_healthy
+      training-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:18181/health/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   gpu-backend:
     image: ssafy-gpu-backend:local
     build:
