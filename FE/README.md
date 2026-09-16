@@ -179,4 +179,4 @@ docs/fe/S15P21A103-80-implementation-refresh
 
 ## 배포 설정
 
-Vinext/Vite와 Cloudflare Workers 설정 및 기존 미리보기용 `.openai/hosting.json`이 포함돼 있습니다. 팀 배포 주소·환경 변수·API 주소가 확정되기 전에는 로컬 Mock 실행을 기준으로 하며, 배포 설정 변경은 별도 태스크에서 관리합니다.
+Vinext/Vite 설정만 포함하며, 배포는 `Dockerfile`의 `pnpm build` → `pnpm start`(Vinext Node 프로덕션 서버, 3000 포트)로 이뤄집니다. 초기 스캐폴드의 Cloudflare Workers·`.openai/hosting.json` 설정은 사용하지 않아 제거했습니다.

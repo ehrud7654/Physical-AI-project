@@ -107,4 +107,4 @@ git status --short
 
 ## 배포 설정
 
-`.openai/hosting.json`은 기존 미리보기 프로젝트 설정입니다. 로컬 실행에는 영향을 주지 않습니다. 팀 배포 주소·환경 변수·API 주소가 확정되기 전에는 임의로 변경하지 말고, 배포 작업은 별도 Jira 태스크와 브랜치에서 진행합니다.
+배포는 `FE/Dockerfile`이 `pnpm build` 후 `pnpm start`(Vinext Node 프로덕션 서버)를 실행하는 방식입니다. 초기 스캐폴드에 있던 Cloudflare Workers·`.openai/hosting.json` 설정은 사용하지 않아 제거했습니다. 배포 설정 변경은 별도 Jira 태스크와 브랜치에서 진행합니다.
