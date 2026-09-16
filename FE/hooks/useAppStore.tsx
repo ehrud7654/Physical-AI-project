@@ -4,7 +4,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { AdminUser, Dataset, LearnedSkill, Robot, SavedWork, Training, Umi, LearningDraft } from '@/types';
 import { initialPermissions, initialUsers } from '@/mocks';
 import {
-  applyModel,
   cancelTraining,
   deleteDevices,
   deleteTrainings,
@@ -17,7 +16,6 @@ import {
   fetchUmis,
   registerDevice,
   retryTraining,
-  savePermissions,
   saveWork,
   updateRobot,
   type RegisterDeviceInput,
@@ -27,8 +25,6 @@ interface AppStore {
   learningDraft: LearningDraft;
   updateLearningDraft: (patch: Partial<LearningDraft>) => void;
   resetLearningDraft: () => void;
-  draftReady: boolean;
-  draftStored: boolean;
   /** 초기 데이터를 불러오는 동안 true */
   loading: boolean;
   /** 초기 데이터 로드 실패 여부 */
@@ -54,15 +50,12 @@ interface AppStore {
   addDevice: (input: RegisterDeviceInput) => Promise<string>;
   refreshDevices: () => Promise<void>;
   deleteDevicesById: (deviceIds: string[]) => Promise<void>;
-  applyModelToRobot: (robotId: string, model: string) => Promise<void>;
   updateRobotInfo: (robotId: string, patch: { name: string; location: string }) => Promise<void>;
   cancelTrainingById: (trainingJobId: string) => Promise<void>;
   deleteTrainingsById: (trainingJobIds: string[]) => Promise<void>;
   deleteWorksById: (workIds: string[]) => Promise<void>;
   retryTraining: (training: Training) => Promise<void>;
-  completeLearning: (input: { name: string; robot: string }) => Promise<void>;
   saveWorkflow: (work: SavedWork) => Promise<SavedWork>;
-  saveRobotPermissions: (next: Record<string, string[]>) => Promise<void>;
 }
 
 const emptyDraft: LearningDraft = { step: 1, skillKey: 'pick_place', method: null, umiId: 'UMI-024', expectedEpisodes: 10, selected: [], progress: 12, startedAt: null, name: '' };
@@ -74,7 +67,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   /* 초기값은 비워두고 서비스 계층에서 불러온다 — 로딩·오류 UI는 공통 게이트(S15P21A103-94)가 담당한다. */
   const [learningDraft, setLearningDraft] = useState<LearningDraft>(emptyDraft);
   const [draftReady, setDraftReady] = useState(false);
-  const [draftStored, setDraftStored] = useState(false);
   const updateLearningDraft = useCallback((patch: Partial<LearningDraft>) => setLearningDraft(current => ({ ...current, ...patch })), []);
   const resetLearningDraft = useCallback(() => setLearningDraft({ ...emptyDraft }), []);
   /* eslint-disable react-hooks/set-state-in-effect -- restore browser-local draft after hydration */
@@ -91,15 +83,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!draftReady) return;
     try {
-      if (learningDraft.step >= 5 && learningDraft.trainingJobId) {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(learningDraft));
-        setDraftStored(true);
-      } else {
-        localStorage.removeItem(DRAFT_KEY);
-        setDraftStored(false);
-      }
-    }
-    catch { setDraftStored(false); }
+      if (learningDraft.step >= 5 && learningDraft.trainingJobId) localStorage.setItem(DRAFT_KEY, JSON.stringify(learningDraft));
+      else localStorage.removeItem(DRAFT_KEY);
+    } catch { /* 저장소를 쓸 수 없는 환경에서는 초안을 보존하지 않는다. */ }
   }, [learningDraft, draftReady]);
   /* eslint-enable react-hooks/set-state-in-effect */
   const [robots, setRobots] = useState<Robot[]>([]);
@@ -112,7 +98,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [trainingRefreshError, setTrainingRefreshError] = useState(false);
   const [trainingUpdatedAt, setTrainingUpdatedAt] = useState<number | null>(null);
   const [savedWorks, setSavedWorks] = useState<SavedWork[]>([]);
-  const [permissions, setPermissions] = useState<Record<string, string[]>>(initialPermissions);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
@@ -196,10 +181,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setUmis(next.umis);
   }, []);
 
-  const applyModelToRobot = useCallback(async (robotId: string, model: string) => {
-    setRobots(await applyModel(robotId, model));
-  }, []);
-
   const updateRobotInfo = useCallback(async (robotId: string, patch: { name: string; location: string }) => {
     setRobots(await updateRobot(robotId, patch));
   }, []);
@@ -224,22 +205,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setTrainings(await retryTraining(training));
   }, []);
 
-  const completeLearning = useCallback(async (input: { name: string; robot: string }) => {
-    void input;
-    setTrainings(await fetchTrainings());
-    setSkills(await fetchLearnedSkills());
-  }, []);
-
   const saveWorkflow = useCallback(async (work: SavedWork) => {
     const result = await saveWork(work);
     setSavedWorks(result.works);
     const saved = result.works.find((item) => item.id === result.savedId);
     if (!saved) throw new Error('저장된 작업을 다시 조회하지 못했어요.');
     return saved;
-  }, []);
-
-  const saveRobotPermissions = useCallback(async (next: Record<string, string[]>) => {
-    setPermissions(await savePermissions(next));
   }, []);
 
   const value = useMemo<AppStore>(
@@ -254,11 +225,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       trainingRefreshError,
       trainingUpdatedAt,
       refreshTrainings,
-      learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored,
+      learningDraft, updateLearningDraft, resetLearningDraft,
       skills,
       savedWorks,
       users: initialUsers,
-      permissions,
+      permissions: initialPermissions,
       datasets,
       datasetRefreshing,
       datasetRefreshError,
@@ -266,17 +237,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       addDevice,
       refreshDevices,
       deleteDevicesById,
-      applyModelToRobot,
       updateRobotInfo,
       cancelTrainingById,
       deleteTrainingsById,
       deleteWorksById,
       retryTraining: retryFailedTraining,
-      completeLearning,
       saveWorkflow,
-      saveRobotPermissions,
     }),
-    [loading, loadError, refresh, robots, umis, datasets, datasetRefreshing, datasetRefreshError, refreshDatasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, draftReady, draftStored, skills, savedWorks, permissions, addDevice, refreshDevices, deleteDevicesById, applyModelToRobot, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, completeLearning, saveWorkflow, saveRobotPermissions],
+    [loading, loadError, refresh, robots, umis, datasets, datasetRefreshing, datasetRefreshError, refreshDatasets, trainings, trainingRefreshing, trainingRefreshError, trainingUpdatedAt, refreshTrainings, learningDraft, updateLearningDraft, resetLearningDraft, skills, savedWorks, addDevice, refreshDevices, deleteDevicesById, updateRobotInfo, cancelTrainingById, deleteTrainingsById, deleteWorksById, retryFailedTraining, saveWorkflow],
   );
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

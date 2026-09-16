@@ -1,4 +1,4 @@
-import type { SkillOverview, Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
+import type { SkillOverview, Training, TrainingSkill, TrainingStatus } from '@/types';
 import { apiRequest } from './client';
 
 type ApiTrainingStatus =
@@ -45,14 +45,6 @@ interface ApiSkill {
   displayName: string;
   description: string | null;
   status: string;
-}
-
-/** SKILL-09: 선택한 스킬의 학습 입력 조건을 조회한다. */
-export async function fetchTrainingRequirements(skillKey: string): Promise<TrainingRequirements> {
-  const skills = await apiRequest<ApiSkill[]>('/skills');
-  const skill = skills.find((item) => item.skillKey === skillKey);
-  if (!skill) throw new Error('학습할 스킬을 찾을 수 없습니다.');
-  return apiRequest<TrainingRequirements>(`/skills/${skill.id}/training-requirements`);
 }
 
 export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
@@ -102,31 +94,6 @@ export async function createTrainingJob(input: CreateTrainingJobInput): Promise<
     body: JSON.stringify(input),
   });
   return toTraining(job);
-}
-
-export async function updateTrainingInputPlan(
-  trainingJobId: string,
-  expectedEpisodeCount: number,
-): Promise<Training> {
-  const job = await apiRequest<ApiTrainingJob>(`/training-jobs/${trainingJobId}/input-plan`, {
-    method: 'PATCH',
-    body: JSON.stringify({ expectedEpisodeCount }),
-  });
-  return toTraining(job);
-}
-
-export async function completeTrainingInput(
-  trainingJobId: string,
-  receivedEpisodeCount: number,
-): Promise<void> {
-  await apiRequest<{ trainingJobId: string; status: ApiTrainingStatus }>(
-    `/training-jobs/${trainingJobId}/input-complete`,
-    {
-      method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-      body: JSON.stringify({ receivedEpisodeCount }),
-    },
-  );
 }
 
 export async function fetchTrainings(status?: TrainingStatus | 'all'): Promise<Training[]> {
