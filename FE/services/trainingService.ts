@@ -87,17 +87,15 @@ export async function updateSkillDescription(
   });
 }
 
-export async function createTrainingJob(input: {
-  skillKey?: string;
-  newSkill?: {
-    displayName: string;
-    description?: string;
-  };
+type CreateTrainingJobInput = {
   umiDeviceId: string;
-  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
-  expectedEpisodeCount?: number;
-  episodeIds?: string[];
-}): Promise<Training> {
+  episodeIds: string[];
+} & (
+  | { skillKey: string; newSkill?: never }
+  | { skillKey?: never; newSkill: { displayName: string; description?: string } }
+);
+
+export async function createTrainingJob(input: CreateTrainingJobInput): Promise<Training> {
   const job = await apiRequest<ApiTrainingJob>('/training-jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -161,16 +159,16 @@ export async function deleteTrainings(trainingJobIds: string[]): Promise<Trainin
 /** 별도 retry API 대신 기존 Episode를 입력으로 새 TrainingJob을 생성한다. */
 export async function retryTraining(training: Training): Promise<Training[]> {
   const episodes = await apiRequest<ApiEpisodeInput[]>(`/training-jobs/${training.id}/episodes`);
-  const hasEpisodes = episodes.length > 0;
+  if (episodes.length === 0) {
+    throw new Error('다시 학습할 Episode가 없습니다.');
+  }
   await apiRequest<ApiTrainingJob>('/training-jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       skillKey: training.skillKey,
       umiDeviceId: training.umiDeviceId,
-      inputMode: hasEpisodes ? 'EXISTING_EPISODES' : 'COLLECT_NEW',
-      expectedEpisodeCount: hasEpisodes ? undefined : training.expectedEpisodeCount,
-      episodeIds: hasEpisodes ? episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId) : undefined,
+      episodeIds: episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId),
     }),
   });
   return fetchTrainings();

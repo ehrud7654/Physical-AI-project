@@ -1030,7 +1030,6 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
       await createTrainingJob({
         skillKey: skill.skillKey,
         umiDeviceId: umi.deviceId,
-        inputMode: 'EXISTING_EPISODES',
         episodeIds: selectedData.map((item) => item.id),
       });
       resetLearningDraft();
