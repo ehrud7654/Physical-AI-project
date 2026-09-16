@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { BlockKind, LearnedSkill, SavedWork, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { useAppStore } from '@/hooks/useAppStore';
 import { makeBlock, makeSkillBlock, flattenWorkflowBlocks, estimateWorkflowSeconds, formatWorkDuration, getWorkflowIssues, workflowContentEquals, syncNextBlockId } from '@/lib/workflow';
-export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { editingWorkId: string | null; suggestedSkillName: string | null; onNavigate: (view: View) => void; onToast: (message: string) => void }) {
+export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToast }: { editingWorkId: string | null; suggestedSkillName: string | null; onNavigate: (view: View) => void; onToast: (message: string, tone?: 'success' | 'error') => void }) {
   const { robots, skills, savedWorks, saveWorkflow } = useAppStore();
   const editingWork = savedWorks.find((work) => work.id === editingWorkId);
   const [robotId, setRobotId] = useState(editingWork?.robotId || robots[0]?.id || '');
@@ -24,11 +24,21 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
 
   const selectedRobot = robots.find((robot) => robot.id === robotId);
   const running = runningIndex >= 0;
-  const workForValidation: SavedWork = { id: selectedWorkId || 'draft', name: workName, robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: '' };
+  const savedSnapshot = savedWorks.find(work => work.id === selectedWorkId);
+  const workForValidation = useMemo<SavedWork>(() => ({
+    id: selectedWorkId || 'draft',
+    taskKey: savedSnapshot?.taskKey,
+    taskVersionId: savedSnapshot?.taskVersionId,
+    version: savedSnapshot?.version,
+    name: workName,
+    robotId,
+    blocks,
+    estimatedSeconds: estimateWorkflowSeconds(blocks),
+    updatedAt: savedSnapshot?.updatedAt ?? '',
+  }), [blocks, robotId, savedSnapshot, selectedWorkId, workName]);
   const unavailableSkills = flattenWorkflowBlocks(blocks).filter((block) => block.skillId && !skills.some((skill) => skill.id === block.skillId));
   const workflowIssues = [...getWorkflowIssues(workForValidation), ...unavailableSkills.map((block) => `‘${block.title}’ 학습 동작을 사용할 수 없어요.`)];
   const robotReady = selectedRobot?.status === '온라인';
-  const savedSnapshot = savedWorks.find(work => work.id === selectedWorkId);
   const isSaved = !!savedSnapshot
     && savedSnapshot.name === workName.trim()
     && workflowContentEquals(savedSnapshot.blocks, blocks);
@@ -38,10 +48,22 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
   const save = async () => {
     if (!workName.trim()) { setNameError('작업 이름을 입력해 주세요.'); return false; }
     const normalizedName = workName.trim().toLocaleLowerCase('ko-KR');
-    if (savedWorks.some((work) => work.name.trim().toLocaleLowerCase('ko-KR') === normalizedName)) {
-      setNameError('이미 저장된 작업 이름입니다. 다른 이름을 입력해 주세요.');
+    const sameNameWork = savedWorks.find(
+      (work) => work.name.trim().toLocaleLowerCase('ko-KR') === normalizedName,
+    );
+    if (sameNameWork && !workflowContentEquals(sameNameWork.blocks, blocks)) {
+      setNameError('');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      onToast('작업이 이미 존재합니다. 이름을 변경하세요', 'error');
       return false;
     }
+    if (sameNameWork && sameNameWork.id !== selectedWorkId) {
+      setNameError('');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      onToast('작업이 이미 존재합니다. 이름을 변경하세요', 'error');
+      return false;
+    }
+    if (sameNameWork?.id === selectedWorkId) return true;
     if (workflowIssues.length) { setNameError(workflowIssues[0]); return false; }
     setNameError('');
     setSaving(true);
@@ -174,7 +196,7 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
         <div className="work-stage-heading"><div><p className="eyebrow">실행 준비</p><h2>{workName || '이름 없는 작업'}</h2><p>실행할 로봇과 작업 상태를 확인한 뒤 배포하세요.</p></div><span>{blocks.length}개 블록 · {formatWorkDuration(estimateWorkflowSeconds(blocks))}</span></div>
         <div className="work-tools stage-robot-select"><label>실행할 로봇<select value={robotId} disabled={running} onChange={(e) => setRobotId(e.target.value)}>{robots.slice(0, 3).map((robot) => <option key={robot.id} value={robot.id}>{robot.name} · {robot.status}</option>)}</select></label><span className={`robot-status status-${selectedRobot.status.replace(' ', '-')}`}><i />{selectedRobot.status}</span></div>
         <div className="preflight-grid stage-preflight"><div className={robotReady ? 'check-pass' : 'check-fail'}><span>{robotReady ? '✓' : '!'}</span><div><strong>로봇 상태</strong><small>{selectedRobot.name} · {selectedRobot.status}</small></div></div><div className={!workflowIssues.length ? 'check-pass' : 'check-fail'}><span>{!workflowIssues.length ? '✓' : '!'}</span><div><strong>작업 유효성</strong><small>{workflowIssues[0] ?? `${flattenWorkflowBlocks(blocks).length}개 블록을 실행할 수 있어요.`}</small></div></div><div className={isSaved ? 'check-pass' : 'check-fail'}><span>{isSaved ? '✓' : '!'}</span><div><strong>저장 상태</strong><small>{isSaved ? '최신 작업이 저장되어 있어요.' : '작업을 다시 저장해 주세요.'}</small></div></div></div>
-        <div className="deployment-status"><strong>{deployment.ready ? `작업 v${deployment.version} · 실행 가능` : deployment.pending ? '배포 중' : '배포 필요'}</strong><p>{deployment.ready ? `${selectedRobot.name}에 현재 작업 버전이 준비됐어요.` : '확인을 마치고 선택한 로봇에 작업 버전을 배포하세요.'}</p>{deployment.error && <p role="alert">{deployment.error}</p>}{!deployment.ready && <button className="secondary-button" disabled={!isSaved || !robotReady || !!workflowIssues.length || deployment.pending} onClick={() => void deployment.deploy()}>{deployment.pending ? '배포 중...' : deployment.error ? '배포 다시 시도' : '작업 버전 배포'}</button>}</div>
+        <div className={`deployment-status${deployment.error ? ' failed' : ''}`}><strong>{deployment.ready ? `작업 v${deployment.version} · 실행 가능` : deployment.pending ? '배포 중' : '배포 필요'}</strong><p>{deployment.ready ? `${selectedRobot.name}에 현재 작업 버전이 준비됐어요.` : '확인을 마치고 선택한 로봇에 작업 버전을 배포하세요.'}</p>{deployment.error && <p className="deployment-error" role="alert"><span aria-hidden="true">!</span>{deployment.error}</p>}{!deployment.ready && <button className="secondary-button" disabled={!isSaved || !robotReady || !!workflowIssues.length || deployment.pending} onClick={() => void deployment.deploy()}>{deployment.pending ? '배포 중...' : deployment.error ? '배포 다시 시도' : '작업 버전 배포'}</button>}</div>
         <div className="safety-note"><span>!</span><p><strong>실행 전 확인해 주세요</strong>로봇 주변에 사람이나 장애물이 없는지 확인하세요.</p></div>
         <div className="work-stage-actions inside"><button className="secondary-button" onClick={() => setWorkStep(1)}>← 작업 구성</button><button className="primary-button" disabled={!deployment.ready} onClick={() => { setWorkStep(3); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>실행 단계로 →</button></div>
       </section>}

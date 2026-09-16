@@ -5,6 +5,7 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/S15P21A103.iml" filepath="$PROJECT_DIR$/.idea/S15P21A103.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/ssafy.main.iml" filepath="$PROJECT_DIR$/.idea/modules/ssafy.main.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/ssafy.test.iml" filepath="$PROJECT_DIR$/.idea/modules/ssafy.test.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/ssafy_gpu.main.iml" filepath="$PROJECT_DIR$/.idea/modules/ssafy_gpu.main.iml" />
     </modules>
   </component>
 </project>
