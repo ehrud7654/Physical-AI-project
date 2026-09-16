@@ -1,0 +1,39 @@
+services:
+  gpu-backend:
+    image: ssafy-gpu-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      SERVER_PORT: 8081
+      EC2_API_BASE_URL: ${EC2_API_BASE_URL:-http://backend:8080}
+      GPU_WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_01}
+      GPU_NODE_KEY: ${GPU_NODE_KEY:-gpu-01-local-cache}
+      GPU_NODE_NAME: ${GPU_NODE_NAME:-SSAFY GPU Worker}
+      GPU_STORAGE_ROOT: /data/ssafy-gpu
+      GPU_SUPPORTED_ALGORITHMS: ${GPU_SUPPORTED_ALGORITHMS:-ACT}
+      GPU_MAX_SLOTS: ${GPU_MAX_SLOTS:-30}
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:8081/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+      - ec2-api
+
+volumes:
+  gpu_data:
+
+networks:
+  ec2-api:
+    external: true
+    name: ec2__default
