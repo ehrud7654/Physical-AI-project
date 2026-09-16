@@ -12,13 +12,13 @@ import { pathToView, viewToPath } from '@/lib/routes';
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { authenticated, currentUserId, logout } = useAuth();
+  const { authenticated, initializing, currentUserId, logout } = useAuth();
   const { loading, loadError, refresh } = useAppStore();
   const { showToast } = useToast();
 
   useEffect(() => {
-    if (!authenticated) router.replace('/');
-  }, [authenticated, router]);
+    if (!initializing && !authenticated) router.replace('/');
+  }, [authenticated, initializing, router]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -28,7 +28,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     if (loadError) showToast('데이터를 불러오지 못했어요.', 'error');
   }, [loadError, showToast]);
 
-  if (!authenticated) return null;
+  if (initializing || !authenticated) return null;
 
   return (
     <main className="app-shell">

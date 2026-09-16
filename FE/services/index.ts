@@ -3,7 +3,7 @@ export type { DeviceEnrollment, RegisterDeviceInput } from './deviceService';
 export { fetchTrainings, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, fetchSkillOverviews, createCustomSkill, updateSkillDescription, createTrainingJob, updateTrainingInputPlan, completeTrainingInput, cancelTraining, deleteTrainings, retryTraining } from './trainingService';
 export { fetchLearnedSkills, fetchSavedWorks, saveWork, deleteWorks } from './workService';
 export { fetchUsers, fetchPermissions, savePermissions } from './adminService';
-export { login, logout } from './authService';
+export { login, logout, restoreAuthentication } from './authService';
 export { fetchDatasets, createEpisodePreviewSession } from './datasetService';
 export { fetchTaskReadiness, fetchDeployments, createDeployment, fetchDeployment, createRobotExecution, fetchRobotExecutions, cancelRobotExecution } from './executionService';
 export { fetchDashboard } from './dashboardService';

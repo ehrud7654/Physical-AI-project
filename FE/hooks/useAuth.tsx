@@ -3,12 +3,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AuthenticatedUser } from '@/types';
-import { logout as clearAuthentication } from '@/services';
+import { logout as clearAuthentication, restoreAuthentication } from '@/services';
 import { SESSION_EXPIRED_EVENT } from '@/services/client';
 import { useAppStore } from '@/hooks/useAppStore';
 
 interface AuthState {
   authenticated: boolean;
+  initializing: boolean;
   currentUser: AuthenticatedUser | null;
   currentUserId: string;
   sessionExpiredMessage: string;
@@ -18,14 +19,22 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-/* 액세스 토큰은 services/client 메모리에만 있으므로 새로고침 시 인증이 풀린다.
-   BE refresh 엔드포인트가 준비되면 여기서 부팅 시 재발급을 시도한다. */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { resetLearningDraft } = useAppStore();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState('');
+
+  useEffect(() => {
+    const restoredUser = restoreAuthentication();
+    if (restoredUser) {
+      setCurrentUser(restoredUser);
+      setAuthenticated(true);
+    }
+    setInitializing(false);
+  }, []);
 
   const login = useCallback((user: AuthenticatedUser) => {
     setCurrentUser(user);
@@ -55,8 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [resetLearningDraft, router]);
 
   const value = useMemo<AuthState>(
-    () => ({ authenticated, currentUser, currentUserId: currentUser?.name ?? 'admin01', sessionExpiredMessage, login, logout }),
-    [authenticated, currentUser, sessionExpiredMessage, login, logout],
+    () => ({ authenticated, initializing, currentUser, currentUserId: currentUser?.name ?? 'admin01', sessionExpiredMessage, login, logout }),
+    [authenticated, initializing, currentUser, sessionExpiredMessage, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
