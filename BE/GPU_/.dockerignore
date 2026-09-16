@@ -1,4 +1,7 @@
-.gradle
-build
-.idea
+.gradle/
+build/
+data/
+FastAPI_/
+.git/
+.idea/
 *.iml
