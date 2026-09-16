@@ -2433,3 +2433,25 @@ button.device-card-content{cursor:pointer}
 /* 실행 중 작업 카드 바운드 (S15P21A103-175) — 동시 실행이 많아도 카드 높이를 4행 정도로 고정하고 내부 스크롤 */
 .active-execution-list { max-height: 280px; overflow-y: auto; padding-right: 4px; }
 .active-execution-count { margin-left: 8px; vertical-align: middle; }
+
+/* 전반 가독성 확대 (S15P21A103-175) — 목록 화면의 10~12px 바닥을 13~14px로, 도구 컨트롤 32px를 38px로 올린다. */
+.app-shell .episode-row.header span,.app-shell .saved-work-columns span,.app-shell .saved-work-total{font-size:13px}
+.app-shell .skill-list-datetime strong,.app-shell .skill-list-datetime small,
+.app-shell .saved-work-main small,.app-shell .saved-work-main em,.app-shell .saved-work-duration,.app-shell .saved-work-updated,
+.app-shell .training-main small,.app-shell .training-table article small,.app-shell .refresh-status,
+.app-shell .compact-robot-list small,.app-shell .compact-training-list small,.app-shell .overview-cards small,.app-shell .training-summary small,
+.app-shell .active-execution-heading p,.app-shell .active-execution-list small,
+.app-shell .device-card dt,.app-shell .device-card dd,.app-shell .device-select-all{font-size:13px}
+.app-shell .training-title-button,.app-shell .saved-work-main strong,.app-shell .compact-robot-list strong,.app-shell .compact-training-list strong,.app-shell .active-execution-list strong{font-size:15px}
+.app-shell .dataset-status,.app-shell .training-badge,.app-shell .status-pill{font-size:12px!important}
+.app-shell .table-empty,.app-shell .state-card p{font-size:14px}
+.app-shell .page-heading>div>p:last-child{font-size:15px}
+.app-shell .primary-button,.app-shell .secondary-button,.app-shell .danger-button,.app-shell .text-button,.app-shell .detail-link,.app-shell .global-auth{font-size:14px}
+.app-shell .skill-name-button{font-size:inherit}
+.app-shell .page-create-button{font-size:15px}
+.app-shell .refresh-status{font-size:13px!important}
+.app-shell select,.app-shell input,.app-shell textarea{font-size:14px}
+.app-shell .training-controls select,.app-shell .training-controls .refresh-button,.app-shell .training-controls .secondary-button,.app-shell .training-controls .danger-button,
+.app-shell .workflow-library-toolbar>.list-delete-button,.app-shell .workflow-library-toolbar .workflow-search input,
+.app-shell .device-sort select,.app-shell .device-delete-action,.app-shell .data-list-controls select,.app-shell .episode-filters select{height:38px!important;min-height:38px!important}
+.app-shell .skill-create-modal label{font-size:13px}
