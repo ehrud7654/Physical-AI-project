@@ -37,27 +37,20 @@
                 android:background="@android:color/transparent" />
         </FrameLayout>
 
+        <!-- 상태줄: 기본 안내 → QR 인식 완료 → 장치 등록 중… -->
         <TextView
+            android:id="@+id/scanStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:text="QR 을 인식해 주세요"
             android:textColor="#FFFFFF"
             android:textSize="18sp" />
-
-        <TextView
-            android:id="@+id/scanStatus"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="세션·스킬 연동용"
-            android:textColor="#888888"
-            android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- 하단: QR 없이 진행 -->
+    <!-- 권한 거부 시에만 노출: 설정에서 카메라 권한 허용 -->
     <Button
-        android:id="@+id/skipBtn"
+        android:id="@+id/grantBtn"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
@@ -67,5 +60,6 @@
         android:background="#FF2A6E3F"
         android:textColor="#FFFFFF"
         android:textSize="17sp"
-        android:text="QR 없이 진행 →" />
+        android:visibility="gone"
+        android:text="카메라 권한 허용" />
 </FrameLayout>

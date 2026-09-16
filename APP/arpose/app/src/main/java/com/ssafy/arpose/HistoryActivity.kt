@@ -304,7 +304,7 @@ class HistoryActivity : Activity() {
         if (page < 0) page = 0
         val from = page * PAGE_SIZE
         val slice = recs.subList(from, minOf(from + PAGE_SIZE, recs.size))
-        for (dir in slice) list.addView(cardFor(dir, list))
+        for (dir in slice) list.addView(cardFor(dir))
 
         buildPager(pager, totalPages)
         updateSendBtn()
@@ -319,11 +319,11 @@ class HistoryActivity : Activity() {
     }
 
     /** rec 폴더 하나를 라이트 카드 한 장으로. */
-    private fun cardFor(dir: File, parent: LinearLayout): View {
+    private fun cardFor(dir: File): View {
         val name = dir.name
         val m = parseSummary(File(dir, "summary.txt"))
         val mkRate = markerRate(dir)
-        val (icon, _, vLabel) = if (mkRate != null && mkRate < 50)
+        val (icon, _, _) = if (mkRate != null && mkRate < 50)
             Triple("✗", 0xFFE0685E.toInt(), "마커 거의 안 잡힘 ($mkRate%) — 재촬영")
         else verdictOf(m)
         val (usableLabel, usableColor) = usableOf(icon)

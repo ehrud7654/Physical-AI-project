@@ -632,14 +632,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         val imuText = imu.stop()
         val r = recorder
         val jumps = r?.jumpCount ?: 0
-        val maxJump = r?.maxJumpMm ?: 0.0
         val dir = r?.stop(imuText)
         val saved = r?.savedFrames ?: 0
         val dropped = r?.droppedFrames ?: 0
-        val verdict = when {
-            jumps == 0 -> "OK  점프 없음 — 그대로 사용 가능"
-            else -> "점프 ${jumps}회 (최대 ${"%.0f".format(maxJump)}mm) — 분할 필요"
-        }
         recStartMs = 0L
         runOnUiThread {
             recBtn.setBackgroundResource(R.drawable.bg_shutter)
