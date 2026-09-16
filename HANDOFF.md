@@ -211,14 +211,61 @@ The learned-policy rollout tool now permits the exact predeclared K=2 approach
 start used by the oracle gate and can perturb only inference RGB with
 `noise`, `blackout` or `freeze`.  The simulator/scorer state is not perturbed.
 On the fixed 14 validation episodes, best-val + simulation-camera closed loop
-gave normal `14/14` stable side-grasp lifts versus blackout `0/14`; Wilson 95%
-intervals are `[78.5%,100%]` and `[0%,21.5%]`.  The normal final-lift range was
-50.3--87.3mm with no IK reject or tip.  This rejects the narrow hypothesis that
-the checkpoint ignores RGB completely, but is **not** full-task or hardware
-success: it uses near-contact K=2 starts, one-step validation/execution,
-simulation-only 2mm preload, an unmeasured proxy and 2.85--4.91x execution time
-scales.  Noise/freeze, seeds 1/2, 8-step/8-step execution and a farther common
-start remain pending.
+gave normal `14/14`, blackout `0/14`, per-tick Gaussian noise `14/14`, and
+first-observation freeze `14/14` stable side-grasp lifts.  All successful
+conditions had bilateral contact in `14/14` and zero geometry errors; blackout
+had bilateral contact in only `1/14` and geometry errors in `14/14`.  Median
+maximum lift was 76.8mm normal, 2.0mm blackout, 52.6mm noise, and 74.9mm freeze.
+The 14/14 Wilson 95% interval is `[78.5%,100%]`; blackout is `[0%,21.5%]`.
+
+This result does **not** establish correct visual localisation or use of live
+visual feedback.  Freeze matching normal shows that the K=2 near-contact
+diagnostic can be solved without time-varying RGB, and noise succeeding shows
+that blackout alone is an unsafe proxy for general image removal.  The result
+remains single-seed, near-contact K=2, one-step validation/execution,
+simulation-only 2mm preload, an unmeasured proxy and retimed execution.  Seeds
+1/2, a farther common start or object-position perturbation, and 8-step/8-step
+execution remain pending.
+
+A bounded object-only perturbation diagnostic was added without shifting the
+registered robot start.  On representative episode `150943`, all
+normal/noise/freeze conditions succeeded at +/-15mm X/Y.  At +/-25mm, 10/12
+conditions succeeded; normal and freeze failed only at +25mm X while noise
+succeeded.  This was not expanded to all episodes because K=2 near-contact
+capture and pushing make it an invalid visual-localisation proof, and Gaussian
+noise can move this OOD policy toward a conservative mean output.
+
+The older K=4 report lacked fixed start joint/gap values, so its 8/8 runner
+errors were tooling errors and are not performance evidence.  Re-running the
+same K=4 registration search with current code produced
+`AI/out/relative_chunk_v9_width40mm_preload2mm_lookback4_fixedstart_20260916.json`.
+Only 8/14 episodes are static-scene valid, so the source remains
+`REJECTED_DIAGNOSTIC_CANONICAL_REPLAY`.  The explicit eight-episode subset
+passed the policy-free dynamic oracle gate 8/8; the gate now requires both an
+explicit episode list and `--allow-rejected-diagnostic-subset` and records that
+the source registration was rejected.
+
+On that same K=4 subset, learned-policy normal and freeze both succeeded 5/8
+and failed the same three episodes (`150753`, `150943`, `151043`) at the first
+predicted command due to joint-limit violations.  Noise succeeded 8/8.  This
+does not show that noise improves perception.  The leading explanation is a
+real-JPEG-to-MuJoCo RGB domain mismatch: normal simulated RGB produces
+aggressive OOD targets while noise pushes the policy toward conservative mean
+outputs.  Blackout is an information-removal control and must not be tuned to
+succeed.  The next priority is camera/render domain alignment or simulation
+pretraining/domain randomisation followed by real-data fine-tuning, then the
+same ablation suite.
+
+Pure black was then retained unchanged and complemented with a less extreme
+`mean_fill` control: each history frame keeps its own RGB channel means but all
+spatial information is removed.  On the K=4 subset it succeeded 7/8 with one
+geometry error (`150943`), versus normal/freeze 5/8, noise 8/8 and same-K4
+blackout 0/8 with eight geometry errors.  Therefore the current near-contact
+rollout can mostly succeed without object shape or position pixels, and
+blackout failure is dominated by a black-specific OOD response.  Do not report
+mean-fill or noise success as policy performance.
+Future camera/domain work must rerun
+normal/blackout/mean_fill/noise/freeze under identical conditions.
 
 This closes the **local policy-free simulation geometry/contact gate only**. It
 does not validate the 2mm execution preload on hardware, establish a deployable

@@ -1396,13 +1396,29 @@ normal per-episode max required time scale: 2.85--4.91x
 blackout geometry reject: 14/14
 ```
 
-정상과 blackout 구간이 겹치지 않고 성공률이 100%p 하락하므로, 이 체크포인트가
-RGB를 완전히 무시하는 정책이라는 가설은 기각한다. 그러나 blackout은 매우 큰
-분포 외 입력이고, 현재 MuJoCo 손목 화면도 실제 S22 영상과 외형·가림이 다르다.
-따라서 물체 위치를 올바르게 인식한다거나 전체 접근 task를 해결했다고 해석하지
-않는다. 또한 이 결과는 단일 seed, near-contact K=2 시작, 1-step validation,
-미실측 collision proxy와 2mm preload에 한정된다. `noise`와 `freeze`, seed 1/2,
-8-step/8-step 실행, 더 먼 공통 시작점은 아직 미검증이다.
+같은 체크포인트와 14개 에피소드에 대해 추론 시점 `noise`와 `freeze`도 실행했다.
+교란은 policy RGB에만 적용했고 simulator state와 scorer는 바꾸지 않았다.
+
+```text
+condition  success  bilateral  geometry error  max lift min/median/max
+normal     14/14    14/14      0/14            50.3 / 76.8 / 87.3mm
+blackout    0/14     1/14     14/14             1.5 /  2.0 /  3.2mm
+noise      14/14    14/14      0/14            50.0 / 52.6 / 55.3mm
+freeze     14/14    14/14      0/14            50.0 / 74.9 / 86.7mm
+```
+
+14/14 조건의 Wilson 95% 구간은 모두 `[78.5%,100%]`, blackout 0/14는
+`[0%,21.5%]`다. 그러나 이 결과는 실시간 시각 피드백 사용을 입증하지 않는다.
+첫 simulation observation stack을 고정한 `freeze`가 정상과 같은 14/14였으므로,
+현재 near-contact 진단은 시간에 따라 갱신되는 RGB 없이도 풀린다. 매 tick Gaussian
+noise를 넣은 조건도 14/14였으므로 blackout 실패만으로 올바른 물체 인식 또는
+시각 의존성을 주장할 수 없다. 상수 검정 입력에서의 0/14는 특정 OOD activation
+반응일 수 있다.
+
+따라서 다음 검증은 K=2 성공률을 더 반복하는 것이 아니라, seed 1/2와 더 먼 공통
+시작점 또는 물체 위치 교란에서 정상과 `freeze/noise`를 비교해야 한다. 현재 결과는
+단일 seed, near-contact K=2 시작, 1-step validation/execution, 미실측 collision
+proxy와 simulation-only 2mm preload에 한정되며 full 8-step 실행도 미검증이다.
 
 대표 영상과 보고서는 다음과 같다.
 
@@ -1411,4 +1427,60 @@ video: out/relative_chunk_v10_bestval_150943_simcam_k2_policy_20260916.gif
 report: out/relative_chunk_v10_bestval_150943_simcam_k2_policy_20260916.json
 normal14: out/relative_chunk_v10_bestval_simcam_k2_normal14_20260916/
 blackout14: out/relative_chunk_v10_bestval_simcam_k2_blackout14_20260916/
+noise14: out/relative_chunk_v10_bestval_simcam_k2_noise14_20260916/
+freeze14: out/relative_chunk_v10_bestval_simcam_k2_freeze14_20260916/
 ```
+
+### 0916 추가 진단: object-only 교란과 K=4 고정 시작
+
+K=2에서 로봇 시작 자세는 고정한 채 시뮬레이션 물체만 X/Y로 이동하는 진단을
+추가했다. 대표 편 `rec_20260911_150943`에서 ±15mm 네 방향은
+`normal/noise/freeze` 모두 성공했고, ±25mm에서는 12조건 중 10조건이 성공했다.
+`+X 25mm`의 normal과 freeze만 첫 예측 목표가 관절 한계를 넘어 실패했지만 noise는
+성공했다. 따라서 이 검사는 물체 위치를 영상으로 재탐색했다는 증거가 아니다. K=2의
+근접 시작에서는 넓은 접촉 포획 범위와 밀기만으로도 성공할 수 있고, Gaussian noise가
+정상 영상보다 보수적인 평균 출력을 유도할 수 있다. 이 이유로 14편 전수 확장은
+중단했다.
+
+K=4는 기존 등록 보고서에 고정 시작 관절값이 없어 발생한 runner error를 성능 실패로
+세지 않고, 동일한 검색 인자와 최신 코드로 보고서를 다시 생성했다. 전체 14편 중 정적
+scene-valid subset은 8편이므로 등록 자체는 계속
+`REJECTED_DIAGNOSTIC_CANONICAL_REPLAY`다. 성공 편만 골라 정본으로 승격하지 않기 위해
+게이트는 명시적 episode 목록과 `--allow-rejected-diagnostic-subset`이 있을 때만 이
+부분집합 진단을 허용하고, 결과에 source status와 부분집합 평가 사실을 기록한다.
+
+```text
+registration:
+  out/relative_chunk_v9_width40mm_preload2mm_lookback4_fixedstart_20260916.json
+policy-free oracle subset: 8/8 contact, 8/8 stable lift
+oracle report:
+  out/relative_chunk_v9_width40mm_preload2mm_lookback4_fixedstart_subset8_dynamic_gate_20260916.json
+
+condition  success  bilateral  geometry error  max lift min/median/max
+normal      5/8      5/8        3/8             0.0 / 53.6 / 87.8mm
+freeze      5/8      5/8        3/8             0.0 / 53.3 / 87.3mm
+noise       8/8      8/8        0/8            51.5 / 52.4 / 55.3mm
+mean_fill   7/8      7/8        1/8             4.3 / 55.1 / 65.4mm
+blackout    0/8      0/8        8/8             1.5 /  2.2 /  3.0mm
+```
+
+normal과 freeze는 동일한 세 편(`150753`, `150943`, `151043`)에서 첫 예측 명령이
+위치·접근축 허용오차 안에는 들지만 관절 한계를 넘어 실패했다. 이 결과 역시 noise가
+시각 인식을 개선했다는 뜻이 아니다. 실물 JPEG로 학습한 정책에 MuJoCo RGB를 넣은
+도메인 불일치 때문에 정상 영상이 공격적인 OOD 출력을 만들고, noise가 평균 정책에
+가까운 보수적 출력을 만든다는 해석이 현재 증거에 가장 잘 맞는다. normal과 freeze가
+같다는 점도 시간에 따라 갱신되는 시각 피드백 사용을 지지하지 않는다.
+
+순수 검정색의 OOD 효과를 분리하기 위해, 각 history frame의 RGB 채널 평균은 유지하되
+모든 픽셀을 그 평균으로 채워 공간 정보를 완전히 지우는 `mean_fill`을 별도 조건으로
+추가했다. 이 조건이 7/8을 성공했고 실패는 `150943` 한 편뿐이었다. 동일 K4 8편의
+blackout은 0/8, geometry error 8/8이었다. 즉 현재 K4 진단은 물체 위치·형태가 없는
+입력에서도 대부분 성공하며, blackout 실패는 검정색이라는 특정 OOD activation의
+영향이 크다. `mean_fill` 역시 성공 조건이 아니라 no-spatial-information 대조군이며,
+이 7/8을 정책 성능으로 인용하지 않는다.
+
+따라서 `blackout`은 성공하도록 개선하지 않는다. 검정 영상은 정보 제거 대조군이며,
+그 성능을 올리면 검사의 의미가 사라진다. 다음 우선순위는 실물 학습 프레임과 MuJoCo
+손목 카메라 프레임의 시야·광학·색/조명 분포를 비교해 입력 도메인을 정렬하고, 필요하면
+시뮬 사전학습/도메인 랜덤화 후 실물 파인튜닝을 적용한 뒤 동일한
+`normal/blackout/mean_fill/noise/freeze` 조건을 다시 측정하는 것이다.

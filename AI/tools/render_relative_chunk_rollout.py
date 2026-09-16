@@ -46,6 +46,7 @@ AI_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = AI_ROOT / "configs" / "so101.yaml"
 DEFAULT_REAL_CONFIG = AI_ROOT / "configs" / "real" / "so101_ver1.json"
 TABLETOP_MOTION_LIFT_CUTOFF_M = 0.005
+MAX_DIAGNOSTIC_OBJECT_OFFSET_M = 0.03
 
 
 def _registration(path: Path) -> dict:
@@ -56,6 +57,7 @@ def _registration(path: Path) -> dict:
         "KINEMATIC_REGISTRATION_CANDIDATE_NOT_DYNAMIC_READY",
         "DIAGNOSTIC_COLLISION_PROXY_CANDIDATE_NOT_PHYSICAL_VALIDATION",
         "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION",
+        "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY",
     }
     if payload.get("status") not in allowed:
         raise ValueError("registration must be an explicitly provisional candidate")
@@ -86,6 +88,22 @@ def _episode_object_xyz(registration: dict, episode_id: str) -> np.ndarray:
     if episode_id == str(registration.get("representative_episode")):
         return np.asarray(registration["object_xyz_m"], dtype=float)
     raise ValueError(f"registration has no object position for {episode_id}")
+
+
+def _diagnostic_object_xyz(
+        registration: dict, episode_id: str,
+        offset_xy_m: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Apply a bounded object-only shift without moving the robot start."""
+    base = _episode_object_xyz(registration, episode_id)
+    offset = np.asarray(offset_xy_m, dtype=float)
+    if (offset.shape != (2,) or not np.isfinite(offset).all()
+            or np.any(np.abs(offset) > MAX_DIAGNOSTIC_OBJECT_OFFSET_M)):
+        raise ValueError(
+            "diagnostic object XY offset must be finite and no larger than "
+            f"{MAX_DIAGNOSTIC_OBJECT_OFFSET_M:.3f}m per axis")
+    shifted = base.copy()
+    shifted[:2] += offset
+    return base, shifted
 
 
 def _episode_approach_start(
@@ -155,6 +173,12 @@ def _perturb_policy_images(
         return source, frozen
     if mode == "blackout":
         return np.zeros_like(source), frozen
+    if mode == "mean_fill":
+        # Preserve each history frame's channel means while removing every
+        # spatial cue.  This is a less extreme no-spatial-information control
+        # than pure black, which is itself a severe OOD colour distribution.
+        means = np.rint(source.mean(axis=(-2, -1), keepdims=True))
+        return np.broadcast_to(means, source.shape).astype(np.uint8).copy(), frozen
     if mode == "noise":
         noisy = np.clip(
             source.astype(np.float32)
@@ -256,12 +280,27 @@ def main() -> int:
     parser.add_argument("--observation-source", choices=("dataset", "simulation"),
                         default="dataset")
     parser.add_argument(
-        "--image-perturb", choices=("none", "noise", "blackout", "freeze"),
+        "--image-perturb",
+        choices=("none", "noise", "blackout", "mean_fill", "freeze"),
         default="none",
         help="learned-policy inference only; alter RGB without changing state/scoring",
     )
     parser.add_argument("--image-noise-gray", type=float, default=96.0)
     parser.add_argument("--image-perturb-seed", type=int, default=0)
+    parser.add_argument(
+        "--object-offset-x-m", type=float, default=0.0,
+        help=(
+            "local diagnostic only: shift the simulated object in world X "
+            "without shifting the registered robot approach start"
+        ),
+    )
+    parser.add_argument(
+        "--object-offset-y-m", type=float, default=0.0,
+        help=(
+            "local diagnostic only: shift the simulated object in world Y "
+            "without shifting the registered robot approach start"
+        ),
+    )
     parser.add_argument("--oracle", action="store_true",
                         help="replay recorded relative targets instead of policy output")
     parser.add_argument("--episode",
@@ -357,7 +396,11 @@ def main() -> int:
             "diagnostic canonical replay requires "
             "--use-registration-approach-start")
     representative = str(args.episode or registration["representative_episode"])
-    object_xyz = _episode_object_xyz(registration, representative)
+    registration_object_xyz, object_xyz = _diagnostic_object_xyz(
+        registration,
+        representative,
+        np.asarray([args.object_offset_x_m, args.object_offset_y_m], dtype=float),
+    )
     episode = _episode(args.data, representative)
     start_row = 0
     start_arm = registration["start_arm_rad"]
@@ -804,6 +847,7 @@ def main() -> int:
             "image_perturb_seed": (
                 args.image_perturb_seed if args.image_perturb == "noise" else None),
             "registration": str(args.registration),
+            "registration_status": registration["status"],
             "collision_model": (
                 "provisional_ver1_parallel_jaw_proxy"
                 if diagnostic_proxy_ready else "legacy_mujoco_gripper"
@@ -818,6 +862,10 @@ def main() -> int:
                 if diagnostic_proxy_ready else None
             ),
             "representative_episode": representative,
+            "registration_object_xyz_m": registration_object_xyz.tolist(),
+            "diagnostic_object_offset_xy_m": [
+                float(args.object_offset_x_m), float(args.object_offset_y_m)],
+            "robot_start_shifted_with_object": False,
             "object_xyz_m": object_xyz.tolist(),
             "initial_gap_m": initial_gap,
             "episode_start_row": start_row,

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -15,20 +17,57 @@ from gate_relative_chunk_oracle import (
     _scene_valid_episodes,
 )
 from render_relative_chunk_rollout import (
+    MAX_DIAGNOSTIC_OBJECT_OFFSET_M,
+    _diagnostic_object_xyz,
     _episode_approach_start,
     _interpolated_joint_target,
     _perturb_policy_images,
+    _registration,
     _stable_side_grasp_success,
 )
 
 
 class Tests(unittest.TestCase):
+    def test_diagnostic_object_offset_moves_only_the_object(self) -> None:
+        payload = {
+            "object_xyz_m": np.asarray([0.4, 0.0, 0.03835]),
+            "representative_episode": "episode-a",
+            "selected": {"per_episode": []},
+        }
+        base, shifted = _diagnostic_object_xyz(
+            payload, "episode-a", np.asarray([0.01, -0.02]))
+        np.testing.assert_allclose(base, [0.4, 0.0, 0.03835])
+        np.testing.assert_allclose(shifted, [0.41, -0.02, 0.03835])
+        # The helper must not mutate the registration payload in place.
+        np.testing.assert_allclose(payload["object_xyz_m"], [0.4, 0.0, 0.03835])
+        with self.assertRaises(ValueError):
+            _diagnostic_object_xyz(
+                payload, "episode-a",
+                np.asarray([MAX_DIAGNOSTIC_OBJECT_OFFSET_M + 0.001, 0.0]),
+            )
+
     def test_policy_image_perturbations_are_explicit_and_deterministic(self) -> None:
         image = np.full((2, 3, 4, 5), 128, dtype=np.uint8)
         rng = np.random.default_rng(7)
         black, frozen = _perturb_policy_images(
             image, mode="blackout", rng=rng, frozen=None, noise_gray=32.0)
         self.assertFalse(np.any(black))
+        self.assertIsNone(frozen)
+
+        channel_pattern = np.asarray(
+            [[[[10, 30], [50, 70]]], [[[20, 40], [60, 80]]]],
+            dtype=np.uint8,
+        )
+        mean_filled, frozen = _perturb_policy_images(
+            channel_pattern, mode="mean_fill", rng=rng, frozen=None,
+            noise_gray=32.0)
+        np.testing.assert_array_equal(
+            mean_filled,
+            np.asarray(
+                [[[[40, 40], [40, 40]]], [[[50, 50], [50, 50]]]],
+                dtype=np.uint8,
+            ),
+        )
         self.assertIsNone(frozen)
 
         first, frozen = _perturb_policy_images(
@@ -57,6 +96,26 @@ class Tests(unittest.TestCase):
             _require_provisional_registration({"status": status})
         with self.assertRaises(ValueError):
             _require_provisional_registration({"status": "VALIDATED"})
+        rejected = {"status": "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY"}
+        with self.assertRaises(ValueError):
+            _require_provisional_registration(rejected)
+        _require_provisional_registration(
+            rejected, allow_rejected_diagnostic_subset=True)
+
+    def test_single_rollout_can_read_rejected_canonical_subset_report(self) -> None:
+        payload = {
+            "status": "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY",
+            "start_arm_rad": [0.0] * 5,
+            "object_xyz_m": [0.4, 0.0, 0.04],
+            "object_size_m": [0.04, 0.04, 0.08],
+            "table_half_size_xy_m": [0.4, 0.4],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registration.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            loaded = _registration(path)
+        self.assertEqual(
+            loaded["status"], "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY")
 
     def test_fixed_approach_start_is_read_without_runtime_search(self) -> None:
         payload = {"selected": {"per_episode": [{

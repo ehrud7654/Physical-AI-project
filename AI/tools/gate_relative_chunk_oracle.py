@@ -46,8 +46,13 @@ def _scene_valid_episodes(registration: dict[str, Any]) -> list[str]:
     return episodes
 
 
-def _require_provisional_registration(registration: dict[str, Any]) -> None:
+def _require_provisional_registration(
+        registration: dict[str, Any], *,
+        allow_rejected_diagnostic_subset: bool = False) -> None:
     status = registration.get("status")
+    if (allow_rejected_diagnostic_subset
+            and status == "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY"):
+        return
     if status not in ACCEPTED_PROVISIONAL_REGISTRATION_STATUSES:
         raise ValueError(
             "registration must be an explicitly accepted provisional "
@@ -227,6 +232,13 @@ def main() -> int:
     parser.add_argument("--registration", type=Path, required=True)
     parser.add_argument("--episodes", nargs="*",
                         help="explicit episode ids; default is every scene-valid episode")
+    parser.add_argument(
+        "--allow-rejected-diagnostic-subset", action="store_true",
+        help=(
+            "allow an explicitly listed scene-valid subset from a rejected "
+            "diagnostic canonical replay; never promotes the source report"
+        ),
+    )
     parser.add_argument("--cycles", type=int, default=30)
     parser.add_argument("--tracking-time-margin", type=float, default=1.0)
     parser.add_argument("--grip-preload-m", type=float, default=0.001)
@@ -266,7 +278,17 @@ def main() -> int:
 
     registration_path = args.registration.resolve()
     registration = json.loads(registration_path.read_text(encoding="utf-8"))
-    _require_provisional_registration(registration)
+    _require_provisional_registration(
+        registration,
+        allow_rejected_diagnostic_subset=args.allow_rejected_diagnostic_subset,
+    )
+    rejected_subset = (
+        registration.get("status") == "REJECTED_DIAGNOSTIC_CANONICAL_REPLAY"
+    )
+    if rejected_subset and not args.episodes:
+        raise ValueError(
+            "a rejected diagnostic registration requires explicit --episodes"
+        )
     eligible = _scene_valid_episodes(registration)
     episodes = list(args.episodes) if args.episodes else eligible
     unknown = sorted(set(episodes) - set(eligible))
@@ -311,6 +333,8 @@ def main() -> int:
         "purpose": "recorded-oracle dynamic registration gate; not policy or hardware validation",
         "dataset": str(args.data),
         "registration": str(args.registration),
+        "source_registration_status": registration.get("status"),
+        "evaluated_static_subset_of_rejected_registration": rejected_subset,
         "kinematic_grasp_override": (
             str(args.kinematic_grasp) if args.kinematic_grasp else None),
         "eligible_scene_valid_episodes": eligible,
