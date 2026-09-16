@@ -5,14 +5,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "127.0.0.1:8081:8081"
+      - "0.0.0.0:8081:8081"
     environment:
       SERVER_PORT: 8081
 
-      EC2_API_BASE_URL: ${EC2_API_BASE_URL:-http://backend:8080}
-      GPU_WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_01}
-      GPU_NODE_KEY: ${GPU_NODE_KEY:-gpu-01-local-cache}
-      GPU_NODE_NAME: ${GPU_NODE_NAME:-SSAFY GPU Worker}
+      EC2_API_BASE_URL: ${EC2_API_BASE_URL:-https://j15a103.p.ssafy.io}
+      GPU_WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_laptop_01}
+      GPU_NODE_KEY: ${GPU_NODE_KEY:-gpu-laptop-local-cache}
+      GPU_NODE_NAME: ${GPU_NODE_NAME:-SSAFY GPU Laptop Worker}
       GPU_STORAGE_ROOT: /data/ssafy-gpu
       GPU_SUPPORTED_ALGORITHMS: ${GPU_SUPPORTED_ALGORITHMS:-ACT}
       GPU_MAX_SLOTS: ${GPU_MAX_SLOTS:-1}
@@ -30,7 +30,6 @@ services:
     restart: unless-stopped
     networks:
       - default
-      - ec2-api
 
   training-api:
     image: ssafy-gpu-fastapi:local
@@ -43,15 +42,14 @@ services:
       FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:-local-fastapi-token}
       GPU_SPRING_BASE_URL: http://gpu-backend:8081
       GPU_SPRING_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:-local-callback-token}
-      WORKER_ID: ${WORKER_ID:-ssafy_gpu_01}
+      WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_laptop_01}
       STORAGE_NODE_ID: ${STORAGE_NODE_ID:-18000000-0000-4000-8000-000000000002}
       SHARED_STORAGE_ROOT: /data/ssafy-gpu
       RUN_JOURNAL_ROOT: /data/ssafy-gpu/journal/training-runs
-      # The host grants this project physical GPU 2 only. Docker exposes that
-      # device as logical CUDA device 0 inside this container.
+      # The laptop has one NVIDIA GPU (host index 0), exposed as CUDA device 0.
       GPU_COUNT: 1
       CUDA_VISIBLE_DEVICES: 0
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       TRAINING_COMMAND_DURATION_SECONDS: ${TRAINING_COMMAND_DURATION_SECONDS:-5}
     volumes:
@@ -62,7 +60,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
@@ -80,7 +78,7 @@ services:
     profiles: ["simulation"]
     environment:
       CUDA_VISIBLE_DEVICES: 0
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
       MUJOCO_GL: egl
       PYOPENGL_PLATFORM: egl
@@ -94,16 +92,17 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     restart: "no"
 
   dcgm-exporter:
     image: ${DCGM_EXPORTER_IMAGE:-nvcr.io/nvidia/k8s/dcgm-exporter:latest}
+    profiles: ["monitoring"]
     ports:
       - "127.0.0.1:${DCGM_EXPORTER_PORT:-9400}:9400"
     environment:
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     cap_add:
       - SYS_ADMIN
@@ -112,7 +111,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9400/metrics >/dev/null || exit 1"]
@@ -126,8 +125,3 @@ volumes:
   gpu_data:
   model_cache:
   simulation_output:
-
-networks:
-  ec2-api:
-    external: true
-    name: ec2__default

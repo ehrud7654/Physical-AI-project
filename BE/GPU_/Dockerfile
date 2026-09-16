@@ -8,14 +8,9 @@ RUN gradle bootJar --no-daemon -x test
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN addgroup -S spring && adduser -S spring -G spring \
-
 RUN addgroup -g 10001 -S gpu \
     && adduser -u 10001 -S gpu -G gpu \
     && mkdir -p /data/ssafy-gpu \
-    && chown -R spring:spring /app /data/ssafy-gpu
-COPY --from=builder --chown=spring:spring /workspace/build/libs/*.jar app.jar
-USER spring:spring
     && chown -R gpu:gpu /app /data/ssafy-gpu
 
 COPY --from=builder --chown=gpu:gpu /workspace/build/libs/*.jar app.jar
