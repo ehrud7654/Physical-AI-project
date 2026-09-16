@@ -1,7 +1,7 @@
 'use client';
 
 import { deploymentStatusMeta } from '@/lib/datasets';
-import { type FormEvent, useState, useEffect, useCallback } from 'react';
+import { type FormEvent, useState, useEffect, useCallback, useMemo } from 'react';
 import type { SkillOverview } from '@/types';
 import { createCustomSkill, fetchSkillOverviews, updateSkillDescription } from '@/services';
 import { formatApiDateTimeParts } from '@/lib/workflow';
@@ -20,7 +20,12 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
   const [editDescription, setEditDescription] = useState('');
   const [editError, setEditError] = useState('');
   const [updating, setUpdating] = useState(false);
-  const { page, pageCount, pageItems, setPage } = usePagination(skills);
+  const [query, setQuery] = useState('');
+  const keyword = query.trim().toLowerCase();
+  const filtered = useMemo(() => keyword
+    ? skills.filter((skill) => skill.displayName.toLowerCase().includes(keyword) || (skill.description ?? '').toLowerCase().includes(keyword))
+    : skills, [skills, keyword]);
+  const { page, pageCount, pageItems, setPage } = usePagination(filtered);
 
   const loadSkills = useCallback(async () => {
     setLoading(true);
@@ -96,6 +101,9 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
       </div>
       <button className="primary-button page-create-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button>
     </div>
+    <section className="workflow-library-toolbar" aria-label="동작 검색">
+      <label className="workflow-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="동작 이름 또는 설명 검색" aria-label="동작 검색" /></label>
+    </section>
     <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table" aria-label="동작 목록">
         <div className="episode-row skill-list-row header" role="row">
@@ -109,7 +117,7 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
           <span data-label="배포 상태"><span className={`dataset-status ${deployment.className}`}><i />{deployment.label}</span></span>
           <span className="skill-list-datetime" data-label="최근 학습 요청">{latestTrainingRequestedAt ? <><strong>{latestTrainingRequestedAt.date}</strong><small>{latestTrainingRequestedAt.time}</small></> : '-'}</span>
         </div>; })}
-        {!loading && !error && !skills.length && <div className="table-empty"><p>등록된 동작이 없어요.</p></div>}
+        {!loading && !error && !filtered.length && <div className="table-empty"><p>{skills.length ? '검색 결과가 없어요.' : '등록된 동작이 없어요.'}</p></div>}
       </div>
       <Pagination page={page} pageCount={pageCount} onChange={setPage} />
     </section>
