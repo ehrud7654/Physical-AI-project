@@ -7,13 +7,17 @@ import java.nio.file.*;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Component;
+import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
 
 @Component
 public class PresignedCheckpointUploader {
   private final HttpClient client;
+  private final CheckpointUploadProperties properties;
 
-  public PresignedCheckpointUploader(HttpClient presignedHttpClient) {
+  public PresignedCheckpointUploader(
+      HttpClient presignedHttpClient, CheckpointUploadProperties properties) {
     this.client = presignedHttpClient;
+    this.properties = properties;
   }
 
   public void upload(UploadSessionResponse session, Path file, String sha256) {
@@ -22,6 +26,7 @@ public class PresignedCheckpointUploader {
     try {
       HttpRequest.Builder builder =
           HttpRequest.newBuilder(URI.create(session.uploadUrl()))
+              .timeout(properties.requestTimeout())
               .PUT(HttpRequest.BodyPublishers.ofFile(file));
       session
           .headers()
@@ -34,10 +39,14 @@ public class PresignedCheckpointUploader {
         String checksum = Base64.getEncoder().encodeToString(HexFormat.of().parseHex(sha256));
         builder.header("x-amz-checksum-sha256", checksum);
       }
-      HttpResponse<Void> response =
-          client.send(builder.build(), HttpResponse.BodyHandlers.discarding());
-      if (response.statusCode() < 200 || response.statusCode() >= 300)
-        throw new IllegalStateException("S3 CKPT 업로드 실패: HTTP " + response.statusCode());
+      HttpRequest request = builder.build();
+      for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
+        HttpResponse<Void> response =
+            client.send(request, HttpResponse.BodyHandlers.discarding());
+        if (response.statusCode() >= 200 && response.statusCode() < 300) return;
+        if (response.statusCode() < 500 || attempt == properties.maxAttempts())
+          throw new IllegalStateException("S3 CKPT 업로드 실패: HTTP " + response.statusCode());
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("S3 업로드가 중단되었습니다.", e);

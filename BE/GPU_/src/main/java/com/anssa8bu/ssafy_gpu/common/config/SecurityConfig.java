@@ -18,6 +18,8 @@ public class SecurityConfig {
                 authorize
                     .requestMatchers("/actuator/health", "/actuator/health/**")
                     .permitAll()
+                    .requestMatchers("/internal/training-runs/*/completion")
+                    .permitAll()
                     .anyRequest()
                     .denyAll())
         .build();

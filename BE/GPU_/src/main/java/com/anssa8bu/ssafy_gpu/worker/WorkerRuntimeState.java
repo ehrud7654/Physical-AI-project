@@ -16,7 +16,22 @@ public class WorkerRuntimeState {
   private final ConcurrentHashMap<Integer, ActiveTraining> trainingsByGpu = new ConcurrentHashMap<>();
 
   public record ActiveTraining(
-      int gpuIndex, UUID trainingJobId, int attempt, String leaseToken, Instant leaseExpiresAt) {}
+      int gpuIndex,
+      UUID trainingJobId,
+      int attempt,
+      String leaseToken,
+      Instant leaseExpiresAt,
+      String runId,
+      long lastForwardedSequence) {
+    public ActiveTraining(
+        int gpuIndex,
+        UUID trainingJobId,
+        int attempt,
+        String leaseToken,
+        Instant leaseExpiresAt) {
+      this(gpuIndex, trainingJobId, attempt, leaseToken, leaseExpiresAt, null, 0L);
+    }
+  }
 
   public UUID storageNodeId() {
     return storageNodeId.get();
@@ -69,7 +84,35 @@ public class WorkerRuntimeState {
                 current.trainingJobId(),
                 current.attempt(),
                 current.leaseToken(),
-                leaseExpiresAt));
+                leaseExpiresAt,
+                current.runId(),
+                current.lastForwardedSequence()));
+  }
+
+  public void bindRun(int gpuIndex, String runId) {
+    trainingsByGpu.computeIfPresent(
+        gpuIndex,
+        (ignored, current) ->
+            new ActiveTraining(
+                current.gpuIndex(), current.trainingJobId(), current.attempt(),
+                current.leaseToken(), current.leaseExpiresAt(), runId,
+                current.lastForwardedSequence()));
+  }
+
+  public void forwarded(int gpuIndex, long sequence) {
+    trainingsByGpu.computeIfPresent(
+        gpuIndex,
+        (ignored, current) ->
+            new ActiveTraining(
+                current.gpuIndex(), current.trainingJobId(), current.attempt(),
+                current.leaseToken(), current.leaseExpiresAt(), current.runId(), sequence));
+  }
+
+  public ActiveTraining require(UUID trainingJobId, int attempt) {
+    return trainingsByGpu.values().stream()
+        .filter(value -> value.trainingJobId().equals(trainingJobId) && value.attempt() == attempt)
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException("활성 학습 할당을 찾을 수 없습니다."));
   }
 
   public void release(int gpuIndex) {

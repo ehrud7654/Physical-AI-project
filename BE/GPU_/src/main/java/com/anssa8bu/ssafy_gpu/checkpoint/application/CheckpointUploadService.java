@@ -5,6 +5,7 @@ import static com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.*;
 import com.anssa8bu.ssafy_gpu.checkpoint.client.CheckpointClient;
 import com.anssa8bu.ssafy_gpu.checkpoint.storage.PresignedCheckpointUploader;
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
+import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
 import com.anssa8bu.ssafy_gpu.common.file.FileHashCalculator;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import java.nio.file.*;
@@ -13,24 +14,26 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class CheckpointUploadService {
-  private static final String CONTENT_TYPE = "application/octet-stream";
   private final CheckpointClient client;
   private final PresignedCheckpointUploader uploader;
   private final FileHashCalculator hashes;
   private final WorkerProperties worker;
   private final WorkerRuntimeState state;
+  private final CheckpointUploadProperties properties;
 
   public CheckpointUploadService(
       CheckpointClient client,
       PresignedCheckpointUploader uploader,
       FileHashCalculator hashes,
       WorkerProperties worker,
-      WorkerRuntimeState state) {
+      WorkerRuntimeState state,
+      CheckpointUploadProperties properties) {
     this.client = client;
     this.uploader = uploader;
     this.hashes = hashes;
     this.worker = worker;
     this.state = state;
+    this.properties = properties;
   }
 
   public UploadResult uploadAndComplete(
@@ -52,7 +55,7 @@ public class CheckpointUploadService {
               leaseToken,
               file.getFileName().toString(),
               checkpoint.modelCompletedAt(),
-              CONTENT_TYPE,
+              properties.contentType(),
               size,
               sha256,
               checkpoint.metadata());

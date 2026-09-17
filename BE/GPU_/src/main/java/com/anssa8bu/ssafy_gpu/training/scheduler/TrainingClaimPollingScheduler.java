@@ -4,6 +4,7 @@ import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingClaimService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingHeartbeatService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingInputPreparationService;
+import com.anssa8bu.ssafy_gpu.fastapi.application.FastApiRunService;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState.ActiveTraining;
 import org.slf4j.Logger;
@@ -20,18 +21,21 @@ public class TrainingClaimPollingScheduler {
   private final WorkerRuntimeState state;
   private final WorkerProperties properties;
   private final TrainingInputPreparationService inputPreparation;
+  private final FastApiRunService fastApi;
 
   public TrainingClaimPollingScheduler(
       TrainingClaimService claims,
       TrainingHeartbeatService heartbeats,
       WorkerRuntimeState state,
       WorkerProperties properties,
-      TrainingInputPreparationService inputPreparation) {
+      TrainingInputPreparationService inputPreparation,
+      FastApiRunService fastApi) {
     this.claims = claims;
     this.heartbeats = heartbeats;
     this.state = state;
     this.properties = properties;
     this.inputPreparation = inputPreparation;
+    this.fastApi = fastApi;
   }
 
   @Scheduled(
@@ -94,9 +98,11 @@ public class TrainingClaimPollingScheduler {
             "학습 취소 요청 수신: trainingJobId={}, gpuIndex={}",
             assignment.trainingJobId(),
             assignment.gpuIndex());
-        return;
+        if (assignment.runId() != null) fastApi.cancel(assignment.runId());
       }
       state.renew(assignment.gpuIndex(), response.leaseExpiresAt());
+      if (assignment.runId() != null)
+        fastApi.renewLease(assignment.runId(), response.leaseExpiresAt());
     } catch (RuntimeException e) {
       state.release(assignment.gpuIndex());
       log.warn(

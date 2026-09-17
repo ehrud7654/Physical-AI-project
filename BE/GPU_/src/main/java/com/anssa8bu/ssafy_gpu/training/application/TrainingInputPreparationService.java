@@ -3,6 +3,7 @@ package com.anssa8bu.ssafy_gpu.training.application;
 import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.ClaimResponse;
 import com.anssa8bu.ssafy_gpu.training.storage.EpisodeArchiveDownloader;
 import com.anssa8bu.ssafy_gpu.training.storage.BaseModelDownloader;
+import com.anssa8bu.ssafy_gpu.fastapi.application.FastApiRunService;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import java.time.Instant;
 import java.util.*;
@@ -16,6 +17,7 @@ public class TrainingInputPreparationService {
   private static final Logger log = LoggerFactory.getLogger(TrainingInputPreparationService.class);
   private final EpisodeArchiveDownloader downloader;
   private final BaseModelDownloader baseModels;
+  private final FastApiRunService fastApi;
   private final TrainingEventService events;
   private final WorkerRuntimeState state;
   private final ExecutorService executor;
@@ -23,11 +25,13 @@ public class TrainingInputPreparationService {
   public TrainingInputPreparationService(
       EpisodeArchiveDownloader downloader,
       BaseModelDownloader baseModels,
+      FastApiRunService fastApi,
       TrainingEventService events,
       WorkerRuntimeState state,
       @Qualifier("trainingPreparationExecutor") ExecutorService executor) {
     this.downloader = downloader;
     this.baseModels = baseModels;
+    this.fastApi = fastApi;
     this.events = events;
     this.state = state;
     this.executor = executor;
@@ -41,10 +45,16 @@ public class TrainingInputPreparationService {
     try {
       var episodes = downloader.downloadAll(claim);
       var baseModel = baseModels.download(claim);
+      var run = fastApi.start(claim, gpuIndex, episodes, baseModel);
+      events.started(
+          claim.job().id(), claim.attempt(), claim.leaseToken(),
+          "run-started-" + claim.job().id() + "-" + claim.attempt(), 1, Instant.now());
+      state.forwarded(gpuIndex, 1);
       log.info(
-          "학습 입력 준비 완료: trainingJobId={}, attempt={}, episodeCount={}, trainingMode={}, baseModel={}, gpuIndex={}",
+          "학습 입력 준비 및 FastAPI 실행 완료: trainingJobId={}, attempt={}, runId={}, episodeCount={}, trainingMode={}, baseModel={}, gpuIndex={}",
           claim.job().id(),
           claim.attempt(),
+          run.runId(),
           episodes.size(),
           claim.job().trainingMode(),
           baseModel == null ? null : baseModel.storageKey(),
@@ -57,6 +67,12 @@ public class TrainingInputPreparationService {
           gpuIndex,
           failure);
       try {
+        try {
+          var assignment = state.require(claim.job().id(), claim.attempt());
+          if (assignment.runId() != null) fastApi.cancel(assignment.runId());
+        } catch (RuntimeException cancelFailure) {
+          log.warn("입력 준비 실패 후 FastAPI 취소 실패: trainingJobId={}", claim.job().id(), cancelFailure);
+        }
         events.failed(
             claim.job().id(),
             claim.attempt(),

@@ -392,5 +392,12 @@ public class TrainingJob extends AuditableEntity {
   public String getTrainingConfigSha256() { return trainingConfigSha256; }
   public Map<String, Object> getDatasetQuery() { return datasetQuery; }
   public String getInputSnapshotSha256() { return inputSnapshotSha256; }
+  public void fixInputSnapshotSha256(String value) {
+    if (value == null || !value.matches("[0-9a-f]{64}"))
+      throw new IllegalArgumentException("input snapshot hash가 올바르지 않습니다.");
+    if (inputSnapshotSha256 != null && !inputSnapshotSha256.equals(value))
+      throw new IllegalStateException("고정된 input snapshot hash를 변경할 수 없습니다.");
+    inputSnapshotSha256 = value;
+  }
   public Instant getModelCompletedAt() { return modelCompletedAt; }
 }

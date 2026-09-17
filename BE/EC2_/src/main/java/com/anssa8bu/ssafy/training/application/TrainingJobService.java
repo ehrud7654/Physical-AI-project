@@ -16,6 +16,8 @@ import com.anssa8bu.ssafy.skill.repository.SkillRepository;
 import com.anssa8bu.ssafy.training.entity.*;
 import com.anssa8bu.ssafy.training.repository.*;
 import java.time.Clock;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -112,6 +114,7 @@ public class TrainingJobService {
                 baseVersion == null ? null : baseVersion.getId()));
     job.planInput(expected, !selected.isEmpty());
     for (int i = 0; i < selected.size(); i++) attach(job, selected.get(i), i + 1);
+    job.fixInputSnapshotSha256(inputSnapshotHash(selected));
     idempotency.complete(
         owner, "POST", "/api/v1/training-jobs", claim, 201, "TRAINING_JOB", job.getId());
     return map(job, skill);
@@ -220,6 +223,24 @@ public class TrainingJobService {
             episode.getSuccess(),
             episode.getQualityStatus(),
             clock.instant()));
+  }
+
+  private String inputSnapshotHash(List<Episode> selected) {
+    try {
+      StringBuilder canonical = new StringBuilder();
+      for (int index = 0; index < selected.size(); index++) {
+        Episode episode = selected.get(index);
+        EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
+        canonical.append(index + 1).append('|').append(episode.getId()).append('|')
+            .append(archive.getSha256()).append('|').append(episode.getContractVersion())
+            .append('\n');
+      }
+      return HexFormat.of().formatHex(
+          MessageDigest.getInstance("SHA-256")
+              .digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
+    }
   }
 
   private SkillVersion validateBaseVersion(
