@@ -110,6 +110,8 @@ def build_model(
     if len(names) != int(cams["count"]):
         raise ValueError(f"cameras.count={cams['count']} but {len(names)} camera blocks defined")
 
+    _add_visual_domain_geometry(spec, cfg)
+
     for name in names:
         block = cams[name]
         kind = block["kind"]
@@ -135,10 +137,73 @@ def build_model(
         spec.visual.quality.offsamples = int(cams["offsamples"])
     model = spec.compile()
 
+    _apply_visual_domain(model, cfg)
+
     found = {mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(model.ncam)}
     if found != set(names):
         raise RuntimeError(f"camera injection failed: expected {set(names)}, got {found}")
     return model
+
+
+def _apply_visual_domain(model: mujoco.MjModel, cfg: dict[str, Any]) -> None:
+    """Apply optional simulation appearance after material compilation."""
+    appearance = cfg.get("visual_domain")
+    if not appearance:
+        return
+    names = {
+        "object_rgba": "target_object_geom",
+        "table_rgba": "table",
+        "floor_rgba": "floor",
+    }
+    for key, geom_name in names.items():
+        rgba = np.asarray(appearance[key], dtype=float)
+        if rgba.shape != (4,) or not np.isfinite(rgba).all():
+            raise ValueError(f"visual_domain.{key} must be finite RGBA")
+        geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, geom_name)
+        if geom_id < 0:
+            raise ValueError(f"visual-domain geom {geom_name!r} is missing")
+        model.geom_rgba[geom_id] = rgba
+    diffuse = np.asarray(appearance["light_diffuse_rgb"], dtype=float)
+    if diffuse.shape != (3,) or not np.isfinite(diffuse).all():
+        raise ValueError("visual_domain.light_diffuse_rgb must be finite RGB")
+    if model.nlight:
+        model.light_diffuse[:] = diffuse
+
+
+def _add_visual_domain_geometry(spec: Any, cfg: dict[str, Any]) -> None:
+    """Add render-only package details and background clutter before compile.
+
+    Every added geom has both collision masks cleared and zero mass.  This lets
+    the visual domain resemble the recorded S22 workspace without silently
+    changing contact, inertia, IK, or recorded-oracle physics.
+    """
+    appearance = cfg.get("visual_domain")
+    if not appearance:
+        return
+    for row in appearance.get("visual_geometry", []):
+        parent_name = str(row["parent"])
+        parent = spec.worldbody if parent_name == "world" else spec.body(parent_name)
+        if parent is None:
+            raise ValueError(f"visual-domain parent {parent_name!r} is missing")
+        geom = parent.add_geom()
+        geom.name = str(row["name"])
+        kind = str(row.get("type", "box"))
+        if kind == "box":
+            geom.type = mujoco.mjtGeom.mjGEOM_BOX
+        elif kind == "cylinder":
+            geom.type = mujoco.mjtGeom.mjGEOM_CYLINDER
+        else:
+            raise ValueError(f"unsupported visual-domain geom type {kind!r}")
+        geom.pos = np.asarray(row["pos_m"], dtype=float)
+        size = np.asarray(row["size_m"], dtype=float)
+        if kind == "cylinder":
+            size = np.r_[size, 0.0]
+        geom.size = size
+        geom.rgba = np.asarray(row["rgba"], dtype=float)
+        geom.contype = 0
+        geom.conaffinity = 0
+        geom.group = 2
+        geom.mass = 0.0
 
 
 def _apply_gripper_pads(spec: Any, cfg: dict[str, Any]) -> None:

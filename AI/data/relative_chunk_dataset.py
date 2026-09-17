@@ -26,6 +26,11 @@ class RelativeChunkDataset(Dataset):
         index = json.loads((self.root / "dataset.json").read_text(encoding="utf-8"))
         if index.get("schema") != SCHEMA:
             raise ValueError(f"unsupported relative dataset schema: {index.get('schema')}")
+        if index.get("status") == "CANDIDATE_NOT_TRAINING_READY":
+            raise ValueError(
+                "counterfactual localisation candidate is not training-ready; "
+                "shifted-target IK and contact dynamics must be validated first"
+            )
         self.obs_horizon = int(index["observation_horizon"])
         self.action_horizon = int(index["action_horizon"])
         self.rate_hz = float(index["rate_hz"])

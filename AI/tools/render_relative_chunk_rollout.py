@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw
 
 from sim.mujoco.build_scene import load_config, normalize
 from sim.mujoco.env import MujocoPickEnv
+from tools.estimate_umi_object_geometry import largest_object_bbox
 from tools.run_umi_regression import is_shared_gpu_server
 from tools.umi_mujoco import (
     MujocoArmAdapter,
@@ -31,8 +32,9 @@ from tools.umi_mujoco import (
     gap_from_angle,
 )
 from umi.arm_preflight import prepare_arm_commands
+from umi.counterfactual import reference_anchors, shifted_chunk_from_reference
 from umi.convert import invert_gap_curve
-from umi.relative_dataset import relative_vector
+from umi.relative_dataset import SCHEMA, relative_vector, write_episode
 from umi.relative_robot_preflight import (
     FixedActionPolicy,
     arm_ranges,
@@ -40,6 +42,7 @@ from umi.relative_robot_preflight import (
     real_limits,
 )
 from umi.timing import uniform_time_schedule
+from umi.visual_domain import apply_visual_domain, load_visual_domain
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
@@ -194,6 +197,31 @@ def _perturb_policy_images(
     raise ValueError(f"unsupported image perturbation: {mode}")
 
 
+def _requires_env_render(*, no_video: bool, oracle: bool,
+                         observation_source: str,
+                         measure_visual_alignment: bool = False,
+                         record_candidate_stream: bool = False) -> bool:
+    """Keep policy RGB rendering even when no GIF is being written."""
+    return ((not no_video)
+            or (not oracle and observation_source == "simulation")
+            or measure_visual_alignment or record_candidate_stream)
+
+
+def _detected_bbox_norm(image_chw: np.ndarray) -> list[float] | None:
+    """Largest yellow/orange component as normalised centre/size."""
+    image = Image.fromarray(np.transpose(np.asarray(image_chw), (1, 2, 0)))
+    component = largest_object_bbox(image)
+    if component is None:
+        return None
+    x0, y0, x1, y1 = component[3]
+    return [
+        (x0 + x1 + 1.0) / (2.0 * image.width),
+        (y0 + y1 + 1.0) / (2.0 * image.height),
+        (x1 - x0 + 1.0) / image.width,
+        (y1 - y0 + 1.0) / image.height,
+    ]
+
+
 def _interpolated_joint_target(*, segment_start_q: np.ndarray,
                                target_arm_rad: np.ndarray,
                                segment_start_gap_m: float,
@@ -303,6 +331,20 @@ def main() -> int:
     )
     parser.add_argument("--oracle", action="store_true",
                         help="replay recorded relative targets instead of policy output")
+    parser.add_argument(
+        "--oracle-shift-target-with-object", action="store_true",
+        help=(
+            "policy-free counterfactual only: reconstruct each recorded world "
+            "target and apply the object XY offset once, not once per cycle"
+        ),
+    )
+    parser.add_argument(
+        "--candidate-stream-out", type=Path,
+        help=(
+            "policy-free diagnostic only: save real MuJoCo RGB/proprio history "
+            "and retimed target timestamps as a non-training-ready NPZ"
+        ),
+    )
     parser.add_argument("--episode",
                         help="override the registration's representative episode")
     parser.add_argument(
@@ -334,8 +376,15 @@ def main() -> int:
     parser.add_argument(
         "--no-video", action="store_true",
         help=(
-            "skip all camera rendering and write only the JSON report; intended "
-            "for local multi-episode recorded-oracle gates"
+            "skip GIF creation; camera rendering remains active when policy "
+            "RGB, visual alignment, or a candidate stream requires it"
+        ),
+    )
+    parser.add_argument(
+        "--measure-visual-alignment", action="store_true",
+        help=(
+            "record real-vs-simulation yellow/orange bbox traces; forces camera "
+            "rendering even with --no-video and never changes commands"
         ),
     )
     parser.add_argument("--tracking-time-margin", type=float, default=1.0,
@@ -352,6 +401,10 @@ def main() -> int:
         help="apply grip preload only at or below this target gap",
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--visual-domain", type=Path,
+        help="simulation-only fitted camera/appearance proxy; never hardware calibration",
+    )
     parser.add_argument(
         "--kinematic-grasp", type=Path,
         help=(
@@ -371,6 +424,25 @@ def main() -> int:
         raise SystemExit("--policy-ckpt is required unless --oracle is used")
     if args.oracle and args.image_perturb != "none":
         raise SystemExit("--image-perturb is meaningless with --oracle")
+    if args.oracle_shift_target_with_object and (
+            not args.oracle or not args.use_registration_approach_start
+            or args.execute_steps != 1):
+        raise SystemExit(
+            "--oracle-shift-target-with-object requires --oracle, fixed "
+            "registration approach start, and --execute-steps 1")
+    if args.candidate_stream_out is not None:
+        if (not args.oracle_shift_target_with_object
+                or args.observation_source != "simulation"
+                or args.validation_horizon_steps != 8
+                or args.candidate_stream_out.suffix.lower() != ".npz"):
+            raise SystemExit(
+                "candidate stream requires shifted-target oracle, simulation "
+                "observation, full 8-step validation, and an .npz output")
+        if (args.candidate_stream_out.exists()
+                or args.candidate_stream_out.with_suffix(".json").exists()
+                or args.candidate_stream_out.with_suffix(".json")
+                == args.out.with_suffix(".json")):
+            raise SystemExit("candidate stream output exists or conflicts with report")
     if args.device != "cpu":
         raise SystemExit("this local diagnostic currently requires --device cpu")
     if args.out.suffix.lower() != ".gif":
@@ -437,6 +509,8 @@ def main() -> int:
         raise SystemExit("--execute-final-oracle-tail requires --oracle")
 
     cfg = copy.deepcopy(load_config(args.config))
+    if args.visual_domain is not None:
+        cfg = apply_visual_domain(cfg, load_visual_domain(args.visual_domain))
     kinematic_grasp = registration.get("kinematic_grasp")
     if args.kinematic_grasp is not None:
         kinematic_grasp = json.loads(
@@ -489,11 +563,24 @@ def main() -> int:
     max_object_tilt_deg = 0.0
     cycle_trace: list[dict[str, object]] = []
     command_trace: list[dict[str, object]] = []
+    visual_alignment_trace: list[dict[str, object]] = []
+    candidate_rows: dict[str, list[np.ndarray | int]] = {
+        key: [] for key in (
+            "image", "proprio", "action", "observation_timestamp",
+            "action_timestamp", "source_row")
+    }
     perturb_rng = np.random.default_rng(args.image_perturb_seed)
     frozen_policy_images: np.ndarray | None = None
 
+    env_render_enabled = _requires_env_render(
+        no_video=args.no_video,
+        oracle=args.oracle,
+        observation_source=args.observation_source,
+        measure_visual_alignment=args.measure_visual_alignment,
+        record_candidate_stream=args.candidate_stream_out is not None,
+    )
     with MujocoPickEnv(
-        cfg, render=not args.no_video, object_jitter_m=0.0,
+        cfg, render=env_render_enabled, object_jitter_m=0.0,
         max_ticks=max(1, args.cycles * args.execute_steps * 20),
     ) as env:
         observation = env.reset(seed=0, object_xy=object_xy, initial_q_rad=initial_q)
@@ -502,6 +589,12 @@ def main() -> int:
         current_q = env.joint_positions()
         current_pose = matrix_from_fk(env.model, ik, current_q)
         current_gap = gap_from_angle(float(current_q[5]), curve)
+        oracle_reference_anchors = (
+            reference_anchors(
+                episode["action"], start_row=start_row,
+                start_pose=current_pose)
+            if args.oracle_shift_target_with_object else None
+        )
         initial_object_xyz = env.object_position()
         initial_object_up = env.object_rotation()[:, 2]
         object_xy_displacement_threshold = max(
@@ -512,6 +605,8 @@ def main() -> int:
         poses: deque[np.ndarray] = deque(
             [current_pose.copy()] * 2, maxlen=2)
         gaps: deque[float] = deque([current_gap] * 2, maxlen=2)
+        observation_times: deque[float] = deque(
+            [float(observation.timestamp)] * 2, maxlen=2)
 
         debug_camera = mujoco.MjvCamera()
         debug_camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -554,6 +649,14 @@ def main() -> int:
             )
             for cycle in range(cycle_count):
                 row = min(start_row + cycle, len(episode["action"]) - 1)
+                if args.measure_visual_alignment:
+                    visual_alignment_trace.append({
+                        "cycle": cycle,
+                        "dataset_row": row,
+                        "real_bbox_xywh_norm": _detected_bbox_norm(
+                            episode["image"][row, -1]),
+                        "simulation_bbox_xywh_norm": _detected_bbox_norm(images[-1]),
+                    })
                 final_oracle_tail = bool(
                     args.execute_final_oracle_tail
                     and cycle == cycle_count - 1
@@ -575,9 +678,19 @@ def main() -> int:
                         noise_gray=args.image_noise_gray,
                     )
                     runtime_obs["image"] = perturbed
+                current_q = env.joint_positions()
+                current_pose = matrix_from_fk(env.model, ik, current_q)
+                current_gap = gap_from_angle(float(current_q[5]), curve)
+                oracle_action = episode["action"][row]
+                if oracle_reference_anchors is not None:
+                    oracle_action = shifted_chunk_from_reference(
+                        oracle_action,
+                        reference_pose=oracle_reference_anchors[cycle],
+                        actual_pose=current_pose,
+                        delta_world_xyz=object_xyz - registration_object_xyz,
+                    )
                 base_candidate = (
-                    FixedActionPolicy(episode["action"][row])
-                    if args.oracle else policy
+                    FixedActionPolicy(oracle_action) if args.oracle else policy
                 )
                 if args.grip_preload_m > 0.0:
                     base_candidate = _GapPreloadPolicy(
@@ -589,9 +702,6 @@ def main() -> int:
                 if validation_horizon < action_horizon and not final_oracle_tail:
                     candidate = _ValidationPrefixPolicy(
                         candidate, validation_horizon)
-                current_q = env.joint_positions()
-                current_pose = matrix_from_fk(env.model, ik, current_q)
-                current_gap = gap_from_angle(float(current_q[5]), curve)
                 try:
                     commands = prepare_arm_commands(
                         candidate, runtime_obs,
@@ -658,6 +768,29 @@ def main() -> int:
                 command_period = (
                     schedule.waypoint_time_s[1] * args.tracking_time_margin)
                 periods.append(command_period)
+
+                # Row zero has only one genuine observation; the duplicated
+                # image/pose used by the runtime policy is not a measured
+                # two-frame history. Record from the next control cycle.
+                if (args.candidate_stream_out is not None and cycle > 0
+                        and geometry_error is None):
+                    history_time = np.asarray(observation_times, dtype=np.float64)
+                    planned_time = (history_time[-1]
+                                    + np.asarray(
+                                        schedule.waypoint_time_s[1:9],
+                                        dtype=np.float64)
+                                    * args.tracking_time_margin)
+                    if (not history_time[0] < history_time[1]
+                            or planned_time.shape != (8,)
+                            or not np.all(np.diff(planned_time) > 0)
+                            or planned_time[0] <= history_time[-1]):
+                        raise ValueError("candidate stream has invalid simulation times")
+                    candidate_rows["image"].append(runtime_obs["image"].copy())
+                    candidate_rows["proprio"].append(runtime_obs["proprio"].copy())
+                    candidate_rows["action"].append(oracle_action.copy())
+                    candidate_rows["observation_timestamp"].append(history_time)
+                    candidate_rows["action_timestamp"].append(planned_time)
+                    candidate_rows["source_row"].append(int(row))
 
                 executed_cycle_commands = (
                     commands if final_oracle_tail
@@ -828,6 +961,7 @@ def main() -> int:
                 images.append(observation.images["cam_wrist"].copy())
                 poses.append(current_pose.copy())
                 gaps.append(current_gap)
+                observation_times.append(float(observation.timestamp))
                 if env.is_success():
                     break
 
@@ -837,7 +971,13 @@ def main() -> int:
             "checkpoint": (str(args.policy_ckpt)
                            if args.policy_ckpt is not None else None),
             "mode": "recorded_oracle" if args.oracle else "learned_policy",
+            "counterfactual_oracle_target_shift_once": bool(
+                args.oracle_shift_target_with_object),
+            "counterfactual_oracle_anchor_source": (
+                "recorded_first_future_step_from_fixed_start"
+                if args.oracle_shift_target_with_object else None),
             "video_generated": not args.no_video,
+            "policy_rgb_renderer_active": env_render_enabled,
             "observation_source": args.observation_source,
             "closed_loop_visual_feedback": (
                 args.observation_source == "simulation" and not args.oracle),
@@ -938,6 +1078,7 @@ def main() -> int:
             "max_endpoint_arm_tracking_error_rad": max_endpoint_tracking_error,
             "cycle_trace": cycle_trace,
             "command_trace": command_trace,
+            "visual_alignment_trace": visual_alignment_trace,
             "policy_input": (
                 "recorded target chunk; policy bypassed"
                 if args.oracle else
@@ -947,6 +1088,56 @@ def main() -> int:
                 "same predicted waypoints; robot-time timestamps uniformly stretched; "
                 "source dataset timestamps and labels unchanged"),
         }
+    if args.candidate_stream_out is not None:
+        if not candidate_rows["action"]:
+            raise ValueError("no two-distinct-frame candidate rows were recorded")
+        candidate_arrays = {
+            "image": np.stack(candidate_rows["image"]).astype(np.uint8),
+            "proprio": np.stack(candidate_rows["proprio"]).astype(np.float32),
+            "action": np.stack(candidate_rows["action"]).astype(np.float32),
+            "observation_timestamp": np.stack(
+                candidate_rows["observation_timestamp"]).astype(np.float64),
+            "action_timestamp": np.stack(
+                candidate_rows["action_timestamp"]).astype(np.float64),
+            "source_row": np.asarray(candidate_rows["source_row"], dtype=np.int64),
+        }
+        candidate_meta = {
+            "schema": SCHEMA,
+            "status": "CANDIDATE_NOT_TRAINING_READY",
+            "episode_id": args.candidate_stream_out.stem,
+            "source_episode": representative,
+            "source_dataset": str(args.data),
+            "source_oracle_report": str(report_path),
+            "source_registration": str(args.registration),
+            "source_visual_domain": str(args.visual_domain),
+            "source": "policy_free_mujoco_dynamic_counterfactual_pilot",
+            "object_offset_world_xy_m": [
+                float(args.object_offset_x_m), float(args.object_offset_y_m)],
+            "robot_start_is_fixed": True,
+            "observation_horizon": 2,
+            "action_horizon": 8,
+            "source_nominal_rate_hz": float(runtime_meta["rate_hz"]),
+            "source_time_preserved": False,
+            "observation_timestamps": "measured MuJoCo simulation time",
+            "action_timestamps": (
+                "planned future waypoint time after per-cycle dynamic retiming; "
+                "not realized state timestamps"),
+            "action_semantics": (
+                "recorded relative target chunk shifted once in world by object "
+                "offset and re-expressed from current actual TCP; absolute gap "
+                "unchanged from source"),
+            "simulation_grip_preload_m": args.grip_preload_m,
+            "preload_applied_to_label": False,
+            "synthetic_ground_truth_images": True,
+            "human_demonstration": False,
+            "training_ready": False,
+            "success_label": "unverified",
+            "physical_registration_validated": False,
+        }
+        write_episode(args.candidate_stream_out, candidate_arrays, candidate_meta)
+        result["candidate_stream"] = str(args.candidate_stream_out)
+        result["candidate_stream_rows"] = len(candidate_arrays["action"])
+        result["candidate_stream_training_ready"] = False
     if not args.no_video:
         _save_gif(frames, args.out, fps=max(1, round(
             float(cfg["control"]["rate_hz"]) / args.capture_every)))

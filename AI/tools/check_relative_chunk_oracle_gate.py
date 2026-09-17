@@ -18,16 +18,43 @@ from gate_relative_chunk_oracle import (
 )
 from render_relative_chunk_rollout import (
     MAX_DIAGNOSTIC_OBJECT_OFFSET_M,
+    _detected_bbox_norm,
     _diagnostic_object_xyz,
     _episode_approach_start,
     _interpolated_joint_target,
     _perturb_policy_images,
+    _requires_env_render,
     _registration,
     _stable_side_grasp_success,
 )
 
 
 class Tests(unittest.TestCase):
+    def test_no_video_keeps_simulation_rgb_for_learned_policy(self) -> None:
+        self.assertTrue(_requires_env_render(
+            no_video=True, oracle=False, observation_source="simulation"))
+        self.assertFalse(_requires_env_render(
+            no_video=True, oracle=True, observation_source="simulation"))
+        self.assertFalse(_requires_env_render(
+            no_video=True, oracle=False, observation_source="dataset"))
+        self.assertTrue(_requires_env_render(
+            no_video=False, oracle=True, observation_source="dataset"))
+        self.assertTrue(_requires_env_render(
+            no_video=True, oracle=True, observation_source="dataset",
+            measure_visual_alignment=True))
+        self.assertTrue(_requires_env_render(
+            no_video=True, oracle=True, observation_source="simulation",
+            record_candidate_stream=True))
+
+    def test_visual_alignment_bbox_is_normalised(self) -> None:
+        image = np.zeros((3, 10, 20), dtype=np.uint8)
+        image[0, 2:8, 5:15] = 245
+        image[1, 2:8, 5:15] = 180
+        image[2, 2:8, 5:15] = 10
+        bbox = _detected_bbox_norm(image)
+        self.assertIsNotNone(bbox)
+        np.testing.assert_allclose(bbox, [0.5, 0.5, 0.5, 0.6])
+
     def test_diagnostic_object_offset_moves_only_the_object(self) -> None:
         payload = {
             "object_xyz_m": np.asarray([0.4, 0.0, 0.03835]),
