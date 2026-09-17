@@ -51,12 +51,16 @@ _EVENT_COMMAND = "robot.command"
 
 class BEClient:
     def __init__(self, base_url: str, device_id: str, *, token: str | None = None,
-                 connect_timeout: float = 10.0, reconnect_backoff: float = 3.0):
+                 connect_timeout: float = 10.0, reconnect_backoff: float = 3.0,
+                 max_reconnect_backoff: float = 30.0):
         self.api = base_url.rstrip("/") + "/api/v1"
         self.device_id = device_id
         self.token = token
         self.connect_timeout = connect_timeout
         self.reconnect_backoff = reconnect_backoff
+        self.max_reconnect_backoff = max_reconnect_backoff
+        # 401 시 토큰 재발급 콜백(오케스트레이터가 secret으로 주입). 없으면 재시도 안 함.
+        self.reauth: Callable[[], None] | None = None
 
     def _headers(self) -> dict[str, str]:
         h = {}
@@ -88,6 +92,19 @@ class BEClient:
         body = resp.json()
         return body.get("data", body) if isinstance(body, dict) else body
 
+    def _request(self, method: str, url: str, **kw):
+        """인증 요청. 401이면 reauth(토큰 재발급) 후 1회 재시도. httpx.Response 반환."""
+        self._require_httpx()
+        r = httpx.request(method, url, headers=self._headers(), **kw)
+        if r.status_code == 401 and self.reauth:
+            try:
+                self.reauth()
+            except Exception as e:  # noqa: BLE001 — 재발급 실패면 원래 401 반환
+                print(f"[BEClient] 401 토큰 재발급 실패: {e}")
+                return r
+            r = httpx.request(method, url, headers=self._headers(), **kw)
+        return r
+
     # ── 명령 수신 (SSE, BE→젯슨) ────────────────────────────────────────
     def stream_commands(self, on_command: Callable[[dict], None],
                         should_stop: Callable[[], bool]) -> None:
@@ -99,20 +116,25 @@ class BEClient:
         """
         self._require_httpx()
         url = f"{self.api}/robots/me/command-stream"
-        headers = {**self._headers(), "Accept": "text/event-stream"}
+        backoff = self.reconnect_backoff
 
         while not should_stop():
+            headers = {**self._headers(), "Accept": "text/event-stream"}  # 토큰 최신값
             try:
                 timeout = httpx.Timeout(self.connect_timeout, read=None)
                 with httpx.Client(timeout=timeout) as client:
                     with client.stream("GET", url, headers=headers) as resp:
+                        if resp.status_code == 401 and self.reauth:
+                            self.reauth()          # 토큰 만료 → 재발급 후 재연결
                         resp.raise_for_status()
+                        backoff = self.reconnect_backoff   # 연결 성공 → 백오프 리셋
                         self._parse_sse(resp.iter_lines(), on_command, should_stop)
             except Exception as e:  # noqa: BLE001 — 어떤 오류든 재연결로 흡수
                 if should_stop():
                     break
-                print(f"[BEClient] command-stream 오류, {self.reconnect_backoff}s 후 재시도: {e}")
-                time.sleep(self.reconnect_backoff)
+                print(f"[BEClient] command-stream 오류, {backoff:.0f}s 후 재시도: {e}")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, self.max_reconnect_backoff)  # 지수 백오프
 
     @staticmethod
     def _parse_sse(lines, on_command: Callable[[dict], None],
@@ -148,7 +170,7 @@ class BEClient:
         body = {"firmwareVersion": firmware, "runtimeVersion": runtime,
                 "contractVersion": contract}
         try:
-            r = httpx.post(url, json=body, headers=self._headers(), timeout=10.0)
+            r = self._request("POST", url, json=body, timeout=10.0)
             r.raise_for_status()
             return self._unwrap(r)
         except Exception as e:  # noqa: BLE001
@@ -160,7 +182,7 @@ class BEClient:
         """GET pending manifest. 없으면 None(204)."""
         self._require_httpx()
         url = f"{self.api}/robots/me/deployments/pending"
-        r = httpx.get(url, headers=self._headers(), timeout=15.0)
+        r = self._request("GET", url, timeout=15.0)
         if r.status_code == 204:
             return None
         r.raise_for_status()
@@ -168,9 +190,8 @@ class BEClient:
 
     def renew_manifest(self, deployment_id: str) -> dict:
         """만료된 S3 URL 재발급 (JETSON-02)."""
-        self._require_httpx()
         url = f"{self.api}/robots/me/deployments/{deployment_id}/manifest"
-        r = httpx.post(url, headers=self._headers(), timeout=15.0)
+        r = self._request("POST", url, timeout=15.0)
         r.raise_for_status()
         return self._unwrap(r)
 
@@ -199,15 +220,25 @@ class BEClient:
             body["error"] = error       # {code, message, recoveryAction?}
         return self._patch(f"/robots/me/executions/{execution_id}", body, "실행")
 
-    def _patch(self, path: str, body: dict, what: str) -> bool:
-        self._require_httpx()
-        try:
-            r = httpx.patch(f"{self.api}{path}", json=body,
-                            headers=self._headers(), timeout=10.0)
-            return 200 <= r.status_code < 300
-        except Exception as e:  # noqa: BLE001
-            print(f"[BEClient] {what} 리포트 실패: {e}")
-            return False
+    def _patch(self, path: str, body: dict, what: str,
+               *, retries: int = 3, backoff: float = 1.0) -> bool:
+        """PATCH 리포트. 같은 body(동일 reportId·sequence·payload)로 재시도 →
+        서버가 멱등 처리. 5xx·네트워크만 재시도, 4xx(409 STATE_CONFLICT 등)는 즉시 종료."""
+        url = f"{self.api}{path}"
+        for attempt in range(1, retries + 1):
+            try:
+                r = self._request("PATCH", url, json=body, timeout=10.0)
+                if 200 <= r.status_code < 300:
+                    return True
+                if 400 <= r.status_code < 500:   # 거부는 재시도 무의미
+                    print(f"[BEClient] {what} 리포트 거부 {r.status_code}: {body.get('status')}")
+                    return False
+                print(f"[BEClient] {what} 리포트 {r.status_code}({attempt}/{retries})")
+            except Exception as e:  # noqa: BLE001 — 네트워크 오류만 재시도
+                print(f"[BEClient] {what} 리포트 실패({attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(backoff * attempt)
+        return False
 
     # ── 모델 다운로드 (S3 presigned) ────────────────────────────────────
     def download(self, url: str, dest_path: str) -> None:

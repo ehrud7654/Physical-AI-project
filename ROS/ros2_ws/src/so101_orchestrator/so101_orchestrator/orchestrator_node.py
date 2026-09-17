@@ -52,6 +52,9 @@ class OrchestratorNode(Node):
         os.makedirs(self._ckpt_dir, exist_ok=True)
 
         self._be = BEClient(base_url, device_id, token=token)
+        # 401 시 재발급 훅 — secret 있을 때만. be_client가 모든 요청·SSE에서 이걸로 재시도.
+        if self._device_secret:
+            self._be.reauth = lambda: self._be.fetch_device_token(self._device_secret)
         # 고정 token 없으면 secret 으로 발급 + 주기 재발급 (900s 만료 전에).
         if not token and self._device_secret:
             period = self._renew_token(initial=True)
@@ -62,6 +65,7 @@ class OrchestratorNode(Node):
         self._estop_pub = self.create_publisher(Bool, "/estop", 10)
 
         self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
+        self._seen_cmds: set[str] = set()       # commandId 중복 실행 차단(세션 한정, 재시작시 리셋)
         self._cmd_q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         self._sse_thread = threading.Thread(target=self._run_sse, daemon=True)
@@ -99,7 +103,14 @@ class OrchestratorNode(Node):
 
     def _handle(self, cmd: dict):
         ctype = cmd.get("type")
-        self.get_logger().info(f"BE 명령: {ctype} (commandId={cmd.get('commandId')})")
+        cid = cmd.get("commandId")
+        # commandId 중복 실행 차단 — BE가 ACK 전까지 같은 명령 재전송하므로 필수.
+        if cid is not None:
+            if cid in self._seen_cmds:
+                self.get_logger().info(f"중복 명령 무시: {ctype} (commandId={cid})")
+                return
+            self._seen_cmds.add(cid)   # ponytail: 세션 한정 무제한 set, 재시작시 리셋(journal은 후속)
+        self.get_logger().info(f"BE 명령: {ctype} (commandId={cid})")
         if ctype == bc.CMD_APPLY_DEPLOYMENT:
             self._apply_deployment(cmd)
         elif ctype == bc.CMD_EXECUTE_TASK:
