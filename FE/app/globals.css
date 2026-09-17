@@ -2217,3 +2217,17 @@ button.device-card-content{cursor:pointer}
 
 /* 동작 목록 정렬 드롭다운 (S15P21A103-175) — 검색창 오른쪽, 툴바 컨트롤 높이(38px)와 통일 */
 .skill-sort-select,.work-sort-select{flex:0 0 auto;height:38px;min-height:38px;padding:0 12px;border:1px solid var(--product-line-strong);border-radius:9px;background:#fff;color:var(--product-ink);font-size:14px}
+
+/* 동작 상세 (S15P21A103-176) — 헤더 메타, 학습 현황 카드, 접이식 수집 데이터 패널 */
+.skill-detail-description .text-button{margin-left:6px;font-size:13px}
+.skill-detail-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0 0!important;color:var(--product-muted);font-size:13px}
+.skill-detail-section{margin-bottom:22px}
+.skill-data-panel{padding:0}
+.skill-data-panel>summary{display:flex;align-items:center;gap:12px;padding:20px 24px;cursor:pointer;list-style:none;font-size:15px;font-weight:600}
+.skill-data-panel>summary::-webkit-details-marker{display:none}
+.skill-data-panel>summary .skill-data-toggle{margin-left:auto;color:var(--product-muted);transition:transform .15s}
+.skill-data-panel[open]>summary .skill-data-toggle{transform:rotate(180deg)}
+.skill-data-list{padding:0 24px 16px}
+.skill-data-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 1fr .9fr;gap:14px;align-items:center;padding:14px 4px;border-top:1px solid var(--product-line);font-size:14px}
+.skill-data-row.header{color:var(--product-muted);font-size:13px;font-weight:500;border-top:0}
+@media(max-width:680px){.skill-data-row{grid-template-columns:1fr 1fr}.skill-data-row.header{display:none}}
