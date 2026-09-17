@@ -2,6 +2,7 @@ package com.anssa8bu.ssafy.deployment.repository;
 
 import com.anssa8bu.ssafy.deployment.entity.*;
 import java.util.*;
+import java.time.Instant;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface DeploymentRepository extends JpaRepository<Deployment, UUID> {
@@ -13,4 +14,6 @@ public interface DeploymentRepository extends JpaRepository<Deployment, UUID> {
 
   Optional<Deployment> findFirstByRobotIdAndStatusInOrderByCreatedAtAsc(
       UUID robotId, Collection<DeploymentStatus> statuses);
+
+  List<Deployment> findAllByStatusAndCreatedAtBefore(DeploymentStatus status, Instant createdAt);
 }

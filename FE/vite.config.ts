@@ -1,7 +1,7 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import hostingConfig from './.openai/hosting.json';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -34,7 +34,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ mode }) => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -44,11 +44,34 @@ export default defineConfig(async () => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
+  // 로컬 FE에서 원격 BE를 쓸 때(CORS 회피용, dev 서버 전용): `.env.local`에
+  // DEV_API_PROXY=http://<be-host> 와 NEXT_PUBLIC_API_BASE_URL=/api/v1 을 두면
+  // /api 요청을 그 호스트로 프록시한다. 미설정 시 아무 동작도 하지 않는다.
+  const proxyTarget = process.env.DEV_API_PROXY ?? loadEnv(mode, process.cwd(), '').DEV_API_PROXY;
+
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
+      ...(proxyTarget
+        ? {
+            proxy: {
+              '/api': {
+                target: proxyTarget,
+                changeOrigin: true,
+                // 실서버 CORS 허용목록엔 프로덕션 origin만 있어 로컬 origin은 403이 난다.
+                // dev 프록시에서 Origin/Referer를 떼어 same-origin 요청처럼 보이게 한다.
+                configure: (proxy) => {
+                  proxy.on('proxyReq', (proxyReq) => {
+                    proxyReq.removeHeader('origin');
+                    proxyReq.removeHeader('referer');
+                  });
+                },
+              },
+            },
+          }
+        : {}),
+    },
     plugins: [
       vinext(),
       sites(),

@@ -1,0 +1,78 @@
+'use client';
+
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { AuthenticatedUser } from '@/types';
+import { logout as clearAuthentication, restoreAuthentication } from '@/services';
+import { SESSION_EXPIRED_EVENT } from '@/services/client';
+import { useAppStore } from '@/hooks/useAppStore';
+
+interface AuthState {
+  authenticated: boolean;
+  initializing: boolean;
+  currentUser: AuthenticatedUser | null;
+  currentUserId: string;
+  sessionExpiredMessage: string;
+  login: (user: AuthenticatedUser) => void;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { resetLearningDraft } = useAppStore();
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState('');
+
+  useEffect(() => {
+    const restoredUser = restoreAuthentication();
+    if (restoredUser) {
+      setCurrentUser(restoredUser);
+      setAuthenticated(true);
+    }
+    setInitializing(false);
+  }, []);
+
+  const login = useCallback((user: AuthenticatedUser) => {
+    setCurrentUser(user);
+    setAuthenticated(true);
+    setSessionExpiredMessage('');
+  }, []);
+
+  const logout = useCallback(() => {
+    clearAuthentication();
+    setCurrentUser(null);
+    setAuthenticated(false);
+    setSessionExpiredMessage('');
+    router.push('/');
+  }, [router]);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      clearAuthentication();
+      resetLearningDraft();
+      setCurrentUser(null);
+      setAuthenticated(false);
+      setSessionExpiredMessage('로그인 시간이 만료되어 자동으로 로그아웃됐어요. 다시 로그인해 주세요.');
+      router.replace('/');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, [resetLearningDraft, router]);
+
+  const value = useMemo<AuthState>(
+    () => ({ authenticated, initializing, currentUser, currentUserId: currentUser?.name ?? 'admin01', sessionExpiredMessage, login, logout }),
+    [authenticated, initializing, currentUser, sessionExpiredMessage, login, logout],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthState {
+  const auth = useContext(AuthContext);
+  if (!auth) throw new Error('useAuth는 AuthProvider 안에서만 사용할 수 있어요.');
+  return auth;
+}
