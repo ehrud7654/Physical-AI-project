@@ -156,7 +156,7 @@ Jetson → 자신의 pending Deployment manifest 요청
 | 서비스 | 제공·호출 계약 |
 |---|---|
 | EC2 Spring Boot | 기존 /api/v1 제공, 대기 큐·lease·최종 업무 상태·게이트 관리 |
-| GPU Spring Boot | /ingest/v1 제공, GPU-01~07·INGEST-03·PURGE-01~03 호출, FastAPI 제어 및 S3 업로드 |
+| GPU Spring Boot | GPU-01~07·PURGE-01~03 호출, S3 Episode 다운로드, FastAPI 제어 및 CKPT S3 업로드 |
 | FastAPI + 별도 학습 프로세스 | GPU 내부 실행·조회·취소·임대 API 제공 (22절), 직접 EC2 claim·DB 접근 없음 |
 | 시뮬레이션·검증 worker | GATE-01 직접 호출, EC2가 결과를 검증해 gatePassed·배포 자격 관리 |
 
@@ -674,9 +674,9 @@ type RobotExecution = {
 
 - Public SkillVersion 응답에는 `checkpointBucket`과 `checkpointKey`를 노출하지 않는다.
 - CKPT 파일 정보는 크기·SHA-256·호환성만 반환하고, 실제 접근은 Deployment manifest의 서명 URL을 사용한다.
-- `receivedEpisodeCount`는 GPU가 중복 제거 후 정상 수신했다고 보고한 샘플 수다.
 - Episode 사용자 응답에는 StorageNode의 실제 mount 경로와 내부 `storageKey`를 노출하지 않는다.
-- 원본 Episode ZIP은 EC2 DB와 S3에 저장하지 않고 GPU 로컬 스토리지에만 정책 기간 동안 보관한다.
+- 원본 Episode ZIP은 S3에 저장하고 EC2 DB에는 bucket·object key·크기·SHA-256 등 메타데이터만 저장한다.
+- GPU의 로컬 Episode는 학습 실행용 임시 복사본이며 시스템 원본으로 취급하지 않는다.
 - ZIP 삭제 후에도 Episode, EpisodeArchive의 크기·해시·형식과 TrainingJob 사용 이력은 DB에 유지한다.
 
 ## 4. 인증 및 사용자 API
@@ -1350,13 +1350,6 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 
 - **1.5.0에서 폐기**한다. TrainingJob 종속 입력 세션 대신 `EPISODE-UPLOAD-01`을 사용한다.
 - 수집된 Episode는 `READY`가 된 뒤 `TRAIN-01`의 `episodeIds`로 선택하여 학습 입력에 포함한다.
-
-- 만료 후 재발급할 수 있다.
-- 실패:
-  - `409 WORKER_NOT_ASSIGNED`
-  - `409 INPUT_MODE_NOT_COLLECT_NEW`
-  - `409 STATE_CONFLICT`
-  - `503 GPU_UNAVAILABLE`
 
 ### TRAIN-05·06 폐기
 
@@ -2247,22 +2240,10 @@ data: {"trainingJobId":"job_31","skillId":"skill_12","status":"RUNNING","percent
 
 ## 16. 비동기 명령 및 큐 계약
 
-### 16.1 학습 입력 종료 명령
+### 16.1 학습 입력 종료 명령 폐기
 
-EC2가 GPU에 입력 종료를 요청할 때 heartbeat 응답 또는 내부 명령 큐를 사용한다.
-
-```json
-{
-  "commandId": "cmd_001",
-  "type": "CLOSE_TRAINING_INPUT",
-  "trainingJobId": "job_31",
-  "attempt": 1,
-  "occurredAt": "2026-09-01T04:40:00Z"
-}
-```
-
-- GPU는 명령을 지속 저장하거나 작업 상태에 반영한 뒤 ACK한다.
-- ACK는 입력 검증 완료가 아니다. 완료는 `INPUT_READY` 또는 `INPUT_INVALID` 이벤트로 확인한다.
+- 학습 입력은 작업 생성 시 S3의 검증 완료 Episode 목록으로 고정한다.
+- `CLOSE_TRAINING_INPUT` 명령과 heartbeat의 `closeInputRequested` 필드는 사용하지 않는다.
 
 ### 16.2 로컬 데이터 삭제 명령
 
@@ -2326,11 +2307,7 @@ DELETING → DELETE_FAILED → DELETING
 ### 17.2 TrainingJob
 
 ```text
-CREATED
-  → COLLECTING
-  → INPUT_VALIDATING
-  → INPUT_READY
-  → QUEUED
+QUEUED
   → PREPARING
   → RUNNING
   → MODEL_UPLOADING
@@ -2341,8 +2318,7 @@ CREATED
 비종료 상태 → FAILED
 ```
 
-- `COLLECT_NEW`는 `CREATED → COLLECTING` 흐름을 사용한다.
-- `EXISTING_EPISODES`는 입력 검증과 snapshot 고정 후 `QUEUED`에서 시작한다.
+- 모든 작업은 검증된 Episode와 snapshot을 고정한 뒤 `QUEUED`에서 시작한다.
 - `SUCCEEDED`는 SkillVersion이 `READY`로 검증된 뒤에만 가능하다.
 - 학습 계산 종료만으로 성공 처리하지 않는다.
 - 학습 종료 후 Episode를 즉시 삭제하지 않고 `lastUsedAt`과 보관 기한을 갱신한다.
@@ -2609,29 +2585,24 @@ retentionExpiresAt = MAX(
 
 ### 19.1 신규 Episode 수집 및 학습
 
-1. 사용자가 시스템 공통 Skill 카탈로그에서 `skillKey`를 선택한다.
-2. 사용자가 하이퍼파라미터 없이 `POST /training-jobs`로 학습 작업을 생성한다.
-3. EC2가 현재 ACTIVE TrainingProfile의 key·version·설정 snapshot·SHA-256을 작업에 고정한다.
-4. GPU worker가 작업을 claim하고 프로필 hash를 검증한 뒤 ingest 주소를 등록한다.
-5. UMI가 input session을 발급받는다.
-6. UMI가 `sessionId`, 최종 ZIP 크기·SHA-256과 Episode ZIP을 GPU ingest API로 전송한다.
-7. GPU가 `.part`에 streaming 저장하면서 SHA-256을 계산하고 ZIP 구조·JSON·CSV·프레임·시간축·품질을 검증한다.
-8. 검증 성공 후 불투명 storage key로 atomic rename하고 Episode·EpisodeArchive를 EC2에 등록한다.
-9. GPU가 집계 진행을 EC2에 보고하고 웹은 REST/SSE로 표시한다.
-10. 사용자가 input-complete를 요청한다.
-11. GPU가 입력 Episode 목록을 검증하고 snapshot을 고정한 뒤 학습한다.
-12. GPU가 CKPT 업로드 세션을 발급받는다.
-13. GPU가 CKPT를 고유한 S3 key에 업로드한다.
-14. GPU가 profile key·version·config SHA-256을 포함한 CKPT 완료 메타데이터를 EC2에 전달한다.
-15. EC2가 S3 객체·SHA-256·CKPT 계약과 학습 설정 hash 일치를 검증한다.
-16. SkillVersion이 READY가 되고 TrainingJob이 SUCCEEDED가 된다.
-17. Episode의 `lastUsedAt`과 `retentionExpiresAt`을 정책에 따라 갱신한다.
-18. 검증 워커가 rollout 결과를 보고하고 백엔드가 `gate.passed`를 계산한다.
+1. UMI가 Episode ZIP을 S3에 직접 업로드하고 EC2 검증을 완료한다.
+2. 사용자가 Skill과 `READY` Episode 목록을 선택한다.
+3. 사용자가 하이퍼파라미터 없이 `POST /training-jobs`로 학습 작업을 생성한다.
+4. EC2가 Episode snapshot과 ACTIVE TrainingProfile의 key·version·설정 SHA-256을 고정한다.
+5. GPU worker가 작업을 claim하고 Presigned GET URL로 Episode를 다운로드한다.
+6. GPU가 크기·SHA-256·archive 계약을 재검증한 뒤 FastAPI 학습을 실행한다.
+7. GPU가 진행 이벤트를 EC2에 보고한다.
+8. GPU가 CKPT 업로드 세션을 발급받고 S3에 업로드한다.
+9. GPU가 전체 metadata envelope와 CKPT 완료 정보를 EC2에 전달한다.
+10. EC2가 S3 객체·SHA-256·CKPT 구조·RobotProfile·TrainingProfile 일치를 검증한다.
+11. SkillVersion이 READY가 되고 TrainingJob이 SUCCEEDED가 된다.
+12. Episode의 `lastUsedAt`과 `retentionExpiresAt`을 정책에 따라 갱신한다.
+13. 검증 워커가 rollout 결과를 보고하고 백엔드가 `gate.passed`를 계산한다.
 
 ### 19.2 보관 Episode 재학습
 
 1. 사용자가 `READY` Episode 목록을 조회한다.
-2. `inputMode=EXISTING_EPISODES`와 정확한 `episodeIds`로 새 TrainingJob을 생성한다.
+2. 정확한 `episodeIds`로 새 TrainingJob을 생성한다. `inputMode`는 서버가 `EXISTING_EPISODES`로 고정한다.
 3. EC2가 모든 Episode의 소유자, 상태, 실제 파일, StorageNode를 검증한다.
 4. Episode 목록과 입력 snapshot hash를 TrainingJob에 불변으로 고정한다.
 5. 데이터가 위치한 StorageNode의 GPU worker가 작업을 claim한다.
@@ -2738,17 +2709,17 @@ retentionExpiresAt = MAX(
 
 ---
 
-이 문서는 UMI 시연 원본을 무압축 Episode ZIP으로 GPU 로컬 스토리지에 정책 기간 동안 보관하고 CKPT는 S3에 영구 저장한다는 범위를 기준으로 작성했다. 학습 하이퍼파라미터는 사용자 요청에서 받지 않고 백엔드가 버전 있는 TrainingProfile로 고정하며, TrainingJob과 CKPT의 설정 SHA-256 일치를 검증한다. 보관 기간 안에는 READY Episode를 새 TrainingJob에 재사용할 수 있지만, 물리 ZIP 삭제 이후에는 메타데이터와 사용 이력만 조회할 수 있다.
+이 문서는 UMI 시연 원본을 무압축 Episode ZIP으로 S3에 정책 기간 동안 보관하고 CKPT도 S3에 저장한다는 범위를 기준으로 작성했다. 학습 하이퍼파라미터는 사용자 요청에서 받지 않고 백엔드가 버전 있는 TrainingProfile로 고정하며, TrainingJob과 CKPT의 설정 SHA-256 일치를 검증한다. 보관 기간 안에는 READY Episode를 새 TrainingJob에 재사용할 수 있지만, 물리 ZIP 삭제 이후에는 메타데이터와 사용 이력만 조회할 수 있다.
 ## 22. GPU Spring Boot ↔ FastAPI 학습 실행 계약
 
 ### 22.1 배치 및 책임
 
-EC2 Spring Boot가 학습 대기 큐·claim·lease·최종 상태와 배포 게이트를 관리한다. GPU Spring Boot가 GPU-01~07, INGEST-03, PURGE-01~03의 EC2 호출 주체다. INGEST-01~02는 GPU Spring Boot가 제공한다. Python은 EC2 PostgreSQL에 직접 접근하거나 EC2 작업을 별도로 claim하지 않는다.
+EC2 Spring Boot가 학습 대기 큐·claim·lease·최종 상태와 배포 게이트를 관리한다. GPU Spring Boot가 GPU-01~07·PURGE-01~03의 EC2 호출 주체이며 S3에서 Episode를 다운로드한다. Python은 EC2 PostgreSQL에 직접 접근하거나 EC2 작업을 별도로 claim하지 않는다.
 
 | 구성 요소 | 책임 |
 |---|---|
 | EC2 Spring Boot | TrainingJob·입력 snapshot·TrainingProfile·lease·SkillVersion·게이트·Outbox·SSE |
-| GPU Spring Boot | UMI ZIP 수신·검증·저장, EC2 claim·heartbeat, Python 실행 제어, 진행 보고, CKPT S3 업로드·완료 보고, 원본 삭제 |
+| GPU Spring Boot | S3 Episode 다운로드·재검증, EC2 claim·heartbeat, Python 실행 제어, 진행 보고, CKPT S3 업로드·완료 보고, 로컬 복사본 정리 |
 | FastAPI | 실행 접수·조회·취소·실행 임대 관리, 로컬 실행 기록 복구 |
 | 별도 Python 프로세스 | 전처리·고정 설정 학습·진행 기록·CKPT 생성 |
 | 시뮬레이션·검증 worker | 평가 계산 및 GATE-01 직접 보고, EC2가 검증·저장·배포 판정 |
