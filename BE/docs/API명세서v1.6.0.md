@@ -21,6 +21,7 @@
 | 노드 API | GPU-06 StorageNode 등록과 GPU-07 heartbeat를 구현 계약으로 확정한다. |
 | Lease 복구 | 만료된 할당은 주기적으로 회수하여 attempt 증가 후 재대기하거나 한도 초과 시 실패 처리한다. |
 | Redis | 학습 lease는 Redis에 보조 캐시하되 PostgreSQL을 최종 판정 기준으로 유지한다. |
+| GPU claim polling | GPU Spring Boot는 StorageNode 등록 후 유휴 슬롯별로 claim을 polling하고, 확보한 할당의 lease를 heartbeat로 유지한다. |
 
 ## 1.5.0 변경 요약
 
@@ -1480,6 +1481,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
           "episodeId": "episode_100",
           "sessionId": "01J7ABCDEF123456789XYZW000",
           "qualityStatus": "VALID",
+          "contractVersion": "episode-archive-v1",
           "archive": {
             "downloadUrl": "https://s3.example.com/presigned-get-url",
             "expiresAt": "2026-09-15T01:15:00Z",
@@ -1512,6 +1514,17 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - Claim 전에 `storageNodeId`가 요청 Worker 소유의 `LOCAL`, `ONLINE` 노드인지와 heartbeat 유효성, 가용 저장 공간, GPU 메모리를 확인한다.
 - 지원 알고리즘 조건은 후보 조회 쿼리에 적용하고, 원자적 선택에는 `FOR UPDATE SKIP LOCKED`를 사용한다.
 - 만료 Lease는 복구 작업이 attempt를 증가시켜 재대기하며 최대 attempt 초과 시 `FAILED`로 종료한다.
+
+#### GPU Spring Boot claim polling 규칙
+
+- StorageNode 등록이 완료되기 전에는 claim하지 않는다.
+- `GPU_CLAIM_POLLING_ENABLED`가 `true`일 때만 polling하며, 초기 지연과 주기는 각각 `GPU_CLAIM_POLLING_INITIAL_DELAY`, `GPU_CLAIM_POLLING_INTERVAL`로 설정한다.
+- `gpuIndex=0..maxGpuSlots-1` 중 로컬에서 점유되지 않은 슬롯만 요청한다. 같은 슬롯의 polling을 중첩 실행하지 않는다.
+- `204 No Content`는 오류가 아니라 대기 작업이 없는 정상 상태이며 경고 로그를 남기지 않는다.
+- 성공한 할당은 `(trainingJobId, attempt, leaseToken, gpuIndex, leaseExpiresAt)`으로 메모리에 추적하고 GPU-02 heartbeat를 보낸다.
+- heartbeat가 반환한 `leaseExpiresAt`으로 로컬 값을 갱신한다. `cancelRequested=true`이면 신규 작업을 claim하지 않고 실행 계층의 취소 완료 처리까지 해당 슬롯을 유지한다.
+- heartbeat가 실패하면 로컬 슬롯을 해제한다. EC2 PostgreSQL lease가 최종 기준이므로 다음 polling은 EC2가 반환하는 기존 유효 할당 또는 재할당 결과를 따른다.
+- claim 응답의 Episode에는 `contractVersion`을 포함한다. GPU는 이를 다운로드한 로컬 파일의 상대 `storageKey`와 함께 FastAPI RUN-01 입력으로 전달한다.
 
 ### GPU-02 작업 heartbeat
 

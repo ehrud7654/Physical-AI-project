@@ -52,7 +52,11 @@ public final class TrainingJobModels {
       String downloadUrl, Instant expiresAt, String contentType, long sizeBytes, String sha256) {}
 
   public record EpisodeData(
-      UUID episodeId, String sessionId, String qualityStatus, ArchiveData archive) {}
+      UUID episodeId,
+      String sessionId,
+      String qualityStatus,
+      String contractVersion,
+      ArchiveData archive) {}
 
   public record JobData(
       UUID id,

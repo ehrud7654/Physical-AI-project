@@ -18,7 +18,7 @@ public final class GpuTrainingApiModels {
       Map<String,Object> hyperparameters, String configSha256) {}
   public record ArchiveData(String downloadUrl, Instant expiresAt, String contentType,
       long sizeBytes, String sha256) {}
-  public record EpisodeData(UUID episodeId, String sessionId, String qualityStatus,
+  public record EpisodeData(UUID episodeId, String sessionId, String qualityStatus, String contractVersion,
       ArchiveData archive) {}
   public record JobData(UUID id, String skillKey, TrainingInputMode inputMode,
       TrainingProfileData trainingProfile, Map<String,Object> datasetQuery,

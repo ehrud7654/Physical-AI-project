@@ -13,4 +13,9 @@ public record WorkerProperties(
     Path storageRoot,
     Set<String> supportedAlgorithms,
     int maxGpuSlots,
-    Duration storageHeartbeatInterval) {}
+    Duration storageHeartbeatInterval,
+    boolean claimPollingEnabled,
+    Duration claimPollingInitialDelay,
+    Duration claimPollingInterval,
+    long claimAvailableMemoryMib,
+    String gitRevision) {}
