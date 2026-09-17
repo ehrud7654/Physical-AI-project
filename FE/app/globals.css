@@ -2214,3 +2214,6 @@ button.device-card-content{cursor:pointer}
 .app-shell select,.app-shell input,.app-shell textarea{font-size:14px}
 .app-shell .training-controls select,.app-shell .training-controls .refresh-button,.app-shell .training-controls .secondary-button,.app-shell .training-controls .danger-button,.app-shell .workflow-library-toolbar>.list-delete-button,.app-shell .workflow-library-toolbar .workflow-search input,.app-shell .device-sort select,.app-shell .device-delete-action,.app-shell .data-list-controls select{height:38px!important;min-height:38px!important}
 .app-shell .skill-create-modal label{font-size:13px}
+
+/* 동작 목록 정렬 드롭다운 (S15P21A103-175) — 검색창 오른쪽, 툴바 컨트롤 높이(38px)와 통일 */
+.skill-sort-select{flex:0 0 auto;height:38px;min-height:38px;padding:0 12px;border:1px solid var(--product-line-strong);border-radius:9px;background:#fff;color:var(--product-ink);font-size:14px}

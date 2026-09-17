@@ -7,6 +7,31 @@ import { createCustomSkill, fetchSkillOverviews, updateSkillDescription } from '
 import { formatApiDateTimeParts } from '@/lib/workflow';
 import { Pagination } from '@/components/Pagination';
 import { usePagination } from '@/hooks/usePagination';
+
+type SortKey = 'recent' | 'oldest' | 'name' | 'status';
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'recent', label: '최신 업데이트순' },
+  { value: 'oldest', label: '오래된 업데이트순' },
+  { value: 'name', label: '이름순' },
+  { value: 'status', label: '상태순' },
+];
+/** 배포 상태 정렬 순서 — 실행 가능이 맨 앞, 검증 실패가 맨 뒤. */
+const STATUS_ORDER: Record<SkillOverview['deploymentStatus'], number> = { DEPLOYED: 0, TRAINING: 1, COLLECTING: 2, PLANNED: 3, GATE_FAILED: 4 };
+/** 동작 목록 정렬. 버전이 없는 항목(생성 시각 null)은 날짜 정렬에서 항상 뒤로 보낸다. */
+function sortSkills(items: SkillOverview[], sort: SortKey): SkillOverview[] {
+  const byName = (a: SkillOverview, b: SkillOverview) => a.displayName.localeCompare(b.displayName, 'ko-KR');
+  const ts = (s: SkillOverview) => (s.latestVersionCreatedAt ? Date.parse(s.latestVersionCreatedAt) : null);
+  return [...items].sort((a, b) => {
+    if (sort === 'name') return byName(a, b);
+    if (sort === 'status') return STATUS_ORDER[a.deploymentStatus] - STATUS_ORDER[b.deploymentStatus] || byName(a, b);
+    const ta = ts(a), tb = ts(b);
+    if (ta === null && tb === null) return byName(a, b);
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return sort === 'recent' ? tb - ta : ta - tb;
+  });
+}
+
 export function SkillListView({ onToast }: { onToast: (message: string) => void }) {
   const [skills, setSkills] = useState<SkillOverview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,11 +46,13 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
   const [editError, setEditError] = useState('');
   const [updating, setUpdating] = useState(false);
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('recent');
   const keyword = query.trim().toLowerCase();
   const filtered = useMemo(() => keyword
     ? skills.filter((skill) => skill.displayName.toLowerCase().includes(keyword) || (skill.description ?? '').toLowerCase().includes(keyword))
     : skills, [skills, keyword]);
-  const { page, pageCount, pageItems, setPage } = usePagination(filtered);
+  const sorted = useMemo(() => sortSkills(filtered, sort), [filtered, sort]);
+  const { page, pageCount, pageItems, setPage } = usePagination(sorted);
 
   const loadSkills = useCallback(async () => {
     setLoading(true);
@@ -101,8 +128,9 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
       </div>
       <button className="primary-button page-create-button" type="button" onClick={() => { setCreateError(''); setCreateOpen(true); }}>동작 추가</button>
     </div>
-    <section className="workflow-library-toolbar" aria-label="동작 검색">
+    <section className="workflow-library-toolbar" aria-label="동작 검색·정렬">
       <label className="workflow-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="동작 이름 또는 설명 검색" aria-label="동작 검색" /></label>
+      <select className="skill-sort-select" value={sort} onChange={(event) => setSort(event.target.value as SortKey)} aria-label="동작 정렬">{SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
     </section>
     <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table" aria-label="동작 목록">
