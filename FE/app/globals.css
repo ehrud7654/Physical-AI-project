@@ -2244,3 +2244,4 @@ button.device-card-content{cursor:pointer}
 
 /* 학습 상세 헤더 액션 버튼 — danger-button 기본 width:100%가 상세 헤딩에서 뭉개지는 것 교정 (S15P21A103-176) */
 .training-detail-actions .primary-button,.training-detail-actions .danger-button{width:auto!important;min-width:0;height:44px!important;min-height:44px!important;margin:0;padding:0 20px!important;white-space:nowrap;font-size:15px}
+.skill-data-row .skill-data-reason{grid-column:1/-1;margin-top:2px;color:#b42318;font-size:13px}

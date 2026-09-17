@@ -4,7 +4,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import type { SkillOverview, TrainingSkill } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 import { fetchSkillOverviews, fetchTrainingSkills, updateSkillDescription } from '@/services';
-import { datasetStatusMeta, deploymentStatusMeta } from '@/lib/datasets';
+import { datasetStatusMeta, deploymentStatusMeta, recoveryActionLabel } from '@/lib/datasets';
 import { Pagination } from '@/components/Pagination';
 import { usePagination } from '@/hooks/usePagination';
 
@@ -109,12 +109,13 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
       </summary>
       <div className="skill-data-list">
         {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>수집 시각</span><span>UMI</span><span>길이</span><span>상태</span><span>보관</span></div>}
-        {dataPage.pageItems.map((item) => { const meta = datasetStatusMeta[item.status]; return <div className="skill-data-row" key={item.id}>
+        {dataPage.pageItems.map((item) => { const meta = datasetStatusMeta[item.status]; const needsAttention = item.status === 'INVALID' || item.status === 'DELETE_FAILED'; return <div className="skill-data-row" key={item.id}>
           <span>{item.date}</span>
           <span>{item.umiId}</span>
           <span>{item.duration}</span>
           <span><span className={`dataset-status ${meta.className}`}><i />{meta.label}</span></span>
           <span>{item.retentionDays}일 남음</span>
+          {needsAttention && (item.blockingReasons[0] || item.recoveryAction !== 'NONE') && <small className="skill-data-reason">{item.blockingReasons[0]?.message ?? '확인이 필요해요.'}{item.recoveryAction !== 'NONE' ? ` · ${recoveryActionLabel[item.recoveryAction]}` : ''}</small>}
         </div>; })}
         {!skillDatasets.length && <p className="table-empty">아직 수집된 데이터가 없어요. 수집 앱에서 ‘{skill.displayName}’을 선택해 데이터를 수집해 주세요.</p>}
         <Pagination page={dataPage.page} pageCount={dataPage.pageCount} onChange={dataPage.setPage} />
