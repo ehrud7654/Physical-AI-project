@@ -9,10 +9,32 @@ import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { useAppStore } from '@/hooks/useAppStore';
 import { isSkillBlock, flattenWorkflowBlocks, formatWorkDuration, formatUpdatedAt, getWorkflowIssues } from '@/lib/workflow';
 import { ActiveRobotExecutionsCard } from '@/components/ActiveRobotExecutionsCard';
+
+type WorkSortKey = 'recent' | 'oldest' | 'name';
+const WORK_SORT_OPTIONS: { value: WorkSortKey; label: string }[] = [
+  { value: 'recent', label: '최근 수정순' },
+  { value: 'oldest', label: '오래된 수정순' },
+  { value: 'name', label: '이름순' },
+];
+/** 작업 목록 정렬. updatedAt이 비어있는 항목은 날짜 정렬에서 항상 뒤로 보낸다. */
+function sortWorks(items: SavedWork[], sort: WorkSortKey): SavedWork[] {
+  const byName = (a: SavedWork, b: SavedWork) => a.name.localeCompare(b.name, 'ko-KR');
+  const ts = (w: SavedWork) => (w.updatedAt ? Date.parse(w.updatedAt) : null);
+  return [...items].sort((a, b) => {
+    if (sort === 'name') return byName(a, b);
+    const ta = ts(a), tb = ts(b);
+    if (ta === null && tb === null) return byName(a, b);
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return sort === 'recent' ? tb - ta : ta - tb;
+  });
+}
+
 export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: string) => void; onToast: (message: string) => void }) {
   const { robots, savedWorks, deleteWorksById } = useAppStore();
   const [mobileDetail, setMobileDetail] = useState(false);
   const [query, setQuery] = useState('');
+  const [workSort, setWorkSort] = useState<WorkSortKey>('recent');
   const [selectedWorkId, setSelectedWorkId] = useState(savedWorks[0]?.id ?? '');
   const initialWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
   const [robotId, setRobotId] = useState(initialWork?.robotId || robots[0]?.id || '');
@@ -27,7 +49,8 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
     const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR');
     return !normalizedQuery || [work.name, ...blocks.map((block) => block.title)].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalizedQuery));
   });
-  const { page, pageCount, pageItems, setPage } = usePagination(filteredWorks);
+  const sortedWorks = sortWorks(filteredWorks, workSort);
+  const { page, pageCount, pageItems, setPage } = usePagination(sortedWorks);
 
   const selectedWork = savedWorks.find((work) => work.id === selectedWorkId) ?? savedWorks[0];
   const selectedRobot = robots.find((robot) => robot.id === robotId);
@@ -78,6 +101,7 @@ export function WorkflowLibraryView({ onEdit, onToast }: { onEdit: (workId: stri
     <section className="workflow-library-toolbar" aria-label="작업 검색">
       {selectingWorks && <div className="selection-summary"><input className="list-select-checkbox" type="checkbox" aria-label="작업 전체 선택" disabled={!filteredWorks.length} checked={filteredWorks.length > 0 && selectedWorkIds.length === filteredWorks.length} onChange={() => setSelectedWorkIds(selectedWorkIds.length === filteredWorks.length ? [] : filteredWorks.map(work => work.id))} /><span>{selectedWorkIds.length}개 선택됨</span></div>}
       <label className="workflow-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="작업명 또는 포함된 블록 검색" aria-label="저장된 작업 검색" /></label>
+      <select className="work-sort-select" value={workSort} onChange={(event) => setWorkSort(event.target.value as WorkSortKey)} aria-label="작업 정렬">{WORK_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
       <button className={`${selectingWorks ? 'danger-button' : 'secondary-button'} list-delete-button`} onClick={() => { if (!selectingWorks) setSelectingWorks(true); else if (selectedWorkIds.length) setDeleteWorksOpen(true); else setSelectingWorks(false); }}>삭제</button>
     </section>
 
