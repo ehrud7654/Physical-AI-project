@@ -46,6 +46,16 @@
       2.841206309382605
     ]
   },
+  "wrist_roll_installation": {
+    "reported_positive_stop_tick": 2864,
+    "reported_ticks_per_turn": 4096,
+    "reported_stop_upper_rad": 1.1320778214596032,
+    "first_bvh_intersection_sample_deg": 65.0,
+    "diagnostic_preflight_upper_rad": 1.0471975511965976,
+    "physical_stop_directly_verified": false,
+    "swept_clearance_verified": false,
+    "note": "60deg is a provisional offline IK screening cap below the first +65deg sampled mesh intersection, not a certified collision-free or motor-safe limit. The +64.86328125deg stop is recalculated from teammate-reported ticks using 4096 ticks/turn and awaits direct HW confirmation."
+  },
   "max_gap_m": 0.09,
   "gripper_state_meaning": "full_contact_surface_width_m",
   "direction": {

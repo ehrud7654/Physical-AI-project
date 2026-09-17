@@ -24,6 +24,7 @@ CHECKS = (
     "check_umi_arm_preflight.py",
     "check_umi_chunk_runtime.py",
     "check_umi_real_fk.py",
+    "check_umi_installation_limits.py",
     "check_umi_ros_adapter.py",
     "check_umi_handover_edges.py",
     "check_umi_ingestion.py",

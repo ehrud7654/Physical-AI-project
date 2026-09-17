@@ -14,7 +14,7 @@ forbidden; server GPU use is for training. No hardware/deployment approval
 follows from these simulation results.
 
 The EEF-relative-chunk-to-joint-command ownership is now recorded as a
-**D-AI-number-pending draft** in
+**D-AI-55 proposal, not yet approved**, in
 `AI/docs/DECISIONS_0917_relative_chunk_execution_boundary_draft.md`:
 Track B owns policy EEF output, Track A owns current-TCP anchoring/decode,
 five-axis IK and joint/gap chunk validation, and HW/ROS owns the downstream
@@ -23,6 +23,46 @@ and MuJoCo-oriented; the cross-system handoff is not complete. Dataset v10's
 alignment/IK `false` flags describe label generation, not the need for this
 runtime boundary. Relative targets anchor to `T_base_tcp_current`; this does
 not establish an independent physical object/workspace-to-base registration.
+The teammate corrected the reported wrist-roll stop to 738 ticks *
+360/4096 = +64.86328125deg (the earlier +66.42deg used a rounded tick
+size). This is close to the handoff mesh's first sampled bracket intersection
+(+65deg), not proof of swept clearance or a directly confirmed safe stop. The raw
+URDF limit remains untouched. An AI-side, config-driven +60deg **offline
+diagnostic cap** now screens IK through `umi.relative_robot_preflight.arm_ranges`;
+it is not a certified safe physical range. Direct HW stop/clearance checks and
+full ROS trajectory integration remain outstanding; motor repair alone does
+not authorise replay of simulator expert trajectories on hardware.
+The +60deg cap was rechecked locally with **policy-free** recorded-oracle
+replays on 2026-09-17: both v9 and v10 passed the same 14/14 scene-valid
+episodes under the v9 K=2 per-episode approach-start registration. The v10
+report is `AI/out/wristroll60_v10_oracle_gate_20260917.json` (v9 comparator:
+`AI/out/wristroll60_v9_oracle_gate_20260917.json`). These runs still use the
+simulation-only 2mm grip preload and validate one target per cycle, not the
+full 8-step chunk. The highest commanded wrist_roll in the v10 replay was
+0.05452rad (3.12deg), so this is a regression check, **not a stress test of
+the new upper bound**. The registration's common `start_arm_rad` itself has
+wrist_roll 1.62073rad and exceeds the +60deg cap; the successful replays use
+their separate per-episode approach starts. Do not use that common start for
+new executions without re-registration.
+An additional torch/ROS-free `AI/umi/joint_chunk_handoff.py` now assembles
+exactly eight preflighted arm commands into ordered J1-J5 `(8,5)` radians,
+absolute full-gap `(8,)` metres and retimed `(8,)` seconds. It independently
+checks the installed wrist-roll cap, gap contract, waypoint range, dynamic
+limits and caller-provided maximum time scale; four focused tests pass.
+Track B's official-UMI `evaluate.py` runs `absolute[1:5]` with
+`action_steps=4`, but v10's eight outputs are *all future targets* and index 0
+is t+0.1s, not current state. An offline prefix selector therefore uses
+v10 indices 0..3 for a nominal four-step/0.4s observe-execute-reobserve
+comparison; retiming can extend the actual interval. Track A's existing local
+MuJoCo diagnostic defaults to one executed future target. Do not transfer
+Track B's 1..4 slice to v10 or compare the two rollout rates as identical
+conditions. The D-AI-55 draft records both indexing conventions.
+This is an **offline interface artifact only**. HW's `BACKEND_INTERFACE.md`
+lists both `/arm_controller/joint_trajectory` topic and
+`/arm_controller/follow_joint_trajectory` action, while the repository has
+only a single-point topic helper. Confirm which transport will carry the
+eight-point chunk and how the separate gripper command is synchronized before
+implementing a sender; do not command physical motors from this handoff.
 
 - Real demonstration data: `umi_real_relative_20260911_v10`, 70 episodes,
   1,248 anchors, observation history 2 and future relative SE(3)+gap chunk 8.
@@ -59,15 +99,62 @@ not establish an independent physical object/workspace-to-base registration.
   nor demonstrate real-world visual localisation. Do not equate this 35/40 with
   the policy-free candidate-suite 35/40: the latter validates the full 8-step
   future and has a different denominator meaning.
+- A further local CPU paired-input probe used the earliest common source row
+  of each of the seven complete source episodes (28 paired offsets). Holding
+  proprio fixed while changing candidate RGB changed predicted 8-step
+  translation by a median 15.30mm, while the corresponding simulator-achieved
+  future target changed by 5.85mm; the episode-median cosine was only 0.011.
+  Changing proprio alone moved predictions by 0.077mm. The policy responds to
+  RGB, but the response is not aligned with the object-placement target in
+  this diagnostic. Candidate RGB also contains robot-pixel differences after
+  the first motion, so this is not a pure object-only image intervention.
+  Report: `AI/out/sim_relative_visual_position_v10_k4_summary_20260917.json`;
+  code/test: `AI/tools/probe_sim_relative_visual_position.py` and
+  `AI/tools/check_sim_relative_visual_position.py`.
+- The follow-up fixed-pose render removed that robot-pixel-motion confound:
+  for seven complete source episodes, the robot joints and wrist-camera pose
+  were held identical while only object XY was shifted by 0/±10mm. The same
+  v10 best-val checkpoint's final chunk-target displacement pointed in the
+  correct half-space in only 14/28 paired offsets, with 0/7 episodes correct
+  in all four directions; mean-filled images gave 7/28. This is a static H=2
+  first-chunk visual-localisation diagnostic, **not** closed-loop success or
+  physical validation. See
+  `AI/out/fixed_pose_object_only_v10_full_v2_20260917.json` and montage PNG;
+  source/test: `AI/tools/probe_fixed_pose_object_only.py` and
+  `AI/tools/check_fixed_pose_object_only.py`.
+- A moving-H=2, object-only held-out probe now uses two distinct robot/camera
+  snapshots 0.096s apart, then re-renders the exact same snapshots with only
+  object XY changed by 0/±10mm. A policy-free backoff IK audit found both
+  poses feasible in 3/7 source episodes at 10mm, 2/7 at 20mm, and 0/7 at
+  30mm (5mm target step; either 45/65mm open gap). In a narrower 10mm-backoff,
+  3mm-target-step probe, 4/7 held-out episodes supplied image pairs; the
+  normal checkpoint's terminal target pointed in the intended half-space for
+  7/16 paired object shifts, mean-filled images for 0/16, and 0/4 episodes
+  were correct in all four directions. Crucially, all four 0.096s approach
+  motions exceeded the **provisional acceleration limit** (36.1–36.8 vs
+  3.0rad/s²), despite speed being below 1.0rad/s. This is a non-executable,
+  near-contact first-chunk diagnostic, not a successful far-start or
+  closed-loop rollout. Report/montage:
+  `AI/out/moving_h2_object_only_v10_backoff10_step3_gap45_final_20260917.json`
+  and `.png`; audit:
+  `AI/out/moving_h2_backoff_ik_audit_20260917.json`; code/check:
+  `AI/tools/probe_moving_history_object_only.py`,
+  `AI/tools/audit_moving_h2_backoff_ik.py`, and
+  `AI/tools/check_moving_history_object_only.py`.
 
 Measurement and exact report paths are in
 `AI/docs/MEASURE_s22_mujoco_visual_alignment_0917.md`. The new source has
 targeted tests `AI/tools/check_sim_relative_10hz_{suite,audit,domain}.py`.
 Generated `AI/out` reports and NPZ/media are not source and should stay out of
-Git. Next substantive work is a stronger, episode-separated visual-localisation
-test (including controls for near-contact start/proprioception shortcuts),
-followed by rechecking camera and contact assumptions. Do not promote the
-synthetic candidates or current checkpoint to hardware claims.
+Git. Next substantive work is to resolve the far-start IK and acceleration
+gates with a policy-free, time-parameterised approach, **then** rerun the
+episode-separated moving-H=2 object-only test before closed-loop success
+claims. The current static and moving diagnostics did not show reliable
+four-direction tracking. Also measure real optical
+camera↔TCP, robot-base/workspace registration and requested gap↔actual pad
+separation, and approve collision/stop limits before any supervised hardware
+dry-run. Do not promote synthetic candidates or the current checkpoint to
+hardware claims or promise a deployment date.
 
 ## 0. Immediate account-transfer state (2026-09-15)
 

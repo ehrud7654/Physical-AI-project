@@ -83,3 +83,40 @@ monotonic clock을 함께 받아 전송 지연을 계산하고 런타임에는 m
 `/gripper_controller/commands`의 전체 gap(m) 한 값으로 분리한다. 실제 ROS 메시지
 인스턴스를 채우는 것까지 AI adapter가 담당하고, publish, watchdog, action cancel과
 E-stop은 상위 ROS 노드가 소유한다.
+
+## 설치된 폰 홀더의 손목 롤 한계 (2026-09-17 잠정)
+
+`configs/real/so101_ver1.json`의 `limits_rad`는 URDF 관절값을 그대로
+보존한다. 하지만 현재 v010 브래킷 메시가 +65°부터 교차하고, 팀원이
+정정한 모터 정지 계산은 738틱 × 360/4096 = +64.86328125°이므로
+이를 안전한 충돌 상한으로 쓸 수 없다. 별도
+`wrist_roll_installation.diagnostic_preflight_upper_rad=+60°`
+를 오프라인 `umi.relative_robot_preflight.arm_ranges()`에 적용한다.
+이 값은 확인된 안전 범위가 아니라 잠정 IK 후보 필터다. 실물 ROS
+송신에는 미검증 설치 제약을 안전 승인으로 사용하지 않는다. 근거와
+남은 계측은 `DECISIONS_0917_relative_chunk_execution_boundary_draft.md`
+(D-AI-55 제안)에 기록했다.
+
+## 8점 오프라인 handoff (2026-09-17)
+
+`umi.joint_chunk_handoff.prepare_joint_chunk_handoff`는 이미 IK·잔차 검사를
+마친 `ArmCommand` **정확히 8개**와 현재 관절/gap을 받아, 고정 J1~J5
+순서의 `(8,5)` rad, 접촉면 전체 gap `(8,)` m, 현재 상태 시점부터의
+목표 시각 `(8,)` s를 하나의 값으로 반환한다. 설치된 wrist_roll 상한은
+원 URDF 범위와 독립적으로 다시 적용하고, gap 계약 불일치·범위 초과·
+과도한 시간 확대는 전체 청크를 거부한다. 시간 확대는 명시된
+`max_time_scale` 이내에서만 계산하며 학습 라벨은 수정하지 않는다.
+
+이것은 **오프라인 자료 형식**이지 `FollowJointTrajectory` goal 송신기가
+아니다. 연속 충돌, 실제 servo 속도·가속도, gripper 동기화, stale state,
+tracking, E-stop은 검증하지 않는다. HW 문서는 action과 topic을 모두
+지원 경로로 적지만, 저장소 helper는 한 점 topic 형식뿐이다. 8점 실행에
+사용할 경로와 그리퍼 동기화는 미확정이다. 이 모듈의 테스트
+통과를 실물 구동 승인으로 해석하지 않는다.
+
+v10의 index 0은 관측 이후 첫 미래 목표이며 현재 자세가 아니다.
+`select_future_target_prefix(..., execute_steps=4)`는 8개 중 index
+`0..3`만 반환한다(원시간 10Hz 기준 0.1..0.4초). 트랙 B의 공식 UMI
+평가 코드가 쓰는 `absolute[1:5]`는 **다른 인덱스 규약**이므로 여기로
+복사하지 않는다. 시간 확대 후의 재관측 시점은 고정 0.4초가 아니라
+반환된 네 번째 목표 시각이며, 이 선택 함수도 ROS 송신을 하지 않는다.
