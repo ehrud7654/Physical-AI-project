@@ -46,6 +46,8 @@ def scene_valid(registration: dict[str, Any]) -> list[str]:
 
 
 def classify(report: dict[str, Any]) -> str:
+    if report.get("timing_error"):
+        return "timing_reject"
     if report.get("object_tipped") is True:
         return "object_tipped"
     if report.get("object_displaced") is True:
@@ -88,7 +90,11 @@ def main() -> int:
               "start is deliberately not shifted; repeat this option for each pair"),
     )
     ap.add_argument("--cycles", type=int, default=30)
+    ap.add_argument("--far-start-audit", type=Path)
+    ap.add_argument("--min-policy-cycles", type=int, default=1)
+    ap.add_argument("--max-policy-time-scale", type=float)
     ap.add_argument("--execute-steps", type=int, default=1)
+    ap.add_argument("--complete-execute-prefix", action="store_true")
     ap.add_argument("--validation-horizon-steps", type=int, default=1)
     ap.add_argument("--tracking-time-margin", type=float, default=1.0)
     ap.add_argument("--grip-preload-m", type=float, default=0.002)
@@ -96,6 +102,10 @@ def main() -> int:
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     object_offsets = args.object_offsets_m or [(0.0, 0.0)]
+    if args.far_start_audit is not None and (
+            object_offsets != [(0.0, 0.0)]
+            or args.max_policy_time_scale is None):
+        raise SystemExit("far-start suite requires nominal object and explicit time cap")
     if args.out.suffix.lower() != ".json" or args.out.exists():
         raise SystemExit("--out must be a new .json path")
     if not args.policy_ckpt.is_file():
@@ -141,7 +151,6 @@ def main() -> int:
                 "--observation-source", "simulation",
                 "--image-perturb", PERTURB[condition],
                 "--episode", episode,
-                "--use-registration-approach-start",
                 "--cycles", str(args.cycles),
                 "--execute-steps", str(args.execute_steps),
                 "--validation-horizon-steps", str(args.validation_horizon_steps),
@@ -155,6 +164,16 @@ def main() -> int:
                 "--visual-domain", str(args.visual_domain.resolve()),
                 "--out", str(pseudo),
             ]
+            if args.complete_execute_prefix:
+                command.append("--complete-execute-prefix")
+            if args.far_start_audit is None:
+                command.append("--use-registration-approach-start")
+            else:
+                command.extend([
+                    "--far-start-audit", str(args.far_start_audit.resolve()),
+                    "--min-policy-cycles", str(args.min_policy_cycles),
+                    "--max-policy-time-scale", str(args.max_policy_time_scale),
+                ])
             completed = subprocess.run(
                 command, cwd=AI_ROOT, capture_output=True, text=True, check=False)
             report_path = pseudo.with_suffix(".json")
@@ -174,6 +193,9 @@ def main() -> int:
                     "classification": classify(report),
                     "success": bool(report.get("stable_side_grasp_success")),
                     "geometry_error": report.get("geometry_error"),
+                    "timing_error": report.get("timing_error"),
+                    "executed_commands": report.get("executed_commands"),
+                    "completed_cycles": len(report.get("cycle_trace", [])),
                     "bilateral_contact": report.get("first_bilateral_contact_cycle") is not None,
                     "max_lift_height_m": report.get("max_lift_height_m"),
                     "closest_pinch_3d_m": report.get("closest_pinch_3d_m"),
@@ -196,6 +218,7 @@ def main() -> int:
             "wilson95": wilson(successes, total),
             "bilateral_contacts": sum(row.get("bilateral_contact") is True for row in rows),
             "geometry_errors": sum(bool(row.get("geometry_error")) for row in rows),
+            "timing_rejections": sum(bool(row.get("timing_error")) for row in rows),
             "runner_errors": sum(row["classification"] == "runner_error" for row in rows),
             "classification_counts": {
                 label: sum(row["classification"] == label for row in rows)
@@ -221,6 +244,12 @@ def main() -> int:
         "inference_device": "cpu",
         "same_checkpoint_all_conditions": True,
         "conditions_change_inference_rgb_only": True,
+        "complete_execute_prefix_after_success": bool(
+            args.complete_execute_prefix),
+        "far_start_audit": (str(args.far_start_audit)
+                            if args.far_start_audit is not None else None),
+        "min_policy_cycles": args.min_policy_cycles,
+        "max_policy_time_scale": args.max_policy_time_scale,
         "policy_rgb_rendered_with_no_video": True,
         "summary": summary,
         "per_condition": all_rows,

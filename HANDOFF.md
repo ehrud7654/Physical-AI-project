@@ -13,6 +13,78 @@ Shared-server learned-checkpoint inference, policy probes and rollout remain
 forbidden; server GPU use is for training. No hardware/deployment approval
 follows from these simulation results.
 
+2026-09-17 follow-up: local CPU v10 best-val learned-policy diagnostics now
+validate and execute the first four **future** targets (index 0..3) fully,
+instead of stopping halfway through the prefix on simulator success. Under the
+same K=2 near-contact, provisional-contact, simulation-only 2mm-preload and
+fixed-object conditions, 14/14 scene-valid episodes showed bilateral contact
+and stable lift. Every run ended after its first four-target prefix, before a
+second policy inference; this is **not** far-start or multi-cycle closed-loop
+validation. Required time expansion was 2.77–3.86x, so the nominal 0.4s
+four-target execution took about 1.1–1.5s. All 14 exceed an illustrative 2x
+handoff cap. See `AI/docs/MEASURE_v10_four_target_nearcontact_0917.md` and
+`AI/out/v10_policy_k2_execute4_complete_normal14_20260917.json` (generated
+report, not Git). `AI/tools/render_relative_chunk_rollout.py` gained an
+opt-in `--complete-execute-prefix` local diagnostic mode; the default behaviour
+is unchanged. The next gate is policy-free time-parameterised far-start IK and
+acceleration feasibility, followed by genuine H=2 four-target reobservation.
+
+2026-09-17 later result **supersedes that next-gate sentence**: a scripted,
+policy-free open-jaw approach from one fixed provisional start reached the
+predeclared near-contact handoff with valid IK, object visibility and measured
+simulator acceleration in 14/14 episodes. At that handoff, the local CPU v10
+best-val checkpoint executed future targets 0..3, reobserved a genuinely new
+H=2 pair, then executed another 0..3: 14/14 nominal-placement lifts in two
+cycles. This is *not* learned far-start navigation or hardware validation.
+First-prefix time expansion was about 4x; the caller's 4x cap and the
+policy-free warmup's 2x cap are diagnostics, not approved robot limits.
+Inference-time mean fill yielded 0/14 accepted lifts (six geometry and eight
+timing rejections), whereas additive noise on the source image yielded 13/14.
+Crucially, the stricter object-only ±10mm test at a no-contact earlier handoff
+found normal first-four-target direction correct in only 20/52 paired shifts,
+and no episode correct in all four. One of 14 episodes was excluded because a
+shift created *pre-policy* jaw contact. Nominal lift must not be cited as
+object-position generalisation. See the follow-up sections of
+`AI/docs/MEASURE_v10_four_target_nearcontact_0917.md`, the reports under
+`AI/out/v10_far_start*20260917.json`, and the local-only tool
+`AI/tools/probe_far_start_object_only.py`. The next substantive work is to
+diagnose this localisation failure before more success-rate trials; physical
+calibration, collision clearance, transport and supervised robot approval
+remain outstanding.
+
+2026-09-17 localisation diagnosis, continuing the object-only check above:
+at the later, contact-free handoff (scripted waypoint 18), the same local
+v10 checkpoint pointed its first-four-target response toward the shifted
+object in only 16/52 ±10mm placements across 13 valid episodes (0/13
+correct in all four directions). This is a first-action test, not a shifted
+object rollout. Real v10 training data do contain frames of similar apparent
+object size/open gap (42/56 episodes), but >10mm lateral fourth-target
+corrections occur in only 9/56 episodes within those selected frames. A
+same-checkpoint **local CPU** probe on selected real images also compressed
+recorded lateral-target variation: predicted fourth-target x standard
+deviation ~1.4mm versus target ~26.8mm on training frames, the latter
+dominated by a few extreme demonstrations. The held-out image-position bins
+make that explicit: 9 central episodes have 1.62mm x MAE, while the sole
+off-centre right episode has 73.0mm error. This is too few off-centre cases
+for a stable rate claim. Simulated handoff H=2 inputs are
+also much more static than comparable-gap human demonstrations (median TCP
+motion 1.49mm versus 15.69mm per ~0.1s), and visual packaging/background
+detail differs. Thus neither "missing real image signal" nor "sim appearance
+alone" is established as the sole cause. These are observational and narrow
+sim tests, not hardware evidence. See
+`AI/docs/MEASURE_v10_visual_localisation_failure_0917.md` and its ignored
+`AI/out/*20260917.json` reports. Next: controlled rare-lateral-correction
+training comparison with the same split/checkpoint family, held-out
+displacement-stratified error, and the same object-only first-four-target
+probe; separately address the 10Hz observation/retiming mismatch. No new
+training or server-side checkpoint inference was performed in this diagnosis.
+An optional factor-4 train-only lateral-correction sampler is prepared in
+`AI/tools/train_relative_chunk_bc.py` (default factor 1 preserves the old
+path); its focused local check passes. In the v10 seed-0 split, it selects
+198/1,009 training rows by current gap 60–70mm and fourth-target local-x
+correction >10mm. The controlled treatment has **not** been trained or
+evaluated yet; validation still uses all 239 held-out rows once.
+
 The EEF-relative-chunk-to-joint-command ownership is now recorded as a
 **D-AI-55 proposal, not yet approved**, in
 `AI/docs/DECISIONS_0917_relative_chunk_execution_boundary_draft.md`:

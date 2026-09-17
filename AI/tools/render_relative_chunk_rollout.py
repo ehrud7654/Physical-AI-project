@@ -21,7 +21,9 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw
 
-from sim.mujoco.build_scene import load_config, normalize
+from sim.mujoco.build_scene import (
+    load_config, normalize, sync_gripper_collision_proxy,
+)
 from sim.mujoco.env import MujocoPickEnv
 from tools.estimate_umi_object_geometry import largest_object_bbox
 from tools.run_umi_regression import is_shared_gpu_server
@@ -154,6 +156,18 @@ def _episode(data_root: Path, episode_id: str) -> dict[str, np.ndarray]:
     if not np.isfinite(gap) or gap < 0:
         raise ValueError("representative initial gap is invalid")
     return episode
+
+
+def _audit_file_path(stored: str) -> Path:
+    """Resolve root-relative audit artifacts when a suite runs from AI/."""
+    path = Path(stored)
+    if path.is_absolute():
+        return path.resolve()
+    for base in (Path.cwd(), AI_ROOT.parent):
+        candidate = (base / path).resolve()
+        if candidate.is_file():
+            return candidate
+    raise ValueError(f"far-start audit artifact is missing: {stored}")
 
 
 def _policy_observation(images: deque[np.ndarray], poses: deque[np.ndarray],
@@ -367,7 +381,20 @@ def main() -> int:
         ),
     )
     parser.add_argument("--cycles", type=int, default=30)
+    parser.add_argument("--far-start-audit", type=Path,
+                        help="local policy-free passing audit with saved achieved H=2 state")
+    parser.add_argument("--min-policy-cycles", type=int, default=1,
+                        help="local diagnostic: require this many prediction/execution cycles before success stop")
+    parser.add_argument("--max-policy-time-scale", type=float,
+                        help="explicit local diagnostic cap; reject a policy chunk before execution")
     parser.add_argument("--execute-steps", type=int, default=1)
+    parser.add_argument(
+        "--complete-execute-prefix", action="store_true",
+        help=(
+            "local diagnostic: execute all selected future targets before "
+            "reobserving even if the simulator reports success mid-prefix"
+        ),
+    )
     parser.add_argument(
         "--validation-horizon-steps", type=int,
         help=(
@@ -471,6 +498,8 @@ def main() -> int:
     if args.out.exists() or report_path.exists():
         raise SystemExit("output already exists")
     if (args.cycles <= 0 or args.execute_steps <= 0 or args.capture_every <= 0
+            or args.min_policy_cycles < 1
+            or args.min_policy_cycles > args.cycles
             or not np.isfinite(args.tracking_time_margin)
             or args.tracking_time_margin < 1.0
             or not np.isfinite(args.grip_preload_m)
@@ -480,10 +509,24 @@ def main() -> int:
             or not np.isfinite(args.image_noise_gray)
             or args.image_noise_gray <= 0.0):
         raise SystemExit("cycles, execute-steps and capture-every must be positive")
+    if args.far_start_audit is not None:
+        if (args.oracle or args.observation_source != "simulation"
+                or args.use_registration_approach_start
+                or args.object_offset_x_m or args.object_offset_y_m
+                or args.visual_domain is None
+                or args.max_policy_time_scale is None
+                or not np.isfinite(args.max_policy_time_scale)
+                or args.max_policy_time_scale < 1):
+            raise SystemExit(
+                "far-start audit requires a learned local simulation policy, "
+                "unshifted object, explicit visual domain and policy time cap")
+    elif args.min_policy_cycles != 1 or args.max_policy_time_scale is not None:
+        raise SystemExit("minimum cycles and policy time cap require --far-start-audit")
 
     registration = _registration(args.registration)
     if (registration["status"] == "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION"
-            and not args.use_registration_approach_start):
+            and not args.use_registration_approach_start
+            and args.far_start_audit is None):
         raise SystemExit(
             "diagnostic canonical replay requires "
             "--use-registration-approach-start")
@@ -502,6 +545,42 @@ def main() -> int:
             registration, representative)
         if start_row >= len(episode["action"]):
             raise ValueError("fixed approach start is outside the episode")
+    far_audit = None
+    far_row = None
+    far_snapshot = None
+    if args.far_start_audit is not None:
+        far_audit = json.loads(args.far_start_audit.read_text(encoding="utf-8"))
+        if (far_audit.get("status")
+                != "POLICY_FREE_FIXED_START_TO_APPROACH_IK_TIMING_AUDIT"
+                or _audit_file_path(far_audit["registration"])
+                != args.registration.resolve()
+                or _audit_file_path(far_audit["visual_domain"])
+                != args.visual_domain.resolve()
+                or far_audit.get("diagnostic_cap_is_team_approved") is not False):
+            raise ValueError("far-start audit contract or provenance mismatch")
+        matching = [row for row in far_audit["rows"]
+                    if row["episode"] == representative]
+        if (len(matching) != 1
+                or matching[0].get("diagnostic_motion_pass") is not True
+                or matching[0].get("diagnostic_cap_pass") is not True
+                or "snapshot_npz" not in matching[0]):
+            raise ValueError("episode has no passing achieved H=2 far-start snapshot")
+        far_row = matching[0]
+        with np.load(_audit_file_path(far_row["snapshot_npz"]),
+                     allow_pickle=False) as stored:
+            far_snapshot = {name: stored[name].copy()
+                            for name in ("image", "qpos", "qvel", "timestamp")}
+        if (far_snapshot["image"].shape != (2, 3, 224, 224)
+                or far_snapshot["qpos"].ndim != 2
+                or far_snapshot["qpos"].shape[0] != 2
+                or far_snapshot["qvel"].shape[0] != 2
+                or far_snapshot["timestamp"].shape != (2,)
+                or not 0.09 <= np.diff(far_snapshot["timestamp"])[0] <= 0.11
+                or np.max(np.abs(np.diff(
+                    far_snapshot["qpos"][:, :5], axis=0))) < 1e-4):
+            raise ValueError("far-start snapshot does not contain distinct measured H=2")
+        start_arm = np.asarray(far_row["fixed_start_arm_rad"], dtype=float)
+        initial_gap = float(far_audit["fixed_start_gap_m"])
     if args.oracle:
         dataset_meta = json.loads(
             (args.data / "dataset.json").read_text(encoding="utf-8"))
@@ -534,6 +613,9 @@ def main() -> int:
     if args.dense_candidate_stream_out is not None:
         # With the current 2ms MuJoCo integrator, 50Hz is exactly ten
         # substeps. Every fifth control tick is an actual 100ms observation.
+        cfg["control"]["rate_hz"] = 50.0
+    if far_snapshot is not None:
+        # Every fifth 50Hz tick gives an exact 100ms policy history sample.
         cfg["control"]["rate_hz"] = 50.0
     kinematic_grasp = registration.get("kinematic_grasp")
     if args.kinematic_grasp is not None:
@@ -575,6 +657,7 @@ def main() -> int:
     bilateral_contact_ticks = 0
     max_simultaneous_contact_pads = 0
     geometry_error = None
+    timing_error = None
     final_oracle_tail_commands = 0
     executed_commands = 0
     simulation_ticks = 0
@@ -614,6 +697,24 @@ def main() -> int:
     ) as env:
         observation = env.reset(seed=0, object_xy=object_xy, initial_q_rad=initial_q)
         ik = MujocoIK(env.model, cfg)
+        far_restore_image_mae = None
+        if far_snapshot is not None:
+            if (far_snapshot["qpos"].shape != (2, env.model.nq)
+                    or far_snapshot["qvel"].shape != (2, env.model.nv)):
+                raise ValueError("far-start MuJoCo state shape mismatch")
+            env.data.qpos[:] = far_snapshot["qpos"][1]
+            env.data.qvel[:] = far_snapshot["qvel"][1]
+            env.data.time = float(far_snapshot["timestamp"][1])
+            env.data.ctrl[:6] = env.data.qpos[:6]
+            sync_gripper_collision_proxy(env.model, env.data, env.cfg)
+            mujoco.mj_forward(env.model, env.data)
+            observation = env._observe()
+            far_restore_image_mae = float(np.mean(np.abs(
+                observation.images["cam_wrist"].astype(float)
+                - far_snapshot["image"][1].astype(float))))
+            if far_restore_image_mae > 1.0:
+                raise ValueError(
+                    "restored far-start scene differs from audited camera frame")
         solver = MujocoArmAdapter(ik, curve)
         current_q = env.joint_positions()
         current_pose = matrix_from_fk(env.model, ik, current_q)
@@ -639,13 +740,24 @@ def main() -> int:
         object_xy_displacement_threshold = max(
             0.01, 0.5 * float(np.min(registration["object_size_m"][:2])))
         object_tilt_threshold_deg = 30.0
-        images: deque[np.ndarray] = deque(
-            [observation.images["cam_wrist"].copy()] * 2, maxlen=2)
-        poses: deque[np.ndarray] = deque(
-            [current_pose.copy()] * 2, maxlen=2)
-        gaps: deque[float] = deque([current_gap] * 2, maxlen=2)
-        observation_times: deque[float] = deque(
-            [float(observation.timestamp)] * 2, maxlen=2)
+        if far_snapshot is None:
+            images: deque[np.ndarray] = deque(
+                [observation.images["cam_wrist"].copy()] * 2, maxlen=2)
+            poses: deque[np.ndarray] = deque(
+                [current_pose.copy()] * 2, maxlen=2)
+            gaps: deque[float] = deque([current_gap] * 2, maxlen=2)
+            observation_times: deque[float] = deque(
+                [float(observation.timestamp)] * 2, maxlen=2)
+        else:
+            previous_q = far_snapshot["qpos"][0, :6]
+            previous_pose = matrix_from_fk(env.model, ik, previous_q)
+            previous_gap = gap_from_angle(float(previous_q[5]), curve)
+            images = deque([far_snapshot["image"][0].copy(),
+                            observation.images["cam_wrist"].copy()], maxlen=2)
+            poses = deque([previous_pose, current_pose.copy()], maxlen=2)
+            gaps = deque([previous_gap, current_gap], maxlen=2)
+            observation_times = deque(
+                [float(value) for value in far_snapshot["timestamp"]], maxlen=2)
 
         debug_camera = mujoco.MjvCamera()
         debug_camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -688,6 +800,13 @@ def main() -> int:
             )
             for cycle in range(cycle_count):
                 row = min(start_row + cycle, len(episode["action"]) - 1)
+                cycle_history_times = [float(value) for value in observation_times]
+                cycle_history_image_mae = float(np.mean(np.abs(
+                    images[-1].astype(float) - images[0].astype(float))))
+                if far_snapshot is not None and not np.isclose(
+                        cycle_history_times[1] - cycle_history_times[0],
+                        0.1, atol=0.01, rtol=0):
+                    raise ValueError("far-start policy history is not two 10Hz frames")
                 if args.measure_visual_alignment:
                     visual_alignment_trace.append({
                         "cycle": cycle,
@@ -806,6 +925,21 @@ def main() -> int:
                 time_scales.append(schedule.time_scale)
                 command_period = (
                     schedule.waypoint_time_s[1] * args.tracking_time_margin)
+                ticks_per_command = max(1, int(np.ceil(
+                    command_period * env.control_rate_hz)))
+                if far_snapshot is not None:
+                    history_ticks = int(round(0.1 * env.control_rate_hz))
+                    if not np.isclose(history_ticks / env.control_rate_hz,
+                                      0.1, atol=1e-9, rtol=0):
+                        raise ValueError("far-start control rate is not exactly 10Hz-sampleable")
+                    ticks_per_command = int(np.ceil(
+                        ticks_per_command / history_ticks)) * history_ticks
+                    command_period = ticks_per_command / env.control_rate_hz
+                    if command_period / source_period > args.max_policy_time_scale + 1e-9:
+                        timing_error = (
+                            f"required policy period {command_period:.3f}s "
+                            f"exceeds diagnostic {args.max_policy_time_scale:.2f}x cap")
+                        break
                 periods.append(command_period)
 
                 # Row zero has only one genuine observation; the duplicated
@@ -837,6 +971,8 @@ def main() -> int:
                 )
                 if final_oracle_tail:
                     final_oracle_tail_commands = len(executed_cycle_commands)
+                cycle_executed_count = 0
+                last_command = executed_cycle_commands[0]
                 for chunk_step, command in enumerate(executed_cycle_commands):
                     raw_target = np.r_[
                         command.arm_positions_rad,
@@ -844,8 +980,7 @@ def main() -> int:
                     ]
                     target_pinch_xyz, target_pinch_quat = ik.forward_pose(
                         raw_target)
-                    ticks = max(1, int(np.ceil(
-                        command_period * env.control_rate_hz)))
+                    ticks = ticks_per_command
                     segment_start_q = env.joint_positions()
                     segment_start_gap = gap_from_angle(
                         float(segment_start_q[5]), curve)
@@ -862,6 +997,13 @@ def main() -> int:
                         action = normalize(interpolated_target, cfg, clip=True)
                         observation = env.step(action)
                         simulation_ticks += 1
+                        if (far_snapshot is not None
+                                and simulation_ticks % history_ticks == 0):
+                            measured_q = env.joint_positions()
+                            images.append(observation.images["cam_wrist"].copy())
+                            poses.append(matrix_from_fk(env.model, ik, measured_q))
+                            gaps.append(gap_from_angle(float(measured_q[5]), curve))
+                            observation_times.append(float(observation.timestamp))
                         if (args.dense_candidate_stream_out is not None
                                 and simulation_ticks % 5 == 0):
                             measured_q = env.joint_positions()
@@ -971,12 +1113,13 @@ def main() -> int:
                             env.has_bilateral_jaw_contact()),
                     })
                     executed_commands += 1
-                    if env.is_success():
+                    cycle_executed_count += 1
+                    last_command = command
+                    if env.is_success() and not args.complete_execute_prefix:
                         break
                 current_q = env.joint_positions()
                 current_pose = matrix_from_fk(env.model, ik, current_q)
                 current_gap = gap_from_angle(float(current_q[5]), curve)
-                last_command = executed_cycle_commands[-1]
                 endpoint_error = float(np.max(np.abs(
                     current_q[:5] - last_command.arm_positions_rad)))
                 max_endpoint_tracking_error = max(
@@ -991,6 +1134,9 @@ def main() -> int:
                 cycle_trace.append({
                     "cycle": cycle,
                     "dataset_row": row,
+                    "observation_history_times_s": cycle_history_times,
+                    "observation_history_image_mae_uint8": cycle_history_image_mae,
+                    "executed_targets_this_cycle": cycle_executed_count,
                     "time_scale": schedule.time_scale,
                     "scheduled_period_s": command_period,
                     "target_arm_rad": last_command.arm_positions_rad.tolist(),
@@ -1008,11 +1154,15 @@ def main() -> int:
                     "jaw_contact_counts": env.jaw_contact_counts(),
                     "bilateral_jaw_contact": env.has_bilateral_jaw_contact(),
                 })
-                images.append(observation.images["cam_wrist"].copy())
-                poses.append(current_pose.copy())
-                gaps.append(current_gap)
-                observation_times.append(float(observation.timestamp))
-                if env.is_success():
+                if far_snapshot is None:
+                    images.append(observation.images["cam_wrist"].copy())
+                    poses.append(current_pose.copy())
+                    gaps.append(current_gap)
+                    observation_times.append(float(observation.timestamp))
+                elif not np.isclose(observation_times[-1], observation.timestamp,
+                                    atol=1e-8, rtol=0):
+                    raise ValueError("far-start cycle ended off the 10Hz observation grid")
+                if env.is_success() and cycle + 1 >= args.min_policy_cycles:
                     break
 
         result = {
@@ -1037,6 +1187,14 @@ def main() -> int:
             "image_perturb_seed": (
                 args.image_perturb_seed if args.image_perturb == "noise" else None),
             "registration": str(args.registration),
+            "far_start_audit": (str(args.far_start_audit)
+                                if args.far_start_audit is not None else None),
+            "far_start_audit_snapshot": (
+                far_row.get("snapshot_npz") if far_row is not None else None),
+            "far_start_restored_image_mae_uint8": far_restore_image_mae,
+            "far_start_warmup_policy_free": far_snapshot is not None,
+            "min_policy_cycles": args.min_policy_cycles,
+            "max_policy_time_scale": args.max_policy_time_scale,
             "registration_status": registration["status"],
             "collision_model": (
                 "provisional_ver1_parallel_jaw_proxy"
@@ -1064,12 +1222,15 @@ def main() -> int:
             "cycles_requested": args.cycles,
             "action_horizon_steps": action_horizon,
             "validation_horizon_steps": validation_horizon,
+            "complete_execute_prefix_after_success": bool(
+                args.complete_execute_prefix),
             "full_chunk_validation": validation_horizon == action_horizon,
             "final_oracle_tail_executed": args.execute_final_oracle_tail,
             "final_oracle_tail_commands": final_oracle_tail_commands,
             "executed_commands": executed_commands,
             "simulation_ticks": simulation_ticks,
             "geometry_error": geometry_error,
+            "timing_error": timing_error,
             "time_scale_p0_p50_p95_max": (
                 [float(value) for value in np.percentile(time_scales, [0, 50, 95, 100])]
                 if time_scales else [None, None, None, None]),

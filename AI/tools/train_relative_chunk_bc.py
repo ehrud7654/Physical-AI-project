@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 import yaml
 
 from data.relative_chunk_dataset import RelativeChunkDataset
@@ -41,6 +41,32 @@ def split_by_episode(dataset: RelativeChunkDataset, fraction: float,
     if not train or not val:
         raise ValueError("empty train or validation split")
     return train, val, names
+
+
+def lateral_sampling_weights(actions: np.ndarray, gaps_m: np.ndarray, *,
+                             threshold_m: float, factor: float,
+                             gap_min_m: float = 0.06,
+                             gap_max_m: float = 0.07) -> tuple[np.ndarray, int]:
+    """Weight open-jaw rows with a large fourth future local-x correction.
+
+    The rule uses training rows only. It is a diagnostic sampling intervention,
+    not a claim that these rows provide causal object-position supervision.
+    """
+    if actions.ndim != 3 or actions.shape[1:] != (8, ACTION_DIM):
+        raise ValueError("expected (N, 8, 10) relative actions")
+    if gaps_m.shape != (len(actions),):
+        raise ValueError("one current metric gap is required per action")
+    if not (np.isfinite(threshold_m) and np.isfinite(factor) and
+            0 < threshold_m and factor >= 1 and
+            0 <= gap_min_m < gap_max_m <= 0.09):
+        raise ValueError("invalid lateral sampling thresholds")
+    if not np.isfinite(actions).all() or not np.isfinite(gaps_m).all():
+        raise ValueError("non-finite sampling inputs")
+    selected = ((gaps_m >= gap_min_m) & (gaps_m <= gap_max_m) &
+                (np.abs(actions[:, 3, 0]) > threshold_m))
+    weights = np.ones(len(actions), dtype=np.float64)
+    weights[selected] = factor
+    return weights, int(selected.sum())
 
 
 def run_epoch(model: nn.Module, loader: DataLoader, criterion: nn.Module,
@@ -81,6 +107,9 @@ def main() -> int:
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--lateral-sampling-factor", type=float, default=1.0,
+                        help="Diagnostic oversampling of open-gap rows with "
+                             ">10mm fourth-target local-x correction; 1 keeps baseline")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
@@ -103,6 +132,13 @@ def main() -> int:
     train_indices, val_indices, val_episodes = split_by_episode(
         dataset, float(train_config["val_fraction"]), seed)
     train_actions = torch.from_numpy(dataset.action_rows(train_indices))
+    train_gaps = np.asarray([
+        dataset.episodes[episode_index]["proprio"][row, -1, -1]
+        for episode_index, row in (dataset.index[index] for index in train_indices)
+    ], dtype=np.float64)
+    sampling_weights, lateral_count = lateral_sampling_weights(
+        train_actions.numpy(), train_gaps, threshold_m=0.01,
+        factor=args.lateral_sampling_factor)
     mean = train_actions.mean(dim=0)
     std = train_actions.std(dim=0)
     std = torch.where(std < 1e-6, torch.ones_like(std), std)
@@ -114,11 +150,20 @@ def main() -> int:
           "each future step uses the same current-pose anchor")
     print("source time is preserved; robot base alignment and IK are not training labels")
     print(f"mean-predictor standardised L1 baseline: {trivial:.5f}")
+    print(f"open-gap large lateral rows in train: {lateral_count}/{len(train_indices)} "
+          f"(sampling factor {args.lateral_sampling_factor:g})")
+    selected_draw_probability = float(
+        lateral_count * args.lateral_sampling_factor / sampling_weights.sum())
 
     generator = torch.Generator().manual_seed(seed)
+    sampler = (WeightedRandomSampler(
+        torch.from_numpy(sampling_weights), num_samples=len(train_indices),
+        replacement=True, generator=torch.Generator().manual_seed(seed))
+        if args.lateral_sampling_factor != 1.0 else None)
     loaders = {
         "train": DataLoader(
-            Subset(dataset, train_indices), batch_size=batch_size, shuffle=True,
+            Subset(dataset, train_indices), batch_size=batch_size,
+            shuffle=(sampler is None), sampler=sampler,
             num_workers=int(train_config["num_workers"]), generator=generator),
         "val": DataLoader(
             Subset(dataset, val_indices), batch_size=batch_size, shuffle=False,
@@ -167,6 +212,15 @@ def main() -> int:
         "val_samples": len(val_indices),
         "val_episodes": val_episodes,
         "mean_predictor_standardised_l1": trivial,
+        "lateral_sampling": {
+            "factor": args.lateral_sampling_factor,
+            "threshold_m": 0.01,
+            "gap_band_m": [0.06, 0.07],
+            "train_rows_selected": lateral_count,
+            "selected_draw_probability": selected_draw_probability,
+            "replacement": sampler is not None,
+            "validation_sampler": "all_heldout_rows_once",
+        },
         "best_val_loss": best,
         "history": history,
         "elapsed_s": time.perf_counter() - started,

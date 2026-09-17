@@ -44,6 +44,8 @@ CHECKS = (
     "check_ver1_collision_proxy.py",
     "check_ver1_side_workspace.py",
     "check_umi_action_roundtrip.py",
+    "check_v10_localisation_failure_factors.py",
+    "check_v10_lateral_sampling.py",
 )
 
 
