@@ -24,7 +24,7 @@ public class StorageNodeLifecycleScheduler {
     try {
       registration.register();
     } catch (RuntimeException e) {
-      log.warn("StorageNode 등록 실패: {}", e.getMessage());
+      log.warn("StorageNode 등록 실패", e);
     }
   }
 
