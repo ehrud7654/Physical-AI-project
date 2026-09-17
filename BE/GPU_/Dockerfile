@@ -8,7 +8,6 @@ RUN gradle bootJar --no-daemon -x test
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-
 RUN addgroup -g 10001 -S gpu \
     && adduser -u 10001 -S gpu -G gpu \
     && mkdir -p /data/ssafy-gpu \

@@ -83,6 +83,15 @@ public class Deployment extends AuditableEntity {
     status = DeploymentStatus.CANCELED;
   }
 
+  public void failPendingTimeout(String errorCode, String errorMessage) {
+    if (status != DeploymentStatus.PENDING) {
+      throw new IllegalStateException("only pending deployment can time out");
+    }
+    status = DeploymentStatus.FAILED;
+    this.errorCode = errorCode;
+    this.errorMessage = errorMessage;
+  }
+
   public DeploymentStatus getStatus() {
     return status;
   }

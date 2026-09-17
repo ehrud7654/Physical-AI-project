@@ -1,48 +1,53 @@
 services:
-  nginx:
-    image: ssafy-gpu-nginx:local
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    ports:
-      - "${GPU_NGINX_PORT:-18181}:18181"
-    depends_on:
-      gpu-backend:
-        condition: service_healthy
-      training-api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:18181/health/ready >/dev/null || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    restart: unless-stopped
-
   gpu-backend:
     image: ssafy-gpu-backend:local
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:8081:8081"
+    expose:
+      - "8081"
     environment:
       SERVER_PORT: 8081
+
+      EC2_API_BASE_URL: ${EC2_API_BASE_URL:-https://j15a103.p.ssafy.io}
+      GPU_WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_laptop_01}
+      GPU_NODE_KEY: ${GPU_NODE_KEY:-gpu-laptop-local-cache}
+      GPU_NODE_NAME: ${GPU_NODE_NAME:-SSAFY GPU Laptop Worker}
+      GPU_STORAGE_ROOT: /data/ssafy-gpu
+      GPU_SUPPORTED_ALGORITHMS: ${GPU_SUPPORTED_ALGORITHMS:-ACT}
+      GPU_MAX_SLOTS: ${GPU_MAX_SLOTS:-1}
+
       FASTAPI_BASE_URL: http://training-api:8000
       FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:-local-fastapi-token}
       FASTAPI_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:-local-callback-token}
       GPU_SHARED_STORAGE_ROOT: /data/ssafy-gpu
     volumes:
       - gpu_data:/data/ssafy-gpu
-    depends_on:
-      training-api:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/actuator/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      gpu-backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   training-api:
@@ -64,7 +69,7 @@ services:
       # device as logical CUDA device 0 inside this container.
       GPU_COUNT: 1
       CUDA_VISIBLE_DEVICES: 0
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       TRAINING_COMMAND_DURATION_SECONDS: ${TRAINING_COMMAND_DURATION_SECONDS:-5}
     volumes:
@@ -75,7 +80,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
@@ -93,7 +98,7 @@ services:
     profiles: ["simulation"]
     environment:
       CUDA_VISIBLE_DEVICES: 0
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
       MUJOCO_GL: egl
       PYOPENGL_PLATFORM: egl
@@ -107,7 +112,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     restart: "no"
 
@@ -116,7 +121,7 @@ services:
     ports:
       - "127.0.0.1:${DCGM_EXPORTER_PORT:-9400}:9400"
     environment:
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     cap_add:
       - SYS_ADMIN
@@ -125,10 +130,16 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9400/metrics >/dev/null || exit 1"]
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9400;
+          printf "GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3;
+          read -r status <&3;
+          [[ "$$status" == *" 200 "* ]]'
       interval: 15s
       timeout: 5s
       retries: 5
