@@ -143,6 +143,7 @@ td strong, td small { display: block; }td strong { color: #303949; font-size: 11
 .spinner { display: inline-block; width: 34px; height: 34px; margin-bottom: 14px; border: 3px solid #e8ecf2; border-top-color: var(--orange); border-radius: 50%; animation: spin .8s linear infinite; }
 .state-icon { display: grid; place-items: center; width: 44px; height: 44px; margin: 0 auto 14px; border-radius: 50%; color: #dc2626; background: #fef2f2; font-size: 20px; font-weight: 800; }
 .toast.error span { background: #dc2626; }
+.session-expired-warning { margin: 0 0 18px; padding: 11px 13px; border-radius: 8px; color: #b42318; background: #fef3f2; font-size: 12px; font-weight: 650; line-height: 1.5; }
 .menu-wrap { position: relative; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
 .dropdown-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; display: flex; flex-direction: column; min-width: 132px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: white; box-shadow: 0 12px 30px rgb(15 23 42 / 14%); }
@@ -1650,8 +1651,8 @@ select:focus,input:focus{border-color:#7c8aa8;box-shadow:0 0 0 3px rgba(70,86,12
 .progress-layout .log-card .log-list span{font-size:11px}
 .progress-layout .log-card .log-error p{font-size:12px}
 .progress-layout .log-card .log-error .secondary-button{font-size:11px}
-.training-save-actions{margin-top:24px;padding-top:20px;border-top:1px solid var(--product-line)}
-.training-save-actions .primary-button{width:100%}
+.training-save-actions{display:flex;flex-direction:column;align-items:center;gap:28px;margin-top:24px;padding-top:20px;border-top:1px solid var(--product-line)}
+.training-save-actions .secondary-button,.training-save-actions .primary-button{width:210px;justify-content:center}
 .training-save-actions small{display:block;margin-top:9px;color:var(--product-muted);font-size:12px;text-align:center}
 .confirm-modal .card-actions{justify-content:flex-end;gap:10px}
 .confirm-modal .card-actions .secondary-button,

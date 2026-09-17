@@ -18,6 +18,9 @@ export function clone<T>(value: T): T {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080/api/v1';
 let accessToken: string | null = null;
+let sessionExpirationNotified = false;
+
+export const SESSION_EXPIRED_EVENT = 'ssafy:session-expired';
 
 export class ApiError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) {
@@ -27,6 +30,7 @@ export class ApiError extends Error {
 
 export function setAccessToken(token: string): void {
   accessToken = token;
+  sessionExpirationNotified = false;
 }
 
 export function clearAccessToken(): void {
@@ -42,6 +46,11 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   const body = await response.json().catch(() => null) as { data?: T; code?: string; message?: string } | null;
 
   if (!response.ok) {
+    if (response.status === 401 && accessToken && !sessionExpirationNotified) {
+      sessionExpirationNotified = true;
+      clearAccessToken();
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    }
     throw new ApiError(
       response.status,
       body?.code ?? 'API_ERROR',

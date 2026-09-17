@@ -7,6 +7,7 @@ import { blockCatalog, motorRanges } from '@/mocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { AppStoreProvider, useAppStore } from '@/hooks/useAppStore';
 import { createCustomSkill, createEpisodePreviewSession, createTrainingJob, fetchDashboard, fetchDeviceRegistrationStatus, fetchRobotDetail, fetchRobotExecutions, fetchSkillOverviews, fetchTrainingDetail, fetchTrainingSkills, login as requestLogin, logout as clearAuthentication, startDeviceEnrollment, updateSkillDescription, type DeviceEnrollment } from '@/services';
+import { SESSION_EXPIRED_EVENT } from '@/services/client';
 import Tutorial from './Tutorial';
 
 let nextBlockId = 20;
@@ -113,10 +114,13 @@ function HomeInner() {
   const [selectedRobotId, setSelectedRobotId] = useState('RB-07');
   const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
   const [workEditorRevision, setWorkEditorRevision] = useState(0);
+  const [trainingHomeRevision, setTrainingHomeRevision] = useState(0);
+  const [workLibraryRevision, setWorkLibraryRevision] = useState(0);
   const [suggestedSkillName, setSuggestedSkillName] = useState<string | null>(null);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [view, entered]);
   const [toast, setToast] = useState('');
   const [toastTone, setToastTone] = useState<'success' | 'error'>('success');
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState('');
 
   const showToast = useCallback((message: string, tone: 'success' | 'error' = 'success') => {
     setToast(message);
@@ -147,6 +151,19 @@ function HomeInner() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      clearAuthentication();
+      resetLearningDraft();
+      setCurrentUser(null);
+      setAuthenticated(false);
+      setEntered(false);
+      setSessionExpiredMessage('로그인 시간이 만료되어 자동으로 로그아웃됐어요. 다시 로그인해 주세요.');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, [resetLearningDraft]);
+
   const enterView = (target: View) => { setView(target); setEntered(true); };
   const navigateTo = (target: View) => {
     if (view === 'learn' && target !== 'learn' && learningDraft.step < 5) {
@@ -155,6 +172,12 @@ function HomeInner() {
     if (target === 'work') {
       setEditingWorkId(null);
       setWorkEditorRevision((revision) => revision + 1);
+    }
+    if (target === 'training') {
+      setTrainingHomeRevision((revision) => revision + 1);
+    }
+    if (target === 'library') {
+      setWorkLibraryRevision((revision) => revision + 1);
     }
     setView(target);
   };
@@ -169,6 +192,7 @@ function HomeInner() {
       setCurrentUserId(user.name);
     } else if (!currentUser) return;
     setAuthenticated(true);
+    setSessionExpiredMessage('');
     enterView(target);
     void refresh();
   };
@@ -178,8 +202,9 @@ function HomeInner() {
     setCurrentUser(null);
     setAuthenticated(false);
     setEntered(false);
+    setSessionExpiredMessage('');
   };
-  if (!entered) return <Landing authenticated={authenticated} onLogin={login} onLogout={logout} />;
+  if (!entered) return <Landing authenticated={authenticated} onLogin={login} onLogout={logout} sessionExpiredMessage={sessionExpiredMessage} />;
 
   return (
     <main className="app-shell">
@@ -192,10 +217,10 @@ function HomeInner() {
           {view === 'dashboard' && <DashboardView onNavigate={navigateTo} onOpenDevices={(tab) => { setDeviceTab(tab); setView('devices'); }} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} />}
           {view === 'data' && <DataView />}
           {view === 'skills' && <SkillListView onToast={showToast} />}
-          {view === 'library' && <WorkflowLibraryView onEdit={editWork} onToast={showToast} />}
+          {view === 'library' && <WorkflowLibraryView key={workLibraryRevision} onEdit={editWork} onToast={showToast} />}
           {view === 'devices' && <DevicesView initialTab={deviceTab} onSelectRobot={(id) => { setSelectedRobotId(id); setDeviceTab('robot'); setView('robot-detail'); }} onToast={showToast} />}
           {view === 'robot-detail' && <RobotDetailView robotId={selectedRobotId} onBack={() => setView('devices')} onNavigate={navigateTo} onToast={showToast} />}
-          {view === 'training' && <TrainingStatusView onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
+          {view === 'training' && <TrainingStatusView key={trainingHomeRevision} onUseResult={(name) => { setSuggestedSkillName(name); navigateTo('work'); }} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'learn' && <LearnView onNavigate={navigateTo} onToast={showToast} />}
           {view === 'work' && <WorkView key={`${editingWorkId ?? 'new'}-${workEditorRevision}`} suggestedSkillName={suggestedSkillName} editingWorkId={editingWorkId} onNavigate={navigateTo} onToast={showToast} />}
           {view === 'admin' && <AdminView onToast={showToast} />}
@@ -206,7 +231,7 @@ function HomeInner() {
   );
 }
 
-function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean; onLogin: (target: View, user?: AuthenticatedUser) => void; onLogout: () => void }) {
+function Landing({ authenticated, onLogin, onLogout, sessionExpiredMessage }: { authenticated: boolean; onLogin: (target: View, user?: AuthenticatedUser) => void; onLogout: () => void; sessionExpiredMessage: string }) {
   const [loginOpen, setLoginOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('figmaView') === 'login');
   const [signupOpen, setSignupOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -242,6 +267,12 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
     document.addEventListener('keydown', handle);
     return () => { document.removeEventListener('keydown', handle); document.body.style.overflow = overflow; previous?.focus(); };
   }, [loginOpen, signupOpen]);
+  useEffect(() => {
+    if (sessionExpiredMessage) {
+      setSignupOpen(false);
+      setLoginOpen(true);
+    }
+  }, [sessionExpiredMessage]);
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!id.trim() || !password) {
@@ -276,6 +307,7 @@ function Landing({ authenticated, onLogin, onLogout }: { authenticated: boolean;
     </section>
     {loginOpen && <div className="landing-login-backdrop" onMouseDown={() => setLoginOpen(false)}><form ref={loginForm} role="dialog" aria-modal="true" aria-label="로그인" className="landing-login-card" onSubmit={submitLogin} onMouseDown={(event) => event.stopPropagation()}>
       <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" onClick={() => setLoginOpen(false)} aria-label="로그인 닫기">×</button></div>
+      {sessionExpiredMessage && <p className="session-expired-warning" role="alert">{sessionExpiredMessage}</p>}
       {signupComplete && <p className="signup-success" role="status">회원가입이 완료됐어요. 입력한 아이디로 로그인해 주세요.</p>}
       <label>이메일<input type="email" value={id} onChange={(event) => { setId(event.target.value); setLoginError(''); setSignupComplete(false); }} autoComplete="username" /></label><label htmlFor="login-password">비밀번호</label><div className="password-field"><input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => { setPassword(event.target.value); setLoginError(''); }} autoComplete="current-password" /><button type="button" aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.8-5 9-5 9 5 9 5-3.8 5-9 5-9-5-9-5z" /><circle cx="12" cy="12" r="2.5" />{showPassword && <path d="M4 4l16 16" />}</svg></button></div>{loginError && <p className="field-error" role="alert">{loginError}</p>}
       <button className="primary-button" disabled={loginPending}>{loginPending ? '로그인 중...' : '로그인'}</button>
@@ -741,7 +773,6 @@ function TrainingStatusView({ onNavigate, onToast, onUseResult }: { onNavigate: 
   if (detail) {
     const terminal = ['완료', '실패', '취소됨'].includes(detail.status);
     return <>
-      <button className="back-link" onClick={() => { setDetail(null); void refreshTrainings(); }}>← 학습 목록으로 돌아가기</button>
       <div className="progress-layout">
         <section className="card progress-card">
           <div className="progress-card-actions">{!terminal && <button className="danger-button" disabled={busy} onClick={() => setConfirmFor(detail)}>학습 취소</button>}</div>
@@ -980,7 +1011,7 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
     setCatalogLoading(true);
     setCatalogError(false);
     void Promise.all([fetchTrainingSkills(), refreshDatasets()])
-      .then(([skills]) => setCatalog(skills.filter((item) => item.tier !== 'CUSTOM' || item.status !== 'PLANNED')))
+      .then(([skills]) => setCatalog(skills))
       .catch(() => {
         setCatalogError(true);
         onToast('학습 동작과 수집 데이터를 불러오지 못했어요.');
@@ -1023,7 +1054,6 @@ function LearnView({ onNavigate, onToast }: { onNavigate: (view: View) => void; 
       await createTrainingJob({
         skillKey: skill.skillKey,
         umiDeviceId: umi.deviceId,
-        inputMode: 'EXISTING_EPISODES',
         episodeIds: selectedData.map((item) => item.id),
       });
       resetLearningDraft();
