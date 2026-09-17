@@ -180,3 +180,14 @@ validation episode 중 측면 파지 13개, 기구학 장면 조건 8개, sample
 공유 GPU 서버에서 수행하지 않는다. MuJoCo 물리 계산은 CPU이며, EGL
 오프스크린 렌더를 사용할 때만 GPU 렌더 결과가 관여한다. 렌더 백엔드가 바뀌면
 기존 성공률과 직접 비교하지 않는다.
+
+## 9. EEF→관절 실행 경계 담당 (2026-09-17 초안)
+
+트랙 A가 상대 EEF 청크의 현재 TCP 기준 복원, 5축 IK, 관절·gap 청크
+검증 구간을 맡는다. 트랙 B는 정책의 상대 EEF 청크 출력까지,
+HW/ROS 담당은 검증된 관절궤적 입력부터 맡는 경계로 기록한다.
+v10의 `robot_base_alignment_applied: false`와 `robot_ik_applied: false`는
+데이터셋 생성 시 미적용이라는 뜻이지 실행 경계가 불필요하다는 뜻이
+아니다. 현재 MuJoCo/오프라인 경계 코드는 있으나 양측 시스템을 잇는
+완성 경로는 아직 아니다. 담당·현재 구현·미완료 범위와 D-AI 승인 상태는
+`DECISIONS_0917_relative_chunk_execution_boundary_draft.md`에 분리해 적었다.

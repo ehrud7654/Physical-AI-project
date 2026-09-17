@@ -13,6 +13,17 @@ Shared-server learned-checkpoint inference, policy probes and rollout remain
 forbidden; server GPU use is for training. No hardware/deployment approval
 follows from these simulation results.
 
+The EEF-relative-chunk-to-joint-command ownership is now recorded as a
+**D-AI-number-pending draft** in
+`AI/docs/DECISIONS_0917_relative_chunk_execution_boundary_draft.md`:
+Track B owns policy EEF output, Track A owns current-TCP anchoring/decode,
+five-axis IK and joint/gap chunk validation, and HW/ROS owns the downstream
+joint-trajectory input/control. Existing Track A implementation is offline
+and MuJoCo-oriented; the cross-system handoff is not complete. Dataset v10's
+alignment/IK `false` flags describe label generation, not the need for this
+runtime boundary. Relative targets anchor to `T_base_tcp_current`; this does
+not establish an independent physical object/workspace-to-base registration.
+
 - Real demonstration data: `umi_real_relative_20260911_v10`, 70 episodes,
   1,248 anchors, observation history 2 and future relative SE(3)+gap chunk 8.
   The task is still the upright 40mm-wide snack case, grasped **from both sides
