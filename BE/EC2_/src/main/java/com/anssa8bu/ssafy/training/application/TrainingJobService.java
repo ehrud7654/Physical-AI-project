@@ -8,6 +8,8 @@ import com.anssa8bu.ssafy.device.entity.*;
 import com.anssa8bu.ssafy.device.repository.DeviceRepository;
 import com.anssa8bu.ssafy.episode.entity.*;
 import com.anssa8bu.ssafy.episode.repository.*;
+import com.anssa8bu.ssafy.model.entity.*;
+import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.skill.application.SkillService;
 import com.anssa8bu.ssafy.skill.entity.Skill;
 import com.anssa8bu.ssafy.skill.repository.SkillRepository;
@@ -28,6 +30,7 @@ public class TrainingJobService {
   private final DeviceRepository devices;
   private final EpisodeRepository episodes;
   private final EpisodeArchiveRepository archives;
+  private final SkillVersionRepository skillVersions;
   private final IdempotencyGuard idempotency;
   private final Clock clock;
 
@@ -39,6 +42,7 @@ public class TrainingJobService {
       DeviceRepository devices,
       EpisodeRepository episodes,
       EpisodeArchiveRepository archives,
+      SkillVersionRepository skillVersions,
       IdempotencyGuard idempotency,
       Clock clock,
       SkillService skillService) {
@@ -49,6 +53,7 @@ public class TrainingJobService {
     this.devices = devices;
     this.episodes = episodes;
     this.archives = archives;
+    this.skillVersions = skillVersions;
     this.idempotency = idempotency;
     this.clock = clock;
     this.skillService = skillService;
@@ -79,12 +84,17 @@ public class TrainingJobService {
                 () ->
                     new BusinessConflictException("ACTIVE_PROFILE_NOT_FOUND", "활성 학습 프로필이 없습니다."));
     List<Episode> selected = selectEpisodes(owner, skill, request);
+    TrainingMode trainingMode =
+        request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
+    SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
     int expected = selected.size();
     if (expected < 1)
       throw new BusinessConflictException("INVALID_EPISODE_COUNT", "Episode 수는 1 이상이어야 합니다.");
     Map<String, Object> query = new LinkedHashMap<>();
     query.put("skillKey", skill.getSkillKey());
     query.put("inputMode", TrainingInputMode.EXISTING_EPISODES.name());
+    query.put("trainingMode", trainingMode.name());
+    if (baseVersion != null) query.put("baseSkillVersionId", baseVersion.getId().toString());
     TrainingJob job =
         jobs.save(
             new TrainingJob(
@@ -97,7 +107,9 @@ public class TrainingJobService {
                 profile.getHyperparameters(),
                 profile.getConfigSha256(),
                 query,
-                selected.size()));
+                selected.size(),
+                trainingMode,
+                baseVersion == null ? null : baseVersion.getId()));
     job.planInput(expected, !selected.isEmpty());
     for (int i = 0; i < selected.size(); i++) attach(job, selected.get(i), i + 1);
     idempotency.complete(
@@ -210,6 +222,30 @@ public class TrainingJobService {
             clock.instant()));
   }
 
+  private SkillVersion validateBaseVersion(
+      Skill skill, TrainingMode mode, UUID baseSkillVersionId) {
+    if (mode == TrainingMode.FROM_SCRATCH) {
+      if (baseSkillVersionId != null)
+        throw new BusinessConflictException(
+            "BASE_MODEL_NOT_ALLOWED", "처음부터 학습할 때는 기준 모델을 지정할 수 없습니다.");
+      return null;
+    }
+    if (baseSkillVersionId == null)
+      throw new BusinessConflictException(
+          "BASE_MODEL_REQUIRED", "추가 학습에는 기준 스킬 버전이 필요합니다.");
+    SkillVersion version =
+        skillVersions
+            .findById(baseSkillVersionId)
+            .orElseThrow(() -> new ResourceNotFoundException("BaseSkillVersion"));
+    if (!version.getSkillId().equals(skill.getId()))
+      throw new BusinessConflictException(
+          "BASE_MODEL_SKILL_MISMATCH", "기준 모델이 학습 대상 동작에 속하지 않습니다.");
+    if (version.getStatus() != SkillVersionStatus.READY)
+      throw new BusinessConflictException(
+          "BASE_MODEL_NOT_READY", "READY 상태의 모델만 추가 학습 기준으로 사용할 수 있습니다.");
+    return version;
+  }
+
   private TrainingJob owned(UUID owner, UUID id) {
     return jobs.findByIdAndOwnerIdAndDeletedAtIsNull(id, owner)
         .orElseThrow(() -> new ResourceNotFoundException("TrainingJob"));
@@ -226,6 +262,8 @@ public class TrainingJobService {
         s.getDisplayName(),
         j.getUmiDeviceId(),
         j.getInputMode(),
+        j.getTrainingMode(),
+        j.getBaseSkillVersionId(),
         j.getStatus(),
         j.getProgressStage(),
         j.getProgressPercent(),

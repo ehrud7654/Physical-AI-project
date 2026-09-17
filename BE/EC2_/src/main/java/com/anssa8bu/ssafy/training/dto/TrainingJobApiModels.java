@@ -15,7 +15,9 @@ public final class TrainingJobApiModels {
       String skillKey,
       @Valid CreateCustomSkillRequest newSkill,
       @NotNull UUID umiDeviceId,
-      List<UUID> episodeIds) {}
+      List<UUID> episodeIds,
+      TrainingMode trainingMode,
+      UUID baseSkillVersionId) {}
 
   public record JobResponse(
       UUID id,
@@ -23,6 +25,8 @@ public final class TrainingJobApiModels {
       String skillDisplayName,
       UUID umiDeviceId,
       TrainingInputMode inputMode,
+      TrainingMode trainingMode,
+      UUID baseSkillVersionId,
       TrainingJobStatus status,
       String progressStage,
       BigDecimal progressPercent,

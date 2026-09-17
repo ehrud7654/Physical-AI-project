@@ -32,6 +32,13 @@ public class TrainingJob extends AuditableEntity {
   private String assignedWorkerId;
 
   @Enumerated(EnumType.STRING)
+  @Column(name = "training_mode", nullable = false, length = 30)
+  private TrainingMode trainingMode;
+
+  @Column(name = "base_skill_version_id")
+  private UUID baseSkillVersionId;
+
+  @Enumerated(EnumType.STRING)
   @Column(name = "input_mode", nullable = false, length = 30)
   private TrainingInputMode inputMode;
 
@@ -130,6 +137,23 @@ public class TrainingJob extends AuditableEntity {
       String hash,
       Map<String, Object> query,
       int episodeCount) {
+    this(id, ownerId, skillId, deviceId, profileId, mode, config, hash, query, episodeCount,
+        TrainingMode.FROM_SCRATCH, null);
+  }
+
+  public TrainingJob(
+      UUID id,
+      UUID ownerId,
+      UUID skillId,
+      UUID deviceId,
+      UUID profileId,
+      TrainingInputMode mode,
+      Map<String, Object> config,
+      String hash,
+      Map<String, Object> query,
+      int episodeCount,
+      TrainingMode trainingMode,
+      UUID baseSkillVersionId) {
     if (hash == null || !hash.matches("[0-9a-f]{64}") || episodeCount < 0)
       throw new IllegalArgumentException();
     this.id = Objects.requireNonNull(id);
@@ -138,6 +162,10 @@ public class TrainingJob extends AuditableEntity {
     this.umiDeviceId = Objects.requireNonNull(deviceId);
     this.trainingProfileId = Objects.requireNonNull(profileId);
     this.inputMode = Objects.requireNonNull(mode);
+    this.trainingMode = Objects.requireNonNull(trainingMode);
+    if ((trainingMode == TrainingMode.FINE_TUNE) != (baseSkillVersionId != null))
+      throw new IllegalArgumentException("학습 모드와 기준 모델이 일치하지 않습니다.");
+    this.baseSkillVersionId = baseSkillVersionId;
     this.status = TrainingJobStatus.CREATED;
     this.trainingConfigSnapshot = Map.copyOf(config);
     this.trainingConfigSha256 = hash;
@@ -207,6 +235,10 @@ public class TrainingJob extends AuditableEntity {
   public TrainingInputMode getInputMode() {
     return inputMode;
   }
+
+  public TrainingMode getTrainingMode() { return trainingMode; }
+
+  public UUID getBaseSkillVersionId() { return baseSkillVersionId; }
 
   public int getExpectedEpisodeCount() {
     return expectedEpisodeCount;

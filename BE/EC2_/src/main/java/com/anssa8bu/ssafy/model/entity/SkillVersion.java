@@ -28,6 +28,9 @@ public class SkillVersion extends CreatedEntity {
   @Column(name = "robot_profile_id", nullable = false)
   private UUID robotProfileId;
 
+  @Column(name = "parent_skill_version_id")
+  private UUID parentSkillVersionId;
+
   @Column(nullable = false)
   private int version;
 
@@ -120,12 +123,25 @@ public class SkillVersion extends CreatedEntity {
       String contractVersion, ActionSpace actionSpace, long parameterCount,
       BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
       Map<String, Object> outputSchema) {
+    this(id, skillId, trainingJobId, trainingProfileId, trainingConfigSha256, robotProfileId,
+        version, bucket, key, sha256, bytes, architecture, framework, frameworkVersion,
+        contractVersion, actionSpace, parameterCount, controlRateHz, cameraNames, inputSchema,
+        outputSchema, null);
+  }
+
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId, UUID trainingProfileId,
+      String trainingConfigSha256, UUID robotProfileId, int version, String bucket, String key,
+      String sha256, long bytes, String architecture, String framework, String frameworkVersion,
+      String contractVersion, ActionSpace actionSpace, long parameterCount,
+      BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
+      Map<String, Object> outputSchema, UUID parentSkillVersionId) {
     this.id = Objects.requireNonNull(id);
     this.skillId = Objects.requireNonNull(skillId);
     this.trainingJobId = Objects.requireNonNull(trainingJobId);
     this.trainingProfileId = Objects.requireNonNull(trainingProfileId);
     this.trainingConfigSha256 = Objects.requireNonNull(trainingConfigSha256);
     this.robotProfileId = Objects.requireNonNull(robotProfileId);
+    this.parentSkillVersionId = parentSkillVersionId;
     this.version = version;
     this.status = SkillVersionStatus.UPLOADING;
     this.checkpointBucket = Objects.requireNonNull(bucket);
@@ -171,6 +187,8 @@ public class SkillVersion extends CreatedEntity {
   public UUID getRobotProfileId() {
     return robotProfileId;
   }
+
+  public UUID getParentSkillVersionId() { return parentSkillVersionId; }
 
   public int getVersion() {
     return version;

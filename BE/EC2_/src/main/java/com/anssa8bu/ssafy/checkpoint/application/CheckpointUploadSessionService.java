@@ -69,7 +69,7 @@ public class CheckpointUploadSessionService {
         job.getTrainingProfileId(), job.getTrainingConfigSha256(), m.robotProfileId(), next, bucket,
         key, request.sha256(), request.sizeBytes(), m.architecture(), m.framework(),
         m.frameworkVersion(), m.contractVersion(), m.actionSpace(), m.nParams(), m.controlRateHz(),
-        m.cameraNames(), m.inputSchema(), m.outputSchema());
+        m.cameraNames(), m.inputSchema(), m.outputSchema(), job.getBaseSkillVersionId());
     job.markModelUploading(request.modelCompletedAt());
     return versions.save(value);
   }

@@ -7,6 +7,9 @@ import com.anssa8bu.ssafy.common.redis.RedisTtlProperties;
 import com.anssa8bu.ssafy.common.redis.dto.TrainingLeaseCache;
 import com.anssa8bu.ssafy.common.redis.repository.TrainingLeaseCacheRepository;
 import com.anssa8bu.ssafy.episode.application.EpisodeDownloadManifestService;
+import com.anssa8bu.ssafy.common.storage.PresignedDownloadService;
+import com.anssa8bu.ssafy.model.entity.SkillVersion;
+import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.skill.repository.SkillRepository;
 import com.anssa8bu.ssafy.training.entity.*;
 import com.anssa8bu.ssafy.training.repository.*;
@@ -25,15 +28,20 @@ public class TrainingClaimService {
   private final int heartbeatSeconds;
   private final TrainingJobClaimRepository candidates; private final TrainingAllocationGate gate;
   private final TrainingLeaseCacheRepository leaseCache; private final RedisTtlProperties redisTtl;
+  private final SkillVersionRepository versions; private final PresignedDownloadService downloads;
+  private final Duration checkpointDownloadTtl;
   public TrainingClaimService(TrainingJobRepository jobs, TrainingProfileRepository profiles,
       SkillRepository skills, EpisodeDownloadManifestService manifests, LeaseTokenService tokens,
       Clock clock, @Value("${app.training-worker.lease-duration}") Duration lease,
       @Value("${app.training-worker.heartbeat-interval-seconds}") int heartbeatSeconds,
       TrainingJobClaimRepository candidates, TrainingAllocationGate gate,
-      TrainingLeaseCacheRepository leaseCache, RedisTtlProperties redisTtl) {
+      TrainingLeaseCacheRepository leaseCache, RedisTtlProperties redisTtl,
+      SkillVersionRepository versions, PresignedDownloadService downloads,
+      @Value("${app.checkpoint-storage.presign-ttl}") Duration checkpointDownloadTtl) {
     this.jobs=jobs; this.profiles=profiles; this.skills=skills; this.manifests=manifests;
     this.tokens=tokens; this.clock=clock; this.lease=lease; this.heartbeatSeconds=heartbeatSeconds;
     this.candidates=candidates;this.gate=gate;this.leaseCache=leaseCache;this.redisTtl=redisTtl;
+    this.versions=versions;this.downloads=downloads;this.checkpointDownloadTtl=checkpointDownloadTtl;
   }
   @Transactional
   public Optional<ClaimResponse> claim(ClaimRequest request) {
@@ -54,10 +62,20 @@ public class TrainingClaimService {
     var skill=skills.findById(job.getSkillId()).orElseThrow();
     var profileData=new TrainingProfileData(profile.getProfileKey(), profile.getVersion(),
         profile.getAlgorithm(), profile.getHyperparameters(), profile.getConfigSha256());
-    var data=new JobData(job.getId(), skill.getSkillKey(), job.getInputMode(), profileData,
+    var data=new JobData(job.getId(), skill.getSkillKey(), job.getInputMode(), job.getTrainingMode(),
+        baseModel(job), profileData,
         job.getDatasetQuery(), job.getInputSnapshotSha256(), manifests.create(job.getId()));
     cache(job,expiry);
     return Optional.of(new ClaimResponse(data,job.getAttempt(),token,expiry,heartbeatSeconds));
+  }
+  private BaseModelData baseModel(TrainingJob job) {
+    if (job.getTrainingMode() == TrainingMode.FROM_SCRATCH) return null;
+    SkillVersion version=versions.findById(job.getBaseSkillVersionId()).orElseThrow();
+    var signed=downloads.issue(version.getCheckpointBucket(),version.getCheckpointKey(),checkpointDownloadTtl);
+    return new BaseModelData(version.getId(),version.getVersion(),signed.url(),signed.expiresAt(),
+        "application/octet-stream",version.getCheckpointBytes(),version.getCheckpointSha256(),
+        version.getArchitecture(),version.getFramework(),version.getFrameworkVersion(),
+        version.getContractVersion());
   }
   private void cache(TrainingJob job,Instant expiry) {
     try {
