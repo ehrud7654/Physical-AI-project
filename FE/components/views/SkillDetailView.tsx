@@ -52,6 +52,7 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
   const attentionCount = skillDatasets.filter((item) => item.status === 'INVALID' || item.status === 'DELETE_FAILED').length;
   /* 상세는 보조 목록이라 5개 단위로 짧게 끊는다. */
   const dataPage = usePagination(skillDatasets, 5);
+  const trainingPage = usePagination(skillTrainings, 5);
 
   const submitDescription = async (event: FormEvent) => {
     event.preventDefault();
@@ -92,13 +93,14 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
 
     <section className="card training-table skill-detail-section" aria-label="학습 현황">
       <div className="training-table-head"><div><h2>학습 현황</h2><p>이 동작으로 진행한 학습이에요.</p></div></div>
-      {skillTrainings.map((item) => <article key={item.id}>
+      {trainingPage.pageItems.map((item) => <article key={item.id}>
         <div className="training-main"><span className="learning-symbol">✦</span><div><button className="training-title-button" type="button" onClick={() => onOpenTraining(item.id)}>{item.name}</button><small>{item.robot} · {item.started}</small></div></div>
         <div><small>현재 단계</small><strong>{item.stage}</strong></div>
         <div className="training-progress"><div><i style={{ width: `${item.progress}%` }} /></div><strong>{item.progress}%</strong></div>
         <span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span>
       </article>)}
       {!skillTrainings.length && <p className="table-empty">아직 이 동작으로 진행한 학습이 없어요. 수집 데이터를 확인하고 학습을 시작해 보세요.</p>}
+      <Pagination page={trainingPage.page} pageCount={trainingPage.pageCount} onChange={trainingPage.setPage} />
     </section>
 
     <details className="card skill-data-panel" open={attentionCount > 0}>

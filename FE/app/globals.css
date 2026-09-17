@@ -2245,3 +2245,25 @@ button.device-card-content{cursor:pointer}
 /* 학습 상세 헤더 액션 버튼 — danger-button 기본 width:100%가 상세 헤딩에서 뭉개지는 것 교정 (S15P21A103-176) */
 .training-detail-actions .primary-button,.training-detail-actions .danger-button{width:auto!important;min-width:0;height:44px!important;min-height:44px!important;margin:0;padding:0 20px!important;white-space:nowrap;font-size:15px}
 .skill-data-row .skill-data-reason{grid-column:1/-1;margin-top:2px;color:#b42318;font-size:13px}
+
+/* UI 폴리시 (S15P21A103-176) */
+/* #1 동작 상세 '학습 현황' 헤더 좌측 정렬 */
+.skill-detail-section .training-table-head{justify-content:flex-start;text-align:left}
+.skill-detail-section .training-table-head>div{margin:0;text-align:left}
+/* #2 작업 추가 버튼이 혼자 커지지 않게 (라이브러리 헤딩의 min-width 제거) */
+.library-page-heading .primary-button,.library-page-heading .page-create-button{min-width:0}
+/* #3·#5 모달: 내용이 화면보다 크면 위에서부터 스크롤(상단 잘림·여백 없음 방지) */
+@media(max-width:900px){
+  .modal-backdrop{align-items:start;overflow-y:auto}
+  .register-modal,.confirm-modal,.skill-create-modal{margin:12px auto}
+}
+/* #4 표 헤더가 숨는 좁은 폭(680~900)에서도 각 셀 라벨을 보여줘 구분 */
+@media(max-width:900px){
+  .episode-row:not(.header)>span::before{content:attr(data-label);display:block;color:#667085;font-size:12px;font-weight:500;margin-bottom:3px}
+  .skill-list-row:not(.header){grid-template-columns:1fr 1fr;justify-items:start;text-align:left}
+  .skill-list-row:not(.header)>span{width:100%;text-align:left}
+}
+/* 모달은 고정 헤더/사이드바(z:90) 위에 오도록 (토스트 z:100보단 아래) */
+.modal-backdrop,.content>.modal-backdrop{z-index:95}
+/* 모바일: 고정 헤더(약 66px) 아래로 모달을 내려 상단 잘림 방지 (stacking에 의존하지 않음) */
+@media(max-width:900px){.modal-backdrop,.content>.modal-backdrop{padding:82px 14px 24px}.register-modal,.confirm-modal,.skill-create-modal{margin:0 auto}}
