@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { BlockKind, LearnedSkill, SavedWork, View, WorkflowBlock } from '@/types';
-import { blockCatalog, motorRanges } from '@/mocks';
+import { blockCatalog, motorRanges } from '@/lib/blocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
 import { useAppStore } from '@/hooks/useAppStore';
 import { makeBlock, makeSkillBlock, flattenWorkflowBlocks, estimateWorkflowSeconds, formatWorkDuration, getWorkflowIssues, workflowContentEquals, syncNextBlockId } from '@/lib/workflow';

@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '@/types';
 import { logout as clearAuthentication, restoreAuthentication } from '@/services';
 import { SESSION_EXPIRED_EVENT } from '@/services/client';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useToast } from '@/hooks/useToast';
 
 interface AuthState {
   authenticated: boolean;
@@ -22,11 +23,13 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { resetLearningDraft } = useAppStore();
+  const { showToast } = useToast();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState('');
 
+  /* eslint-disable react-hooks/set-state-in-effect -- mount 시 저장된 세션을 1회 복원한다. */
   useEffect(() => {
     const restoredUser = restoreAuthentication();
     if (restoredUser) {
@@ -35,6 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setInitializing(false);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const login = useCallback((user: AuthenticatedUser) => {
     setCurrentUser(user);
@@ -48,7 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthenticated(false);
     setSessionExpiredMessage('');
     router.push('/');
-  }, [router]);
+    showToast('로그아웃되었습니다.');
+  }, [router, showToast]);
 
   useEffect(() => {
     const handleSessionExpired = () => {

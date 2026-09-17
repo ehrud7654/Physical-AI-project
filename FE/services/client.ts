@@ -11,11 +11,6 @@ export async function delay(ms = 350): Promise<void> {
   }
 }
 
-/** 원본 Mock 배열을 오염시키지 않도록 깊은 복사해 반환한다. */
-export function clone<T>(value: T): T {
-  return structuredClone(value);
-}
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080/api/v1';
 let accessToken: string | null = null;
 let sessionExpirationNotified = false;

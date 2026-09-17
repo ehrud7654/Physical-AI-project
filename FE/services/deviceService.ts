@@ -122,13 +122,6 @@ export async function deleteDevices(
   return { robots, umis };
 }
 
-/** 모델 배포 API 연동 전까지 서버의 최신 로봇 목록을 유지한다. */
-export async function applyModel(robotId: string, model: string): Promise<Robot[]> {
-  void robotId;
-  void model;
-  return fetchRobots();
-}
-
 /** devices.id를 사용해 Jetson 장치의 이름과 설치 위치를 수정한다. */
 export async function updateRobot(
   deviceId: string,

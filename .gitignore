@@ -3,3 +3,6 @@
 Claude outputs/
 .idea/
 *.idea/*
+
+# Claude Code 세션 설정·산출물. 개인 도구 상태라 저장소에 올리지 않는다.
+.claude/

@@ -1,5 +1,5 @@
 import type { BlockKind, LearnedSkill, SavedWork, WorkflowBlock } from '@/types';
-import { blockCatalog, motorRanges } from '@/mocks';
+import { blockCatalog, motorRanges } from '@/lib/blocks';
 
 let nextBlockId = 20;
 

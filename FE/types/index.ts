@@ -81,12 +81,6 @@ export interface RobotDetail {
   createdAt: string;
 }
 
-export interface DeployedModel {
-  version: string;
-  name: string;
-  deployedAt: string;
-}
-
 export interface Umi {
   id: string;
   /** 서버 devices.id(UUID). 화면 표시용 핸들 번호인 id와 구분한다. */
@@ -123,15 +117,6 @@ export interface Dataset {
   recoveryAction: RecoveryAction;
 }
 
-export interface RetentionPolicy {
-  name: string;
-  defaultRetentionDays: number;
-  postTrainingGraceDays: number;
-  maxRetentionDays: number;
-  allowManualExtension: boolean;
-  allowManualPurge: boolean;
-}
-
 export type RecoveryAction = 'WAIT' | 'RETRY_UPLOAD' | 'RECORD_AGAIN' | 'SET_LABEL' | 'EXTEND_RETENTION' | 'CREATE_DEPLOYMENT' | 'RETRY' | 'CONTACT_SUPPORT' | 'NONE';
 
 export interface BlockingReason { code: string; message: string; recoveryAction: RecoveryAction; }
@@ -143,19 +128,6 @@ export interface EpisodePreviewSession {
   manifestUrl: string;
   thumbnailUrl: string;
   expiresAt: string;
-}
-
-export interface TrainingRequirements {
-  skillId: string;
-  skillKey: string;
-  minimumEpisodeCount: number;
-  recommendedEpisodeCount: number;
-  maximumEpisodeCount: number;
-  allowedSources: Array<'SIM' | 'REAL'>;
-  requiresSameUmiDevice: boolean;
-  requiredContractVersion: string;
-  supported: boolean;
-  requirementsVersion: number;
 }
 
 export interface TrainingSkill {

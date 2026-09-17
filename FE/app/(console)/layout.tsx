@@ -24,6 +24,20 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [pathname]);
 
+  /* 콘솔 모달(.modal-backdrop)이 열려 있는 동안 문서 스크롤을 잠근다 — 뷰 12곳을 각각 고치지 않고 한 곳에서. */
+  useEffect(() => {
+    const update = () => {
+      document.body.style.overflow = document.querySelector('.modal-backdrop') ? 'hidden' : '';
+    };
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, { childList: true, subtree: true });
+    update();
+    return () => {
+      observer.disconnect();
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   useEffect(() => {
     if (loadError) showToast('데이터를 불러오지 못했어요.', 'error');
   }, [loadError, showToast]);
