@@ -69,7 +69,7 @@ services:
       # device as logical CUDA device 0 inside this container.
       GPU_COUNT: 1
       CUDA_VISIBLE_DEVICES: 0
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       TRAINING_COMMAND_DURATION_SECONDS: ${TRAINING_COMMAND_DURATION_SECONDS:-5}
     volumes:
@@ -80,7 +80,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
@@ -98,7 +98,7 @@ services:
     profiles: ["simulation"]
     environment:
       CUDA_VISIBLE_DEVICES: 0
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
       MUJOCO_GL: egl
       PYOPENGL_PLATFORM: egl
@@ -112,7 +112,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     restart: "no"
 
@@ -121,7 +121,7 @@ services:
     ports:
       - "127.0.0.1:${DCGM_EXPORTER_PORT:-9400}:9400"
     environment:
-      NVIDIA_VISIBLE_DEVICES: 2
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     cap_add:
       - SYS_ADMIN
@@ -130,10 +130,16 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["2"]
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9400/metrics >/dev/null || exit 1"]
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9400;
+          printf "GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3;
+          read -r status <&3;
+          [[ "$$status" == *" 200 "* ]]'
       interval: 15s
       timeout: 5s
       retries: 5
