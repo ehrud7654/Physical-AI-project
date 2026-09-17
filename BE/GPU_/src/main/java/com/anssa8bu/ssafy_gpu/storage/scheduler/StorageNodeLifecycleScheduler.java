@@ -20,7 +20,7 @@ public class StorageNodeLifecycleScheduler {
   }
 
   @EventListener(ApplicationReadyEvent.class)
-  public void register() {
+  public synchronized void register() {
     try {
       registration.register();
     } catch (RuntimeException e) {
@@ -28,7 +28,9 @@ public class StorageNodeLifecycleScheduler {
     }
   }
 
-  @Scheduled(fixedDelayString = "${app.worker.storage-heartbeat-interval:15s}")
+  @Scheduled(
+      initialDelayString = "${app.worker.storage-heartbeat-interval:15s}",
+      fixedDelayString = "${app.worker.storage-heartbeat-interval:15s}")
   public void heartbeat() {
     try {
       heartbeat.heartbeat();
