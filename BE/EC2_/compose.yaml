@@ -76,6 +76,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-development-only-change-this-secret-key}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,https://j15a103.p.ssafy.io}
       EPISODE_MAX_UPLOAD_BYTES: ${EPISODE_MAX_UPLOAD_BYTES:-52428800}
+      AWS_PROFILE: ${AWS_PROFILE:-personal-s3}
+      AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
+      AWS_CONFIG_FILE: /aws/config
+    volumes:
+      - ${AWS_CONFIG_DIR:?AWS_CONFIG_DIR is required for the selected AWS profile}:/aws:ro
     depends_on:
       postgres:
         condition: service_healthy
