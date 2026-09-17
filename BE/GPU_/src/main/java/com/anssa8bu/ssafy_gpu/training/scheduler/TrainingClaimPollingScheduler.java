@@ -3,6 +3,7 @@ package com.anssa8bu.ssafy_gpu.training.scheduler;
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingClaimService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingHeartbeatService;
+import com.anssa8bu.ssafy_gpu.training.application.TrainingInputPreparationService;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState.ActiveTraining;
 import org.slf4j.Logger;
@@ -18,16 +19,19 @@ public class TrainingClaimPollingScheduler {
   private final TrainingHeartbeatService heartbeats;
   private final WorkerRuntimeState state;
   private final WorkerProperties properties;
+  private final TrainingInputPreparationService inputPreparation;
 
   public TrainingClaimPollingScheduler(
       TrainingClaimService claims,
       TrainingHeartbeatService heartbeats,
       WorkerRuntimeState state,
-      WorkerProperties properties) {
+      WorkerProperties properties,
+      TrainingInputPreparationService inputPreparation) {
     this.claims = claims;
     this.heartbeats = heartbeats;
     this.state = state;
     this.properties = properties;
+    this.inputPreparation = inputPreparation;
   }
 
   @Scheduled(
@@ -72,6 +76,7 @@ public class TrainingClaimPollingScheduler {
                       assignment.attempt(),
                       gpuIndex,
                       assignment.leaseExpiresAt());
+                  inputPreparation.prepare(response, gpuIndex);
                 }
               });
     } catch (RuntimeException e) {
