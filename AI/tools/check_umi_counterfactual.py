@@ -6,7 +6,11 @@ import unittest
 import numpy as np
 
 from tools.eval_counterfactual_oracle_suite import _record
-from umi.counterfactual import reference_anchors, shifted_chunk_from_reference
+from umi.counterfactual import (
+    dense_executed_future_rows,
+    reference_anchors,
+    shifted_chunk_from_reference,
+)
 from umi.relative_dataset import transform_to_vector
 
 
@@ -80,6 +84,31 @@ class CounterfactualTests(unittest.TestCase):
         result = _record(report)
         self.assertTrue(result["stable_side_grasp_success"])
         self.assertFalse(result["full_trajectory_geometry_valid"])
+
+    def test_dense_future_rows_use_only_measured_uniform_samples(self) -> None:
+        n = 12
+        images = np.zeros((n, 3, 224, 224), dtype=np.uint8)
+        images[:, 0, 0, 0] = np.arange(n)
+        poses = np.tile(np.eye(4), (n, 1, 1))
+        poses[:, 0, 3] = np.arange(n) * 0.001
+        gaps = np.linspace(0.04, 0.05, n)
+        times = np.arange(n) * 0.1
+        source_rows = np.arange(n) // 4
+        arrays = dense_executed_future_rows(
+            images, poses, gaps, times, source_rows)
+        self.assertEqual(arrays["image"].shape, (3, 2, 3, 224, 224))
+        self.assertEqual(arrays["action"].shape, (3, 8, 10))
+        np.testing.assert_allclose(arrays["action"][:, 0, 0], 0.001)
+        np.testing.assert_allclose(
+            arrays["action_timestamp"][:, 0]
+            - arrays["observation_timestamp"][:, -1], 0.1)
+        self.assertEqual(int(arrays["image"][0, 0, 0, 0, 0]), 0)
+        self.assertEqual(int(arrays["image"][0, 1, 0, 0, 0]), 1)
+        with self.assertRaisesRegex(ValueError, "uniformly timed"):
+            bad_times = times.copy()
+            bad_times[5] += 0.01
+            dense_executed_future_rows(
+                images, poses, gaps, bad_times, source_rows)
 
 
 if __name__ == "__main__":

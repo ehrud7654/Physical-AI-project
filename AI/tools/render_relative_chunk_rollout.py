@@ -32,7 +32,11 @@ from tools.umi_mujoco import (
     gap_from_angle,
 )
 from umi.arm_preflight import prepare_arm_commands
-from umi.counterfactual import reference_anchors, shifted_chunk_from_reference
+from umi.counterfactual import (
+    dense_executed_future_rows,
+    reference_anchors,
+    shifted_chunk_from_reference,
+)
 from umi.convert import invert_gap_curve
 from umi.relative_dataset import SCHEMA, relative_vector, write_episode
 from umi.relative_robot_preflight import (
@@ -345,6 +349,13 @@ def main() -> int:
             "and retimed target timestamps as a non-training-ready NPZ"
         ),
     )
+    parser.add_argument(
+        "--dense-candidate-stream-out", type=Path,
+        help=(
+            "policy-free diagnostic only: sample achieved MuJoCo RGB/TCP/gap "
+            "at exact 10Hz and save future achieved trajectories, never ctrl"
+        ),
+    )
     parser.add_argument("--episode",
                         help="override the registration's representative episode")
     parser.add_argument(
@@ -430,17 +441,26 @@ def main() -> int:
         raise SystemExit(
             "--oracle-shift-target-with-object requires --oracle, fixed "
             "registration approach start, and --execute-steps 1")
-    if args.candidate_stream_out is not None:
+    if (args.candidate_stream_out is not None
+            and args.dense_candidate_stream_out is not None):
+        raise SystemExit("choose only one candidate stream output")
+    candidate_path = (args.candidate_stream_out
+                      if args.candidate_stream_out is not None
+                      else args.dense_candidate_stream_out)
+    if candidate_path is not None:
         if (not args.oracle_shift_target_with_object
                 or args.observation_source != "simulation"
                 or args.validation_horizon_steps != 8
-                or args.candidate_stream_out.suffix.lower() != ".npz"):
+                or (args.dense_candidate_stream_out is not None
+                    and not args.execute_final_oracle_tail)
+                or candidate_path.suffix.lower() != ".npz"):
             raise SystemExit(
                 "candidate stream requires shifted-target oracle, simulation "
-                "observation, full 8-step validation, and an .npz output")
-        if (args.candidate_stream_out.exists()
-                or args.candidate_stream_out.with_suffix(".json").exists()
-                or args.candidate_stream_out.with_suffix(".json")
+                "observation, full 8-step validation, and an .npz output; "
+                "dense mode also requires the final tail")
+        if (candidate_path.exists()
+                or candidate_path.with_suffix(".json").exists()
+                or candidate_path.with_suffix(".json")
                 == args.out.with_suffix(".json")):
             raise SystemExit("candidate stream output exists or conflicts with report")
     if args.device != "cpu":
@@ -511,6 +531,10 @@ def main() -> int:
     cfg = copy.deepcopy(load_config(args.config))
     if args.visual_domain is not None:
         cfg = apply_visual_domain(cfg, load_visual_domain(args.visual_domain))
+    if args.dense_candidate_stream_out is not None:
+        # With the current 2ms MuJoCo integrator, 50Hz is exactly ten
+        # substeps. Every fifth control tick is an actual 100ms observation.
+        cfg["control"]["rate_hz"] = 50.0
     kinematic_grasp = registration.get("kinematic_grasp")
     if args.kinematic_grasp is not None:
         kinematic_grasp = json.loads(
@@ -569,6 +593,11 @@ def main() -> int:
             "image", "proprio", "action", "observation_timestamp",
             "action_timestamp", "source_row")
     }
+    dense_images: list[np.ndarray] = []
+    dense_poses: list[np.ndarray] = []
+    dense_gaps: list[float] = []
+    dense_times: list[float] = []
+    dense_source_rows: list[int] = []
     perturb_rng = np.random.default_rng(args.image_perturb_seed)
     frozen_policy_images: np.ndarray | None = None
 
@@ -577,7 +606,7 @@ def main() -> int:
         oracle=args.oracle,
         observation_source=args.observation_source,
         measure_visual_alignment=args.measure_visual_alignment,
-        record_candidate_stream=args.candidate_stream_out is not None,
+        record_candidate_stream=candidate_path is not None,
     )
     with MujocoPickEnv(
         cfg, render=env_render_enabled, object_jitter_m=0.0,
@@ -589,6 +618,16 @@ def main() -> int:
         current_q = env.joint_positions()
         current_pose = matrix_from_fk(env.model, ik, current_q)
         current_gap = gap_from_angle(float(current_q[5]), curve)
+        if args.dense_candidate_stream_out is not None:
+            if not np.isclose(
+                    env._substeps * env.model.opt.timestep, 0.02,
+                    atol=1e-10, rtol=0):
+                raise ValueError("dense candidate requires an exact 20ms control tick")
+            dense_images.append(observation.images["cam_wrist"].copy())
+            dense_poses.append(current_pose.copy())
+            dense_gaps.append(current_gap)
+            dense_times.append(float(observation.timestamp))
+            dense_source_rows.append(int(start_row))
         oracle_reference_anchors = (
             reference_anchors(
                 episode["action"], start_row=start_row,
@@ -823,6 +862,17 @@ def main() -> int:
                         action = normalize(interpolated_target, cfg, clip=True)
                         observation = env.step(action)
                         simulation_ticks += 1
+                        if (args.dense_candidate_stream_out is not None
+                                and simulation_ticks % 5 == 0):
+                            measured_q = env.joint_positions()
+                            dense_images.append(
+                                observation.images["cam_wrist"].copy())
+                            dense_poses.append(
+                                matrix_from_fk(env.model, ik, measured_q))
+                            dense_gaps.append(gap_from_angle(
+                                float(measured_q[5]), curve))
+                            dense_times.append(float(observation.timestamp))
+                            dense_source_rows.append(int(row))
                         max_tracking_error = max(
                             max_tracking_error,
                             float(np.max(np.abs(
@@ -1138,6 +1188,52 @@ def main() -> int:
         result["candidate_stream"] = str(args.candidate_stream_out)
         result["candidate_stream_rows"] = len(candidate_arrays["action"])
         result["candidate_stream_training_ready"] = False
+    if args.dense_candidate_stream_out is not None:
+        dense_arrays = dense_executed_future_rows(
+            np.stack(dense_images), np.stack(dense_poses),
+            np.asarray(dense_gaps), np.asarray(dense_times),
+            np.asarray(dense_source_rows), rate_hz=10.0,
+        )
+        dense_meta = {
+            "schema": SCHEMA,
+            "status": "CANDIDATE_NOT_TRAINING_READY",
+            "episode_id": args.dense_candidate_stream_out.stem,
+            "source_episode": representative,
+            "source_dataset": str(args.data),
+            "source_oracle_report": str(report_path),
+            "source_registration": str(args.registration),
+            "source_visual_domain": str(args.visual_domain),
+            "source": "policy_free_mujoco_achieved_future_tcp_10hz_candidate",
+            "object_offset_world_xy_m": [
+                float(args.object_offset_x_m), float(args.object_offset_y_m)],
+            "robot_start_is_fixed": True,
+            "observation_horizon": 2,
+            "action_horizon": 8,
+            "rate_hz": 10.0,
+            "control_rate_hz": float(env.control_rate_hz),
+            "integrator_timestep_s": float(env.model.opt.timestep),
+            "source_nominal_rate_hz": float(runtime_meta["rate_hz"]),
+            "source_time_preserved": False,
+            "observation_timestamps": "actual MuJoCo simulation clock",
+            "action_timestamps": "actual future MuJoCo sample clock",
+            "action_semantics": (
+                "achieved future MuJoCo TCP pose relative to current achieved "
+                "TCP plus achieved absolute gap; neither ctrl nor a human "
+                "demonstration target"),
+            "sampling": "every fifth 20ms control tick; no interpolation or padding",
+            "simulation_grip_preload_m": args.grip_preload_m,
+            "preload_applied_to_label": True,
+            "synthetic_ground_truth_images": True,
+            "human_demonstration": False,
+            "training_ready": False,
+            "success_label": "unverified",
+            "physical_registration_validated": False,
+        }
+        write_episode(args.dense_candidate_stream_out, dense_arrays, dense_meta)
+        result["dense_candidate_stream"] = str(args.dense_candidate_stream_out)
+        result["dense_candidate_stream_rows"] = len(dense_arrays["action"])
+        result["dense_candidate_stream_samples"] = len(dense_times)
+        result["dense_candidate_stream_training_ready"] = False
     if not args.no_video:
         _save_gif(frames, args.out, fps=max(1, round(
             float(cfg["control"]["rate_hz"]) / args.capture_every)))
