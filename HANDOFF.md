@@ -1,8 +1,62 @@
 # Project Handoff
 
-> Last updated: 2026-09-16 KST. **Read this section before the older material
+> Last updated: 2026-09-17 KST. **Read this section before the older material
 > below.** The repository and uncommitted diff are the source of truth. Do not
 > reset, clean, pull, switch branches, or bulk-add files before reviewing §0.3.
+
+## 0.0 Latest diagnostic state (2026-09-17; read before the historical §0.1-0.6)
+
+The historical §0.3 Git snapshot and K=2 next-action text below are **not the
+current repository state**. The local geometry/contact gate was completed, and
+the user authorized diagnostic learned-policy rollout on the local machine.
+Shared-server learned-checkpoint inference, policy probes and rollout remain
+forbidden; server GPU use is for training. No hardware/deployment approval
+follows from these simulation results.
+
+- Real demonstration data: `umi_real_relative_20260911_v10`, 70 episodes,
+  1,248 anchors, observation history 2 and future relative SE(3)+gap chunk 8.
+  The task is still the upright 40mm-wide snack case, grasped **from both sides
+  of its body**, never top-down.
+- The diagnostic registration for this work is
+  `AI/out/relative_chunk_v9_width40mm_preload2mm_lookback4_fixedstart_20260916.json`.
+  It is **rejected as a global registration**; only the predeclared eight-episode
+  subset is used with an explicit diagnostic override. K=4 is a separate
+  near-contact test, not a replacement for the historical K=2 oracle gate.
+- New policy-free, fixed-start, object-only ±10mm X/Y exact-10Hz suite:
+  `AI/tools/eval_sim_relative_10hz_suite.py` produces a resumable 8 episodes ×
+  5 placements manifest without deleting partial outputs. The completed local
+  run has 35/40 checked candidate conditions and 637 complete H=2/K=8 rows.
+  All five rejected conditions belong to short episode `145625` and remain in
+  the denominator. `AI/tools/audit_sim_relative_10hz_candidates.py` checks
+  fixed-start image/target variation and extrapolation baselines. These are
+  **simulator-achieved future states**, not robot commands, human labels or
+  approved training data (`training_ready=false`).
+- `AI/tools/preflight_sim_relative_10hz_domain.py` keeps all five placements
+  of a source episode in one fold and compares distinct source rows at baseline
+  object placement only. The eligible source split is five train / two holdout
+  episodes; `145625` is excluded from training but not from the 40-condition
+  denominator. Forty distinct source rows were paired. `source_row` aligns
+  trajectory phase, not physically synchronized camera times after retiming.
+- Same-checkpoint **inference-time** RGB replacement was run on the local CPU
+  over the same 8 × 5 placements using the v10 seed-0 best-val checkpoint
+  (SHA-256 `5bc8a25de054bc29967ebe387d808d5add0e7ad8f791c60e40b20f3440e6adbb`).
+  Stable side grasp: normal 35/40, spatial-information-free `mean_fill` 36/40,
+  noise 36/40. The 40 placements cluster within only eight source episodes;
+  they are not independent demonstrations. Under this narrow K=4, provisional
+  2mm-preload/contact-proxy, one-step-validation simulation, **normal RGB has
+  no observed advantage**. This does not prove the policy never uses images,
+  nor demonstrate real-world visual localisation. Do not equate this 35/40 with
+  the policy-free candidate-suite 35/40: the latter validates the full 8-step
+  future and has a different denominator meaning.
+
+Measurement and exact report paths are in
+`AI/docs/MEASURE_s22_mujoco_visual_alignment_0917.md`. The new source has
+targeted tests `AI/tools/check_sim_relative_10hz_{suite,audit,domain}.py`.
+Generated `AI/out` reports and NPZ/media are not source and should stay out of
+Git. Next substantive work is a stronger, episode-separated visual-localisation
+test (including controls for near-contact start/proprioception shortcuts),
+followed by rechecking camera and contact assumptions. Do not promote the
+synthetic candidates or current checkpoint to hardware claims.
 
 ## 0. Immediate account-transfer state (2026-09-15)
 
@@ -15,10 +69,11 @@ close on the left and right sides of the upright package, like lifting a cup.
 Top-down/claw-machine grasping is the wrong task even if the object rises.
 
 The active data path is the relative EEF trajectory dataset family, currently
-`umi_real_relative_20260911_v9`: observation horizon 2 at 10 Hz and an 8-step
+`umi_real_relative_20260911_v10`: observation horizon 2 at 10 Hz and an 8-step
 future relative SE(3)+gap target. Robot-base registration and IK are applied at
-execution/validation time, not baked into the training label. Learned-policy
-success is **not** currently established.
+execution/validation time, not baked into the training label. A learned policy
+has been run in narrow local simulation, but useful image-conditioned grasping
+and hardware success are **not** established; see §0.0.
 
 ### 0.2 Last work completed in the current task
 
@@ -324,7 +379,7 @@ git diff --check: PASS (line-ending warnings only)
 MuJoCo: 3.12.0, local Windows CPU diagnostic
 ```
 
-### 0.3 Git state — preserve exactly
+### 0.3 Historical Git snapshot (2026-09-16; use current `git status` for staging)
 
 ```text
 branch: umi
@@ -378,7 +433,7 @@ exclude `.local-umi-deps/`, `.pnpm-store/`, `.server-worktree/`, `.tmp*`, `tmp/`
 `FE/.vite/`, `FE/tsconfig.tsbuildinfo`, large Docs media/backups and unrelated
 AI study/config files unless the user separately asks to commit them.
 
-### 0.4 P0 — exact next action
+### 0.4 Historical P0 (2026-09-16; superseded by §0.0)
 
 1. Review this handoff, `git status`, and the current diff; do not recreate the
    ver1 fix.
