@@ -11,6 +11,11 @@ public final class TrainingJobModels {
     EXISTING_EPISODES
   }
 
+  public enum TrainingMode {
+    FROM_SCRATCH,
+    FINE_TUNE
+  }
+
   public enum TrainingJobStatus {
     QUEUED,
     PREPARING,
@@ -58,10 +63,25 @@ public final class TrainingJobModels {
       String contractVersion,
       ArchiveData archive) {}
 
+  public record BaseModelData(
+      UUID skillVersionId,
+      int version,
+      String downloadUrl,
+      Instant expiresAt,
+      String contentType,
+      long sizeBytes,
+      String sha256,
+      String architecture,
+      String framework,
+      String frameworkVersion,
+      String contractVersion) {}
+
   public record JobData(
       UUID id,
       String skillKey,
       TrainingInputMode inputMode,
+      TrainingMode trainingMode,
+      BaseModelData baseModel,
       TrainingProfileData trainingProfile,
       Map<String, Object> datasetQuery,
       String inputSnapshotSha256,

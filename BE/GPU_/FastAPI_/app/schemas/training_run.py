@@ -9,6 +9,24 @@ from app.schemas.common import ApiModel
 from app.schemas.training_profile import TrainingProfileSnapshot
 
 
+class BaseModelInput(ApiModel):
+    skill_version_id: str = Field(min_length=1)
+    version: int = Field(ge=1)
+    storage_key: str = Field(min_length=1)
+    sha256: str
+    architecture: str = Field(min_length=1)
+    framework: str = Field(min_length=1)
+    framework_version: str = Field(min_length=1)
+    contract_version: str = Field(min_length=1)
+
+    @field_validator("sha256")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("sha256 must be a lowercase SHA-256")
+        return value
+
+
 class EpisodeInput(ApiModel):
     input_order: int = Field(ge=0)
     episode_id: str = Field(min_length=1)
@@ -30,6 +48,8 @@ class CreateTrainingRunRequest(ApiModel):
     worker_id: str = Field(min_length=1)
     storage_node_id: str = Field(min_length=1)
     gpu_index: int = Field(ge=0)
+    training_mode: str = "FROM_SCRATCH"
+    base_model: BaseModelInput | None = None
     training_profile: TrainingProfileSnapshot
     input_snapshot_sha256: str
     episodes: list[EpisodeInput] = Field(min_length=1)

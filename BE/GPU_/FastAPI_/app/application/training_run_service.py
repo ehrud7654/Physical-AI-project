@@ -67,6 +67,16 @@ class TrainingRunService:
             raise DomainError(403, "WORKER_SCOPE_MISMATCH", "인증된 worker 또는 StorageNode 범위와 다릅니다.")
         if request.execution_lease_expires_at.astimezone(timezone.utc) <= utc_now():
             raise DomainError(409, "EXECUTION_LEASE_EXPIRED", "실행 임대가 이미 만료되었습니다.")
+        if request.training_mode not in {"FROM_SCRATCH", "FINE_TUNE"}:
+            raise DomainError(422, "INVALID_TRAINING_MODE", "지원하지 않는 학습 모드입니다.")
+        if request.training_mode == "FINE_TUNE" and request.base_model is None:
+            raise DomainError(422, "BASE_MODEL_REQUIRED", "추가 학습에는 기준 모델이 필요합니다.")
+        if request.training_mode == "FROM_SCRATCH" and request.base_model is not None:
+            raise DomainError(422, "BASE_MODEL_NOT_ALLOWED", "처음부터 학습에는 기준 모델을 사용할 수 없습니다.")
+        if request.base_model is not None:
+            path = self.paths.resolve_existing_file(request.base_model.storage_key)
+            if sha256_file(path) != request.base_model.sha256:
+                raise DomainError(422, "BASE_MODEL_HASH_MISMATCH", "기준 모델 hash가 일치하지 않습니다.")
         profile = request.training_profile
         if profile.algorithm not in self.settings.algorithm_set:
             raise DomainError(422, "UNSUPPORTED_TRAINING_PROFILE", "지원하지 않는 학습 알고리즘입니다.")
