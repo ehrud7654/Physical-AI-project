@@ -5,13 +5,15 @@ import type { SkillOverview, TrainingSkill } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 import { fetchSkillOverviews, fetchTrainingSkills, updateSkillDescription } from '@/services';
 import { datasetStatusMeta, deploymentStatusMeta } from '@/lib/datasets';
+import { Pagination } from '@/components/Pagination';
+import { usePagination } from '@/hooks/usePagination';
 
 /**
  * 동작 하나의 허브: 이 동작으로 진행한 학습 현황과 수집 데이터를 보여주고, 여기서 학습을 시작한다.
  * 라우트 파라미터는 skill id. 에피소드·학습은 skillKey로 묶이므로 `/skills` 카탈로그에서 id → skillKey를 푼다
  * (`/skills/overview`는 배포판에 따라 skillKey가 없을 수 있다).
  */
-export function SkillDetailView({ skillId, onBack, onStartTraining, onToast }: { skillId: string; onBack: () => void; onStartTraining: (skillKey: string) => void; onToast: (message: string) => void }) {
+export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraining, onToast }: { skillId: string; onBack: () => void; onStartTraining: (skillKey: string) => void; onOpenTraining: (trainingId: string) => void; onToast: (message: string) => void }) {
   const { datasets, trainings } = useAppStore();
   const [skill, setSkill] = useState<TrainingSkill | null>(null);
   const [overview, setOverview] = useState<SkillOverview | null>(null);
@@ -48,6 +50,8 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onToast }: {
   const skillTrainings = trainings.filter((item) => item.skillKey === skillKey);
   const skillDatasets = datasets.filter((item) => item.skillKey === skillKey);
   const attentionCount = skillDatasets.filter((item) => item.status === 'INVALID' || item.status === 'DELETE_FAILED').length;
+  /* 상세는 보조 목록이라 5개 단위로 짧게 끊는다. */
+  const dataPage = usePagination(skillDatasets, 5);
 
   const submitDescription = async (event: FormEvent) => {
     event.preventDefault();
@@ -89,7 +93,7 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onToast }: {
     <section className="card training-table skill-detail-section" aria-label="학습 현황">
       <div className="training-table-head"><div><h2>학습 현황</h2><p>이 동작으로 진행한 학습이에요.</p></div></div>
       {skillTrainings.map((item) => <article key={item.id}>
-        <div className="training-main"><span className="learning-symbol">✦</span><div><strong>{item.name}</strong><small>{item.robot} · {item.started}</small></div></div>
+        <div className="training-main"><span className="learning-symbol">✦</span><div><button className="training-title-button" type="button" onClick={() => onOpenTraining(item.id)}>{item.name}</button><small>{item.robot} · {item.started}</small></div></div>
         <div><small>현재 단계</small><strong>{item.stage}</strong></div>
         <div className="training-progress"><div><i style={{ width: `${item.progress}%` }} /></div><strong>{item.progress}%</strong></div>
         <span className={`training-badge ${item.status === '실패' ? 'failed' : item.status === '완료' ? 'complete' : ''}`}>{item.status}</span>
@@ -105,7 +109,7 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onToast }: {
       </summary>
       <div className="skill-data-list">
         {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>수집 시각</span><span>UMI</span><span>길이</span><span>상태</span><span>보관</span></div>}
-        {skillDatasets.map((item) => { const meta = datasetStatusMeta[item.status]; return <div className="skill-data-row" key={item.id}>
+        {dataPage.pageItems.map((item) => { const meta = datasetStatusMeta[item.status]; return <div className="skill-data-row" key={item.id}>
           <span>{item.date}</span>
           <span>{item.umiId}</span>
           <span>{item.duration}</span>
@@ -113,6 +117,7 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onToast }: {
           <span>{item.retentionDays}일 남음</span>
         </div>; })}
         {!skillDatasets.length && <p className="table-empty">아직 수집된 데이터가 없어요. 수집 앱에서 ‘{skill.displayName}’을 선택해 데이터를 수집해 주세요.</p>}
+        <Pagination page={dataPage.page} pageCount={dataPage.pageCount} onChange={dataPage.setPage} />
       </div>
     </details>
 

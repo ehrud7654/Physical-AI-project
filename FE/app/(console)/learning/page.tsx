@@ -8,5 +8,5 @@ import { viewToPath } from '@/lib/routes';
 export default function LearningPage() {
   const router = useRouter();
   const { showToast } = useToast();
-  return <TrainingStatusView onNavigate={(view) => router.push(viewToPath(view))} onToast={showToast} onUseResult={(name) => router.push(`/work/new?skill=${encodeURIComponent(name)}`)} />;
+  return <TrainingStatusView onNavigate={(view) => router.push(viewToPath(view))} onToast={showToast} onOpen={(trainingId) => router.push(`/learning/${encodeURIComponent(trainingId)}`)} />;
 }

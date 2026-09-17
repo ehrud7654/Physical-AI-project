@@ -2231,3 +2231,13 @@ button.device-card-content{cursor:pointer}
 .skill-data-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 1fr .9fr;gap:14px;align-items:center;padding:14px 4px;border-top:1px solid var(--product-line);font-size:14px}
 .skill-data-row.header{color:var(--product-muted);font-size:13px;font-weight:500;border-top:0}
 @media(max-width:680px){.skill-data-row{grid-template-columns:1fr 1fr}.skill-data-row.header{display:none}}
+.skill-detail-section article>div:nth-child(2){text-align:right}
+.skill-detail-section .training-title-button{font-size:15px;font-weight:600}
+
+/* 학습 상세·작업 상세 라우트 (S15P21A103-176) */
+.training-detail-actions{display:flex;gap:10px;align-items:center}
+.training-detail-card{padding:24px 28px}
+.training-detail-card .training-modal-progress{margin-top:18px}
+.training-detail-card .modal-note,.training-detail-card .active-execution-warning{margin-top:14px}
+.page-heading .data-modal-title{display:flex;align-items:center;gap:12px}
+.work-detail-page{position:static;max-width:1100px;margin:0 auto}
