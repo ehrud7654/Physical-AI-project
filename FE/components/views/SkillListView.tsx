@@ -107,15 +107,15 @@ export function SkillListView({ onToast }: { onToast: (message: string) => void 
     <section className="card episode-panel data-table-panel">
       <div className="episode-table" role="table" aria-label="동작 목록">
         <div className="episode-row skill-list-row header" role="row">
-          <span>동작 이름</span><span>설명</span><span>최신 버전</span><span>버전 생성 시각</span><span>배포 상태</span><span>최근 학습 요청</span>
+          <span>동작 이름</span><span>설명</span><span>최신 버전</span><span>마지막 업데이트</span><span>상태</span><span>최근 학습</span>
         </div>
         {pageItems.map((skill) => { const deployment = deploymentStatusMeta[skill.deploymentStatus]; const versionCreatedAt = skill.latestVersionCreatedAt ? formatApiDateTimeParts(skill.latestVersionCreatedAt) : null; const latestTrainingRequestedAt = skill.latestTrainingRequestedAt ? formatApiDateTimeParts(skill.latestTrainingRequestedAt) : null; return <div className="episode-row skill-list-row" role="row" key={`${skill.displayName}-${skill.latestVersionCreatedAt ?? 'empty'}`}>
           <span className="skill-list-name" data-label="동작 이름"><button className="text-button skill-name-button" type="button" onClick={() => openSkillEditor(skill)}>{skill.displayName}</button></span>
           <span data-label="설명">{skill.description || '-'}</span>
           <span className="skill-list-version" data-label="최신 버전">{skill.latestVersion == null ? '-' : `v${skill.latestVersion}`}</span>
-          <span className="skill-list-datetime" data-label="버전 생성 시각">{versionCreatedAt ? <><strong>{versionCreatedAt.date}</strong><small>{versionCreatedAt.time}</small></> : '-'}</span>
-          <span data-label="배포 상태"><span className={`dataset-status ${deployment.className}`}><i />{deployment.label}</span></span>
-          <span className="skill-list-datetime" data-label="최근 학습 요청">{latestTrainingRequestedAt ? <><strong>{latestTrainingRequestedAt.date}</strong><small>{latestTrainingRequestedAt.time}</small></> : '-'}</span>
+          <span className="skill-list-datetime" data-label="마지막 업데이트">{versionCreatedAt ? <><strong>{versionCreatedAt.date}</strong><small>{versionCreatedAt.time}</small></> : '-'}</span>
+          <span data-label="상태"><span className={`dataset-status ${deployment.className}`}><i />{deployment.label}</span></span>
+          <span className="skill-list-datetime" data-label="최근 학습">{latestTrainingRequestedAt ? <><strong>{latestTrainingRequestedAt.date}</strong><small>{latestTrainingRequestedAt.time}</small></> : '-'}</span>
         </div>; })}
         {!loading && !error && !filtered.length && <div className="table-empty"><p>{skills.length ? '검색 결과가 없어요.' : '등록된 동작이 없어요.'}</p></div>}
       </div>
