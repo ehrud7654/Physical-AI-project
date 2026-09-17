@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.anssa8bu.ssafy.common.exception.BusinessConflictException;
 
 @Service
 public class JetsonHeartbeatService {
@@ -29,6 +30,8 @@ public class JetsonHeartbeatService {
 
   @Transactional
   public JetsonHeartbeatResponse heartbeat(Jwt jwt, JetsonHeartbeatRequest request) {
+    if (!"robot-command-v1".equals(request.contractVersion()))
+      throw new BusinessConflictException("UNSUPPORTED_CONTRACT_VERSION", "지원하지 않는 로봇 명령 계약입니다.");
     Device device = identity.requireDevice(jwt);
     Robot robot = identity.requireRobot(jwt);
     Instant now = clock.instant();

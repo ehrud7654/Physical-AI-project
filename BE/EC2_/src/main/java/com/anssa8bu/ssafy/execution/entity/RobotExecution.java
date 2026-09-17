@@ -114,6 +114,15 @@ public class RobotExecution {
         || progressPercent.compareTo(BigDecimal.valueOf(100)) > 0) {
       throw new IllegalArgumentException("progressPercent is out of range");
     }
+    if (!canTransition(status, nextStatus))
+      throw new IllegalArgumentException("invalid execution status transition");
+    if (progressPercent.compareTo(this.progressPercent) < 0)
+      throw new IllegalArgumentException("progressPercent must not decrease");
+    if (this.currentStep != null && currentStep != null && currentStep < this.currentStep)
+      throw new IllegalArgumentException("currentStep must not decrease");
+    if (nextStatus == RobotExecutionStatus.SUCCEEDED
+        && progressPercent.compareTo(BigDecimal.valueOf(100)) != 0)
+      throw new IllegalArgumentException("succeeded execution requires 100 percent progress");
     lastReportId = reportId;
     lastReportSequence = sequence;
     lastReportHash = reportHash;
@@ -124,6 +133,23 @@ public class RobotExecution {
     if (nextStatus == RobotExecutionStatus.SUCCEEDED
         || nextStatus == RobotExecutionStatus.CANCELED
         || nextStatus == RobotExecutionStatus.FAILED) finishedAt = occurredAt;
+  }
+
+  private boolean canTransition(RobotExecutionStatus current, RobotExecutionStatus next) {
+    if (current == next) return !terminal(current);
+    if (next == RobotExecutionStatus.FAILED) return !terminal(current);
+    return switch (current) {
+      case REQUESTED -> next == RobotExecutionStatus.STARTING;
+      case STARTING -> next == RobotExecutionStatus.RUNNING || next == RobotExecutionStatus.CANCEL_REQUESTED;
+      case RUNNING -> next == RobotExecutionStatus.SUCCEEDED || next == RobotExecutionStatus.CANCEL_REQUESTED;
+      case CANCEL_REQUESTED -> next == RobotExecutionStatus.CANCELED;
+      default -> false;
+    };
+  }
+
+  private boolean terminal(RobotExecutionStatus value) {
+    return value == RobotExecutionStatus.SUCCEEDED || value == RobotExecutionStatus.CANCELED
+        || value == RobotExecutionStatus.FAILED;
   }
 
   public void fail(

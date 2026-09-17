@@ -17,4 +17,8 @@ public interface DeviceRepository extends JpaRepository<Device, UUID> {
   Optional<Device> findByIdAndOwnerId(UUID id, UUID ownerId);
 
   boolean existsByHandleNumber(String handleNumber);
+
+  List<Device> findAllByDeviceTypeAndConnectionStatusAndLastSeenAtBefore(
+      DeviceType type, com.anssa8bu.ssafy.device.entity.DeviceConnectionStatus status,
+      java.time.Instant cutoff);
 }

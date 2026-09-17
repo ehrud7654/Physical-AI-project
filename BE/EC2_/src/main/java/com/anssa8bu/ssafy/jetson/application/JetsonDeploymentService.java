@@ -34,6 +34,7 @@ public class JetsonDeploymentService {
   private final DeploymentRepository deployments;
   private final DeploymentItemRepository items;
   private final DeploymentReportRepository reports;
+  private final RobotSkillDeploymentRepository robotSkills;
   private final SkillVersionRepository skills;
   private final TaskStepRepository steps;
   private final S3Presigner presigner;
@@ -45,6 +46,7 @@ public class JetsonDeploymentService {
       DeploymentRepository deployments,
       DeploymentItemRepository items,
       DeploymentReportRepository reports,
+      RobotSkillDeploymentRepository robotSkills,
       SkillVersionRepository skills,
       TaskStepRepository steps,
       S3Presigner presigner,
@@ -54,6 +56,7 @@ public class JetsonDeploymentService {
     this.deployments = deployments;
     this.items = items;
     this.reports = reports;
+    this.robotSkills = robotSkills;
     this.skills = skills;
     this.steps = steps;
     this.presigner = presigner;
@@ -74,7 +77,8 @@ public class JetsonDeploymentService {
     Robot robot = identity.requireRobot(jwt);
     Deployment deployment = owned(robot, deploymentId);
     if (deployment.getStatus() == DeploymentStatus.CANCELED
-        || deployment.getStatus() == DeploymentStatus.FAILED) {
+        || deployment.getStatus() == DeploymentStatus.FAILED
+        || deployment.getStatus() == DeploymentStatus.SUCCEEDED) {
       throw new BusinessConflictException("STATE_CONFLICT", "종료된 배포의 manifest는 재발급할 수 없습니다.");
     }
     return manifest(robot, deployment);
@@ -99,6 +103,12 @@ public class JetsonDeploymentService {
     String errorCode = request.error() == null ? null : request.error().code();
     String errorMessage = request.error() == null ? null : request.error().message();
     Instant now = clock.instant();
+    List<DeploymentItem> deploymentItems = items.findAllByDeploymentId(deploymentId);
+    applyItemReports(deploymentItems, request.items(), now);
+    if (request.status() == DeploymentStatus.SUCCEEDED
+        && deploymentItems.stream().anyMatch(item -> item.getStatus() != DeploymentItemStatus.VERIFIED)) {
+      throw new BusinessConflictException("DEPLOYMENT_ITEMS_NOT_VERIFIED", "모든 모델 검증 후 성공 보고할 수 있습니다.");
+    }
     try {
       deployment.acceptReport(
           request.sequence(),
@@ -118,11 +128,54 @@ public class JetsonDeploymentService {
             request.sequence(),
             request.status(),
             request.progressPercent(),
-            request.items(),
+            request.items() == null ? List.of() : request.items(),
             request.error() == null ? null : Map.of("code", errorCode, "message", errorMessage),
             now));
-    if (request.status() == DeploymentStatus.SUCCEEDED) robot.activateDeployment(deploymentId);
+    if (request.status() == DeploymentStatus.SUCCEEDED) {
+      robot.activateDeployment(deploymentId);
+      activateSkills(robot, deploymentItems, deploymentId, now);
+    }
     return response(deployment);
+  }
+
+  private void applyItemReports(List<DeploymentItem> target, List<Map<String, Object>> reports, Instant now) {
+    if (reports == null) return;
+    Map<UUID, DeploymentItem> byId = new HashMap<>();
+    target.forEach(item -> byId.put(item.getId(), item));
+    for (Map<String, Object> value : reports) {
+      UUID id;
+      DeploymentItemStatus status;
+      try {
+        id = UUID.fromString(String.valueOf(value.get("deploymentItemId")));
+        status = DeploymentItemStatus.valueOf(String.valueOf(value.get("status")));
+      } catch (RuntimeException error) {
+        throw new BusinessConflictException("INVALID_DEPLOYMENT_REPORT", "배포 항목 형식이 올바르지 않습니다.");
+      }
+      DeploymentItem item = byId.get(id);
+      if (item == null) throw new BusinessConflictException("INVALID_DEPLOYMENT_REPORT", "배포에 없는 항목입니다.");
+      Map<?, ?> itemError = value.get("error") instanceof Map<?, ?> map ? map : null;
+      try {
+        item.acceptReport(status,
+            itemError == null ? null : String.valueOf(itemError.get("code")),
+            itemError == null ? null : String.valueOf(itemError.get("message")), now);
+      } catch (IllegalArgumentException error) {
+        throw new BusinessConflictException("INVALID_DEPLOYMENT_REPORT", error.getMessage());
+      }
+    }
+  }
+
+  private void activateSkills(Robot robot, List<DeploymentItem> deploymentItems, UUID deploymentId, Instant now) {
+    List<RobotSkillDeployment> active = robotSkills.findAllByRobotIdAndStatusOrderByDeployedAtDesc(
+        robot.getId(), RobotSkillDeploymentStatus.ACTIVE);
+    active.forEach(value -> value.retire(now));
+    robotSkills.flush();
+    List<RobotSkillDeployment> replacements = deploymentItems.stream().map(item -> {
+      SkillVersion version = skills.findById(item.getSkillVersionId())
+          .orElseThrow(() -> new ResourceNotFoundException("SkillVersion"));
+      return new RobotSkillDeployment(UUID.randomUUID(), robot.getId(), version.getSkillId(),
+          version.getId(), deploymentId, now);
+    }).toList();
+    robotSkills.saveAll(replacements);
   }
 
   private Manifest manifest(Robot robot, Deployment deployment) {

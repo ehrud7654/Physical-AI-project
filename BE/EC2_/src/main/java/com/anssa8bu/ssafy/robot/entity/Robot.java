@@ -92,4 +92,6 @@ public class Robot extends AuditableEntity {
   public void activateDeployment(UUID deploymentId) {
     currentDeploymentId = deploymentId;
   }
+
+  public void markOffline() { connectionStatus = RobotConnectionStatus.OFFLINE; }
 }

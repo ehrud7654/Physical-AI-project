@@ -129,11 +129,31 @@ public class Deployment extends AuditableEntity {
             || errorMessage.isBlank())) {
       throw new IllegalArgumentException("failed deployment requires an error");
     }
+    if (!canTransition(status, nextStatus))
+      throw new IllegalArgumentException("invalid deployment status transition");
+    if (nextStatus != DeploymentStatus.FAILED && (errorCode != null || errorMessage != null))
+      throw new IllegalArgumentException("only failed deployment may contain error");
+    if (progressPercent.compareTo(this.progressPercent) < 0)
+      throw new IllegalArgumentException("progressPercent must not decrease");
     this.lastReportSequence = sequence;
     this.status = nextStatus;
     this.progressPercent = progressPercent;
     this.errorCode = errorCode;
     this.errorMessage = errorMessage;
     if (nextStatus == DeploymentStatus.SUCCEEDED && appliedAt == null) appliedAt = receivedAt;
+  }
+
+  private boolean canTransition(DeploymentStatus current, DeploymentStatus next) {
+    if (current == next)
+      return current != DeploymentStatus.SUCCEEDED && current != DeploymentStatus.FAILED
+          && current != DeploymentStatus.CANCELED;
+    if (next == DeploymentStatus.FAILED) return current != DeploymentStatus.SUCCEEDED && current != DeploymentStatus.CANCELED;
+    return switch (current) {
+      case PENDING -> next == DeploymentStatus.DOWNLOADING || next == DeploymentStatus.CANCELED;
+      case DOWNLOADING -> next == DeploymentStatus.VERIFYING || next == DeploymentStatus.CANCELED;
+      case VERIFYING -> next == DeploymentStatus.APPLYING || next == DeploymentStatus.CANCELED;
+      case APPLYING -> next == DeploymentStatus.SUCCEEDED || next == DeploymentStatus.CANCELED;
+      default -> false;
+    };
   }
 }

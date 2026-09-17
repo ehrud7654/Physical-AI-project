@@ -80,4 +80,25 @@ public class DeploymentItem extends AuditableEntity {
   public String getErrorMessage() {
     return errorMessage;
   }
+
+  public void acceptReport(DeploymentItemStatus next, String code, String message, Instant now) {
+    if (next == null) throw new IllegalArgumentException("item status is required");
+    if (status == DeploymentItemStatus.VERIFIED || status == DeploymentItemStatus.FAILED) {
+      if (status != next) throw new IllegalArgumentException("deployment item is terminal");
+      return;
+    }
+    boolean allowed =
+        (status == DeploymentItemStatus.PENDING && next == DeploymentItemStatus.DOWNLOADING)
+            || (status == DeploymentItemStatus.DOWNLOADING
+                && (next == DeploymentItemStatus.VERIFIED || next == DeploymentItemStatus.FAILED))
+            || next == DeploymentItemStatus.FAILED;
+    if (!allowed) throw new IllegalArgumentException("invalid deployment item transition");
+    if (next == DeploymentItemStatus.FAILED && (code == null || code.isBlank()))
+      throw new IllegalArgumentException("failed item requires error");
+    status = next;
+    errorCode = code;
+    errorMessage = message;
+    if (next == DeploymentItemStatus.DOWNLOADING && downloadedAt == null) downloadedAt = now;
+    if (next == DeploymentItemStatus.VERIFIED) verifiedAt = now;
+  }
 }

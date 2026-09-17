@@ -148,4 +148,6 @@ public class Device extends AuditableEntity {
   public Instant getLastSeenAt() {
     return lastSeenAt;
   }
+
+  public void markOffline() { connectionStatus = DeviceConnectionStatus.OFFLINE; }
 }

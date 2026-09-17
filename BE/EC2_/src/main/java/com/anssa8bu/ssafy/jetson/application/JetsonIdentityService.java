@@ -36,6 +36,8 @@ public class JetsonIdentityService {
     if (device.getDeviceType() != DeviceType.JETSON) {
       throw new BusinessConflictException("DEVICE_TYPE_MISMATCH", "JETSON 장치 토큰이 필요합니다.");
     }
+    if (!device.getOwnerId().toString().equals(jwt.getSubject()))
+      throw new BusinessConflictException("INVALID_DEVICE_TOKEN", "장치 소유자 정보가 일치하지 않습니다.");
     return device;
   }
 
