@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '@/types';
 import { logout as clearAuthentication, restoreAuthentication } from '@/services';
 import { SESSION_EXPIRED_EVENT } from '@/services/client';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useToast } from '@/hooks/useToast';
 
 interface AuthState {
   authenticated: boolean;
@@ -22,6 +23,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { resetLearningDraft } = useAppStore();
+  const { showToast } = useToast();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -50,7 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthenticated(false);
     setSessionExpiredMessage('');
     router.push('/');
-  }, [router]);
+    showToast('로그아웃되었습니다.');
+  }, [router, showToast]);
 
   useEffect(() => {
     const handleSessionExpired = () => {
