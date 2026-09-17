@@ -2,3 +2,4 @@
 # 내용이 필요하면 각 파트 폴더(AI/docs 등) 안으로 옮겨서 커밋한다.
 Claude outputs/
 .idea/
+*.idea/*
