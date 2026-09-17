@@ -604,6 +604,9 @@ select:focus,input:focus{border-color:#697be0;box-shadow:0 0 0 3px rgba(82,103,2
 .data-detail{display:grid;grid-template-columns:110px 1fr;gap:16px;margin:24px 0}.data-detail dd{margin:0}
 .deployment-status{margin-top:18px;padding:16px;border:1px solid #d0d5dd;border-radius:8px;background:#fafafa}
 .deployment-status p{margin:8px 0;color:#475467;font-size:13px}.deployment-status button{margin-top:8px;min-height:44px}
+.deployment-status.failed{border-color:#f0c9c7;background:#fff8f7}
+.deployment-status .deployment-error{display:flex;align-items:center;gap:8px;color:#b42318;font-weight:700}
+.deployment-status .deployment-error>span{display:inline-grid;width:20px;height:20px;flex:0 0 20px;place-items:center;border-radius:50%;background:#b42318;color:#fff;font-size:13px;font-weight:900}
 .episode-row button{padding:8px 0;white-space:normal;text-align:left}
 .training-controls{display:flex;align-items:center;gap:8px}.training-controls .refresh-button,.training-controls select{box-sizing:border-box;height:36px;padding-top:0;padding-bottom:0;font-size:12px;font-weight:400}.training-controls .refresh-button{padding-right:12px;padding-left:12px}.refresh-status{margin-top:7px!important;font-size:11px!important;color:#667085!important}.refresh-status.failed{color:#b42318!important}
 @media(max-width:900px){
