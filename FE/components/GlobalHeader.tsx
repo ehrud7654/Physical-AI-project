@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { View } from '@/types';
-function NavIcon({ name }: { name: 'dashboard' | 'data' | 'skills' | 'learning' | 'work' | 'devices' }) {
+function NavIcon({ name }: { name: 'dashboard' | 'skills' | 'learning' | 'work' | 'devices' }) {
   const paths = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></>,
-    data: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" /></>,
     skills: <><path d="M5 4h14v16H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
     learning: <><path d="M3 5.5 12 2l9 3.5-9 3.5-9-3.5Z" /><path d="M6 8v6.5c0 1.7 2.7 3.5 6 3.5s6-1.8 6-3.5V8" /><path d="M21 6v7" /></>,
     work: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V2h6v2M8.5 10h7M8.5 15h5" /></>,
@@ -28,7 +27,6 @@ export function GlobalHeader({ authenticated, activeView, onHome, onNavigate, on
     <button className="global-brand" onClick={onHome} aria-label="S.S.A.F.Y 메인으로 이동"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" />{variant === 'header' && <span className="brand-fullname">Show Simply Arm Follows You</span>}</button>
     <nav ref={menuRef} className={`global-nav${menuOpen ? ' open' : ''}`} aria-label="플랫폼 메뉴">
       <div className="global-nav-item"><button className={activeView === 'dashboard' ? 'active' : ''} onClick={() => goTo('dashboard')}><NavIcon name="dashboard" />대시 보드</button></div>
-      <div className="global-nav-item"><button className={activeView === 'data' ? 'active' : ''} onClick={() => goTo('data')}><NavIcon name="data" />데이터</button></div>
       <div className="global-nav-item"><button className={activeView === 'skills' ? 'active' : ''} onClick={() => goTo('skills')}><NavIcon name="skills" />동작 목록</button></div>
       <div className="global-nav-item"><button className={activeView === 'training' || activeView === 'learn' ? 'active' : ''} onClick={() => goTo('training')}><NavIcon name="learning" />학습</button></div>
       <div className="global-nav-item"><button className={activeView === 'library' || activeView === 'work' ? 'active' : ''} onClick={() => goTo('library')}><NavIcon name="work" />작업</button></div>

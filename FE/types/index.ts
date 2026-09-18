@@ -1,4 +1,4 @@
-export type View = 'dashboard' | 'data' | 'skills' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
+export type View = 'dashboard' | 'skills' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
 
 export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
@@ -141,6 +141,8 @@ export interface TrainingSkill {
 
 export interface SkillOverview {
   id: string;
+  /** 에피소드·학습과 이어주는 공통 키. 최신 BE는 내려주지만 배포판엔 없을 수 있어 선택 필드로 둔다. */
+  skillKey?: string;
   displayName: string;
   description: string | null;
   latestVersion: number | null;
