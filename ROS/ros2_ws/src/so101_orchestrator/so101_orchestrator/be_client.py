@@ -134,13 +134,25 @@ class BEClient:
                         resp.raise_for_status()
                         backoff = self.reconnect_backoff   # 연결 성공 → 백오프 리셋
                         print("[BEClient] command-stream 연결됨")
-                        self._parse_sse(resp.iter_lines(), on_command, should_stop)
+                        # iter_lines 는 이벤트 경계(빈 줄)를 안 넘겨줄 때가 있어 직접 줄 분리.
+                        self._parse_sse(self._iter_lines(resp), on_command, should_stop)
             except Exception as e:  # noqa: BLE001 — 어떤 오류든 재연결로 흡수
                 if should_stop():
                     break
                 print(f"[BEClient] command-stream 오류, {backoff:.0f}s 후 재시도: {e}")
                 time.sleep(backoff)
                 backoff = min(backoff * 2, self.max_reconnect_backoff)  # 지수 백오프
+
+    @staticmethod
+    def _iter_lines(resp):
+        """SSE 바이트를 직접 \\n 으로 쪼개 **빈 줄 포함** 모든 줄을 넘긴다.
+        httpx iter_lines 가 이벤트 경계(빈 줄)를 안 넘길 때가 있어 직접 처리."""
+        buf = ""
+        for chunk in resp.iter_text():
+            buf += chunk
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
+                yield line
 
     @staticmethod
     def _parse_sse(lines, on_command: Callable[[dict], None],
