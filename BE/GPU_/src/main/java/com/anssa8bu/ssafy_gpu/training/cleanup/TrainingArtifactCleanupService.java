@@ -1,12 +1,15 @@
 package com.anssa8bu.ssafy_gpu.training.cleanup;
 
+import com.anssa8bu.ssafy_gpu.checkpoint.persistence.CheckpointTransferJournal;
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.*;
 import org.springframework.stereotype.Service;
 
@@ -16,25 +19,40 @@ public class TrainingArtifactCleanupService {
   private final Path root;
   private final WorkerRuntimeState state;
   private final TrainingArtifactCleanupProperties properties;
+  private final CheckpointTransferJournal checkpoints;
+  private final MeterRegistry meter;
+  private final ConcurrentHashMap<String, CleanupTarget> retries = new ConcurrentHashMap<>();
 
   public TrainingArtifactCleanupService(
       WorkerProperties worker,
       WorkerRuntimeState state,
-      TrainingArtifactCleanupProperties properties) {
+      TrainingArtifactCleanupProperties properties,
+      CheckpointTransferJournal checkpoints,
+      MeterRegistry meter) {
     root = worker.storageRoot().toAbsolutePath().normalize();
     this.state = state;
     this.properties = properties;
+    this.checkpoints = checkpoints;
+    this.meter = meter;
   }
 
   public void cleanup(UUID jobId, int attempt) {
-    deleteTree(resolve("training-inputs", jobId, attempt));
-    deleteTree(resolve("training-results", jobId, attempt));
+    if (isActive(jobId, attempt) || checkpoints.isFinalizationPending(jobId, attempt)) {
+      log.info("미완료 학습 artifact 정리 보류: trainingJobId={}, attempt={}", jobId, attempt);
+      return;
+    }
+    boolean success = deleteTree(resolve("training-inputs", jobId, attempt));
+    success &= deleteTree(resolve("training-results", jobId, attempt));
+    String key = jobId + ":" + attempt;
+    if (success) retries.remove(key);
+    else retries.put(key, new CleanupTarget(jobId, attempt));
   }
 
   public void cleanupOrphans() {
     if (!properties.enabled()) return;
     scan(root.resolve("training-inputs"));
     scan(root.resolve("training-results"));
+    retries.values().forEach(target -> cleanup(target.jobId(), target.attempt()));
   }
 
   private void scan(Path artifactRoot) {
@@ -61,13 +79,10 @@ public class TrainingArtifactCleanupService {
               path -> {
                 try {
                   int attempt = Integer.parseInt(path.getFileName().toString());
-                  boolean active =
-                      state.activeTrainingAssignments().stream()
-                          .anyMatch(
-                              value ->
-                                  value.trainingJobId().equals(jobId)
-                                      && value.attempt() == attempt);
-                  if (!active && Files.getLastModifiedTime(path).toInstant().isBefore(threshold))
+                  boolean active = isActive(jobId, attempt);
+                  if (!active
+                      && !checkpoints.isFinalizationPending(jobId, attempt)
+                      && Files.getLastModifiedTime(path).toInstant().isBefore(threshold))
                     deleteTree(path);
                 } catch (NumberFormatException | IOException ignored) {
                   // 작업 디렉터리 규칙과 다른 항목은 자동 삭제하지 않는다.
@@ -85,8 +100,13 @@ public class TrainingArtifactCleanupService {
     return path;
   }
 
-  private void deleteTree(Path directory) {
-    if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return;
+  private boolean isActive(UUID jobId, int attempt) {
+    return state.activeTrainingAssignments().stream()
+        .anyMatch(value -> value.trainingJobId().equals(jobId) && value.attempt() == attempt);
+  }
+
+  private boolean deleteTree(Path directory) {
+    if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return true;
     if (Files.isSymbolicLink(directory) || !directory.startsWith(root))
       throw new IllegalArgumentException("학습 artifact 삭제 경로가 안전하지 않습니다.");
     try {
@@ -110,8 +130,14 @@ public class TrainingArtifactCleanupService {
             }
           });
       log.info("학습 artifact 정리 완료: path={}", directory);
+      meter.counter("gpu.training.cleanup", "result", "success").increment();
+      return true;
     } catch (IOException exception) {
       log.warn("학습 artifact 정리 실패: path={}", directory, exception);
+      meter.counter("gpu.training.cleanup", "result", "failure").increment();
+      return false;
     }
   }
+
+  private record CleanupTarget(UUID jobId, int attempt) {}
 }
