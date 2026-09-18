@@ -149,11 +149,15 @@ class OrchestratorNode(Node):
     def _recover_current_deployment(self):
         """재시작 시 BE가 '배포됨'으로 아는데 우린 메모리 비어 '미배포' 나던 것 방지.
         current 조회 → 로컬 ckpt 있으면 _deployed_ckpts 채우고 정책 configure."""
+        self.get_logger().info("복구 시작: 현재 배포 조회")
         try:
             cur = self._be.get_current_deployment()
         except Exception as e:  # noqa: BLE001
             self.get_logger().warn(f"현재 배포 조회 실패(복구 스킵): {e}")
             return
+        self.get_logger().info(
+            f"복구 조회 결과: {type(cur).__name__} "
+            f"{list(cur) if isinstance(cur, dict) else cur}")
         if not cur:
             return
         recovered: dict[str, str] = {}
