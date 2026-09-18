@@ -189,6 +189,7 @@ class OrchestratorNode(Node):
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_DOWNLOADING, 10.0)
             loaded: dict[str, str] = {}          # 이 배포에서 받은 svid → 경로 (성공시 반영)
+            item_reports: list = []              # SUCCEEDED 전 item VERIFIED 보고용
             for model in manifest.get("models", []):
                 svid = model["skillVersionId"]
                 # 계약 검증 — actionSpace 는 BE enum 과 일치해야 함(관절공간만 실행 가능)
@@ -231,9 +232,14 @@ class OrchestratorNode(Node):
                                      "message": f"{model['skillVersionId']} 무결성 실패"})
                     return
                 loaded[svid] = dest
+                # BE: 모든 item VERIFIED 여야 SUCCEEDED 허용(JetsonDeploymentService).
+                # deploymentItemId 는 manifest Model 에 있어야 함(현재 BE 미포함 — 은찬 추가 필요).
+                iid = model.get("deploymentItemId")
+                if iid:
+                    item_reports.append({"deploymentItemId": iid, "status": "VERIFIED"})
 
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_VERIFYING, 60.0)
+                                       bc.DEPLOY_VERIFYING, 60.0, items=item_reports or None)
             # 정책 노드에 ckpt 로드. ponytail: 다중 스킬이면 첫 ckpt만 configure —
             #   단일 스킬 데모 기준. 스텝별 스킬 전환이 필요해지면 SKILL step 에서 재configure.
             first_ckpt = next(iter(loaded.values()), None)
@@ -242,7 +248,7 @@ class OrchestratorNode(Node):
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_APPLYING, 90.0)
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_SUCCEEDED, 100.0)
+                                       bc.DEPLOY_SUCCEEDED, 100.0, items=item_reports or None)
             self._deployed_ckpts = loaded        # 성공한 것만 반영(실패시 이전 배포 유지)
             self.get_logger().info(f"배포 {dep_id} 적용 완료 — 스킬 {list(loaded)}")
         except Exception as e:  # noqa: BLE001
