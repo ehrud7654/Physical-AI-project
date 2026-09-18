@@ -2,6 +2,7 @@ package com.anssa8bu.ssafy.jetson.presentation;
 
 import com.anssa8bu.ssafy.jetson.application.JetsonCommandStreamService;
 import com.anssa8bu.ssafy.jetson.application.JetsonIdentityService;
+import com.anssa8bu.ssafy.jetson.application.JetsonCommandRecoveryService;
 import com.anssa8bu.ssafy.robot.entity.Robot;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,16 +17,21 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class JetsonCommandStreamController {
   private final JetsonIdentityService identity;
   private final JetsonCommandStreamService streams;
+  private final JetsonCommandRecoveryService recovery;
 
   public JetsonCommandStreamController(
-      JetsonIdentityService identity, JetsonCommandStreamService streams) {
+      JetsonIdentityService identity, JetsonCommandStreamService streams,
+      JetsonCommandRecoveryService recovery) {
     this.identity = identity;
     this.streams = streams;
+    this.recovery = recovery;
   }
 
   @GetMapping(path = "/command-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   public SseEmitter connect(@AuthenticationPrincipal Jwt jwt) {
     Robot robot = identity.requireRobot(jwt);
-    return streams.connect(robot.getId());
+    SseEmitter emitter = streams.connect(robot.getId());
+    recovery.replay(robot.getId());
+    return emitter;
   }
 }
