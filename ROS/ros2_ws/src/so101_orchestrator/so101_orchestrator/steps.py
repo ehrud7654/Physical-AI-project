@@ -4,8 +4,10 @@ BE는 step 트리를 flat 리스트(parentStepId)로 보내고 totalSteps 만 �
 (ExecutionService.countExecutableSteps). 펼치기는 여기서 — 같은 규칙으로 세야
 우리 currentStep 이 BE 범위 검사(≤ totalSteps)에 안 걸린다.
 
-MOTOR step parameters = {"motor": "J1".."J6", "angle": 도} (TaskService.validateMotor).
-J{n} = so101.yaml 관절 index n-1. 도→rad, 그리퍼(마지막 관절)는 폭[m]으로 변환.
+MOTOR step parameters = {"motor": "J1".."J6", "angle": 값} (BE TaskService.validateMotor).
+J{n} = URDF 움직이는 관절 n-1번째. 팔(revolute)은 angle=도→rad, 그리퍼(prismatic)는
+angle=손가락 간격[m] 그대로. (BE 계약: 그리퍼 단위 = 미터. 키 이름은 angle 공용.)
+  ⚠️ 그리퍼가 정말 J6·angle 필드로 미터를 보내는지 은찬 최종 확인 필요.
 """
 from __future__ import annotations
 
@@ -43,17 +45,20 @@ def motor_index(motor, n_joints: int) -> int:
     return i
 
 
-def motor_to_command(params: dict, joints: list[tuple[str, float, float]],
-                     current: list[float], max_width_m: float) -> list[float]:
-    """MOTOR parameters → 6축 명령(팔 rad, 그리퍼 m). 지정 관절만 바꾸고 나머지는 current 유지.
-    도→rad 후 so101.yaml 범위로 clamp. 그리퍼(마지막)는 rad 범위를 [0, max_width_m]에 선형 매핑.
-    ponytail: 그리퍼 각도→폭 선형 가정 — 실측 캘리브레이션 나오면 교체."""
+def motor_to_command(params: dict, joints: list[tuple[str, float, float, bool]],
+                     current: list[float]) -> list[float]:
+    """MOTOR parameters → 관절 명령 벡터(팔 rad, 그리퍼 m). 지정 관절만 바꾸고 나머지 유지.
+    팔(revolute) = 도→rad, 그리퍼(prismatic) = 미터 그대로. 둘 다 URDF 한계로 clamp."""
     i = motor_index(params.get("motor"), len(joints))
-    angle = params.get("angle")
-    if isinstance(angle, bool) or not isinstance(angle, (int, float)):
-        raise ValueError(f"angle 숫자 아님: {angle!r}")
-    _, lo, hi = joints[i]
-    rad = min(hi, max(lo, math.radians(float(angle))))
+    val = params.get("angle")
+    if isinstance(val, bool) or not isinstance(val, (int, float)):
+        raise ValueError(f"angle 숫자 아님: {val!r}")
+    _, lo, hi, is_gripper = joints[i]
+    target = float(val) if is_gripper else math.radians(float(val))   # 그리퍼는 미터 직접
+    if lo is not None:
+        target = max(lo, target)
+    if hi is not None:
+        target = min(hi, target)
     cmd = list(current)
-    cmd[i] = (rad - lo) / (hi - lo) * max_width_m if i == len(joints) - 1 else rad
+    cmd[i] = target
     return cmd

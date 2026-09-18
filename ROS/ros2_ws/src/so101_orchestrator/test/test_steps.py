@@ -1,13 +1,14 @@
-"""step 해석 self-check — REPEAT 펼치기·J매핑·도→rad·그리퍼 폭 (S15P21A103-43)."""
+"""step 해석 self-check — REPEAT 펼치기·J매핑·도→rad·그리퍼 미터 (S15P21A103-43)."""
 import math
 
 import pytest
 
 from so101_orchestrator import steps as st
 
-# so101.yaml 형태 (name, lo, hi) — 테스트용 단순 범위
-J = [("shoulder_pan", -1.0, 1.0), ("shoulder_lift", -1.0, 1.0), ("elbow_flex", -1.0, 1.0),
-     ("wrist_flex", -1.0, 1.0), ("wrist_roll", -1.0, 1.0), ("gripper", 0.0, 2.0)]
+# (name, lo, hi, is_gripper) — URDF parse_joints 형태. 팔 5 + 그리퍼(prismatic, 미터)
+J = [("shoulder_pan", -1.0, 1.0, False), ("shoulder_lift", -1.0, 1.0, False),
+     ("elbow_flex", -1.0, 1.0, False), ("wrist_flex", -1.0, 1.0, False),
+     ("wrist_roll", -1.0, 1.0, False), ("gripper", 0.0, 0.09, True)]
 
 
 def _s(sid, typ, order, parent=None, repeat=None):
@@ -41,30 +42,27 @@ def test_motor_index():
             st.motor_index(bad, 6)
 
 
-def test_motor_to_command_arm_deg_to_rad_and_clamp():
+def test_motor_arm_deg_to_rad_and_clamp():
     cur = [0.1] * 6
-    out = st.motor_to_command({"motor": "J2", "angle": 45}, J, cur, 0.09)
+    out = st.motor_to_command({"motor": "J2", "angle": 45}, J, cur)
     assert out[1] == pytest.approx(math.radians(45))
     assert out[0] == 0.1 and out[2:] == [0.1] * 4          # 나머지 유지
     assert cur == [0.1] * 6                                 # 입력 불변
-    assert st.motor_to_command({"motor": "J1", "angle": 179}, J, cur, 0.09)[0] == 1.0  # clamp hi
-    assert st.motor_to_command({"motor": "J1", "angle": -179}, J, cur, 0.09)[0] == -1.0
+    assert st.motor_to_command({"motor": "J1", "angle": 179}, J, cur)[0] == 1.0    # clamp hi
+    assert st.motor_to_command({"motor": "J1", "angle": -179}, J, cur)[0] == -1.0
 
 
-def test_motor_to_command_gripper_to_width():
+def test_motor_gripper_meters_direct():
     cur = [0.0] * 6
-    hi_deg = math.degrees(2.0)
-    assert st.motor_to_command({"motor": "J6", "angle": hi_deg}, J, cur, 0.09)[5] == \
-        pytest.approx(0.09)                                 # 상한 → 최대 폭
-    assert st.motor_to_command({"motor": "J6", "angle": 0}, J, cur, 0.09)[5] == 0.0
-    assert st.motor_to_command({"motor": "J6", "angle": math.degrees(1.0)}, J, cur,
-                               0.09)[5] == pytest.approx(0.045)
+    assert st.motor_to_command({"motor": "J6", "angle": 0.05}, J, cur)[5] == 0.05   # 미터 그대로
+    assert st.motor_to_command({"motor": "J6", "angle": 0.2}, J, cur)[5] == 0.09    # clamp hi
+    assert st.motor_to_command({"motor": "J6", "angle": -0.1}, J, cur)[5] == 0.0    # clamp lo
 
 
-def test_motor_to_command_rejects_bad_angle():
+def test_motor_rejects_bad_angle():
     for bad in ({"motor": "J1"}, {"motor": "J1", "angle": "45"}, {"motor": "J1", "angle": True}):
         with pytest.raises(ValueError):
-            st.motor_to_command(bad, J, [0.0] * 6, 0.09)
+            st.motor_to_command(bad, J, [0.0] * 6)
 
 
 def test_action_spaces_match_be_enum():

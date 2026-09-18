@@ -23,14 +23,15 @@ from datetime import datetime, timezone
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray, String
 
 from so101_orchestrator import be_client as bc
+from so101_orchestrator import robot_model as rm
 from so101_orchestrator import steps as st
 from so101_orchestrator.be_client import BEClient
 from so101_orchestrator.policy_control import PolicyControl
-from so101_policy.config import load_joints
 
 try:
     import httpx
@@ -49,8 +50,6 @@ class OrchestratorNode(Node):
         self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
         self.declare_parameter("ckpt_dir", "/tmp/so101_ckpt")
         self.declare_parameter("contract_version", "robot-command-v1")
-        self.declare_parameter("config_path", "")          # so101.yaml (빈값=so101_policy 기본 탐색)
-        self.declare_parameter("max_width_m", 0.09)        # 그리퍼 폭 상한 (urdf max_width_m)
         self.declare_parameter("motor_settle_sec", 2.0)    # MOTOR step: timeoutSeconds 없을 때 대기
         self.declare_parameter("skill_default_sec", 10.0)  # SKILL step: timeoutSeconds 없을 때 실행
 
@@ -63,15 +62,16 @@ class OrchestratorNode(Node):
         self._hb_period = float(self.get_parameter("heartbeat_sec").value)
         self._ckpt_dir = self.get_parameter("ckpt_dir").value
         self._contract = self.get_parameter("contract_version").value
-        self._max_width_m = float(self.get_parameter("max_width_m").value)
         self._motor_settle_sec = float(self.get_parameter("motor_settle_sec").value)
         self._skill_default_sec = float(self.get_parameter("skill_default_sec").value)
-        try:   # J1..J6 → 관절 매핑의 단일 출처. 실패해도 MOTOR step 만 막히고 나머진 동작.
-            self._joints = load_joints(self.get_parameter("config_path").value or None)
-        except Exception as e:  # noqa: BLE001
-            self._joints = None
-            self.get_logger().warn(f"so101.yaml 로드 실패 (MOTOR step 불가): {e}")
         os.makedirs(self._ckpt_dir, exist_ok=True)
+
+        # 관절 순서·한계 = URDF(/robot_description) 단일 출처. latched 라 기동 직후 도착.
+        # MOTOR step 이 오기 전(실행은 한참 뒤)에 채워짐. 못 받았으면 MOTOR 만 막힘.
+        self._joints: list | None = None
+        self.create_subscription(
+            String, "/robot_description", self._on_robot_description,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
 
         self._be = BEClient(base_url, device_id, token=token)
         # 401 시 재발급 훅 — secret 있을 때만. be_client가 모든 요청·SSE에서 이걸로 재시도.
@@ -130,6 +130,14 @@ class OrchestratorNode(Node):
     def _on_joint_state(self, msg: JointState):
         for name, pos in zip(msg.name, msg.position):
             self._latest[name] = pos
+
+    def _on_robot_description(self, msg: String):
+        try:
+            self._joints = rm.parse_joints(msg.data)
+            names = ", ".join(j[0] for j in self._joints)
+            self.get_logger().info(f"URDF 관절 {len(self._joints)}개 로드: {names}")
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().error(f"URDF 파싱 실패 (MOTOR step 불가): {e}")
 
     # ── 워커 스레드: 명령 처리 (HTTP·다운로드 블로킹 OK) ────────────────
     def _run_worker(self):
@@ -300,10 +308,10 @@ class OrchestratorNode(Node):
         timeout = step.get("timeoutSeconds")
         if stype == st.STEP_MOTOR:
             if self._joints is None:
-                raise RuntimeError("so101.yaml 미로드 — MOTOR step 불가 (config_path 확인)")
+                raise RuntimeError("URDF 미수신 — MOTOR step 불가 (/robot_description 확인)")
             out = Float64MultiArray()
             out.data = st.motor_to_command(step.get("parameters") or {}, self._joints,
-                                           self._current_vector(), self._max_width_m)
+                                           self._current_vector())
             self._cmd_pub.publish(out)
             # ponytail: 도달 확인 없이 정착 시간만 대기 — /joint_states 수렴 체크는 후속
             self._cancel.wait(float(timeout or self._motor_settle_sec))
@@ -317,9 +325,9 @@ class OrchestratorNode(Node):
             raise ValueError(f"알 수 없는 step type: {stype}")
 
     def _current_vector(self) -> list[float]:
-        """/joint_states 최신값을 so101.yaml 순서 벡터로. 없는 관절 있으면 에러(안전)."""
+        """/joint_states 최신값을 URDF 관절 순서 벡터로. 없는 관절 있으면 에러(안전)."""
         try:
-            return [self._latest[name] for name, _, _ in self._joints]
+            return [self._latest[name] for name, _, _, _ in self._joints]
         except KeyError as e:
             raise RuntimeError(f"/joint_states 에 {e} 없음 — 컨트롤러 기동 확인") from e
 
