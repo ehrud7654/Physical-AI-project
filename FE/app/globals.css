@@ -199,7 +199,7 @@ select:focus,input:focus{border-color:#315efb;box-shadow:0 0 0 3px #e3eaff}tr.se
 @media(max-width:680px){.app-shell{grid-template:106px 1fr / 1fr;padding-bottom:0}.content{padding-bottom:36px}}
 
 /* Unified landing and console frame */
-.app-shell{grid-template:84px 1fr / 1fr}.content{position:relative;min-height:calc(100vh - 84px);padding-top:38px;background:linear-gradient(180deg,rgba(239,244,252,.9) 0,rgba(248,250,252,.98) 170px,#f5f7fb 420px);animation:content-enter .28s ease both}.content::before{content:'';position:absolute;z-index:0;top:0;right:0;left:0;height:210px;pointer-events:none;background:radial-gradient(circle at 82% 15%,rgba(49,94,251,.09),transparent 32%),linear-gradient(90deg,rgba(255,255,255,.75),transparent 58%)}.content>*{position:relative;z-index:1}@keyframes content-enter{from{opacity:.45}to{opacity:1}}.page-heading{padding:7px 0 4px}.page-heading .eyebrow{font-size:10px;letter-spacing:.16em}.page-heading h1{font-size:30px}
+.app-shell{grid-template:84px 1fr / 1fr}.content{position:relative;min-height:calc(100vh - 84px);padding-top:38px;background:linear-gradient(180deg,rgba(239,244,252,.9) 0,rgba(248,250,252,.98) 170px,#f5f7fb 420px);animation:none}.content::before{content:'';position:absolute;z-index:0;top:0;right:0;left:0;height:210px;pointer-events:none;background:radial-gradient(circle at 82% 15%,rgba(49,94,251,.09),transparent 32%),linear-gradient(90deg,rgba(255,255,255,.75),transparent 58%)}.content>*{position:relative;z-index:1}@keyframes content-enter{from{opacity:.45}to{opacity:1}}.page-heading{padding:7px 0 4px}.page-heading .eyebrow{font-size:10px;letter-spacing:.16em}.page-heading h1{font-size:30px}
 @media(max-width:900px){.app-shell{grid-template:112px 1fr / 1fr}.content{min-height:calc(100vh - 112px);padding-top:25px}.page-heading h1{font-size:25px}}
 
 /* Header parity: landing and console share one exact system */
@@ -219,7 +219,7 @@ html{scrollbar-gutter:stable}.brand-fullname{padding-left:14px;border-left:1px s
 /* Main-page-led monochrome UI system */
 :root{--orange:#101828;--orange-dark:#101828;--orange-soft:#f4f5f6;--orange-border:#d9dde3;--ink:#101828;--muted:#667085;--line:#e4e7ec;--surface:#fff;--canvas:#fff}
 body{background:#fff;color:#101828}.global-header{background:#fff;box-shadow:none;border-bottom:1px solid #e4e7ec}.global-nav button{color:#344054}.global-nav button:hover,.global-nav button.active{color:#101828}.global-nav button.active::after{background:#101828}.global-auth{background:#fff}.brand-fullname{color:#667085;border-left-color:#d0d5dd}
-.content{background:#fff!important;animation:content-enter .22s ease both}.content::before{display:none}.page-heading{max-width:1320px;padding-top:12px}.page-heading .eyebrow,.eyebrow{color:#475467}.page-heading h1{color:#101828}.page-heading>div>p:last-child{color:#667085}
+.content{background:#fff!important}.content::before{display:none}.page-heading{max-width:1320px;padding-top:12px}.page-heading .eyebrow,.eyebrow{color:#475467}.page-heading h1{color:#101828}.page-heading>div>p:last-child{color:#667085}
 .card,.overview-cards>button,.training-summary{border:1px solid #e4e7ec!important;background:#fff!important;box-shadow:none!important;border-radius:10px}.overview-cards>button:hover,.device-card:hover{border-color:#98a2b3!important;box-shadow:none!important;transform:none}.device-visual,.device-visual.umi,.learning-symbol,.robot-tile,.robot-illustration,.run-robot .robot-tile{color:#101828!important;background:#f2f4f7!important}.overview-cards strong,.overview-cards p{color:#101828}.online-dot{background:#12b76a}
 .primary-button{color:#fff;background:#101828;box-shadow:none}.primary-button:hover{background:#273244}.primary-button:disabled{background:#d0d5dd}.secondary-button{color:#101828;background:#fff;border-color:#98a2b3}.text-button,.detail-link{color:#101828}.avatar{color:#101828;background:#f2f4f7}
 .device-tabs{border-bottom-color:#e4e7ec}.device-tabs button{color:#667085}.device-tabs button.active{color:#101828;border-color:#101828}.device-tabs span{color:#475467;background:#f2f4f7}.device-card dl{border-color:#eaecf0}.back-link{color:#475467}.detail-metrics article{background:#fff!important}
@@ -2247,8 +2247,8 @@ button.device-card-content{cursor:pointer}
 .skill-data-row .skill-data-reason{grid-column:1/-1;margin-top:2px;color:#b42318;font-size:13px}
 
 /* UI 폴리시 (S15P21A103-176) */
-/* #1 동작 상세 '학습 현황' 헤더 좌측 정렬 */
-.skill-detail-section .training-table-head{justify-content:flex-start;text-align:left}
+/* #1 동작 상세 '학습 현황' 헤더: 목록용 회색 밴드(음수마진·라운드·배경) 제거하고 좌측 정렬한 순수 제목으로 */
+.skill-detail-section .training-table-head{justify-content:flex-start;margin:0;padding:22px 0 14px;min-height:0;border-radius:0;background:transparent!important;text-align:left}
 .skill-detail-section .training-table-head>div{margin:0;text-align:left}
 /* #2 작업 추가 버튼이 혼자 커지지 않게 (라이브러리 헤딩의 min-width 제거) */
 .library-page-heading .primary-button,.library-page-heading .page-create-button{min-width:0}
@@ -2257,13 +2257,23 @@ button.device-card-content{cursor:pointer}
   .modal-backdrop{align-items:start;overflow-y:auto}
   .register-modal,.confirm-modal,.skill-create-modal{margin:12px auto}
 }
-/* #4 표 헤더가 숨는 좁은 폭(680~900)에서도 각 셀 라벨을 보여줘 구분 */
+/* #4 동작 목록·작업 목록: 좁은 폭에서도 헤더 행을 유지(표 형태·열 정렬 그대로, 넘치면 가로 스크롤) */
 @media(max-width:900px){
-  .episode-row:not(.header)>span::before{content:attr(data-label);display:block;color:#667085;font-size:12px;font-weight:500;margin-bottom:3px}
-  .skill-list-row:not(.header){grid-template-columns:1fr 1fr;justify-items:start;text-align:left}
-  .skill-list-row:not(.header)>span{width:100%;text-align:left}
+  .data-table-panel{overflow-x:auto}
+  .data-table-panel .episode-table{min-width:640px}
+  .data-table-panel .skill-list-row{grid-template-columns:.9fr 1.55fr .75fr 1.05fr .9fr 1.35fr}
+  .data-table-panel .skill-list-row.header{display:grid}
+  .saved-work-list{overflow-x:auto}
+  .saved-work-list>.saved-work-columns{display:grid;min-width:560px;grid-template-columns:minmax(220px,1fr) 94px 92px 12px}
+  .saved-work-list>.saved-work-select-row{min-width:560px}
+  .saved-work-list .saved-work-row{grid-template-columns:minmax(220px,1fr) 94px 92px 12px}
+  .saved-work-list .saved-work-duration,.saved-work-list .saved-work-updated,.saved-work-list .saved-work-chevron{grid-column:auto;grid-row:auto;margin-left:0}
 }
 /* 모달은 고정 헤더/사이드바(z:90) 위에 오도록 (토스트 z:100보단 아래) */
 .modal-backdrop,.content>.modal-backdrop{z-index:95}
 /* 모바일: 고정 헤더(약 66px) 아래로 모달을 내려 상단 잘림 방지 (stacking에 의존하지 않음) */
 @media(max-width:900px){.modal-backdrop,.content>.modal-backdrop{padding:82px 14px 24px}.register-modal,.confirm-modal,.skill-create-modal{margin:0 auto}}
+/* 장치 관리: 사이드바 없는 행 배치(561~900)에서 삭제·정렬 버튼이 구분선에 붙지 않게 띄움 */
+@media(min-width:561px) and (max-width:900px){.device-toolbar-actions{padding-bottom:9px}}
+/* 사이드바 nav 정렬: 가로 헤더용 left:100px가 세로 사이드바로 새어 nav가 우측으로 밀리던 것 제거(브랜드·인사말과 좌측 정렬) */
+@media(min-width:901px){.app-shell .app-sidebar .global-nav{position:static;left:auto}}
