@@ -50,6 +50,20 @@ OPEN_GAP_M = 0.065
 HISTORY_SECONDS = 0.1
 
 
+def _command_fraction(profile: str, elapsed_s: float,
+                      motion_duration_s: float) -> float:
+    """Return a causal command fraction without looking at policy outputs."""
+    if profile == "step":
+        return 1.0
+    if profile != "quintic":
+        raise ValueError(f"unknown history command profile: {profile}")
+    if (not np.isfinite(elapsed_s) or not np.isfinite(motion_duration_s)
+            or elapsed_s < 0 or motion_duration_s < HISTORY_SECONDS):
+        raise ValueError("invalid quintic motion duration")
+    u = float(np.clip(elapsed_s / motion_duration_s, 0.0, 1.0))
+    return 10.0 * u ** 3 - 15.0 * u ** 4 + 6.0 * u ** 5
+
+
 def _valid_ik(solution: object) -> bool:
     return bool(solution.converged and solution.within_limits
                 and solution.pos_error_m <= 0.005
@@ -95,6 +109,8 @@ def _history_target(ik: MujocoIK, model: mujoco.MjModel,
 def _simulate_history(env: MujocoPickEnv, *, previous_q: np.ndarray,
                       current_target_q: np.ndarray, object_xy: np.ndarray,
                       speed_limit_rad_s: float,
+                      command_profile: str = "step",
+                      motion_duration_s: float = HISTORY_SECONDS,
                       ) -> tuple[list[dict], dict]:
     """Run one policy-free approach, then preserve its two exact snapshots."""
     env.reset(seed=0, object_xy=tuple(object_xy), initial_q_rad=previous_q)
@@ -112,8 +128,14 @@ def _simulate_history(env: MujocoPickEnv, *, previous_q: np.ndarray,
     if control_ticks < 1 or not np.isclose(
             control_ticks / env.control_rate_hz, HISTORY_SECONDS, atol=1e-9):
         raise ValueError("control rate cannot represent the 100ms history exactly")
-    target = normalize(current_target_q, env.cfg, clip=True)
-    for _ in range(control_ticks):
+    command_fractions = []
+    for tick in range(control_ticks):
+        fraction = _command_fraction(
+            command_profile, (tick + 1) / env.control_rate_hz,
+            motion_duration_s)
+        command_fractions.append(fraction)
+        target_q = previous_q + fraction * (current_target_q - previous_q)
+        target = normalize(target_q, env.cfg, clip=True)
         last_q = env.joint_positions()
         last_time = float(env.data.time)
         env.step(target)
@@ -156,6 +178,9 @@ def _simulate_history(env: MujocoPickEnv, *, previous_q: np.ndarray,
         "max_joint_motion_rad": robot_motion,
         "max_arm_speed_rad_s": max_arm_speed_rad_s,
         "finite_difference_peak_accel_rad_s2": max_arm_accel_rad_s2,
+        "command_profile": command_profile,
+        "command_motion_duration_s": motion_duration_s,
+        "command_fraction_at_current": command_fractions[-1],
         "pad_contact_ticks": pad_contact_ticks,
         "object_xy_drift_m": object_drift,
     }
@@ -239,7 +264,10 @@ def evaluate(suite_path: Path, checkpoint: Path,
              max_episodes: int | None = None, *,
              backoff_m: float = BACKOFF_M,
              history_target_step_m: float = HISTORY_TARGET_STEP_M,
-             open_gap_m: float = OPEN_GAP_M) -> tuple[dict, Image.Image]:
+             open_gap_m: float = OPEN_GAP_M,
+             command_profile: str = "step",
+             motion_duration_s: float = HISTORY_SECONDS,
+             ) -> tuple[dict, Image.Image]:
     if is_shared_gpu_server():
         raise RuntimeError("learned-policy inference is forbidden on the shared GPU server")
     conditions, episodes, offsets = _suite_conditions(suite_path)
@@ -289,7 +317,9 @@ def evaluate(suite_path: Path, checkpoint: Path,
                 snapshots, motion = _simulate_history(
                     env, previous_q=previous_q,
                     current_target_q=current_target_q,
-                    object_xy=object_xyz[:2], speed_limit_rad_s=speed_limit)
+                    object_xy=object_xyz[:2], speed_limit_rad_s=speed_limit,
+                    command_profile=command_profile,
+                    motion_duration_s=motion_duration_s)
                 views = _render_history(env, snapshots, offsets)
                 if any(None in view["bboxes"] for view in views):
                     raise ValueError("object not visible in both frames at every offset")
@@ -356,6 +386,8 @@ def evaluate(suite_path: Path, checkpoint: Path,
         "history_target_step_m": history_target_step_m,
         "history_interval_s": HISTORY_SECONDS,
         "open_gap_m": open_gap_m,
+        "history_command_profile": command_profile,
+        "history_motion_duration_s": motion_duration_s,
         "configured_speed_limit_rad_s": speed_limit,
         "configured_accel_limit_rad_s2": accel_limit,
         "eligible_source_episodes": len(episodes),
@@ -412,6 +444,9 @@ def main() -> int:
     parser.add_argument("--history-target-step-m", type=float,
                         default=HISTORY_TARGET_STEP_M)
     parser.add_argument("--open-gap-m", type=float, default=OPEN_GAP_M)
+    parser.add_argument("--history-command-profile", choices=("step", "quintic"),
+                        default="step")
+    parser.add_argument("--motion-duration-s", type=float, default=HISTORY_SECONDS)
     args = parser.parse_args()
     if args.out.exists() or args.montage.exists():
         raise SystemExit("refusing to overwrite an existing report or montage")
@@ -419,13 +454,17 @@ def main() -> int:
         raise SystemExit("--max-episodes must be positive")
     if (not 0 <= args.backoff_m <= 0.05
             or not 0 < args.history_target_step_m <= 0.01
-            or not 0.03 <= args.open_gap_m <= 0.09):
+            or not 0.03 <= args.open_gap_m <= 0.09
+            or not np.isfinite(args.motion_duration_s)
+            or args.motion_duration_s < HISTORY_SECONDS):
         raise SystemExit("backoff/gap inputs are outside diagnostic bounds")
     report, montage = evaluate(
         args.suite, args.policy_ckpt, max_episodes=args.max_episodes,
         backoff_m=args.backoff_m,
         history_target_step_m=args.history_target_step_m,
-        open_gap_m=args.open_gap_m)
+        open_gap_m=args.open_gap_m,
+        command_profile=args.history_command_profile,
+        motion_duration_s=args.motion_duration_s)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.montage.parent.mkdir(parents=True, exist_ok=True)
     montage.save(args.montage)

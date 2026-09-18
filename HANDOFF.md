@@ -126,6 +126,46 @@ GPU-2/server-only; learned-checkpoint evaluation remains local CPU. The plan
 and exact commands are in `AI/docs/PLAN_v10_spatial_encoder_ablation_0918.md`.
 No spatial checkpoint has been trained or evaluated yet.
 
+2026-09-18 spatial4 result supersedes the final sentence above. Training ran
+on V100 GPU 2 only; all following inference ran on local CPU. Best-val SHA-256
+is `3cc516e3e6a3935dead95bc73e8aeda48186f9fed48143d87616db43e64e45fd`
+and last-epoch is
+`a61f42adc887941ca6e2b2450764a4a2d030b7ef4c2349b82899371b0233943e`.
+Best validation L1 fell from the old `0.39769` to `0.32684`, but loss is not
+the acceptance criterion. On the same ten-episode/28-row held-out image
+diagnostic, best-val normal local-x MAE was 4.15mm versus the old 12.71mm;
+the five large-target rows from only three episodes changed from 2/5 correct
+directions and 61.55mm MAE to 5/5 and 12.77mm. Mean-fill raised the new MAE to
+13.72mm and large-target MAE to 62.17mm. In fixed-pose, object-only +/-10mm
+renders, best/last produced 24/28 and 26/28 correct terminal directions versus
+the old 14/28; all four directions passed in 3/7 and 5/7 episodes versus 0/7.
+With genuinely different moving-H=2 snapshots, best/last produced 15/16 and
+16/16 directions over four IK-valid episodes, while mean-fill produced 3/16
+and 8/16. **All four histories still exceed the provisional acceleration
+limit**, and only three independent held-out demonstrations contain large
+lateral targets. This supports spatial-feature preservation as a major
+bottleneck but is not closed-loop, hardware or deployment evidence. Keep both
+best and last as research candidates until a new-placement episode holdout
+resolves best's stronger magnitude/error versus last's stronger direction
+consistency. Details: `AI/docs/MEASURE_v10_spatial_encoder_0918.md`.
+
+2026-09-18 smooth moving-H=2 follow-up: the abrupt one-tick history above was
+not retained as the execution condition. Before looking at any learned-policy
+result, a policy-free quintic duration sweep over `0.2--1.0s` selected the
+shortest duration that kept all four IK-valid histories below the provisional
+acceleration bound. `0.2s` passed only 1/4 histories (peak `3.401rad/s^2`),
+whereas `0.3s` passed 4/4 (peak `1.600rad/s^2`). The observation interval stays
+about `0.1s`; `0.3s` is the complete ramp duration, so the H=2 history executes
+about 20.99% of the command and has median TCP movement only `0.604mm`. This is
+far more static than the real UMI median (~`15.69mm/0.1s`). Under that frozen
+condition, best/last normal direction counts were 14/16 and 15/16, all-four
+episode counts 2/4 and 3/4, mean-fill counts 2/16 and 8/16, and acceleration
+exceedances 0/4 for both. This removes the provisional acceleration violation
+from this diagnostic only; it is not hardware, timing-match, closed-loop or
+deployment evidence. The local regression including the new analytic profile
+check passes 35/35. Details and ignored generated reports are listed in
+`AI/docs/MEASURE_v10_spatial_encoder_0918.md`.
+
 2026-09-18 pre-arrival work: HW expects to share a new ORB-SLAM3 + ArUco
 ID 11 episode, but no such episode has reached Track A yet. The
 `AI/docs/PLAN_orbslam_aruco_umi_intake_0918.md` separates a read-only
@@ -138,7 +178,7 @@ No ORB-specific adapter or new-data quality pass is claimed. The
 snapshot, rejects inconsistent 10Hz history and independently checks the
 injected IK output with the released URDF FK. Its seven ROS-free fixture
 tests pass; so do the existing four joint-chunk, six ROS-adapter and four
-installation-limit tests, and the expanded local regression passes 34/34
+installation-limit tests, and the expanded local regression passes 35/35
 checks. The real IK solver, camera/TCP calibration,
 continuous collision clearance, ROS transport and physical approval remain
 unverified. None of this work runs learned inference on the shared server

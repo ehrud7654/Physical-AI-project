@@ -2,6 +2,9 @@
 
 관련 Jira: `S15P21A103-154`, `S15P21A103-171`.
 
+상태: 학습과 로컬 진단 완료. 결과는
+`MEASURE_v10_spatial_encoder_0918.md`를 따른다. 아래 명령은 재현용이다.
+
 ## 목적
 
 현재 진단용 relative-chunk BC의 영상 인코더는 마지막 convolution feature
