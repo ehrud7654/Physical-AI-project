@@ -68,4 +68,8 @@ public class RobotProfile extends AuditableEntity {
   public Map<String, Object> getCameraContract() {
     return cameraContract;
   }
+
+  public String getContractVersion() { return contractVersion; }
+  public Map<String, Object> getStateContract() { return stateContract; }
+  public Map<String, Object> getActionContract() { return actionContract; }
 }

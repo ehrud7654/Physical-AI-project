@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.anssa8bu.ssafy.device.entity.Device;
 import com.anssa8bu.ssafy.device.entity.DeviceConnectionStatus;
 import com.anssa8bu.ssafy.device.entity.DeviceCredential;
+import com.anssa8bu.ssafy.device.entity.DeviceCredentialStatus;
 import com.anssa8bu.ssafy.device.entity.DeviceType;
 import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import jakarta.persistence.EntityManager;
@@ -50,7 +51,9 @@ class UserDeviceJpaMappingTest extends IntegrationTestBase {
             "UMI-" + deviceId,
             "Entity 테스트 UMI",
             DeviceConnectionStatus.OFFLINE);
-    DeviceCredential credential = new DeviceCredential(deviceId, "device-secret-hash", null, null);
+    Instant enrolledAt = Instant.parse("2026-09-08T01:00:00.123456Z");
+    DeviceCredential credential =
+        new DeviceCredential(deviceId, "device-secret-hash", enrolledAt);
 
     entityManager.persist(user);
     entityManager.persist(session);
@@ -86,8 +89,9 @@ class UserDeviceJpaMappingTest extends IntegrationTestBase {
     assertThat(foundDevice.getUpdatedAt()).isNotNull();
 
     assertThat(foundCredential.getDeviceId()).isEqualTo(deviceId);
-    assertThat(foundCredential.getRegistrationCodeHash()).isNull();
-    assertThat(foundCredential.getRegistrationCodeExpiresAt()).isNull();
+    assertThat(foundCredential.getStatus()).isEqualTo(DeviceCredentialStatus.ACTIVE);
+    assertThat(foundCredential.getEnrolledAt()).isEqualTo(enrolledAt);
+    assertThat(foundCredential.getLastAuthenticatedAt()).isNull();
     assertThat(foundCredential.getSecretRotatedAt()).isNull();
     assertThat(foundCredential.getCreatedAt()).isNotNull();
     assertThat(foundCredential.getUpdatedAt()).isNotNull();

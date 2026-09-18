@@ -1,6 +1,6 @@
 # UMI 앱 연동 인터페이스 계약
 
-> 버전: 1.0.0-draft  
+> 버전: 1.2.0
 > 작성일: 2026-09-11  
 > 적용 범위: UMI Android 앱 ↔ EC2 백엔드 ↔ Amazon S3
 
@@ -24,7 +24,7 @@ GPU 워커
   └─ EC2에서 작업을 outbound polling한 뒤 S3에서 Episode 다운로드
 ```
 
-이 문서는 UMI 연동에 한해 S3 직접 업로드 방식을 기준으로 한다. 기존 `API명세서v1.2.0.md`와 `인터페이스계약v1.md`의 `UMI → GPU ingest multipart 업로드`, `Episode ZIP은 S3에 저장하지 않음` 규칙은 본 계약과 충돌하므로 전체 시스템 명세를 같은 방식으로 개정해야 한다.
+이 문서는 UMI 연동에 한해 S3 직접 업로드 방식을 기준으로 하며 `API명세서v1.4.0.md`, `인터페이스계약v1.2.0.md`와 함께 적용한다. 이전 문서의 `UMI → GPU ingest multipart 업로드`, `Episode ZIP은 S3에 저장하지 않음` 규칙은 폐기한다.
 
 ## 2. 역할과 책임
 
@@ -277,6 +277,15 @@ S3 object key는 EC2 백엔드만 생성한다. UMI 앱은 전체 key, bucket, `
 
 ## 6. API 계약
 
+### 6.0 장치 최초 등록과 인증
+
+1. 웹 사용자가 `POST /api/v1/devices/{deviceId}/enrollment`을 호출해 `qrPayload`를 발급한다.
+2. UMI 앱은 QR을 읽고 `POST /api/v1/device-auth/enroll`에 `enrollmentId`, `registrationToken`을 보내 Device Secret을 한 번 발급받는다.
+3. 앱은 Device Secret을 Android Keystore로 보호하고 `POST /api/v1/device-auth/token`으로 Device Access Token을 발급받는다.
+4. Episode 관련 EC2 API에는 Device Access Token을 Bearer token으로 사용한다.
+
+Device Secret 원문은 등록 완료 성공 응답에서만 제공된다. QR 등록 토큰과 Device Secret을 로그·분석 이벤트·크래시 리포트에 기록하지 않는다.
+
 ### 6.1 Episode 업로드 세션 발급
 
 ```http
@@ -291,22 +300,50 @@ Content-Type: application/json
 ```json
 {
   "sessionId": "550e8400-e29b-41d4-a716-446655440000",
-  "endedAt": "2026-09-11T05:30:12.842Z",
   "contentType": "application/zip",
   "sizeBytes": 10485760,
-  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "metadata": {
+    "contractVersion": "episode-archive-v1",
+    "schemaVersion": "1.0",
+    "skillKey": "pick_place",
+    "source": "REAL",
+    "success": true,
+    "labelStatus": "LABELED",
+    "startedAt": "2026-09-11T05:30:00.123Z",
+    "endedAt": "2026-09-11T05:30:12.842Z",
+    "startMonotonicNs": 2810045000000,
+    "timestampTimebase": "MONOTONIC_NS",
+    "device": { "deviceIdentifier": "UMI-001" },
+    "camera": { "width": 1920, "height": 1080, "fx": 1452.21, "fy": 1451.87, "cx": 960.34, "cy": 539.92 }
+  },
+  "summary": {
+    "schemaVersion": "1.0",
+    "firstTimestampNs": 2810045000000,
+    "lastTimestampNs": 2822769000000,
+    "frameCount": 382,
+    "poseSampleCount": 382,
+    "imuSampleCount": 2541,
+    "gripperSampleCount": 382,
+    "missingFrameCount": 0,
+    "trackingGapCount": 1,
+    "trackingLostDurationNs": 83000000
+  }
 }
 ```
 
 | 필드 | 타입 | 필수 | 규칙 |
 |---|---|---|---|
 | `sessionId` | string | 예 | 3.3절 UUID v4 형식 |
-| `endedAt` | string | 예 | `meta.json.ended_at`과 동일한 RFC 3339 UTC 수집 종료 시각 |
 | `contentType` | string | 예 | `application/zip` 고정 |
 | `sizeBytes` | integer | 예 | 실제 ZIP 크기, 1 이상이며 서버 한도 이하 |
 | `sha256` | string | 예 | 최종 ZIP 전체 SHA-256, 소문자 64자리 |
+| `metadata` | object | 예 | `meta.json`의 API 필드를 lower camel case로 변환한 선언값 |
+| `summary` | object | 예 | `summary.json`의 개수·시간·품질 집계를 lower camel case로 변환한 선언값 |
 
 `filename`은 `sessionId`로부터 결정되므로 요청하지 않는다. 서버가 내부 표시용 원본 파일명을 저장해야 한다면 `{sessionId}.zip`으로 생성한다. S3 bucket과 object key도 5.4절에 따라 서버가 생성하며 클라이언트가 지정하지 않는다.
+
+`metadata.device.deviceIdentifier`는 선택적 수집 메타데이터다. 앱은 값을 알고 있을 때만 전송할 수 있으며 누락하거나 빈 값으로 보내도 된다. EC2는 이 값을 `devices.handle_number`와 비교하지 않고, Device Access Token의 서명된 `sub(ownerId)`와 `deviceId`로 Episode 귀속을 확정한다.
 
 성공 `201 Created`:
 
@@ -318,10 +355,12 @@ Content-Type: application/json
     "uploadMethod": "PUT",
     "uploadUrl": "https://example-bucket.s3.ap-northeast-2.amazonaws.com/...?X-Amz-Signature=...",
     "requiredHeaders": {
-      "Content-Type": "application/zip"
+      "Content-Type": "application/zip",
+      "x-amz-checksum-sha256": "base64-encoded-sha256",
+      "If-None-Match": "*"
     },
     "expiresAt": "2026-09-11T05:45:00Z",
-    "maxUploadBytes": 2147483648
+    "maxUploadBytes": 16777216
   }
 }
 ```
@@ -366,7 +405,6 @@ Content-Type: application/json
 ```json
 {
   "sessionId": "550e8400-e29b-41d4-a716-446655440000",
-  "endedAt": "2026-09-11T05:30:12.842Z",
   "sizeBytes": 10485760,
   "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
@@ -385,7 +423,7 @@ Content-Type: application/json
 }
 ```
 
-EC2는 S3 객체의 존재, 크기와 checksum을 확인한 후 ZIP 구조·내용 검증을 비동기로 진행한다. 완료 API의 선언값은 업로드 세션 생성 요청값과 모두 일치해야 한다. ZIP 검증 시 요청의 `endedAt`과 `meta.json.ended_at`도 정확히 일치해야 한다.
+EC2는 S3 객체의 존재, 크기와 checksum을 확인한 후 ZIP 구조·내용 검증을 비동기로 진행한다. 완료 API의 세 선언값은 업로드 세션 생성 요청값과 모두 일치해야 한다. `endedAt`은 완료 요청에서 다시 받지 않으며 최초 요청의 `metadata.endedAt`과 ZIP 내부 `meta.json.ended_at`을 비교한다.
 
 이미 동일한 Episode 등록이 완료된 경우 성공 `200 OK`와 `duplicate=true`를 반환한다. 따라서 앱은 응답 유실 시 같은 `Idempotency-Key`로 안전하게 재시도할 수 있다.
 
@@ -419,13 +457,49 @@ Authorization: Bearer <device-access-token>
 | `INVALID` | 구조·무결성 또는 품질 검증 실패 | 오류에 따라 수정 또는 재수집 |
 | `FAILED` | 서버·저장소 처리 실패 | `recoveryAction`에 따라 재시도 |
 
+검증 실패 응답 예시:
+
+```json
+{
+  "data": {
+    "episodeId": "a7a95443-b21b-4bba-9624-c199343f5105",
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "INVALID",
+    "qualityStatus": "INVALID",
+    "error": {
+      "code": "INTERNAL_CHECKSUM_MISMATCH",
+      "message": "imu.csv checksum이 일치하지 않습니다.",
+      "recoveryAction": "RETRY_OR_RECAPTURE"
+    }
+  }
+}
+```
+
+### 6.5 업로드 URL 재발급
+
+```http
+POST /api/v1/training-jobs/{trainingJobId}/episode-upload-sessions/{uploadSessionId}/renew
+Authorization: Bearer <device-access-token>
+```
+
+`UPLOAD_PENDING`인 세션에 한해 기존 bucket, object key, 크기와 SHA-256을 유지하면서 새 `uploadUrl`, `requiredHeaders`, `expiresAt`을 반환한다. 이미 완료·취소된 세션은 `409 STATE_CONFLICT`다.
+
+### 6.6 업로드 세션 취소
+
+```http
+DELETE /api/v1/training-jobs/{trainingJobId}/episode-upload-sessions/{uploadSessionId}
+Authorization: Bearer <device-access-token>
+```
+
+`UPLOAD_PENDING`인 세션의 S3 객체를 삭제하고 예약을 취소한다. 성공은 `204 No Content`이며 동일 취소 요청은 멱등하게 처리한다. 검증을 시작한 세션은 취소할 수 없다.
+
 ## 7. 서버 검증 규칙
 
 서버는 최소한 다음을 검증한다.
 
 1. 요청, `meta.json`, `summary.json`의 session ID가 모두 일치한다.
 2. `sessionId`가 UUID v4 형식이다.
-3. 업로드 요청의 `endedAt`과 `meta.json.ended_at`이 일치한다.
+3. 업로드 요청의 `metadata.endedAt`과 `meta.json.ended_at`이 일치한다.
 4. S3 object key가 5.4절의 owner·시간·session 규칙과 일치한다.
 5. S3 객체의 크기와 checksum이 업로드 세션 선언값과 일치한다.
 6. ZIP의 모든 entry가 `STORE`이며 암호화·symlink·nested ZIP이 없다.
@@ -535,17 +609,17 @@ RECORDING
 다음 값은 UMI와 백엔드 담당자가 구현 전에 확정해야 한다.
 
 - [ ] 운영 API base URL과 개발·스테이징 URL
-- [ ] 장치 등록 및 Device Access Token 최초 발급·갱신 API
-- [ ] 업로드 세션과 Device Access Token의 TTL
-- [ ] Episode 최대 ZIP 크기, 최대 entry 수와 최대 uncompressed 크기
-- [ ] 5 GiB 초과 또는 전송 재개를 위한 Multipart Upload 지원 여부
+- [x] QR 장치 등록, Device Secret 1회 발급 및 Device Access Token 발급 API
+- [x] Presigned PUT TTL 기본 15분, Device Access Token TTL은 서버 인증 설정 사용
+- [x] Episode 최대 ZIP 16 MiB, 최대 entry 100,000개, 최대 uncompressed 16 MiB
+- [x] MVP는 단일 PUT만 지원하고 Multipart Upload는 제외
 - [ ] `meta.json`, `summary.json` JSON Schema 파일과 CSV nullable 규칙
 - [ ] 카메라 프레임 해상도·FPS·JPEG 품질
 - [ ] Pose·IMU·Gripper 수집 주기와 누락 허용치
 - [ ] 좌표축 방향, quaternion 정규화 오차와 ARCore tracking state 허용값
 - [ ] `VALID`, `WARNING`, `INVALID` 품질 임계값
 - [ ] S3 원본 보관 기간과 검증 실패·중단 upload 정리 정책
-- [ ] 완료 API를 동기 검증(`200`)으로 할지 비동기 검증(`202`)으로 할지
+- [x] 완료 API는 S3 HEAD 확인 후 `202`, ZIP 내용 검증은 비동기로 처리
 - [ ] GPU 다운로드 완료 후 S3 Episode 삭제 시점
 
 ## 12. UMI 구현 체크리스트
@@ -553,7 +627,7 @@ RECORDING
 - [ ] 수집 시작 시 UUID v4 `sessionId`를 한 번만 생성하고 즉시 저장한다.
 - [ ] 모든 센서 timestamp가 같은 monotonic clock을 사용한다.
 - [ ] 요청과 두 JSON의 session ID가 동일하다.
-- [ ] 업로드 요청의 `endedAt`과 `meta.json.ended_at`이 동일하다.
+- [ ] 업로드 요청의 `metadata.endedAt`과 `meta.json.ended_at`이 동일하다.
 - [ ] ZIP 이름이 `{sessionId}.zip`이고 모든 entry가 `STORE`다.
 - [ ] ZIP 생성 완료 후 실제 byte 크기와 전체 SHA-256을 계산한다.
 - [ ] 업로드 세션 응답의 URL·필수 헤더·만료 시각을 저장한다.

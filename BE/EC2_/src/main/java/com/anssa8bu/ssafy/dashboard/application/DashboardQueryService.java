@@ -20,7 +20,6 @@ public class DashboardQueryService {
 
   private static final int RECENT_ITEM_LIMIT = 5;
   private static final Duration UMI_ONLINE_WINDOW = Duration.ofSeconds(60);
-  private static final Duration ROBOT_ONLINE_WINDOW = Duration.ofSeconds(20);
   private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
   private final DashboardDeviceQueryRepository deviceRepository;
@@ -50,13 +49,13 @@ public class DashboardQueryService {
     Instant endOfDay = businessDate.plusDays(1).atStartOfDay(BUSINESS_ZONE).toInstant();
 
     var umiSummary = deviceRepository.summarize(ownerId, now.minus(UMI_ONLINE_WINDOW));
-    var robotSummary = robotRepository.summarize(ownerId, now.minus(ROBOT_ONLINE_WINDOW));
+    var robotSummary = robotRepository.summarize(ownerId);
     var trainingSummary = trainingRepository.summarize(ownerId);
     var executionSummary = executionRepository.summarize(ownerId, startOfDay, endOfDay);
 
     return new DashboardResponse(
         new DashboardSummaryResponse(umiSummary, robotSummary, trainingSummary, executionSummary),
-        robotRepository.findRecent(ownerId, now.minus(ROBOT_ONLINE_WINDOW), RECENT_ITEM_LIMIT),
+        robotRepository.findRecent(ownerId, RECENT_ITEM_LIMIT),
         trainingRepository.findRecent(ownerId, RECENT_ITEM_LIMIT),
         now);
   }

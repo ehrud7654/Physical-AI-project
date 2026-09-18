@@ -83,6 +83,15 @@ public class Deployment extends AuditableEntity {
     status = DeploymentStatus.CANCELED;
   }
 
+  public void failPendingTimeout(String errorCode, String errorMessage) {
+    if (status != DeploymentStatus.PENDING) {
+      throw new IllegalStateException("only pending deployment can time out");
+    }
+    status = DeploymentStatus.FAILED;
+    this.errorCode = errorCode;
+    this.errorMessage = errorMessage;
+  }
+
   public DeploymentStatus getStatus() {
     return status;
   }
@@ -93,5 +102,58 @@ public class Deployment extends AuditableEntity {
 
   public Long getRowVersion() {
     return rowVersion;
+  }
+
+  public long getLastReportSequence() {
+    return lastReportSequence;
+  }
+
+  public void acceptReport(
+      long sequence,
+      DeploymentStatus nextStatus,
+      BigDecimal progressPercent,
+      String errorCode,
+      String errorMessage,
+      Instant receivedAt) {
+    if (sequence <= lastReportSequence)
+      throw new IllegalArgumentException("sequence must increase");
+    if (progressPercent == null
+        || progressPercent.compareTo(BigDecimal.ZERO) < 0
+        || progressPercent.compareTo(BigDecimal.valueOf(100)) > 0) {
+      throw new IllegalArgumentException("progressPercent is out of range");
+    }
+    if (nextStatus == DeploymentStatus.FAILED
+        && (errorCode == null
+            || errorCode.isBlank()
+            || errorMessage == null
+            || errorMessage.isBlank())) {
+      throw new IllegalArgumentException("failed deployment requires an error");
+    }
+    if (!canTransition(status, nextStatus))
+      throw new IllegalArgumentException("invalid deployment status transition");
+    if (nextStatus != DeploymentStatus.FAILED && (errorCode != null || errorMessage != null))
+      throw new IllegalArgumentException("only failed deployment may contain error");
+    if (progressPercent.compareTo(this.progressPercent) < 0)
+      throw new IllegalArgumentException("progressPercent must not decrease");
+    this.lastReportSequence = sequence;
+    this.status = nextStatus;
+    this.progressPercent = progressPercent;
+    this.errorCode = errorCode;
+    this.errorMessage = errorMessage;
+    if (nextStatus == DeploymentStatus.SUCCEEDED && appliedAt == null) appliedAt = receivedAt;
+  }
+
+  private boolean canTransition(DeploymentStatus current, DeploymentStatus next) {
+    if (current == next)
+      return current != DeploymentStatus.SUCCEEDED && current != DeploymentStatus.FAILED
+          && current != DeploymentStatus.CANCELED;
+    if (next == DeploymentStatus.FAILED) return current != DeploymentStatus.SUCCEEDED && current != DeploymentStatus.CANCELED;
+    return switch (current) {
+      case PENDING -> next == DeploymentStatus.DOWNLOADING || next == DeploymentStatus.CANCELED;
+      case DOWNLOADING -> next == DeploymentStatus.VERIFYING || next == DeploymentStatus.CANCELED;
+      case VERIFYING -> next == DeploymentStatus.APPLYING || next == DeploymentStatus.CANCELED;
+      case APPLYING -> next == DeploymentStatus.SUCCEEDED || next == DeploymentStatus.CANCELED;
+      default -> false;
+    };
   }
 }

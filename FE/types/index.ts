@@ -1,4 +1,4 @@
-export type View = 'dashboard' | 'data' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
+export type View = 'dashboard' | 'skills' | 'library' | 'devices' | 'robot-detail' | 'training' | 'learn' | 'work' | 'admin';
 
 export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
@@ -81,12 +81,6 @@ export interface RobotDetail {
   createdAt: string;
 }
 
-export interface DeployedModel {
-  version: string;
-  name: string;
-  deployedAt: string;
-}
-
 export interface Umi {
   id: string;
   /** 서버 devices.id(UUID). 화면 표시용 핸들 번호인 id와 구분한다. */
@@ -123,15 +117,6 @@ export interface Dataset {
   recoveryAction: RecoveryAction;
 }
 
-export interface RetentionPolicy {
-  name: string;
-  defaultRetentionDays: number;
-  postTrainingGraceDays: number;
-  maxRetentionDays: number;
-  allowManualExtension: boolean;
-  allowManualPurge: boolean;
-}
-
 export type RecoveryAction = 'WAIT' | 'RETRY_UPLOAD' | 'RECORD_AGAIN' | 'SET_LABEL' | 'EXTEND_RETENTION' | 'CREATE_DEPLOYMENT' | 'RETRY' | 'CONTACT_SUPPORT' | 'NONE';
 
 export interface BlockingReason { code: string; message: string; recoveryAction: RecoveryAction; }
@@ -145,25 +130,25 @@ export interface EpisodePreviewSession {
   expiresAt: string;
 }
 
-export interface TrainingRequirements {
-  skillId: string;
-  skillKey: string;
-  minimumEpisodeCount: number;
-  recommendedEpisodeCount: number;
-  maximumEpisodeCount: number;
-  allowedSources: Array<'SIM' | 'REAL'>;
-  requiresSameUmiDevice: boolean;
-  requiredContractVersion: string;
-  supported: boolean;
-  requirementsVersion: number;
-}
-
 export interface TrainingSkill {
   id: string;
   skillKey: string;
   displayName: string;
   description: string | null;
+  tier: 'TUTORIAL' | 'DEMO' | 'CUSTOM';
   status: string;
+}
+
+export interface SkillOverview {
+  id: string;
+  /** 에피소드·학습과 이어주는 공통 키. 최신 BE는 내려주지만 배포판엔 없을 수 있어 선택 필드로 둔다. */
+  skillKey?: string;
+  displayName: string;
+  description: string | null;
+  latestVersion: number | null;
+  latestVersionCreatedAt: string | null;
+  deploymentStatus: 'PLANNED' | 'COLLECTING' | 'TRAINING' | 'GATE_FAILED' | 'DEPLOYED';
+  latestTrainingRequestedAt: string | null;
 }
 
 export type TaskReadiness = 'PREPARING' | 'READY' | 'BLOCKED' | 'UNKNOWN';

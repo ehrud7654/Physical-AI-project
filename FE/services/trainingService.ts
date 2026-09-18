@@ -1,4 +1,4 @@
-import type { Training, TrainingRequirements, TrainingSkill, TrainingStatus } from '@/types';
+import type { SkillOverview, Training, TrainingSkill, TrainingStatus } from '@/types';
 import { apiRequest } from './client';
 
 type ApiTrainingStatus =
@@ -41,65 +41,59 @@ interface ApiEpisodeInput {
 interface ApiSkill {
   id: string;
   skillKey: string;
+  tier: 'TUTORIAL' | 'DEMO' | 'CUSTOM';
   displayName: string;
   description: string | null;
   status: string;
-}
-
-/** SKILL-09: 선택한 스킬의 학습 입력 조건을 조회한다. */
-export async function fetchTrainingRequirements(skillKey: string): Promise<TrainingRequirements> {
-  const skills = await apiRequest<ApiSkill[]>('/skills');
-  const skill = skills.find((item) => item.skillKey === skillKey);
-  if (!skill) throw new Error('학습할 스킬을 찾을 수 없습니다.');
-  return apiRequest<TrainingRequirements>(`/skills/${skill.id}/training-requirements`);
 }
 
 export async function fetchTrainingSkills(): Promise<TrainingSkill[]> {
   return apiRequest<ApiSkill[]>('/skills');
 }
 
-export async function createTrainingJob(input: {
-  skillKey?: string;
-  newSkill?: {
-    displayName: string;
-    description?: string;
-  };
+export async function fetchSkillOverviews(): Promise<SkillOverview[]> {
+  return apiRequest<SkillOverview[]>('/skills/overview');
+}
+
+export async function createCustomSkill(input: {
+  displayName: string;
+  description?: string;
+}): Promise<TrainingSkill> {
+  return apiRequest<ApiSkill>('/skills', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify({
+      displayName: input.displayName.trim(),
+      description: input.description?.trim() || null,
+    }),
+  });
+}
+
+export async function updateSkillDescription(
+  skillId: string,
+  description: string,
+): Promise<TrainingSkill> {
+  return apiRequest<ApiSkill>(`/skills/${skillId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ description: description.trim() || null }),
+  });
+}
+
+type CreateTrainingJobInput = {
   umiDeviceId: string;
-  inputMode: 'COLLECT_NEW' | 'EXISTING_EPISODES';
-  expectedEpisodeCount?: number;
-  episodeIds?: string[];
-}): Promise<Training> {
+  episodeIds: string[];
+} & (
+  | { skillKey: string; newSkill?: never }
+  | { skillKey?: never; newSkill: { displayName: string; description?: string } }
+);
+
+export async function createTrainingJob(input: CreateTrainingJobInput): Promise<Training> {
   const job = await apiRequest<ApiTrainingJob>('/training-jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify(input),
   });
   return toTraining(job);
-}
-
-export async function updateTrainingInputPlan(
-  trainingJobId: string,
-  expectedEpisodeCount: number,
-): Promise<Training> {
-  const job = await apiRequest<ApiTrainingJob>(`/training-jobs/${trainingJobId}/input-plan`, {
-    method: 'PATCH',
-    body: JSON.stringify({ expectedEpisodeCount }),
-  });
-  return toTraining(job);
-}
-
-export async function completeTrainingInput(
-  trainingJobId: string,
-  receivedEpisodeCount: number,
-): Promise<void> {
-  await apiRequest<{ trainingJobId: string; status: ApiTrainingStatus }>(
-    `/training-jobs/${trainingJobId}/input-complete`,
-    {
-      method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-      body: JSON.stringify({ receivedEpisodeCount }),
-    },
-  );
 }
 
 export async function fetchTrainings(status?: TrainingStatus | 'all'): Promise<Training[]> {
@@ -132,16 +126,16 @@ export async function deleteTrainings(trainingJobIds: string[]): Promise<Trainin
 /** 별도 retry API 대신 기존 Episode를 입력으로 새 TrainingJob을 생성한다. */
 export async function retryTraining(training: Training): Promise<Training[]> {
   const episodes = await apiRequest<ApiEpisodeInput[]>(`/training-jobs/${training.id}/episodes`);
-  const hasEpisodes = episodes.length > 0;
+  if (episodes.length === 0) {
+    throw new Error('다시 학습할 Episode가 없습니다.');
+  }
   await apiRequest<ApiTrainingJob>('/training-jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       skillKey: training.skillKey,
       umiDeviceId: training.umiDeviceId,
-      inputMode: hasEpisodes ? 'EXISTING_EPISODES' : 'COLLECT_NEW',
-      expectedEpisodeCount: hasEpisodes ? undefined : training.expectedEpisodeCount,
-      episodeIds: hasEpisodes ? episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId) : undefined,
+      episodeIds: episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId),
     }),
   });
   return fetchTrainings();

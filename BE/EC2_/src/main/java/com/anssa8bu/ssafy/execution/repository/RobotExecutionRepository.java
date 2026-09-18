@@ -16,4 +16,7 @@ public interface RobotExecutionRepository extends JpaRepository<RobotExecution, 
   List<RobotExecution> findAllByRobotIdAndOwnerIdOrderByRequestedAtDesc(UUID robotId, UUID ownerId);
 
   boolean existsByRobotIdAndStatusIn(UUID robotId, Collection<RobotExecutionStatus> statuses);
+
+  Optional<RobotExecution> findFirstByRobotIdAndStatusInOrderByRequestedAtAsc(
+      UUID robotId, Collection<RobotExecutionStatus> statuses);
 }

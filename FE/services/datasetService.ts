@@ -1,5 +1,5 @@
-import type { BlockingReason, Dataset, DatasetStatus, EpisodePreviewSession, RecoveryAction, RetentionPolicy } from '@/types';
-import { apiRequest, delay } from './client';
+import type { BlockingReason, Dataset, DatasetStatus, RecoveryAction } from '@/types';
+import { apiRequest } from './client';
 
 /** EPISODE-01/02 응답(API 명세 1.2.0 `Episode`) 중 데이터 탭이 쓰는 필드만 선언한다. */
 interface ApiEpisode {
@@ -28,30 +28,6 @@ export async function fetchDatasets(): Promise<Dataset[]> {
   const episodes = await apiRequest<ApiEpisode[]>('/episodes');
   const total = episodes.length;
   return episodes.map((episode, index) => toDataset(episode, total - index));
-}
-
-/** EPISODE-02 */
-export async function fetchDataset(episodeId: string): Promise<Dataset> {
-  const episode = await apiRequest<ApiEpisode>(`/episodes/${episodeId}`);
-  return toDataset(episode, 0);
-}
-
-/** EPISODE-06 */
-export function fetchRetentionPolicy(): Promise<RetentionPolicy> {
-  return apiRequest<RetentionPolicy>('/episodes/retention-policy');
-}
-
-/** EPISODE-08은 아직 서버에 없다. 미리보기 URL은 짧게 만료되므로 화면을 열 때마다 발급하는 계약만 흉내 낸다. */
-export async function createEpisodePreviewSession(episodeId: string): Promise<EpisodePreviewSession> {
-  await delay();
-  return {
-    episodeId,
-    status: 'READY',
-    previewType: 'FRAME_SEQUENCE',
-    manifestUrl: `/api/v1/episode-previews/${episodeId}/manifest`,
-    thumbnailUrl: `/api/v1/episode-previews/${episodeId}/thumbnail`,
-    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-  };
 }
 
 function toDataset(episode: ApiEpisode, seq: number): Dataset {

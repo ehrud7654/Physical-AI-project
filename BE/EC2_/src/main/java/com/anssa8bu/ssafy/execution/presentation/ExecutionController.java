@@ -5,6 +5,9 @@ import static com.anssa8bu.ssafy.execution.dto.ExecutionApiModels.ExecutionRespo
 
 import com.anssa8bu.ssafy.common.response.ApiResponse;
 import com.anssa8bu.ssafy.execution.application.ExecutionService;
+import com.anssa8bu.ssafy.execution.entity.RobotExecutionStatus;
+import com.anssa8bu.ssafy.jetson.application.JetsonCommandFactory;
+import com.anssa8bu.ssafy.jetson.application.JetsonCommandStreamService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -17,9 +20,14 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/robots/{robotId}/executions")
 public class ExecutionController {
   private final ExecutionService service;
+  private final JetsonCommandFactory commands;
+  private final JetsonCommandStreamService streams;
 
-  public ExecutionController(ExecutionService service) {
+  public ExecutionController(
+      ExecutionService service, JetsonCommandFactory commands, JetsonCommandStreamService streams) {
     this.service = service;
+    this.commands = commands;
+    this.streams = streams;
   }
 
   @PostMapping
@@ -28,8 +36,9 @@ public class ExecutionController {
       @PathVariable UUID robotId,
       @RequestHeader("Idempotency-Key") String idempotencyKey,
       @Valid @RequestBody CreateRequest request) {
-    return ResponseEntity.accepted()
-        .body(ApiResponse.of(service.create(owner(jwt), robotId, idempotencyKey, request)));
+    ExecutionResponse response = service.create(owner(jwt), robotId, idempotencyKey, request);
+    streams.publish(commands.executionStart(response));
+    return ResponseEntity.accepted().body(ApiResponse.of(response));
   }
 
   @GetMapping
@@ -52,8 +61,11 @@ public class ExecutionController {
       @PathVariable UUID robotId,
       @PathVariable UUID executionId,
       @RequestHeader("Idempotency-Key") String idempotencyKey) {
-    return ResponseEntity.accepted()
-        .body(ApiResponse.of(service.cancel(owner(jwt), robotId, executionId, idempotencyKey)));
+    ExecutionResponse response = service.cancel(owner(jwt), robotId, executionId, idempotencyKey);
+    if (response.status() == RobotExecutionStatus.CANCEL_REQUESTED) {
+      streams.publish(commands.executionCancel(response));
+    }
+    return ResponseEntity.accepted().body(ApiResponse.of(response));
   }
 
   private UUID owner(Jwt jwt) {

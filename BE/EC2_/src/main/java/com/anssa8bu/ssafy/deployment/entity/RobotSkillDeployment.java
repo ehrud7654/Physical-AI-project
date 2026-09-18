@@ -33,4 +33,21 @@ public class RobotSkillDeployment extends CreatedEntity {
   private Instant retiredAt;
 
   protected RobotSkillDeployment() {}
+
+  public RobotSkillDeployment(UUID id, UUID robotId, UUID skillId, UUID skillVersionId,
+      UUID deploymentId, Instant deployedAt) {
+    this.id = id; this.robotId = robotId; this.skillId = skillId;
+    this.skillVersionId = skillVersionId; this.deploymentId = deploymentId;
+    this.status = RobotSkillDeploymentStatus.ACTIVE; this.deployedAt = deployedAt;
+  }
+
+  public void retire(Instant at) { status = RobotSkillDeploymentStatus.RETIRED; retiredAt = at; }
+  public UUID getId() { return id; }
+  public UUID getRobotId() { return robotId; }
+  public UUID getSkillId() { return skillId; }
+  public UUID getSkillVersionId() { return skillVersionId; }
+  public UUID getDeploymentId() { return deploymentId; }
+  public RobotSkillDeploymentStatus getStatus() { return status; }
+  public Instant getDeployedAt() { return deployedAt; }
+  public Instant getRetiredAt() { return retiredAt; }
 }

@@ -19,14 +19,11 @@ public class SkillVersion extends CreatedEntity {
   @Column(name = "training_job_id", nullable = false)
   private UUID trainingJobId;
 
-  @Column(name = "training_profile_id", nullable = false)
-  private UUID trainingProfileId;
-
-  @Column(name = "training_config_sha256", nullable = false, length = 64)
-  private String trainingConfigSha256;
-
   @Column(name = "robot_profile_id", nullable = false)
   private UUID robotProfileId;
+
+  @Column(name = "parent_skill_version_id")
+  private UUID parentSkillVersionId;
 
   @Column(nullable = false)
   private int version;
@@ -62,6 +59,14 @@ public class SkillVersion extends CreatedEntity {
   @Enumerated(EnumType.STRING)
   @Column(name = "action_space", nullable = false, length = 30)
   private ActionSpace actionSpace;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "action_spec", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> actionSpec;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "runtime_spec", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> runtimeSpec;
 
   @Column(name = "n_params", nullable = false)
   private long parameterCount;
@@ -114,6 +119,61 @@ public class SkillVersion extends CreatedEntity {
 
   protected SkillVersion() {}
 
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
+      UUID robotProfileId, int version, String bucket, String key,
+      String sha256, long bytes, String architecture, String framework, String frameworkVersion,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec, long parameterCount,
+      BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
+      Map<String, Object> outputSchema) {
+    this(id, skillId, trainingJobId, robotProfileId,
+        version, bucket, key, sha256, bytes, architecture, framework, frameworkVersion,
+        contractVersion, actionSpace, actionSpec, runtimeSpec, parameterCount, controlRateHz, cameraNames, inputSchema,
+        outputSchema, null);
+  }
+
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
+      UUID robotProfileId, int version, String bucket, String key,
+      String sha256, long bytes, String architecture, String framework, String frameworkVersion,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec, long parameterCount,
+      BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
+      Map<String, Object> outputSchema, UUID parentSkillVersionId) {
+    this.id = Objects.requireNonNull(id);
+    this.skillId = Objects.requireNonNull(skillId);
+    this.trainingJobId = Objects.requireNonNull(trainingJobId);
+    this.robotProfileId = Objects.requireNonNull(robotProfileId);
+    this.parentSkillVersionId = parentSkillVersionId;
+    this.version = version;
+    this.status = SkillVersionStatus.UPLOADING;
+    this.checkpointBucket = Objects.requireNonNull(bucket);
+    this.checkpointKey = Objects.requireNonNull(key);
+    this.checkpointSha256 = Objects.requireNonNull(sha256);
+    this.checkpointBytes = bytes;
+    this.architecture = Objects.requireNonNull(architecture);
+    this.framework = Objects.requireNonNull(framework);
+    this.frameworkVersion = Objects.requireNonNull(frameworkVersion);
+    this.contractVersion = Objects.requireNonNull(contractVersion);
+    this.actionSpace = Objects.requireNonNull(actionSpace);
+    this.actionSpec = Map.copyOf(Objects.requireNonNull(actionSpec));
+    this.runtimeSpec = Map.copyOf(Objects.requireNonNull(runtimeSpec));
+    this.parameterCount = parameterCount;
+    this.controlRateHz = Objects.requireNonNull(controlRateHz);
+    this.cameraNames = List.copyOf(cameraNames);
+    this.inputSchema = Map.copyOf(inputSchema);
+    this.outputSchema = Map.copyOf(outputSchema);
+  }
+
+  public void beginValidation() { status = SkillVersionStatus.VALIDATING; }
+  public void markReady(Instant at) { status = SkillVersionStatus.READY; validatedAt = at; }
+  public void markFailed(Instant at) { status = SkillVersionStatus.FAILED; validatedAt = at; }
+  public void recordGate(String metric, int n, int runs, double value, double low, double high,
+      Instant measuredAt) {
+    this.gateMetric = metric; this.gateN = n; this.gateRuns = runs; this.gateValue = value;
+    this.gateCiLow = low; this.gateCiHigh = high; this.gateMeasuredAt = measuredAt;
+  }
+  public UUID getTrainingJobId() { return trainingJobId; }
+
   public boolean isGatePassed() {
     return gatePassed;
   }
@@ -129,6 +189,8 @@ public class SkillVersion extends CreatedEntity {
   public UUID getRobotProfileId() {
     return robotProfileId;
   }
+
+  public UUID getParentSkillVersionId() { return parentSkillVersionId; }
 
   public int getVersion() {
     return version;
@@ -148,5 +210,53 @@ public class SkillVersion extends CreatedEntity {
 
   public String getContractVersion() {
     return contractVersion;
+  }
+
+  public String getCheckpointBucket() {
+    return checkpointBucket;
+  }
+
+  public String getCheckpointKey() {
+    return checkpointKey;
+  }
+
+  public String getArchitecture() {
+    return architecture;
+  }
+
+  public String getFramework() {
+    return framework;
+  }
+
+  public String getFrameworkVersion() {
+    return frameworkVersion;
+  }
+
+  public ActionSpace getActionSpace() {
+    return actionSpace;
+  }
+
+  public Map<String, Object> getActionSpec() { return actionSpec; }
+
+  public Map<String, Object> getRuntimeSpec() { return runtimeSpec; }
+
+  public long getParameterCount() {
+    return parameterCount;
+  }
+
+  public BigDecimal getControlRateHz() {
+    return controlRateHz;
+  }
+
+  public List<String> getCameraNames() {
+    return cameraNames;
+  }
+
+  public Map<String, Object> getInputSchema() {
+    return inputSchema;
+  }
+
+  public Map<String, Object> getOutputSchema() {
+    return outputSchema;
   }
 }

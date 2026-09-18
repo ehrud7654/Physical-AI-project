@@ -83,4 +83,15 @@ public class Robot extends AuditableEntity {
   public Long getRowVersion() {
     return rowVersion;
   }
+
+  public void reportHeartbeat(Instant receivedAt) {
+    connectionStatus = RobotConnectionStatus.ONLINE;
+    lastSeenAt = receivedAt;
+  }
+
+  public void activateDeployment(UUID deploymentId) {
+    currentDeploymentId = deploymentId;
+  }
+
+  public void markOffline() { connectionStatus = RobotConnectionStatus.OFFLINE; }
 }

@@ -31,6 +31,7 @@ public class DashboardTrainingQueryRepository {
                    AS average_progress
           FROM training_jobs
          WHERE owner_id = :ownerId
+           AND deleted_at IS NULL
         """
             .formatted(ACTIVE_STATUSES, ACTIVE_STATUSES);
 
@@ -62,6 +63,7 @@ public class DashboardTrainingQueryRepository {
               JOIN skills s ON s.id = j.skill_id
               JOIN devices d ON d.id = j.umi_device_id
              WHERE j.owner_id = :ownerId
+               AND j.deleted_at IS NULL
              ORDER BY j.updated_at DESC, j.id
              LIMIT :limit
             """)

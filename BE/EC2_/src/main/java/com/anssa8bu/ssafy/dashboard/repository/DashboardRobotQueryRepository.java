@@ -5,7 +5,6 @@ import com.anssa8bu.ssafy.dashboard.dto.DashboardRobotStatus;
 import com.anssa8bu.ssafy.dashboard.dto.DashboardSummaryResponse.RobotSummary;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -23,13 +22,12 @@ public class DashboardRobotQueryRepository {
     this.jdbcClient = jdbcClient;
   }
 
-  public RobotSummary summarize(UUID ownerId, Instant onlineThreshold) {
+  public RobotSummary summarize(UUID ownerId) {
     String sql =
         """
         SELECT COUNT(*) AS total_count,
                COUNT(*) FILTER (
                    WHERE r.connection_status = 'ONLINE'
-                     AND r.last_seen_at >= :onlineThreshold
                      AND NOT EXISTS (
                          SELECT 1 FROM robot_executions e
                           WHERE e.robot_id = r.id
@@ -44,14 +42,13 @@ public class DashboardRobotQueryRepository {
     return jdbcClient
         .sql(sql)
         .param("ownerId", ownerId)
-        .param("onlineThreshold", onlineThreshold.atOffset(ZoneOffset.UTC))
         .query(
             (rs, rowNum) ->
                 new RobotSummary(rs.getLong("total_count"), rs.getLong("available_count")))
         .single();
   }
 
-  public List<DashboardRobotResponse> findRecent(UUID ownerId, Instant onlineThreshold, int limit) {
+  public List<DashboardRobotResponse> findRecent(UUID ownerId, int limit) {
     String sql =
         """
         SELECT r.id,
@@ -59,9 +56,7 @@ public class DashboardRobotQueryRepository {
                r.last_seen_at,
                r.current_deployment_id,
                CASE
-                 WHEN r.connection_status <> 'ONLINE'
-                   OR r.last_seen_at IS NULL
-                   OR r.last_seen_at < :onlineThreshold THEN 'OFFLINE'
+                 WHEN r.connection_status <> 'ONLINE' THEN 'OFFLINE'
                  WHEN EXISTS (
                      SELECT 1 FROM robot_executions e
                       WHERE e.robot_id = r.id
@@ -79,7 +74,6 @@ public class DashboardRobotQueryRepository {
     return jdbcClient
         .sql(sql)
         .param("ownerId", ownerId)
-        .param("onlineThreshold", onlineThreshold.atOffset(ZoneOffset.UTC))
         .param("limit", limit)
         .query(
             (rs, rowNum) ->

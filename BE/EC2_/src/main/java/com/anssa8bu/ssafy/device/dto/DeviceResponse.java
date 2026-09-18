@@ -3,6 +3,7 @@ package com.anssa8bu.ssafy.device.dto;
 import com.anssa8bu.ssafy.device.entity.Device;
 import com.anssa8bu.ssafy.device.entity.DeviceConnectionStatus;
 import com.anssa8bu.ssafy.device.entity.DeviceType;
+import com.anssa8bu.ssafy.device.entity.DeviceRegistrationStatus;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -14,6 +15,7 @@ public record DeviceResponse(
     String name,
     String location,
     DeviceConnectionStatus connectionStatus,
+    DeviceRegistrationStatus registrationStatus,
     Instant lastSeenAt,
     Instant createdAt) {
 
@@ -26,6 +28,7 @@ public record DeviceResponse(
         device.getName(),
         device.getLocation(),
         device.getConnectionStatus(),
+        device.getRegistrationStatus(),
         device.getLastSeenAt(),
         device.getCreatedAt());
   }

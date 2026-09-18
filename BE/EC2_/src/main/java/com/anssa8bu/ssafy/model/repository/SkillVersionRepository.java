@@ -11,6 +11,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface SkillVersionRepository extends JpaRepository<SkillVersion, UUID> {
   List<SkillVersion> findAllByIdIn(Collection<UUID> ids);
 
+  List<SkillVersion> findAllBySkillIdIn(Collection<UUID> skillIds);
+
   Optional<SkillVersion> findFirstBySkillIdAndStatusAndGatePassedTrueOrderByVersionDesc(
       UUID skillId, SkillVersionStatus status);
+
+  Optional<SkillVersion> findByTrainingJobId(UUID trainingJobId);
+  Optional<SkillVersion> findFirstBySkillIdOrderByVersionDesc(UUID skillId);
 }

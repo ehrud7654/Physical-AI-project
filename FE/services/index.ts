@@ -1,9 +1,9 @@
-export { fetchRobots, fetchRobotDetail, fetchUmis, registerDevice, applyModel, updateRobot } from './deviceService';
-export type { RegisterDeviceInput } from './deviceService';
-export { fetchTrainings, fetchTrainingDetail, fetchTrainingRequirements, fetchTrainingSkills, createTrainingJob, updateTrainingInputPlan, completeTrainingInput, cancelTraining, deleteTrainings, retryTraining } from './trainingService';
+export { fetchRobots, fetchRobotDetail, fetchUmis, registerDevice, startDeviceEnrollment, fetchDeviceRegistrationStatus, deleteDevices, updateRobot } from './deviceService';
+export type { DeviceEnrollment, RegisterDeviceInput } from './deviceService';
+export { fetchTrainings, fetchTrainingDetail, fetchTrainingSkills, fetchSkillOverviews, createCustomSkill, updateSkillDescription, createTrainingJob, cancelTraining, deleteTrainings, retryTraining } from './trainingService';
 export { fetchLearnedSkills, fetchSavedWorks, saveWork, deleteWorks } from './workService';
-export { fetchUsers, fetchPermissions, savePermissions } from './adminService';
-export { login, logout } from './authService';
-export { fetchDatasets, createEpisodePreviewSession } from './datasetService';
+export { login, logout, restoreAuthentication } from './authService';
+export { fetchDatasets } from './datasetService';
 export { fetchTaskReadiness, fetchDeployments, createDeployment, fetchDeployment, createRobotExecution, fetchRobotExecutions, cancelRobotExecution } from './executionService';
+export type { Deployment } from './executionService';
 export { fetchDashboard } from './dashboardService';

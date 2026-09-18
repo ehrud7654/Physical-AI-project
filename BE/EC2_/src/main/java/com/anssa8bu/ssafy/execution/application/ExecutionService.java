@@ -70,6 +70,8 @@ public class ExecutionService {
     if (deployment.getStatus() != DeploymentStatus.SUCCEEDED
         || !deployment.getTaskVersionId().equals(request.taskVersionId()))
       throw new BusinessConflictException("DEPLOYMENT_NOT_READY", "완료된 현재 배포가 아닙니다.");
+    if (!Objects.equals(robot.getCurrentDeploymentId(), deployment.getId()))
+      throw new BusinessConflictException("DEPLOYMENT_NOT_CURRENT", "현재 로봇에 적용된 배포가 아닙니다.");
     int total =
         countExecutableSteps(
             steps.findAllByTaskVersionIdOrderByStepOrder(request.taskVersionId()), null);

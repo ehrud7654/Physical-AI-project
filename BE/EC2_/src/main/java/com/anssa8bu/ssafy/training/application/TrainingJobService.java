@@ -8,12 +8,16 @@ import com.anssa8bu.ssafy.device.entity.*;
 import com.anssa8bu.ssafy.device.repository.DeviceRepository;
 import com.anssa8bu.ssafy.episode.entity.*;
 import com.anssa8bu.ssafy.episode.repository.*;
+import com.anssa8bu.ssafy.model.entity.*;
+import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.skill.application.SkillService;
 import com.anssa8bu.ssafy.skill.entity.Skill;
 import com.anssa8bu.ssafy.skill.repository.SkillRepository;
 import com.anssa8bu.ssafy.training.entity.*;
 import com.anssa8bu.ssafy.training.repository.*;
 import java.time.Clock;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,33 +26,33 @@ import org.springframework.transaction.annotation.Transactional;
 public class TrainingJobService {
   private final TrainingJobRepository jobs;
   private final TrainingJobEpisodeRepository inputs;
-  private final TrainingProfileRepository profiles;
   private final SkillRepository skills;
   private final SkillService skillService;
   private final DeviceRepository devices;
   private final EpisodeRepository episodes;
   private final EpisodeArchiveRepository archives;
+  private final SkillVersionRepository skillVersions;
   private final IdempotencyGuard idempotency;
   private final Clock clock;
 
   public TrainingJobService(
       TrainingJobRepository jobs,
       TrainingJobEpisodeRepository inputs,
-      TrainingProfileRepository profiles,
       SkillRepository skills,
       DeviceRepository devices,
       EpisodeRepository episodes,
       EpisodeArchiveRepository archives,
+      SkillVersionRepository skillVersions,
       IdempotencyGuard idempotency,
       Clock clock,
       SkillService skillService) {
     this.jobs = jobs;
     this.inputs = inputs;
-    this.profiles = profiles;
     this.skills = skills;
     this.devices = devices;
     this.episodes = episodes;
     this.archives = archives;
+    this.skillVersions = skillVersions;
     this.idempotency = idempotency;
     this.clock = clock;
     this.skillService = skillService;
@@ -72,22 +76,18 @@ public class TrainingJobService {
             .findByIdAndOwnerId(request.umiDeviceId(), owner)
             .filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
             .orElseThrow(() -> new ResourceNotFoundException("UMI Device"));
-    TrainingProfile profile =
-        profiles
-            .findFirstByStatusOrderByVersionDesc(TrainingProfileStatus.ACTIVE)
-            .orElseThrow(
-                () ->
-                    new BusinessConflictException("ACTIVE_PROFILE_NOT_FOUND", "활성 학습 프로필이 없습니다."));
     List<Episode> selected = selectEpisodes(owner, skill, request);
-    int expected =
-        request.inputMode() == TrainingInputMode.COLLECT_NEW
-            ? Optional.ofNullable(request.expectedEpisodeCount()).orElse(0)
-            : selected.size();
+    TrainingMode trainingMode =
+        request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
+    SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
+    int expected = selected.size();
     if (expected < 1)
       throw new BusinessConflictException("INVALID_EPISODE_COUNT", "Episode 수는 1 이상이어야 합니다.");
     Map<String, Object> query = new LinkedHashMap<>();
     query.put("skillKey", skill.getSkillKey());
-    query.put("inputMode", request.inputMode().name());
+    query.put("inputMode", TrainingInputMode.EXISTING_EPISODES.name());
+    query.put("trainingMode", trainingMode.name());
+    if (baseVersion != null) query.put("baseSkillVersionId", baseVersion.getId().toString());
     TrainingJob job =
         jobs.save(
             new TrainingJob(
@@ -95,14 +95,14 @@ public class TrainingJobService {
                 owner,
                 skill.getId(),
                 device.getId(),
-                profile.getId(),
-                request.inputMode(),
-                profile.getHyperparameters(),
-                profile.getConfigSha256(),
+                TrainingInputMode.EXISTING_EPISODES,
                 query,
-                selected.size()));
+                selected.size(),
+                trainingMode,
+                baseVersion == null ? null : baseVersion.getId()));
     job.planInput(expected, !selected.isEmpty());
     for (int i = 0; i < selected.size(); i++) attach(job, selected.get(i), i + 1);
+    job.fixInputSnapshotSha256(inputSnapshotHash(selected));
     idempotency.complete(
         owner, "POST", "/api/v1/training-jobs", claim, 201, "TRAINING_JOB", job.getId());
     return map(job, skill);
@@ -141,37 +141,6 @@ public class TrainingJobService {
     return map(job, skill(job.getSkillId()));
   }
 
-  @Transactional
-  public JobResponse updateInputPlan(UUID owner, UUID id, InputPlanUpdateRequest request) {
-    TrainingJob job = owned(owner, id);
-    try {
-      job.updateExpectedEpisodeCount(request.expectedEpisodeCount());
-    } catch (IllegalStateException e) {
-      throw new BusinessConflictException("STATE_CONFLICT", e.getMessage());
-    }
-    return map(job, skill(job.getSkillId()));
-  }
-
-  @Transactional
-  public InputCompleteResponse completeInput(
-      UUID owner, UUID id, String key, InputCompleteRequest request) {
-    String path = "/api/v1/training-jobs/" + id + "/input-complete";
-    var claim = idempotency.claim(owner, "POST", path, key, request);
-    if (claim.existingResourceId() != null) {
-      TrainingJob existing = owned(owner, claim.existingResourceId());
-      return new InputCompleteResponse(existing.getId(), existing.getStatus());
-    }
-    TrainingJob job = owned(owner, id);
-    try {
-      job.beginInputValidation(request.receivedEpisodeCount());
-    } catch (IllegalStateException e) {
-      String code = e.getMessage().contains("일치") ? "INPUT_COUNT_MISMATCH" : "STATE_CONFLICT";
-      throw new BusinessConflictException(code, e.getMessage());
-    }
-    idempotency.complete(owner, "POST", path, claim, 202, "TRAINING_JOB", job.getId());
-    return new InputCompleteResponse(job.getId(), job.getStatus());
-  }
-
   @Transactional(readOnly = true)
   public List<EpisodeInputResponse> inputEpisodes(UUID owner, UUID id) {
     owned(owner, id);
@@ -195,11 +164,6 @@ public class TrainingJobService {
   }
 
   private List<Episode> selectEpisodes(UUID owner, Skill skill, CreateRequest request) {
-    if (request.inputMode() == TrainingInputMode.COLLECT_NEW) {
-      if (request.episodeIds() != null && !request.episodeIds().isEmpty())
-        throw new BusinessConflictException("FIELD_NOT_ALLOWED", "신규 수집에는 episodeIds를 사용할 수 없습니다.");
-      return List.of();
-    }
     if (request.episodeIds() == null
         || request.episodeIds().isEmpty()
         || new HashSet<>(request.episodeIds()).size() != request.episodeIds().size())
@@ -249,6 +213,48 @@ public class TrainingJobService {
             clock.instant()));
   }
 
+  private String inputSnapshotHash(List<Episode> selected) {
+    try {
+      StringBuilder canonical = new StringBuilder();
+      for (int index = 0; index < selected.size(); index++) {
+        Episode episode = selected.get(index);
+        EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
+        canonical.append(index + 1).append('|').append(episode.getId()).append('|')
+            .append(archive.getSha256()).append('|').append(episode.getContractVersion())
+            .append('\n');
+      }
+      return HexFormat.of().formatHex(
+          MessageDigest.getInstance("SHA-256")
+              .digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
+    }
+  }
+
+  private SkillVersion validateBaseVersion(
+      Skill skill, TrainingMode mode, UUID baseSkillVersionId) {
+    if (mode == TrainingMode.FROM_SCRATCH) {
+      if (baseSkillVersionId != null)
+        throw new BusinessConflictException(
+            "BASE_MODEL_NOT_ALLOWED", "처음부터 학습할 때는 기준 모델을 지정할 수 없습니다.");
+      return null;
+    }
+    if (baseSkillVersionId == null)
+      throw new BusinessConflictException(
+          "BASE_MODEL_REQUIRED", "추가 학습에는 기준 스킬 버전이 필요합니다.");
+    SkillVersion version =
+        skillVersions
+            .findById(baseSkillVersionId)
+            .orElseThrow(() -> new ResourceNotFoundException("BaseSkillVersion"));
+    if (!version.getSkillId().equals(skill.getId()))
+      throw new BusinessConflictException(
+          "BASE_MODEL_SKILL_MISMATCH", "기준 모델이 학습 대상 동작에 속하지 않습니다.");
+    if (version.getStatus() != SkillVersionStatus.READY)
+      throw new BusinessConflictException(
+          "BASE_MODEL_NOT_READY", "READY 상태의 모델만 추가 학습 기준으로 사용할 수 있습니다.");
+    return version;
+  }
+
   private TrainingJob owned(UUID owner, UUID id) {
     return jobs.findByIdAndOwnerIdAndDeletedAtIsNull(id, owner)
         .orElseThrow(() -> new ResourceNotFoundException("TrainingJob"));
@@ -265,6 +271,8 @@ public class TrainingJobService {
         s.getDisplayName(),
         j.getUmiDeviceId(),
         j.getInputMode(),
+        j.getTrainingMode(),
+        j.getBaseSkillVersionId(),
         j.getStatus(),
         j.getProgressStage(),
         j.getProgressPercent(),
