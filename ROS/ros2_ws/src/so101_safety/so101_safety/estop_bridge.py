@@ -1,4 +1,5 @@
-"""Estop 브리지 (S15P21A103-49) — /estop을 실제 토크 off로 연결.
+"""
+Estop 브리지 (S15P21A103-49) — /estop을 실제 토크 off로 연결.
 
 safety 노드가 /estop을 발행해도 ros2_control엔 소비자가 없어 팔이 안 멈춘다.
 (옛 so101_driver가 /estop을 받아 토크 off 했는데 ros2_control 전환 때 삭제됨.)
