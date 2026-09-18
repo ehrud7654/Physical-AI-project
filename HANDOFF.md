@@ -1,6 +1,6 @@
 # Project Handoff
 
-> Last updated: 2026-09-17 KST. **Read this section before the older material
+> Last updated: 2026-09-18 KST. **Read this section before the older material
 > below.** The repository and uncommitted diff are the source of truth. Do not
 > reset, clean, pull, switch branches, or bulk-add files before reviewing §0.3.
 
@@ -82,8 +82,36 @@ An optional factor-4 train-only lateral-correction sampler is prepared in
 `AI/tools/train_relative_chunk_bc.py` (default factor 1 preserves the old
 path); its focused local check passes. In the v10 seed-0 split, it selects
 198/1,009 training rows by current gap 60–70mm and fourth-target local-x
-correction >10mm. The controlled treatment has **not** been trained or
-evaluated yet; validation still uses all 239 held-out rows once.
+correction >10mm. The factor-4 treatment was subsequently trained on V100
+GPU 2; both its best-val and last-epoch checkpoints were evaluated on the
+local CPU with the same object-only probe. Correct-direction signs on the
+last of the first four targets changed from baseline 16/52 to best-val
+28/52 and last 25/52, but best-val median displacement gain was 0.0011,
+and image noise still gave 25/52. Selected held-out real-image local-x MAE
+barely changed (8.76 to 8.66mm), with one off-centre held-out episode
+still at 67.2mm error. This is a partial diagnostic change, not a
+localisation or physical grasp gate. See
+`AI/docs/MEASURE_v10_visual_localisation_failure_0917.md` for conditions,
+checkpoint hashes, limitations and ignored `AI/out/` report paths.
+
+2026-09-18 pre-arrival work: HW expects to share a new ORB-SLAM3 + ArUco
+ID 11 episode, but no such episode has reached Track A yet. The
+`AI/docs/PLAN_orbslam_aruco_umi_intake_0918.md` separates a read-only
+archive inventory from still-unverified pose/clock/gap/tracking checks.
+`AI/tools/inspect_umi_delivery.py` fingerprints a directory, ZIP or TAR
+without extraction and always reports `INVENTORY_ONLY_SCHEMA_UNVERIFIED`;
+its four synthetic tests and a read of one older ARCore normalized ZIP pass.
+No ORB-specific adapter or new-data quality pass is claimed. The
+`AI/umi/offline_real_handoff.py` now copies an accepted H=2 JointState
+snapshot, rejects inconsistent 10Hz history and independently checks the
+injected IK output with the released URDF FK. Its seven ROS-free fixture
+tests pass; so do the existing four joint-chunk, six ROS-adapter and four
+installation-limit tests, and the expanded local regression passes 32/32
+checks. The real IK solver, camera/TCP calibration,
+continuous collision clearance, ROS transport and physical approval remain
+unverified. None of this work runs learned inference on the shared server
+or sends motor commands. This account-transfer section describes related
+source/tests/docs, not generated recordings or media.
 
 The EEF-relative-chunk-to-joint-command ownership is now recorded as a
 **D-AI-55 proposal, not yet approved**, in

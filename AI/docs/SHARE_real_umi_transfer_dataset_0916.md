@@ -63,10 +63,35 @@ A semantic converter is required. Do not merely rename or repackage the arrays:
 
 The safest conversion source is the preserved normalized pose/image/gap stream,
 not a lossy reinterpretation of the existing 6D chunk as axis-angle.
-That source currently exists at `AI/out/real_20260911_normalized` (about
-2.05 GB, 70 episode ZIPs plus quality metadata), but it has not been packaged
-for transfer in this handoff. A one-episode source-field sample and its units
-are documented in `AI/docs/SHARE_normalized_umi_source_sample_0916.md`.
+That source exists at `AI/out/real_20260911_normalized` and has now been
+packaged separately for transfer:
+
+- Archive: `AI/datasets/umi_real_normalized_20260911_v1.tar`
+- Size: 2,046,383,104 bytes
+- SHA-256: `0aaab2847ec763042c5407b9b9745bc2b054e16f308ecfa39c888a6d804ab0e0`
+- Contents: 70 canonical episode ZIPs, 70 quality JSONs and one `manifest.json`
+- Integrity: all 70 episode ZIP hashes match their manifest entries; the
+  archive directory and counts were checked after creation.
+
+The Jupyter server already has `~/real_20260911_normalized_full.tar`. On
+2026-09-17 its archive listing counted 70 episode ZIPs, and the SHA-256 of its
+embedded `manifest.json` was
+`7c0078a4bcd155e8354bf1b8b2fe90bef5bcf876ee77ffd3560ac8c02df471b4`,
+identical to the local manifest. Use the existing server archive for transfer;
+do **not** upload the local repack merely because its tar filename or whole-file
+hash differs. The server archive's individual ZIP payload hashes have not yet
+been independently checked against that manifest.
+
+This archive is **not** the official Stanford UMI Zarr dataset and does not
+silently supply success labels, physical pad-centre calibration or a measured
+IMU orientation. A one-episode source-field sample and its units are documented
+in `AI/docs/SHARE_normalized_umi_source_sample_0916.md`.
+
+Before extracting the server archive, inspect its member paths with
+`tar -tf ~/real_20260911_normalized_full.tar | head`. Extract to a separate
+source directory, not over the existing v10 training directory
+`datasets/umi_real_relative_20260911_v10`. Validate the extracted episode
+ZIP hashes against the embedded manifest before official-UMI conversion.
 
 ## Current validation status
 
@@ -91,7 +116,9 @@ branch under `AI/docs/SHARE_real_umi_transfer_dataset_0916.md`,
 `AI/docs/SPEC_umi_relative_target_trajectory_0914.md`, and
 `AI/umi/relative_dataset.py`. To reproduce training, the separate v10 archive
 must also be transferred and its SHA-256 checked. Official UMI conversion
-needs the separate 70 normalized source ZIPs, not only the v10 archive.
+needs the separate normalized-source archive above, not only the v10 archive.
+Neither data archive is part of Git; a successful commit/push shares only this
+contract and the source code, not the recordings themselves.
 
 ## Two-target constraint
 

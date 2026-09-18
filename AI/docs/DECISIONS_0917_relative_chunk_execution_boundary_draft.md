@@ -55,6 +55,18 @@ T_base_tcp_target[k] = T_base_tcp_current @ T_tcp_current_tcp_target[k]
   실물 연결을 증명하지는 않는다.
 - `umi/ros_adapter.py`: 관절·gap 명령의 ROS 메시지 필드 생성 helper가
   있지만, 실제 ROS 송신 경로의 관통 검증과 동일하지 않다.
+- `umi/offline_real_handoff.py`: ROS JointState에서 변환된 monotonic 시각의
+  상태 두 개와 이미 정규화된 RGB 두 프레임을 v10 `(2,3,224,224)` 영상 및
+  `(2,10)` 현재 TCP 상대 proprio 관측으로 묶는다. 영상↔상태 시각,
+  최신성, 10Hz 이력 간격, 실제 URDF FK와 상태 TCP의 일치 여부를 검사하고
+  관측 상태를 복사해 이후 버퍼 변경의 영향을 막는다. **이미 계산된**
+  `(8,10)` 정책 출력만 받아 5축 IK와 8점 관절·gap·시간 검사를 연달아
+  적용한다. IK가 보고한 잔차는 반환 관절의 URDF FK로 다시 검사하고,
+  v10 첫 미래 목표 `0..3`을 오프라인 prefix로 반환한다.
+  이 코드는 체크포인트 추론이나 ROS publish를 하지 않는다. 카메라 회전·
+  optical extrinsic, 실제 IK solver 및 실물 관절/gap 동기화가 검증됐다는
+  뜻도 아니다. `tools/check_offline_real_handoff.py`는 합성 JointState와
+  가짜 IK fixture만 사용한다.
 
 ## 아직 이 결정으로 완료 처리하지 않는 것
 
