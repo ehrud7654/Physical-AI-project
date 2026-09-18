@@ -15,16 +15,19 @@ public class JetsonCommandRecoveryService {
   private final RobotExecutionRepository executions;
   private final JetsonCommandFactory commands;
   private final JetsonCommandStreamService streams;
+  private final io.micrometer.core.instrument.MeterRegistry meter;
 
   public JetsonCommandRecoveryService(
       DeploymentRepository deployments,
       RobotExecutionRepository executions,
       JetsonCommandFactory commands,
-      JetsonCommandStreamService streams) {
+      JetsonCommandStreamService streams,
+      io.micrometer.core.instrument.MeterRegistry meter) {
     this.deployments = deployments;
     this.executions = executions;
     this.commands = commands;
     this.streams = streams;
+    this.meter = meter;
   }
 
   @Transactional(readOnly = true)
@@ -33,9 +36,11 @@ public class JetsonCommandRecoveryService {
         .findFirstByRobotIdAndStatusInOrderByCreatedAtAsc(
             robotId, EnumSet.of(DeploymentStatus.PENDING, DeploymentStatus.DOWNLOADING))
         .ifPresent(
-            value ->
-                streams.publish(
-                    commands.deploymentApply(robotId, value.getId(), value.getTaskVersionId())));
+            value -> {
+              streams.publish(
+                  commands.deploymentApply(robotId, value.getId(), value.getTaskVersionId()));
+              meter.counter("jetson.command.replay", "type", "deployment").increment();
+            });
 
     executions
         .findFirstByRobotIdAndStatusInOrderByRequestedAtAsc(
@@ -43,6 +48,10 @@ public class JetsonCommandRecoveryService {
             EnumSet.of(
                 RobotExecutionStatus.REQUESTED, RobotExecutionStatus.STARTING,
                 RobotExecutionStatus.RUNNING, RobotExecutionStatus.CANCEL_REQUESTED))
-        .ifPresent(value -> streams.publish(commands.recoverExecution(value)));
+        .ifPresent(
+            value -> {
+              streams.publish(commands.recoverExecution(value));
+              meter.counter("jetson.command.replay", "type", "execution").increment();
+            });
   }
 }
