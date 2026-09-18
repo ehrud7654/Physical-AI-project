@@ -50,6 +50,8 @@ class OrchestratorNode(Node):
         self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
         self.declare_parameter("ckpt_dir", "/tmp/so101_ckpt")
         self.declare_parameter("contract_version", "robot-command-v1")
+        self.declare_parameter("firmware_version", "jetson-runtime-1.0.0")  # BE @NotBlank
+        self.declare_parameter("runtime_version", "policy-runner-1.0.0")    # BE @NotBlank
         self.declare_parameter("motor_settle_sec", 2.0)    # MOTOR step: timeoutSeconds 없을 때 대기
         self.declare_parameter("skill_default_sec", 10.0)  # SKILL step: timeoutSeconds 없을 때 실행
 
@@ -62,6 +64,8 @@ class OrchestratorNode(Node):
         self._hb_period = float(self.get_parameter("heartbeat_sec").value)
         self._ckpt_dir = self.get_parameter("ckpt_dir").value
         self._contract = self.get_parameter("contract_version").value
+        self._firmware = self.get_parameter("firmware_version").value
+        self._runtime = self.get_parameter("runtime_version").value
         self._motor_settle_sec = float(self.get_parameter("motor_settle_sec").value)
         self._skill_default_sec = float(self.get_parameter("skill_default_sec").value)
         os.makedirs(self._ckpt_dir, exist_ok=True)
@@ -369,7 +373,8 @@ class OrchestratorNode(Node):
 
     # ── heartbeat ──────────────────────────────────────────────────────
     def _send_heartbeat(self):
-        resp = self._be.heartbeat(contract=self._contract)  # 실패는 be_client가 로깅
+        resp = self._be.heartbeat(firmware=self._firmware, runtime=self._runtime,
+                                  contract=self._contract)  # 실패는 be_client가 로깅
         if not isinstance(resp, dict):
             return
         # 젯슨 RTC 죽어서 부팅마다 시각 리셋 — BE 시각과 비교해 경고(JWT exp·TLS 검증 영향)
