@@ -23,10 +23,21 @@ from typing import Any
 
 import numpy as np
 import torch
+
+# BLAS 캡(OMP/MKL/...)은 torch 의 intra-op 스레드를 항상 따라가지 않는다.
+# 여기서 명시로 건다 — 공유 머신이고, 이 모델은 1.3M 파라미터라 스레드가
+# 많아서 빨라지지 않는다. 실측 🟢 2026-09-07: 6개 프로세스에서 load average 165/80.
+try:
+    import runtime_limits as _rl
+
+    _rl.torch_threads()
+except Exception:  # 단독 실행 등 경로에 없을 때
+    pass
 import torch.nn as nn
 import yaml
 
 from paths import CONFIG_DIR, DEFAULT_CONFIG
+from contract.episode import RANGE_TOLERANCE
 from policy.base import check_action
 from sim.base import Observation
 
@@ -78,7 +89,12 @@ class ConvEncoder(nn.Module):
         return self.proj(h)
 
 
-ACTION_SPACES = ("joint_absolute", "joint_delta", "joint_delta_gripper_abs")
+ACTION_SPACES = (
+    "joint_absolute",
+    "joint_delta",
+    "joint_delta_gripper_abs",
+    "joint_delta_gripper_binary",
+)
 """What the network regresses. Not a contract change -- the dataset always stores
 absolute joint angles and this is a transform applied at train and inference time.
 신경망이 무엇을 회귀하는가. 계약 변경이 아니다. 데이터셋에는 언제나 절대 관절각이
@@ -95,7 +111,26 @@ joint_delta_gripper_abs: 팔 관절은 `action - state`, 그리퍼는 절대 명
 명령은 에피소드당 두 번(열기, 닫기) 바뀌는 설정값이라 델타가 141스텝 중 124스텝에서
 0 이고 17스텝에서만 스파이크다. L1 손실에서 대부분 0 인 목표의 최적값은 중앙값 — 0 —
 이고 신경망은 정확히 그것을 배웠다. 팔 관절 오차는 필요한 움직임의 0.17배까지
-내려갔는데 그리퍼는 1.07배에 머물렀고, 폐루프에서 그리퍼가 열리지 않았다."""
+내려갔는데 그리퍼는 1.07배에 머물렀고, 폐루프에서 그리퍼가 열리지 않았다.
+
+joint_delta_gripper_binary: arm joints as `action - state`, gripper as a binary
+label (1 = closed) fitted with BCE instead of the regression loss. Making the
+gripper absolute fixed the zero-delta collapse above, but the same structure came
+back one level up: the absolute command is "open" on roughly 110 of 141 steps, so
+under L1 the conditional median is "open" wherever the observation cannot resolve
+the closing moment -- and the policy simply never closes. Measured 🟢 2026-09-10:
+v5 seed0 never closed the gripper in 42 of 100 episodes (scripted: 1 of 100), and
+where it did close it closed at a median 28.0mm from the object (scripted 4.7mm).
+BCE has no median-collapse: it fits a graded probability, so a weakly informative
+observation still produces a crossing.
+joint_delta_gripper_binary: 팔 관절은 `action - state`, 그리퍼는 **이진 라벨**
+(1 = 닫힘)이고 회귀 손실 대신 BCE 로 맞춘다. 그리퍼를 절대값으로 바꾼 것이 위의
+델타-0 붕괴는 고쳤지만, **같은 구조가 한 단계 위에서 재발했다** — 절대 명령은 141
+스텝 중 약 110 스텝이 "열림"이라, 관측이 닫는 순간을 분해하지 못하는 구간에서 L1 의
+조건부 중앙값은 "열림"이고 정책은 아예 닫지 않는다. 실측 🟢 2026-09-10: v5 seed0 이
+100편 중 **42편에서 그리퍼를 한 번도 닫지 않았다** (scripted 는 1편), 닫은 경우도
+물체에서 중앙 28.0mm 떨어진 곳에서 닫았다 (scripted 4.7mm). BCE 는 중앙값 붕괴가
+없다 — 등급이 있는 확률을 맞추므로 관측이 약하게만 정보를 줘도 통과가 생긴다."""
 
 
 def gripper_index(config_path: Path = DEFAULT_CONFIG) -> int:
@@ -116,8 +151,93 @@ def gripper_index(config_path: Path = DEFAULT_CONFIG) -> int:
 _GRIPPER = gripper_index()
 
 
+def gripper_command_norms(
+    config_path: Path = DEFAULT_CONFIG,
+) -> tuple[float, float]:
+    """Normalised open and close gripper commands, from the hardware config.
+    정규화된 그리퍼 열기·닫기 명령. 하드웨어 설정에서 읽는다.
+
+    Hardware-dependent and contract-defined, so nothing here is a literal: the
+    commands come from `grasp.open_cmd`/`grasp.close_cmd` and the mapping is the
+    contract's own formula. The arm is going to be replaced, so a number typed
+    here would go stale silently.
+    하드웨어 의존 + 계약 정의 값이므로 리터럴을 쓰지 않는다. 명령은
+    `grasp.open_cmd`/`grasp.close_cmd` 에서, 매핑은 계약 자신의 공식에서 온다.
+    로봇팔은 교체 예정이라 여기 숫자를 박으면 조용히 낡는다.
+    """
+    with Path(config_path).open(encoding="utf-8") as fh:
+        cfg = yaml.safe_load(fh)
+    lo, hi = (float(v) for v in cfg["joints"][_GRIPPER]["range_rad"])
+    grasp = cfg["grasp"]
+
+    def unit(x: float) -> float:
+        return 2.0 * (x - lo) / (hi - lo) - 1.0
+
+    return unit(float(grasp["open_cmd"])), unit(float(grasp["close_cmd"]))
+
+
+_GRIP_OPEN_NORM, _GRIP_CLOSE_NORM = gripper_command_norms()
+_GRIP_MID = (_GRIP_OPEN_NORM + _GRIP_CLOSE_NORM) / 2.0
+
+# 데이터에서 두 모드를 찾을 때 쓰는 분위수. 양 끝의 이상치를 피하면서 두 평탄부를 집는다.
+GRIP_QUANTILES = (0.05, 0.95)
+# 두 모드가 전체 범위의 이 비율보다 가깝게 붙어 있으면 개폐 두 모드가 없는 것이다.
+GRIP_MIN_SEPARATION = 0.05
+# 중간 띠(두 모드 사이 10% 구간)에 이 비율보다 많이 들어 있으면 이봉분포가 아니다.
+GRIP_MAX_MIDBAND_FRAC = 0.15
+
+
+def gripper_norms_from_data(
+    gripper_channel: torch.Tensor,
+) -> tuple[float, float, float]:
+    """Open / close / threshold read from the data, not from the sim config.
+    열림·닫힘·임계값을 시뮬 설정이 아니라 **데이터에서** 읽는다.
+
+    Why this exists / 왜 있는가 (2026-09-12) 🟢.
+
+    `_GRIP_MID` 는 `grasp.open_cmd`/`close_cmd` 에서 파생된다. 그 둘은 **시뮬** 값이다 --
+    2cm 큐브를 1.8cm 로 무는 설정이라 정규화하면 열림 -0.1931 · 닫힘 -0.7557 · 중간 -0.4744 다.
+    실물 UMI 시연은 6.7cm 로 벌려 4cm 상자를 물어서 열림 +0.2964 · 닫힘 -0.3414 이고,
+    **둘 다 -0.4744 보다 위**다. 그 임계값을 그대로 쓰면 실물 프레임의 닫힘 라벨이 **0/76** 이 된다.
+
+    같은 채널에 규약이 두 개인 것이고 L69(action 의미 두 갈래)와 같은 계열이다.
+    임계값은 하드웨어 설정이 아니라 **그 데이터셋이 쓰는 규약**에서 나와야 한다.
+
+    검증 가능한 성질: 시뮬 데이터에 적용하면 설정에서 파생된 값이 그대로 나온다
+    (`tools/check_gripper_norms.py` 가 그것을 fixture 로 검정한다).
+
+    Returns (open_norm, close_norm, mid). 닫힘이 열림보다 작다 -- 계약상 range_rad
+    하한이 닫힘이다.
+    """
+    x = gripper_channel.reshape(-1).to(torch.float64)
+    lo_q, hi_q = GRIP_QUANTILES
+    close_norm = float(torch.quantile(x, lo_q))
+    open_norm = float(torch.quantile(x, hi_q))
+    span = float(x.max() - x.min())
+
+    if span <= 0.0 or (open_norm - close_norm) < GRIP_MIN_SEPARATION * max(span, 1e-9):
+        raise ValueError(
+            "그리퍼 채널에 개폐 두 모드가 없다 "
+            f"(q{lo_q:.2f}={close_norm:.4f} · q{hi_q:.2f}={open_norm:.4f} · 전체폭 {span:.4f}). "
+            "이 데이터로는 이진 라벨을 만들 수 없다 -- 폐쇄 이벤트가 있는지 먼저 확인하라"
+        )
+
+    mid = (open_norm + close_norm) / 2.0
+    band = 0.10 * (open_norm - close_norm)
+    midband = float(((x > mid - band) & (x < mid + band)).to(torch.float64).mean())
+    if midband > GRIP_MAX_MIDBAND_FRAC:
+        raise ValueError(
+            f"그리퍼 채널이 이봉분포가 아니다 -- 중간 띠에 {midband:.1%} 가 있다 "
+            f"(허용 {GRIP_MAX_MIDBAND_FRAC:.0%}). 이진화 임계값이 임의값이 된다"
+        )
+    return open_norm, close_norm, mid
+
+
 def training_target(
-    action: torch.Tensor, state: torch.Tensor, action_space: str
+    action: torch.Tensor,
+    state: torch.Tensor,
+    action_space: str,
+    grip_mid: float | None = None,
 ) -> torch.Tensor:
     """The tensor the loss is computed against.
     손실을 계산할 대상 텐서.
@@ -139,6 +259,19 @@ def training_target(
         target = target.clone()
         target[..., _GRIPPER] = action[..., _GRIPPER]
         return target
+    if action_space == "joint_delta_gripper_binary":
+        target = action - state
+        target = target.clone()
+        # 닫힘 명령이 열림 명령보다 작다 (range_rad 하한 = 닫힘). 중간점 기준으로
+        # 이진화한다 — 여기 리터럴은 없다.
+        # `grip_mid` 를 주면 **그 데이터셋에서 파생된** 임계값을 쓴다. 안 주면 시뮬
+        # 설정에서 파생된 값이다 — 실물 데이터에는 그것이 맞지 않는다 (2026-09-12 🟢,
+        # `gripper_norms_from_data` 의 주석 참조).
+        mid = _GRIP_MID if grip_mid is None else float(grip_mid)
+        target[..., _GRIPPER] = (
+            action[..., _GRIPPER] < mid
+        ).to(action.dtype)
+        return target
     if action_space == "joint_absolute":
         return action
     raise ValueError(f"action_space 는 {ACTION_SPACES} 중 하나여야 한다: {action_space!r}")
@@ -146,6 +279,7 @@ def training_target(
 
 def target_scale(
     target: torch.Tensor,
+    action_space: str | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-joint mean and std of the regression target.
     회귀 목표의 관절별 평균과 표준편차.
@@ -168,7 +302,20 @@ def target_scale(
     # constant target needs no scaling anyway.
     # 한 번도 안 움직인 관절은 std 가 0 이다. 그걸로 나누면 inf 가 되고, 상수 목표는
     # 애초에 스케일이 필요 없다.
-    std = torch.where(std < 1e-8, torch.ones_like(std), std)
+    # ⚠️ 2026-09-15 정정 — 하한이 1e-8 이었다. 계약의 RANGE_TOLERANCE 는 1e-4 이고,
+    # 그보다 작은 움직임은 **계약상 의미 없는 값**이다. 그런데 std 1e-5 인 축을
+    # 그대로 나누면 잔차가 1e5 배로 증폭된다. DAgger 데이터의 `wrist_roll` 이
+    # std 1e-05·90% 가 정확히 0 이었고, 그 한 축 때문에 표준화 손실이 12~14 로
+    # 터졌다 (자명한 예측기 1.66 의 7배). train 부터 발산했다 🟢.
+    # 움직이지 않는 축은 표준화하지 않는다 — 상수 목표에 스케일은 의미가 없다.
+    std = torch.where(std < RANGE_TOLERANCE, torch.ones_like(std), std)
+    if action_space == "joint_delta_gripper_binary":
+        # 그리퍼 채널은 0/1 라벨이고 헤드 출력은 로짓이다. 표준화하면 BCE 가 보는
+        # 라벨이 0/1 이 아니게 되고 sigmoid 임계값이 뜻을 잃는다. 항등으로 둔다.
+        mean = mean.clone()
+        std = std.clone()
+        mean[_GRIPPER] = 0.0
+        std[_GRIPPER] = 1.0
     return mean, std
 
 
@@ -178,6 +325,7 @@ def to_action(
     action_space: str,
     target_mean: torch.Tensor | None = None,
     target_std: torch.Tensor | None = None,
+    grip_norms: tuple[float, float] | None = None,
 ) -> torch.Tensor:
     """Turn the network's output into a contract-unit action.
     신경망 출력을 계약 단위 행동으로 바꾼다."""
@@ -189,6 +337,21 @@ def to_action(
         out = state + raw
         out = out.clone()
         out[..., _GRIPPER] = raw[..., _GRIPPER]
+        return out
+    if action_space == "joint_delta_gripper_binary":
+        out = state + raw
+        out = out.clone()
+        # 로짓 > 0 이면 닫는다 (sigmoid > 0.5 와 같다). 중간값이 나올 수 없으므로
+        # "명령 진폭이 문턱 미만" 으로 미폐쇄가 되는 경로가 구조적으로 사라진다.
+        closed = raw[..., _GRIPPER] > 0.0
+        # 내는 명령도 그 데이터셋의 규약이어야 한다. 실물 데이터로 학습한 정책이
+        # 시뮬 명령(-0.7557 = 1.8cm)을 내면 4cm 물체를 뭉갠다.
+        o_norm, c_norm = (_GRIP_OPEN_NORM, _GRIP_CLOSE_NORM) if grip_norms is None else grip_norms
+        out[..., _GRIPPER] = torch.where(
+            closed,
+            torch.full_like(raw[..., _GRIPPER], c_norm),
+            torch.full_like(raw[..., _GRIPPER], o_norm),
+        )
         return out
     if action_space == "joint_absolute":
         return raw
@@ -294,6 +457,10 @@ class CheckpointMeta:
     epochs_run: int
     best_val_loss: float
     trained_on: str  # "random_tensors" | dataset path
+    # 이 체크포인트가 쓰는 그리퍼 규약. 없으면 시뮬 설정에서 파생된 값으로 읽는다
+    # (2026-09-12 이전 체크포인트). 실물 데이터로 학습하면 여기 값이 다르다.
+    gripper_open_norm: float | None = None
+    gripper_close_norm: float | None = None
     note: str = (
         "val_loss 는 학습이 망가지지 않았는지 확인용이다. 성능 판정은 "
         "tools/eval_rollout.py 의 롤아웃 성공률이 한다."
@@ -327,6 +494,12 @@ class BCPolicy:
         blob = torch.load(ckpt_path, map_location=device, weights_only=False)
         self.meta = blob["meta"]
         self.device = torch.device(device)
+        # 체크포인트가 자기 그리퍼 규약을 지니면 그것을 쓴다. 없으면 설정 파생값이다.
+        _o = self.meta.get("gripper_open_norm")
+        _c = self.meta.get("gripper_close_norm")
+        self._grip_norms: tuple[float, float] | None = (
+            (float(_o), float(_c)) if _o is not None and _c is not None else None
+        )
         self.model = BCNet(self.meta["camera_names"], self.meta["train_config"])
         self.model.load_state_dict(blob["state_dict"])
         self.model.to(self.device).eval()
@@ -379,7 +552,13 @@ class BCPolicy:
         state = torch.from_numpy(np.asarray(obs.state, dtype=np.float32)).unsqueeze(0)
         state = state.to(self.device)
         raw = self.model(images, state)
-        out = to_action(raw, state, self.action_space, self._t_mean, self._t_std)
+        # 헤드의 원 출력을 남긴다. `joint_delta_gripper_binary` 에서 그리퍼 채널은
+        # 로짓이고, `to_action` 이 부호만 남기고 크기를 버린다 — 계측에는 크기가
+        # 필요하다 (조건부 확률이 0.5 아래에 눌렸는지 요동치는지가 처방을 가른다).
+        # 동작에는 영향이 없다. 읽기만 한다.
+        self.last_raw = raw.squeeze(0).detach().cpu().numpy().astype(np.float64)
+        out = to_action(raw, state, self.action_space, self._t_mean, self._t_std,
+                        self._grip_norms)
         action = out.squeeze(0).cpu().numpy().astype(np.float32)
         action = check_action(action, self.name)
         clipped = np.clip(action, -1.0, 1.0)
