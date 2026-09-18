@@ -48,6 +48,8 @@ CHECKS = (
     "check_umi_action_roundtrip.py",
     "check_v10_localisation_failure_factors.py",
     "check_v10_lateral_sampling.py",
+    "check_relative_chunk_spatial_encoder.py",
+    "check_v10_heldout_visual_response.py",
 )
 
 

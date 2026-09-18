@@ -18,8 +18,12 @@ import torch.nn as nn
 class RelativeImageEncoder(nn.Module):
     """Small image encoder kept independent from SO-101 joint-policy code."""
 
-    def __init__(self, channels: list[int], feature_dim: int) -> None:
+    def __init__(self, channels: list[int], feature_dim: int,
+                 spatial_grid_size: int = 1) -> None:
         super().__init__()
+        self.spatial_grid_size = int(spatial_grid_size)
+        if not 1 <= self.spatial_grid_size <= 8:
+            raise ValueError("spatial_grid_size must be in [1, 8]")
         layers: list[nn.Module] = []
         input_channels = 3
         for output_channels in channels:
@@ -31,11 +35,13 @@ class RelativeImageEncoder(nn.Module):
             ])
             input_channels = output_channels
         self.network = nn.Sequential(*layers)
-        self.projection = nn.Linear(input_channels, feature_dim)
+        projection_input = input_channels * self.spatial_grid_size ** 2
+        self.projection = nn.Linear(projection_input, feature_dim)
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         encoded = self.network(image)
-        encoded = nn.functional.adaptive_avg_pool2d(encoded, 1).flatten(1)
+        encoded = nn.functional.adaptive_avg_pool2d(
+            encoded, self.spatial_grid_size).flatten(1)
         return self.projection(encoded)
 
 
@@ -49,7 +55,8 @@ class RelativeChunkBCNet(nn.Module):
         model = config["model"]
         feature_dim = int(model["feature_dim"])
         self.encoder = RelativeImageEncoder(
-            [int(value) for value in model["encoder_channels"]], feature_dim)
+            [int(value) for value in model["encoder_channels"]], feature_dim,
+            spatial_grid_size=int(model.get("spatial_grid_size", 1)))
         input_dim = self.obs_horizon * (feature_dim + self.action_dim)
         dims = [input_dim, *[int(value) for value in model["hidden_dims"]]]
         layers: list[nn.Module] = []

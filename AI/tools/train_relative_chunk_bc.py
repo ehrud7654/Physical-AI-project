@@ -172,6 +172,9 @@ def main() -> int:
     model = RelativeChunkBCNet(
         obs_horizon=dataset.obs_horizon, action_horizon=dataset.action_horizon,
         action_dim=ACTION_DIM, config=config).to(device)
+    spatial_grid_size = int(config["model"].get("spatial_grid_size", 1))
+    print(f"image encoder spatial grid: {spatial_grid_size}x{spatial_grid_size} "
+          f"(trainable parameters {model.n_params():,})")
     mean, std = mean.to(device), std.to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=float(train_config["lr"]),
@@ -226,6 +229,10 @@ def main() -> int:
         "elapsed_s": time.perf_counter() - started,
         "limitations": [
             "Diagnostic BC baseline; not ACT or Diffusion Policy.",
+            ("Spatial-grid encoder ablation; improvement must be established "
+             "on episode-held-out object-placement tests."
+             if spatial_grid_size > 1 else
+             "Global-average image encoder may attenuate object position."),
             "Camera-to-marker-midpoint extrinsic remains provisional.",
             "Held-out episodes are not a certified held-out object-position split.",
         ],

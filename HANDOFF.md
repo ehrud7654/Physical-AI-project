@@ -94,6 +94,38 @@ localisation or physical grasp gate. See
 `AI/docs/MEASURE_v10_visual_localisation_failure_0917.md` for conditions,
 checkpoint hashes, limitations and ignored `AI/out/` report paths.
 
+2026-09-18 follow-up: a local-CPU, inference-time recheck used **all** 28
+scene-scale/open-gap matched rows from 10 of the 14 held-out v10 episodes,
+instead of choosing one row per episode. Baseline vs factor-4 best-val
+fourth-target local-x MAE was 12.71mm vs 8.66mm; episode-equal means were
+9.70mm vs 7.39mm. Only five rows from three episodes had recorded lateral
+targets above 10mm. Their MAE fell 61.55mm to 37.55mm and correct-sign
+counts rose 2/5 to 4/5, but two roughly 70mm targets still elicited only
+about 3mm of policy movement. Mean-filled and noisy inference inputs raised
+factor-4 overall MAE to 13.22mm and 13.19mm. These correlated, cross-episode
+image comparisons do **not** establish measured object-placement
+generalisation or robot success. See
+`AI/docs/MEASURE_v10_heldout_visual_response_0918.md` and the ignored
+`AI/out/v10_heldout_all_matched_visual_response_20260918.json`. A subsequent
+paired-episode exploratory bootstrap found baseline-minus-factor-4 mean MAE
+improvement +2.31mm across ten episodes, but only 4/10 episodes improved and
+the 95% percentile interval was [−0.39,+6.81]mm. The apparent row-average
+benefit is not a stable episode-level finding; only three episodes contain
+large lateral targets. See the separate ignored
+`AI/out/v10_heldout_episode_paired_effect_20260918.json`.
+
+2026-09-18 next controlled training experiment: the diagnostic relative-chunk
+image encoder globally averaged its last feature map to `1x1`, which may
+attenuate object position. This is a hypothesis, not an established cause. An
+opt-in `4x4` spatial-grid encoder config was added at
+`AI/configs/train/relative_chunk_bc_spatial4.yaml`; the legacy config and old
+checkpoint reconstruction remain `1x1`. Split, seed, optimiser, loss and
+sampling factor stay unchanged so the first comparison varies only this model
+path (although parameter count rises from 1,031,280 to 2,014,320). Training is
+GPU-2/server-only; learned-checkpoint evaluation remains local CPU. The plan
+and exact commands are in `AI/docs/PLAN_v10_spatial_encoder_ablation_0918.md`.
+No spatial checkpoint has been trained or evaluated yet.
+
 2026-09-18 pre-arrival work: HW expects to share a new ORB-SLAM3 + ArUco
 ID 11 episode, but no such episode has reached Track A yet. The
 `AI/docs/PLAN_orbslam_aruco_umi_intake_0918.md` separates a read-only
@@ -106,7 +138,7 @@ No ORB-specific adapter or new-data quality pass is claimed. The
 snapshot, rejects inconsistent 10Hz history and independently checks the
 injected IK output with the released URDF FK. Its seven ROS-free fixture
 tests pass; so do the existing four joint-chunk, six ROS-adapter and four
-installation-limit tests, and the expanded local regression passes 32/32
+installation-limit tests, and the expanded local regression passes 34/34
 checks. The real IK solver, camera/TCP calibration,
 continuous collision clearance, ROS transport and physical approval remain
 unverified. None of this work runs learned inference on the shared server
