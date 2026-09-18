@@ -20,18 +20,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class CheckpointUploadSessionService {
   private final TrainingJobRepository jobs; private final SkillVersionRepository versions;
   private final SkillRepository skills; private final RobotProfileRepository robots;
-  private final TrainingProfileRepository profiles; private final TrainingLeaseValidator leases;
+  private final TrainingLeaseValidator leases;
   private final PresignedUploadService uploads; private final CheckpointStorageKeyFactory keys;
   private final Clock clock; private final String bucket; private final Duration ttl;
   private final IdempotencyGuard idempotency;
   private final CheckpointMetadataValidator metadataValidator;
   public CheckpointUploadSessionService(TrainingJobRepository jobs, SkillVersionRepository versions,
-      SkillRepository skills, RobotProfileRepository robots, TrainingProfileRepository profiles,
+      SkillRepository skills, RobotProfileRepository robots,
       TrainingLeaseValidator leases, PresignedUploadService uploads, CheckpointStorageKeyFactory keys,
       Clock clock, @Value("${app.checkpoint-storage.bucket}") String bucket,
       @Value("${app.checkpoint-storage.presign-ttl}") Duration ttl, IdempotencyGuard idempotency,
       CheckpointMetadataValidator metadataValidator) {
-    this.jobs=jobs;this.versions=versions;this.skills=skills;this.robots=robots;this.profiles=profiles;
+    this.jobs=jobs;this.versions=versions;this.skills=skills;this.robots=robots;
     this.leases=leases;this.uploads=uploads;this.keys=keys;this.clock=clock;this.bucket=bucket;this.ttl=ttl;
     this.idempotency=idempotency;
     this.metadataValidator=metadataValidator;
@@ -55,20 +55,16 @@ public class CheckpointUploadSessionService {
   }
   private SkillVersion create(TrainingJob job, UploadSessionRequest request) {
     var skill=skills.findByIdForUpdate(job.getSkillId()).orElseThrow();
-    var profile=profiles.findById(job.getTrainingProfileId()).orElseThrow();
     Metadata m=request.metadata();
-    if (!profile.getProfileKey().equals(m.trainingProfileKey()) || profile.getVersion()!=m.trainingProfileVersion()
-        || !job.getTrainingConfigSha256().equals(m.trainingConfigSha256()))
-      throw new BusinessConflictException("TRAINING_CONFIG_MISMATCH", "학습 프로필 메타데이터가 작업과 다릅니다.");
     var robot=robots.findById(m.robotProfileId()).orElseThrow(() -> new ResourceNotFoundException("RobotProfile"));
     metadataValidator.validate(m, robot);
     validateFile(request);
     int next=versions.findFirstBySkillIdOrderByVersionDesc(job.getSkillId()).map(v->v.getVersion()+1).orElse(1);
     String key=keys.create(job.getOwnerId(), skill.getSkillKey(), next, request.modelCompletedAt());
     SkillVersion value=new SkillVersion(UUID.randomUUID(), job.getSkillId(), job.getId(),
-        job.getTrainingProfileId(), job.getTrainingConfigSha256(), m.robotProfileId(), next, bucket,
+        m.robotProfileId(), next, bucket,
         key, request.sha256(), request.sizeBytes(), m.architecture(), m.framework(),
-        m.frameworkVersion(), m.contractVersion(), m.actionSpace(), m.nParams(), m.controlRateHz(),
+        m.frameworkVersion(), m.contractVersion(), m.actionSpace(), m.actionSpec(), m.nParams(), m.controlRateHz(),
         m.cameraNames(), m.inputSchema(), m.outputSchema(), job.getBaseSkillVersionId());
     job.markModelUploading(request.modelCompletedAt());
     return versions.save(value);

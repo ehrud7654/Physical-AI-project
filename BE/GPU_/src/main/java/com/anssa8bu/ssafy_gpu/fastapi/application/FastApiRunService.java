@@ -44,7 +44,7 @@ public class FastApiRunService {
         client.create(
             new CreateRunRequest(
                 claim.job().id(), claim.attempt(), worker.workerId(), state.storageNodeId(),
-                gpuIndex, claim.job().trainingMode().name(), base, claim.job().trainingProfile(),
+                gpuIndex, claim.job().trainingMode().name(), base,
                 claim.job().inputSnapshotSha256(), inputs, claim.leaseExpiresAt()));
     state.bindRun(gpuIndex, response.runId());
     return response;

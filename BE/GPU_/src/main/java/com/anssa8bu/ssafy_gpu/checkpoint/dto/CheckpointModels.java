@@ -10,7 +10,8 @@ public final class CheckpointModels {
 
   public enum ActionSpace {
     JOINT_ABSOLUTE,
-    JOINT_DELTA
+    JOINT_DELTA,
+    EEF_RELATIVE_ROT6D
   }
 
   public record Metadata(
@@ -19,10 +20,8 @@ public final class CheckpointModels {
       String frameworkVersion,
       String contractVersion,
       UUID robotProfileId,
-      String trainingProfileKey,
-      int trainingProfileVersion,
-      String trainingConfigSha256,
       ActionSpace actionSpace,
+      Map<String, Object> actionSpec,
       long nParams,
       BigDecimal controlRateHz,
       List<String> cameraNames,

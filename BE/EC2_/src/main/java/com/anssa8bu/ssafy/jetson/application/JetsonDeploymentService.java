@@ -237,6 +237,7 @@ public class JetsonDeploymentService {
         version.getFrameworkVersion(),
         version.getContractVersion(),
         version.getActionSpace(),
+        version.getActionSpec(),
         version.getParameterCount(),
         version.getControlRateHz(),
         version.getCameraNames(),

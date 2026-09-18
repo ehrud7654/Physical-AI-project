@@ -41,17 +41,9 @@ public final class TrainingJobModels {
       Integer gpuIndex,
       String gitRev,
       UUID storageNodeId,
-      Set<String> supportedAlgorithms,
       Long availableMemoryMiB,
       Long storageCapacityBytes,
       Long storageAvailableBytes) {}
-
-  public record TrainingProfileData(
-      String profileKey,
-      int profileVersion,
-      String algorithm,
-      Map<String, Object> hyperparameters,
-      String configSha256) {}
 
   public record ArchiveData(
       String downloadUrl, Instant expiresAt, String contentType, long sizeBytes, String sha256) {}
@@ -82,7 +74,6 @@ public final class TrainingJobModels {
       TrainingInputMode inputMode,
       TrainingMode trainingMode,
       BaseModelData baseModel,
-      TrainingProfileData trainingProfile,
       Map<String, Object> datasetQuery,
       String inputSnapshotSha256,
       List<EpisodeData> episodes) {}

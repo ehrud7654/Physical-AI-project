@@ -14,7 +14,8 @@ public class CheckpointMetadataValidator {
   public void validate(Metadata metadata, RobotProfile robotProfile) {
     if (!robotProfile.getContractVersion().equals(metadata.contractVersion()))
       conflict("RobotProfile contractVersion과 CKPT 계약 버전이 다릅니다.");
-    Object actionType=robotProfile.getActionContract().get("type");
+    Object actionType=robotProfile.getActionContract().get("actionSpace");
+    if (actionType == null) actionType=robotProfile.getActionContract().get("type");
     if (actionType!=null && !metadata.actionSpace().name().equals(actionType.toString()))
       conflict("RobotProfile action contract와 actionSpace가 다릅니다.");
     Object names=robotProfile.getCameraContract().get("cameraNames");
@@ -27,12 +28,12 @@ public class CheckpointMetadataValidator {
 
   public boolean matches(SkillVersion version, Metadata metadata) {
     return version.getRobotProfileId().equals(metadata.robotProfileId())
-        && version.getTrainingConfigSha256().equals(metadata.trainingConfigSha256())
         && version.getArchitecture().equals(metadata.architecture())
         && version.getFramework().equals(metadata.framework())
         && version.getFrameworkVersion().equals(metadata.frameworkVersion())
         && version.getContractVersion().equals(metadata.contractVersion())
         && version.getActionSpace()==metadata.actionSpace()
+        && version.getActionSpec().equals(metadata.actionSpec())
         && version.getParameterCount()==metadata.nParams()
         && version.getControlRateHz().compareTo(metadata.controlRateHz())==0
         && version.getCameraNames().equals(metadata.cameraNames())

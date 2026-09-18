@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,8 +26,8 @@ def main() -> None:
         completed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         reporter.report(
             "COMPLETED", "CHECKPOINT_READY", 100,
-            epoch=request["trainingProfile"]["hyperparameters"]["epochs"],
-            totalEpochs=request["trainingProfile"]["hyperparameters"]["epochs"],
+            epoch=int(os.getenv("TRAINING_EPOCHS", "60")),
+            totalEpochs=int(os.getenv("TRAINING_EPOCHS", "60")),
             modelCompletedAt=completed_at, result=result,
         )
     except BaseException as error:

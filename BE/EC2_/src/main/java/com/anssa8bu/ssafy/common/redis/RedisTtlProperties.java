@@ -8,7 +8,6 @@ public record RedisTtlProperties(
     Duration session,
     Duration trainingLease,
     Duration purgeLease,
-    Duration trainingProfile,
     Duration devicePresence,
     Duration sseEvent,
     Duration idempotency,
@@ -17,7 +16,6 @@ public record RedisTtlProperties(
     session = positive(session, "session");
     trainingLease = positive(trainingLease, "trainingLease");
     purgeLease = positive(purgeLease, "purgeLease");
-    trainingProfile = positive(trainingProfile, "trainingProfile");
     devicePresence = positive(devicePresence, "devicePresence");
     sseEvent = positive(sseEvent, "sseEvent");
     idempotency = positive(idempotency, "idempotency");

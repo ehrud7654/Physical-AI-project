@@ -38,7 +38,6 @@ public class TrainingClaimService {
             gpuIndex,
             gitRevision,
             state.storageNodeId(),
-            properties.supportedAlgorithms(),
             availableMemoryMiB,
             capacity.totalBytes(),
             capacity.availableBytes()));

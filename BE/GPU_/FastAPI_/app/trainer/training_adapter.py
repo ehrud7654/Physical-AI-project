@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ class TrainingAdapter:
     """AI 담당자가 실제 UMI 학습 구현으로 교체할 경계."""
 
     def train(self, request: dict[str, Any], output: Path, reporter: ProgressReporter, duration_seconds: int) -> dict[str, Any]:
-        epochs = int(request["trainingProfile"]["hyperparameters"]["epochs"])
+        epochs = int(os.getenv("TRAINING_EPOCHS", "60"))
         reporter.report("RUNNING", "PREPROCESSING", 5, epoch=0, totalEpochs=epochs)
         steps = max(1, min(epochs, duration_seconds))
         for step in range(1, steps + 1):

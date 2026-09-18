@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TrainingClaimService {
-  private final TrainingJobRepository jobs; private final TrainingProfileRepository profiles;
+  private final TrainingJobRepository jobs;
   private final SkillRepository skills; private final EpisodeDownloadManifestService manifests;
   private final LeaseTokenService tokens; private final Clock clock; private final Duration lease;
   private final int heartbeatSeconds;
@@ -30,7 +30,7 @@ public class TrainingClaimService {
   private final TrainingLeaseCacheRepository leaseCache; private final RedisTtlProperties redisTtl;
   private final SkillVersionRepository versions; private final PresignedDownloadService downloads;
   private final Duration checkpointDownloadTtl;
-  public TrainingClaimService(TrainingJobRepository jobs, TrainingProfileRepository profiles,
+  public TrainingClaimService(TrainingJobRepository jobs,
       SkillRepository skills, EpisodeDownloadManifestService manifests, LeaseTokenService tokens,
       Clock clock, @Value("${app.training-worker.lease-duration}") Duration lease,
       @Value("${app.training-worker.heartbeat-interval-seconds}") int heartbeatSeconds,
@@ -38,7 +38,7 @@ public class TrainingClaimService {
       TrainingLeaseCacheRepository leaseCache, RedisTtlProperties redisTtl,
       SkillVersionRepository versions, PresignedDownloadService downloads,
       @Value("${app.checkpoint-storage.presign-ttl}") Duration checkpointDownloadTtl) {
-    this.jobs=jobs; this.profiles=profiles; this.skills=skills; this.manifests=manifests;
+    this.jobs=jobs; this.skills=skills; this.manifests=manifests;
     this.tokens=tokens; this.clock=clock; this.lease=lease; this.heartbeatSeconds=heartbeatSeconds;
     this.candidates=candidates;this.gate=gate;this.leaseCache=leaseCache;this.redisTtl=redisTtl;
     this.versions=versions;this.downloads=downloads;this.checkpointDownloadTtl=checkpointDownloadTtl;
@@ -51,20 +51,16 @@ public class TrainingClaimService {
             request.workerId(), request.gpuIndex(), now, TrainingAllocationGate.ACTIVE);
     boolean resumed=existing.isPresent();
     gate.validate(request,resumed);
-    TrainingJob job=existing.orElseGet(() -> candidates.lockNextCandidate(request.supportedAlgorithms())
+    TrainingJob job=existing.orElseGet(() -> candidates.lockNextCandidate()
         .flatMap(jobs::findById).orElse(null));
     if (job==null) return Optional.empty();
-    TrainingProfile profile=profiles.findById(job.getTrainingProfileId()).orElseThrow();
     String token=tokens.issue(); Instant expiry=now.plus(lease);
     if (resumed) job.rotateLease(tokens.hash(token), expiry);
     else job.claim(request.workerId(), request.storageNodeId(), request.gpuIndex(), request.gitRev(),
         tokens.hash(token), expiry);
     var skill=skills.findById(job.getSkillId()).orElseThrow();
-    var profileData=new TrainingProfileData(profile.getProfileKey(), profile.getVersion(),
-        profile.getAlgorithm(), profile.getHyperparameters(), profile.getConfigSha256());
     var data=new JobData(job.getId(), skill.getSkillKey(), job.getInputMode(), job.getTrainingMode(),
-        baseModel(job), profileData,
-        job.getDatasetQuery(), job.getInputSnapshotSha256(), manifests.create(job.getId()));
+        baseModel(job), job.getDatasetQuery(), job.getInputSnapshotSha256(), manifests.create(job.getId()));
     cache(job,expiry);
     return Optional.of(new ClaimResponse(data,job.getAttempt(),token,expiry,heartbeatSeconds));
   }

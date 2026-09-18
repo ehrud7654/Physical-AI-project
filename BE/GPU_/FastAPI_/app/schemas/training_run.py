@@ -6,7 +6,6 @@ from pydantic import Field, field_validator
 from app.domain.enums.training_run_status import TrainingRunStatus
 from app.schemas.checkpoint import CheckpointResult
 from app.schemas.common import ApiModel
-from app.schemas.training_profile import TrainingProfileSnapshot
 
 
 class BaseModelInput(ApiModel):
@@ -50,7 +49,6 @@ class CreateTrainingRunRequest(ApiModel):
     gpu_index: int = Field(ge=0)
     training_mode: str = "FROM_SCRATCH"
     base_model: BaseModelInput | None = None
-    training_profile: TrainingProfileSnapshot
     input_snapshot_sha256: str
     episodes: list[EpisodeInput] = Field(min_length=1)
     execution_lease_expires_at: datetime

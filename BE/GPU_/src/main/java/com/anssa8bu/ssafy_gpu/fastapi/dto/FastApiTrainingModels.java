@@ -1,7 +1,6 @@
 package com.anssa8bu.ssafy_gpu.fastapi.dto;
 
 import com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.Metadata;
-import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingProfileData;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
@@ -30,7 +29,6 @@ public final class FastApiTrainingModels {
       int gpuIndex,
       String trainingMode,
       BaseModelInput baseModel,
-      TrainingProfileData trainingProfile,
       String inputSnapshotSha256,
       List<EpisodeInput> episodes,
       Instant executionLeaseExpiresAt) {}

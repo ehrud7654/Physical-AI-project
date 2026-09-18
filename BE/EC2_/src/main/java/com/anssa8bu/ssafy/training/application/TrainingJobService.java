@@ -26,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class TrainingJobService {
   private final TrainingJobRepository jobs;
   private final TrainingJobEpisodeRepository inputs;
-  private final TrainingProfileRepository profiles;
   private final SkillRepository skills;
   private final SkillService skillService;
   private final DeviceRepository devices;
@@ -39,7 +38,6 @@ public class TrainingJobService {
   public TrainingJobService(
       TrainingJobRepository jobs,
       TrainingJobEpisodeRepository inputs,
-      TrainingProfileRepository profiles,
       SkillRepository skills,
       DeviceRepository devices,
       EpisodeRepository episodes,
@@ -50,7 +48,6 @@ public class TrainingJobService {
       SkillService skillService) {
     this.jobs = jobs;
     this.inputs = inputs;
-    this.profiles = profiles;
     this.skills = skills;
     this.devices = devices;
     this.episodes = episodes;
@@ -79,12 +76,6 @@ public class TrainingJobService {
             .findByIdAndOwnerId(request.umiDeviceId(), owner)
             .filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
             .orElseThrow(() -> new ResourceNotFoundException("UMI Device"));
-    TrainingProfile profile =
-        profiles
-            .findFirstByStatusOrderByVersionDesc(TrainingProfileStatus.ACTIVE)
-            .orElseThrow(
-                () ->
-                    new BusinessConflictException("ACTIVE_PROFILE_NOT_FOUND", "활성 학습 프로필이 없습니다."));
     List<Episode> selected = selectEpisodes(owner, skill, request);
     TrainingMode trainingMode =
         request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
@@ -104,10 +95,7 @@ public class TrainingJobService {
                 owner,
                 skill.getId(),
                 device.getId(),
-                profile.getId(),
                 TrainingInputMode.EXISTING_EPISODES,
-                profile.getHyperparameters(),
-                profile.getConfigSha256(),
                 query,
                 selected.size(),
                 trainingMode,

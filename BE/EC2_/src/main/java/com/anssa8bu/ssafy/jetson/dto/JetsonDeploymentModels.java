@@ -41,6 +41,7 @@ public final class JetsonDeploymentModels {
       String frameworkVersion,
       String contractVersion,
       ActionSpace actionSpace,
+      Map<String, Object> actionSpec,
       long nParams,
       BigDecimal controlRateHz,
       List<String> cameraNames,

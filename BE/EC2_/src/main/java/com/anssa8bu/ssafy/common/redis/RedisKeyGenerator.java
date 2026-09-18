@@ -36,10 +36,6 @@ public class RedisKeyGenerator {
     return key("purge-lease", id);
   }
 
-  public String activeTrainingProfile() {
-    return prefix + ":training-profile:active";
-  }
-
   public String devicePresence(UUID id) {
     return key("device-presence", id);
   }

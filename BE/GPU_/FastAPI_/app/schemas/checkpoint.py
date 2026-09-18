@@ -11,10 +11,8 @@ class CheckpointMetadata(ApiModel):
     framework_version: str
     contract_version: str
     robot_profile_id: str
-    training_profile_key: str
-    training_profile_version: int = Field(ge=1)
-    training_config_sha256: str
     action_space: str
+    action_spec: dict[str, Any]
     n_params: int = Field(ge=0)
     control_rate_hz: int = Field(gt=0)
     camera_names: list[str]

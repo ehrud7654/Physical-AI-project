@@ -77,11 +77,6 @@ class TrainingRunService:
             path = self.paths.resolve_existing_file(request.base_model.storage_key)
             if sha256_file(path) != request.base_model.sha256:
                 raise DomainError(422, "BASE_MODEL_HASH_MISMATCH", "기준 모델 hash가 일치하지 않습니다.")
-        profile = request.training_profile
-        if profile.algorithm not in self.settings.algorithm_set:
-            raise DomainError(422, "UNSUPPORTED_TRAINING_PROFILE", "지원하지 않는 학습 알고리즘입니다.")
-        if sha256_hex(profile.hash_input()) != profile.config_sha256:
-            raise DomainError(422, "TRAINING_CONFIG_MISMATCH", "TrainingProfile 설정 hash가 일치하지 않습니다.")
         orders = [episode.input_order for episode in request.episodes]
         if len(orders) != len(set(orders)):
             raise DomainError(422, "INPUT_ORDER_DUPLICATED", "Episode inputOrder가 중복되었습니다.")

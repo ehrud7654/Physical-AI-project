@@ -22,9 +22,6 @@ public class TrainingJob extends AuditableEntity {
   @Column(name = "umi_device_id", nullable = false)
   private UUID umiDeviceId;
 
-  @Column(name = "training_profile_id", nullable = false)
-  private UUID trainingProfileId;
-
   @Column(name = "assigned_storage_node_id")
   private UUID assignedStorageNodeId;
 
@@ -54,13 +51,6 @@ public class TrainingJob extends AuditableEntity {
 
   @Column(name = "lease_expires_at")
   private Instant leaseExpiresAt;
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "training_config_snapshot", nullable = false, columnDefinition = "jsonb")
-  private Map<String, Object> trainingConfigSnapshot;
-
-  @Column(name = "training_config_sha256", nullable = false, length = 64)
-  private String trainingConfigSha256;
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "dataset_query", nullable = false, columnDefinition = "jsonb")
@@ -131,13 +121,10 @@ public class TrainingJob extends AuditableEntity {
       UUID ownerId,
       UUID skillId,
       UUID deviceId,
-      UUID profileId,
       TrainingInputMode mode,
-      Map<String, Object> config,
-      String hash,
       Map<String, Object> query,
       int episodeCount) {
-    this(id, ownerId, skillId, deviceId, profileId, mode, config, hash, query, episodeCount,
+    this(id, ownerId, skillId, deviceId, mode, query, episodeCount,
         TrainingMode.FROM_SCRATCH, null);
   }
 
@@ -146,29 +133,22 @@ public class TrainingJob extends AuditableEntity {
       UUID ownerId,
       UUID skillId,
       UUID deviceId,
-      UUID profileId,
       TrainingInputMode mode,
-      Map<String, Object> config,
-      String hash,
       Map<String, Object> query,
       int episodeCount,
       TrainingMode trainingMode,
       UUID baseSkillVersionId) {
-    if (hash == null || !hash.matches("[0-9a-f]{64}") || episodeCount < 0)
-      throw new IllegalArgumentException();
+    if (episodeCount < 0) throw new IllegalArgumentException();
     this.id = Objects.requireNonNull(id);
     this.ownerId = Objects.requireNonNull(ownerId);
     this.skillId = Objects.requireNonNull(skillId);
     this.umiDeviceId = Objects.requireNonNull(deviceId);
-    this.trainingProfileId = Objects.requireNonNull(profileId);
     this.inputMode = Objects.requireNonNull(mode);
     this.trainingMode = Objects.requireNonNull(trainingMode);
     if ((trainingMode == TrainingMode.FINE_TUNE) != (baseSkillVersionId != null))
       throw new IllegalArgumentException("학습 모드와 기준 모델이 일치하지 않습니다.");
     this.baseSkillVersionId = baseSkillVersionId;
     this.status = TrainingJobStatus.CREATED;
-    this.trainingConfigSnapshot = Map.copyOf(config);
-    this.trainingConfigSha256 = hash;
     this.datasetQuery = Map.copyOf(query);
     this.episodeCount = episodeCount;
     this.progressPercent = BigDecimal.ZERO;
@@ -180,10 +160,6 @@ public class TrainingJob extends AuditableEntity {
 
   public TrainingJobStatus getStatus() {
     return status;
-  }
-
-  public Map<String, Object> getTrainingConfigSnapshot() {
-    return trainingConfigSnapshot;
   }
 
   public BigDecimal getProgressPercent() {
@@ -226,10 +202,6 @@ public class TrainingJob extends AuditableEntity {
 
   public UUID getUmiDeviceId() {
     return umiDeviceId;
-  }
-
-  public UUID getTrainingProfileId() {
-    return trainingProfileId;
   }
 
   public TrainingInputMode getInputMode() {
@@ -389,7 +361,6 @@ public class TrainingJob extends AuditableEntity {
   public int getAttempt() { return attempt; }
   public String getLeaseTokenHash() { return leaseTokenHash; }
   public Instant getLeaseExpiresAt() { return leaseExpiresAt; }
-  public String getTrainingConfigSha256() { return trainingConfigSha256; }
   public Map<String, Object> getDatasetQuery() { return datasetQuery; }
   public String getInputSnapshotSha256() { return inputSnapshotSha256; }
   public void fixInputSnapshotSha256(String value) {

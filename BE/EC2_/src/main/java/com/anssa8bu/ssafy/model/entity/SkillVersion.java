@@ -19,12 +19,6 @@ public class SkillVersion extends CreatedEntity {
   @Column(name = "training_job_id", nullable = false)
   private UUID trainingJobId;
 
-  @Column(name = "training_profile_id", nullable = false)
-  private UUID trainingProfileId;
-
-  @Column(name = "training_config_sha256", nullable = false, length = 64)
-  private String trainingConfigSha256;
-
   @Column(name = "robot_profile_id", nullable = false)
   private UUID robotProfileId;
 
@@ -65,6 +59,10 @@ public class SkillVersion extends CreatedEntity {
   @Enumerated(EnumType.STRING)
   @Column(name = "action_space", nullable = false, length = 30)
   private ActionSpace actionSpace;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "action_spec", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> actionSpec;
 
   @Column(name = "n_params", nullable = false)
   private long parameterCount;
@@ -117,29 +115,27 @@ public class SkillVersion extends CreatedEntity {
 
   protected SkillVersion() {}
 
-  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId, UUID trainingProfileId,
-      String trainingConfigSha256, UUID robotProfileId, int version, String bucket, String key,
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
+      UUID robotProfileId, int version, String bucket, String key,
       String sha256, long bytes, String architecture, String framework, String frameworkVersion,
-      String contractVersion, ActionSpace actionSpace, long parameterCount,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec, long parameterCount,
       BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
       Map<String, Object> outputSchema) {
-    this(id, skillId, trainingJobId, trainingProfileId, trainingConfigSha256, robotProfileId,
+    this(id, skillId, trainingJobId, robotProfileId,
         version, bucket, key, sha256, bytes, architecture, framework, frameworkVersion,
-        contractVersion, actionSpace, parameterCount, controlRateHz, cameraNames, inputSchema,
+        contractVersion, actionSpace, actionSpec, parameterCount, controlRateHz, cameraNames, inputSchema,
         outputSchema, null);
   }
 
-  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId, UUID trainingProfileId,
-      String trainingConfigSha256, UUID robotProfileId, int version, String bucket, String key,
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
+      UUID robotProfileId, int version, String bucket, String key,
       String sha256, long bytes, String architecture, String framework, String frameworkVersion,
-      String contractVersion, ActionSpace actionSpace, long parameterCount,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec, long parameterCount,
       BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
       Map<String, Object> outputSchema, UUID parentSkillVersionId) {
     this.id = Objects.requireNonNull(id);
     this.skillId = Objects.requireNonNull(skillId);
     this.trainingJobId = Objects.requireNonNull(trainingJobId);
-    this.trainingProfileId = Objects.requireNonNull(trainingProfileId);
-    this.trainingConfigSha256 = Objects.requireNonNull(trainingConfigSha256);
     this.robotProfileId = Objects.requireNonNull(robotProfileId);
     this.parentSkillVersionId = parentSkillVersionId;
     this.version = version;
@@ -153,6 +149,7 @@ public class SkillVersion extends CreatedEntity {
     this.frameworkVersion = Objects.requireNonNull(frameworkVersion);
     this.contractVersion = Objects.requireNonNull(contractVersion);
     this.actionSpace = Objects.requireNonNull(actionSpace);
+    this.actionSpec = Map.copyOf(Objects.requireNonNull(actionSpec));
     this.parameterCount = parameterCount;
     this.controlRateHz = Objects.requireNonNull(controlRateHz);
     this.cameraNames = List.copyOf(cameraNames);
@@ -169,8 +166,6 @@ public class SkillVersion extends CreatedEntity {
     this.gateCiLow = low; this.gateCiHigh = high; this.gateMeasuredAt = measuredAt;
   }
   public UUID getTrainingJobId() { return trainingJobId; }
-  public UUID getTrainingProfileId() { return trainingProfileId; }
-  public String getTrainingConfigSha256() { return trainingConfigSha256; }
 
   public boolean isGatePassed() {
     return gatePassed;
@@ -233,6 +228,8 @@ public class SkillVersion extends CreatedEntity {
   public ActionSpace getActionSpace() {
     return actionSpace;
   }
+
+  public Map<String, Object> getActionSpec() { return actionSpec; }
 
   public long getParameterCount() {
     return parameterCount;
