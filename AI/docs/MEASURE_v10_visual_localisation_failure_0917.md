@@ -126,7 +126,7 @@ Real camera↔TCP, base/workspace registration, actual pad-gap mapping,
 installed collision clearance and supervised hardware approval are separate
 unmet prerequisites. None is bypassed by these local diagnostics.
 
-## Reproducible next training comparison (prepared, not yet run)
+## Controlled train-only lateral oversampling comparison
 
 `AI/tools/train_relative_chunk_bc.py` now has an optional
 `--lateral-sampling-factor`; its default `1` keeps the historical shuffled
@@ -147,4 +147,45 @@ probe for both checkpoints. Do not compare **training** losses directly:
 the treatment changes its draw distribution. Checkpoint validation losses
 can be compared as diagnostics, but lift and localisation gates remain
 separate. The new sampler and its deterministic selection checks passed
-locally; **no treatment training or rollout result exists yet**.
+locally. The user trained factor 4 on the shared V100 GPU 2 for 30 epochs;
+**all checkpoint inference below ran on the local CPU**, not the server.
+Metadata confirms the same v10 schema, seed 0, 70 episodes, 1,009/239
+train/validation rows, 14 held-out episodes and observation/action contract
+as the factor-1 baseline. The treatment draws 198 eligible train rows with
+replacement at an expected 49.4% share; validation remains unweighted.
+The best-validation checkpoint is
+`C:/Users/SSAFY/Downloads/umi_real_relative_v10_seed0_lateral4_bestval.pt`
+(SHA-256 `74f770c58c994ebfb48d69c668b0e74fe29916ce01ad37a5cd48fbad5f318448`).
+The last-epoch checkpoint is `..._lateral4.pt` (SHA-256
+`43e58d93bd35aace16438a72d7d3273b12da6a7590bfd994875c02f0bbbaf0cb`).
+The best validation L1 is **0.40823** versus
+factor-1 **0.39769**; this is diagnostic, not an outcome gate.
+
+On the *same* locally rendered, robot/camera-fixed ±10 mm object-only probe
+at contact-free scripted waypoint 18, 13/14 episodes were eligible (one
+created pre-policy jaw contact when shifted). The normal-image fourth
+executed target pointed toward the shifted object in **16/52** placements
+with factor 1, **28/52** with factor-4 best-val, and **25/52** with factor-4
+last epoch. All four offsets pointed correctly in respectively **0/13**,
+**2/13** and **3/13** episodes. The best-val treatment's median displacement
+gain was only **0.0011**: correct signs often mean negligible movement.
+Its mean-fill and additive-noise conditions gave **20/52** and **25/52**
+correct signs; last epoch gave **24/52** and **32/52**. Thus this is a
+partial sign improvement, **not** reliable visual localisation or a
+closed-loop grasp result. Offsets within an episode are correlated; 52 is
+not an independent-trial count. Reports:
+`AI/out/v10_lateral4_far_start_object_only_handoff18_14_metrics_20260917.json`
+and `AI/out/v10_lateral4_last_far_start_object_only_handoff18_14_metrics_20260917.json`.
+
+The best-val model's selected real-frame fourth-target local-x MAE was
+**8.66 mm** over ten held-out episodes versus baseline **8.76 mm**. Nine
+central held-out examples worsened from **1.62 to 2.15 mm**; the single
+off-centre right example improved from **73.0 to 67.2 mm**, still far too
+large. One training left-of-centre example improved from **154.8 to 74.8
+mm**, also too large. Single-episode bins do not support a population claim.
+Report: `AI/out/v10_lateral4_real_image_position_stratified_20260917.json`.
+
+Next, improve diversity of genuine object-offset and robot-feasible
+observation/target sequences, then repeat held-out object-only response
+testing. Do not infer physical readiness from this oversampling result or
+the earlier nominal-placement lift.
