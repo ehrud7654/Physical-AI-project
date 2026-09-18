@@ -48,7 +48,8 @@ class OrchestratorNode(Node):
         self.declare_parameter("token", "")                          # 고정 JWT (없으면 secret 로 발급)
         self.declare_parameter("device_secret", "")                  # DEVICE-05 — 절대 소스/깃에 X
         self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
-        self.declare_parameter("ckpt_dir", "/tmp/so101_ckpt")
+        # 영구 경로 — /tmp 는 재부팅 시 소실(젯슨 RTC 죽어 재부팅 잦음). ~/.so101/ckpt 로.
+        self.declare_parameter("ckpt_dir", os.path.expanduser("~/.so101/ckpt"))
         self.declare_parameter("contract_version", "robot-command-v1")
         self.declare_parameter("firmware_version", "jetson-runtime-1.0.0")  # BE @NotBlank
         self.declare_parameter("runtime_version", "policy-runner-1.0.0")    # BE @NotBlank
