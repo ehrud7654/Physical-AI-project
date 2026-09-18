@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class EpisodeArchiveValidator {
   private static final Set<String> REQUIRED =
-      Set.of("meta.json", "summary.json", "frames.csv", "pose.csv", "imu.csv");
-  private static final String OPTIONAL_GRIPPER = "gripper.csv";
+      Set.of("meta.json", "summary.json", "frames.csv", "pose.csv", "imu.csv", "gripper.csv");
+  private static final String GRIPPER = "gripper.csv";
   private static final int MAX_ENTRIES = 100_000;
   private final ObjectMapper objectMapper;
 
@@ -58,7 +58,7 @@ public class EpisodeArchiveValidator {
         byte[] bytes = readBounded(zip, maxUncompressedBytes - totalBytes);
         totalBytes += bytes.length;
         hashes.put(name, sha256(bytes));
-        if (REQUIRED.contains(name) || OPTIONAL_GRIPPER.equals(name)) files.put(name, bytes);
+        if (REQUIRED.contains(name)) files.put(name, bytes);
         if (name.startsWith("frames/") && name.endsWith(".jpg")) frameEntryCount++;
       }
     } catch (IOException exception) {
@@ -77,10 +77,8 @@ public class EpisodeArchiveValidator {
     CsvResult frames = validateFramesCsv(files.get("frames.csv"), names);
     CsvResult pose = validateTimedCsv(files.get("pose.csv"), "t_ns,px,py,pz,qw,qx,qy,qz,tracking_state");
     CsvResult imu = validateTimedCsv(files.get("imu.csv"), "t_ns,ax,ay,az,gx,gy,gz");
-    CsvResult gripper = files.containsKey(OPTIONAL_GRIPPER)
-        ? validateTimedCsv(files.get(OPTIONAL_GRIPPER), "t_ns,openness,tracking_state", false)
-        : CsvResult.empty();
-    validateCountsAndTimes(summary, frames, pose, imu, gripper, frameEntryCount);
+    GripperResult gripper = validateGripperCsv(files.get(GRIPPER), frames.count);
+    validateCountsAndTimes(summary, frames, pose, imu, gripper.total, frameEntryCount);
     validateInternalChecksums(summary, hashes);
 
     return new EpisodeValidationResult(
@@ -89,7 +87,8 @@ public class EpisodeArchiveValidator {
         instant(meta, "started_at"), instant(meta, "ended_at"), number(meta, "start_monotonic_ns"),
         number(summary, "first_timestamp_ns"), number(summary, "last_timestamp_ns"),
         integer(summary, "frame_count"), integer(summary, "pose_sample_count"),
-        integer(summary, "imu_sample_count"), integer(summary, "gripper_sample_count"),
+        integer(summary, "imu_sample_count"), gripper.total,
+        gripper.detected, gripper.longestX,
         integer(summary, "missing_frame_count"), integer(summary, "tracking_gap_count"),
         number(summary, "tracking_lost_duration_ns"), text(summary, "quality_status"),
         map(meta, "device"), map(meta, "camera"), optionalMap(meta, "coordinate_system"),
@@ -147,20 +146,74 @@ public class EpisodeArchiveValidator {
       CsvResult frames,
       CsvResult pose,
       CsvResult imu,
-      CsvResult gripper,
+      int gripperCount,
       int imageCount) {
     if (frames.count != integer(summary, "frame_count") || frames.count != imageCount
         || pose.count != integer(summary, "pose_sample_count")
         || imu.count != integer(summary, "imu_sample_count")
-        || gripper.count != integer(summary, "gripper_sample_count"))
+        || gripperCount != integer(summary, "gripper_sample_count"))
       fail("SAMPLE_COUNT_MISMATCH", "summary와 실제 파일의 sample 개수가 다릅니다.");
     long first = number(summary, "first_timestamp_ns");
     long last = number(summary, "last_timestamp_ns");
-    for (CsvResult value : List.of(frames, pose, imu, gripper)) {
+    for (CsvResult value : List.of(frames, pose, imu)) {
       if (value.count == 0) continue;
       if (value.first < first || value.last > last)
         fail("TIMESTAMP_RANGE_MISMATCH", "CSV timestamp가 summary 범위를 벗어났습니다.");
     }
+  }
+
+  private GripperResult validateGripperCsv(byte[] bytes, int frameCount) {
+    String[] lines = lines(bytes);
+    if (!lines[0].equals("frame_index,gap_m,status"))
+      invalidGripper("header는 frame_index,gap_m,status 순서여야 합니다.");
+    int total = lines.length - 1;
+    if (total == 0) invalidGripper("데이터 행은 1개 이상이어야 합니다.");
+    if (total != frameCount)
+      invalidGripper("행 수가 frames.csv 행 수와 일치하지 않습니다.");
+    int detected = 0;
+    int currentX = 0;
+    int longestX = 0;
+    for (int row = 1; row < lines.length; row++) {
+      String[] columns = lines[row].split(",", -1);
+      if (columns.length != 3) invalidGripper(row + "번 행의 column 개수가 3이 아닙니다.");
+      int frameIndex;
+      try { frameIndex = Integer.parseInt(columns[0]); }
+      catch (NumberFormatException exception) {
+        invalidGripper(row + "번 행 frame_index가 정수가 아닙니다."); return null;
+      }
+      if (frameIndex != row - 1)
+        invalidGripper(row + "번 행 frame_index가 0부터 연속 증가하지 않습니다.");
+      String status = columns[2];
+      if (!status.equals("D") && !status.equals("X"))
+        invalidGripper(row + "번 행 status는 D 또는 X여야 합니다.");
+      if (status.equals("D")) {
+        double gap;
+        try { gap = parseFinite(columns[1]); }
+        catch (EpisodeArchiveValidationException exception) {
+          invalidGripper(row + "번 행 D 상태의 gap_m이 유효한 숫자가 아닙니다."); return null;
+        }
+        if (gap < 0 || gap > 0.15)
+          invalidGripper(row + "번 행 gap_m은 0 이상 0.15 이하여야 합니다.");
+        detected++;
+        currentX = 0;
+      } else {
+        if (!columns[1].isBlank()) {
+          double gap;
+          try { gap = parseFinite(columns[1]); }
+          catch (EpisodeArchiveValidationException exception) {
+            invalidGripper(row + "번 행 gap_m이 유효한 숫자가 아닙니다."); return null;
+          }
+          if (gap < 0 || gap > 0.15)
+            invalidGripper(row + "번 행 gap_m은 0 이상 0.15 이하여야 합니다.");
+        }
+        longestX = Math.max(longestX, ++currentX);
+      }
+    }
+    return new GripperResult(detected, total, longestX);
+  }
+
+  private void invalidGripper(String message) {
+    fail("INVALID_GRIPPER_CHANNEL", message);
   }
 
   private CsvResult validateFramesCsv(byte[] bytes, Set<String> entries) {
@@ -230,9 +283,8 @@ public class EpisodeArchiveValidator {
       if (!actual.get(name).equals(expected.get(name)))
         fail("INTERNAL_CHECKSUM_MISMATCH", name + " checksum이 일치하지 않습니다.");
     }
-    if (actual.containsKey(OPTIONAL_GRIPPER)
-        && !actual.get(OPTIONAL_GRIPPER).equals(expected.get(OPTIONAL_GRIPPER)))
-      fail("INTERNAL_CHECKSUM_MISMATCH", OPTIONAL_GRIPPER + " checksum이 일치하지 않습니다.");
+    if (!actual.get(GRIPPER).equals(expected.get(GRIPPER)))
+      fail("INTERNAL_CHECKSUM_MISMATCH", GRIPPER + " checksum이 일치하지 않습니다.");
   }
 
   private byte[] readBounded(InputStream input, long remaining) throws IOException {
@@ -324,6 +376,8 @@ public class EpisodeArchiveValidator {
     catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
   }
   private void fail(String code, String message) { throw new EpisodeArchiveValidationException(code, message); }
+  private record GripperResult(int detected, int total, int longestX) {}
+
   private record CsvResult(int count, long first, long last) {
     private static CsvResult empty() { return new CsvResult(0, -1, -1); }
   }

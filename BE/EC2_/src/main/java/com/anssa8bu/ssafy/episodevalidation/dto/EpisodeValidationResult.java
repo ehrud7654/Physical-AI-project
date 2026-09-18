@@ -19,6 +19,8 @@ public record EpisodeValidationResult(
     int poseSampleCount,
     int imuSampleCount,
     int gripperSampleCount,
+    int gripperDetectedCount,
+    int gripperLongestX,
     int missingFrameCount,
     int trackingGapCount,
     long trackingLostDurationNs,

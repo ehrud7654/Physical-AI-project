@@ -82,6 +82,11 @@ public class EpisodeValidationResultWriter {
     EpisodeLabelStatus labelStatus = EpisodeLabelStatus.valueOf(result.labelStatus());
     EpisodeQualityStatus qualityStatus = normalizedQuality(result.qualityStatus());
     Instant now = Instant.now();
+    Map<String, Object> qualitySummary = new LinkedHashMap<>(session.getSummary());
+    qualitySummary.put("gripper", Map.of(
+        "detected", result.gripperDetectedCount(),
+        "total", result.gripperSampleCount(),
+        "longestX", result.gripperLongestX()));
     Episode episode =
         new Episode(
             session.getEpisodeId(),
@@ -118,7 +123,7 @@ public class EpisodeValidationResultWriter {
             qualityStatus,
             new CaptureMetadata(
                 result.device(), result.camera(), result.coordinateSystem(), result.units()),
-            new QualitySummary(session.getSummary()),
+            new QualitySummary(qualitySummary),
             now.plus(retention.getDefaultRetentionDays(), ChronoUnit.DAYS));
     episode.confirmValidated(now);
     episodes.save(episode);
