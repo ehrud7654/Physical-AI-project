@@ -3,9 +3,10 @@ package com.anssa8bu.ssafy_gpu.checkpoint.application;
 import static com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.*;
 
 import com.anssa8bu.ssafy_gpu.checkpoint.client.CheckpointClient;
+import com.anssa8bu.ssafy_gpu.checkpoint.persistence.CheckpointTransferJournal;
 import com.anssa8bu.ssafy_gpu.checkpoint.storage.PresignedCheckpointUploader;
-import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
+import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.common.file.FileHashCalculator;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import java.nio.file.*;
@@ -20,6 +21,7 @@ public class CheckpointUploadService {
   private final WorkerProperties worker;
   private final WorkerRuntimeState state;
   private final CheckpointUploadProperties properties;
+  private final CheckpointTransferJournal journal;
 
   public CheckpointUploadService(
       CheckpointClient client,
@@ -27,13 +29,15 @@ public class CheckpointUploadService {
       FileHashCalculator hashes,
       WorkerProperties worker,
       WorkerRuntimeState state,
-      CheckpointUploadProperties properties) {
+      CheckpointUploadProperties properties,
+      CheckpointTransferJournal journal) {
     this.client = client;
     this.uploader = uploader;
     this.hashes = hashes;
     this.worker = worker;
     this.state = state;
     this.properties = properties;
+    this.journal = journal;
   }
 
   public UploadResult uploadAndComplete(
@@ -59,9 +63,26 @@ public class CheckpointUploadService {
               size,
               sha256,
               checkpoint.metadata());
-      UploadSessionResponse session =
-          client.createUploadSession(jobId, uploadIdempotencyKey, request);
-      uploader.upload(session, file, sha256);
+      var transfer =
+          journal.stage(
+              jobId, attempt, uploadIdempotencyKey, completeIdempotencyKey, file, request);
+      if (transfer.completeResponse() != null) {
+        return new UploadResult(
+            transfer.session().skillVersionId(),
+            transfer.session().version(),
+            size,
+            sha256,
+            transfer.completeResponse());
+      }
+      UploadSessionResponse session = transfer.session();
+      if (session == null) {
+        session = client.createUploadSession(jobId, uploadIdempotencyKey, request);
+        transfer = journal.session(jobId, attempt, session);
+      }
+      if (!transfer.s3PutCompleted()) {
+        uploader.upload(session, file, sha256);
+        journal.uploaded(jobId, attempt);
+      }
       CompleteResponse complete =
           client.complete(
               jobId,
@@ -72,9 +93,14 @@ public class CheckpointUploadService {
                   session.skillVersionId(),
                   new Checkpoint(size, sha256),
                   checkpoint.metadata()));
+      journal.completed(jobId, attempt, complete);
       return new UploadResult(session.skillVersionId(), session.version(), size, sha256, complete);
     } catch (java.io.IOException e) {
+      if (journal.find(jobId, attempt) != null) journal.failed(jobId, attempt);
       throw new IllegalStateException("CKPT 파일 정보 조회에 실패했습니다.", e);
+    } catch (RuntimeException e) {
+      if (journal.find(jobId, attempt) != null) journal.failed(jobId, attempt);
+      throw e;
     } finally {
       state.uploadFinished();
     }

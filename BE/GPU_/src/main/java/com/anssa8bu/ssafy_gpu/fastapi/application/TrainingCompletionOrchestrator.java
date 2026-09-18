@@ -20,13 +20,15 @@ public class TrainingCompletionOrchestrator {
   private final WorkerProperties worker;
   private final TrainingArtifactCleanupService cleanup;
   private final CompletionReceiptStore receipts;
-  private final java.util.concurrent.ConcurrentHashMap<String, Long> completionSequences = new java.util.concurrent.ConcurrentHashMap<>();
+  private final java.util.concurrent.ConcurrentHashMap<String, Long> completionSequences =
+      new java.util.concurrent.ConcurrentHashMap<>();
 
   public TrainingCompletionOrchestrator(
       CheckpointUploadService checkpoints,
       TrainingEventService events,
       WorkerRuntimeState state,
-      WorkerProperties worker, TrainingArtifactCleanupService cleanup,
+      WorkerProperties worker,
+      TrainingArtifactCleanupService cleanup,
       CompletionReceiptStore receipts) {
     this.checkpoints = checkpoints;
     this.events = events;
@@ -51,16 +53,25 @@ public class TrainingCompletionOrchestrator {
         completionSequences.computeIfAbsent(
             request.eventId(), ignored -> assignment.lastForwardedSequence() + 2);
     events.trainingFinished(
-        request.trainingJobId(), request.attempt(), assignment.leaseToken(),
-        request.eventId() + "-finished", eventSequence, request.result().sizeBytes(),
-        request.result().sha256(), request.modelCompletedAt());
+        request.trainingJobId(),
+        request.attempt(),
+        assignment.leaseToken(),
+        request.eventId() + "-finished",
+        eventSequence,
+        request.result().sizeBytes(),
+        request.result().sha256(),
+        request.modelCompletedAt());
     Path checkpoint =
         worker.storageRoot().resolve(request.result().checkpointStorageKey()).normalize();
     var uploaded =
         checkpoints.uploadAndComplete(
-            request.trainingJobId(), request.attempt(), assignment.leaseToken(),
-            request.eventId() + "-upload", request.eventId() + "-complete",
-            new LocalCheckpoint(checkpoint, request.modelCompletedAt(), request.result().metadata()));
+            request.trainingJobId(),
+            request.attempt(),
+            assignment.leaseToken(),
+            request.eventId() + "-upload",
+            request.eventId() + "-complete",
+            new LocalCheckpoint(
+                checkpoint, request.modelCompletedAt(), request.result().metadata()));
     CompletionResponse response =
         new CompletionResponse(
             uploaded.skillVersionId(), uploaded.version(), uploaded.completion().status());
@@ -68,6 +79,19 @@ public class TrainingCompletionOrchestrator {
     state.release(assignment.gpuIndex());
     cleanup.cleanup(request.trainingJobId(), request.attempt());
     return response;
+  }
+
+  public CompletionResponse completeRecovered(RunResponse run) {
+    if (!"COMPLETED".equals(run.status()) || run.result() == null)
+      throw new IllegalArgumentException("완료된 FastAPI run만 복구할 수 있습니다.");
+    return complete(
+        run.runId(),
+        new CompletionRequest(
+            "fastapi-" + run.runId() + "-completion",
+            run.trainingJobId(),
+            run.attempt(),
+            run.modelCompletedAt(),
+            run.result()));
   }
 
   public record CompletionResponse(java.util.UUID skillVersionId, int version, String status) {}

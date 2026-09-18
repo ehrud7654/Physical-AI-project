@@ -1,10 +1,10 @@
 package com.anssa8bu.ssafy_gpu.training.scheduler;
 
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
+import com.anssa8bu.ssafy_gpu.fastapi.application.FastApiRunService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingClaimService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingHeartbeatService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingInputPreparationService;
-import com.anssa8bu.ssafy_gpu.fastapi.application.FastApiRunService;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState.ActiveTraining;
 import org.slf4j.Logger;
@@ -104,11 +104,20 @@ public class TrainingClaimPollingScheduler {
       if (assignment.runId() != null)
         fastApi.renewLease(assignment.runId(), response.leaseExpiresAt());
     } catch (RuntimeException e) {
-      state.release(assignment.gpuIndex());
+      if (assignment.leaseExpiresAt() != null
+          && !assignment.leaseExpiresAt().isAfter(java.time.Instant.now())
+          && assignment.runId() != null) {
+        try {
+          fastApi.cancel(assignment.runId());
+        } catch (RuntimeException cancelFailure) {
+          e.addSuppressed(cancelFailure);
+        }
+      }
       log.warn(
-          "학습 lease 갱신 실패로 슬롯 해제: trainingJobId={}, gpuIndex={}",
+          "학습 lease 갱신 실패: trainingJobId={}, gpuIndex={}, leaseExpiresAt={}",
           assignment.trainingJobId(),
           assignment.gpuIndex(),
+          assignment.leaseExpiresAt(),
           e);
     }
   }

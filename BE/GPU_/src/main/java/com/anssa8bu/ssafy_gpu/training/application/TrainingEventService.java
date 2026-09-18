@@ -3,6 +3,7 @@ package com.anssa8bu.ssafy_gpu.training.application;
 import static com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.*;
 
 import com.anssa8bu.ssafy_gpu.training.client.TrainingJobClient;
+import com.anssa8bu.ssafy_gpu.training.persistence.TrainingEventJournal;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
@@ -11,9 +12,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class TrainingEventService {
   private final TrainingJobClient client;
+  private final TrainingEventJournal journal;
 
-  public TrainingEventService(TrainingJobClient client) {
+  public TrainingEventService(TrainingJobClient client, TrainingEventJournal journal) {
     this.client = client;
+    this.journal = journal;
   }
 
   public EventResponse send(
@@ -25,10 +28,30 @@ public class TrainingEventService {
       TrainingEventType type,
       Instant occurredAt,
       Map<String, Object> payload) {
-    return client.event(
-        jobId,
+    EventRequest request =
         new EventRequest(
-            attempt, leaseToken, eventId, sequence, type.name(), occurredAt, Map.copyOf(payload)));
+            attempt, leaseToken, eventId, sequence, type.name(), occurredAt, Map.copyOf(payload));
+    var staged = journal.stage(jobId, request);
+    if (staged.response() != null) return staged.response();
+    try {
+      EventResponse response = client.event(jobId, request);
+      journal.delivered(eventId, response);
+      return response;
+    } catch (RuntimeException exception) {
+      journal.failed(eventId);
+      throw exception;
+    }
+  }
+
+  public EventResponse retry(TrainingEventJournal.Entry entry) {
+    try {
+      EventResponse response = client.event(entry.jobId(), entry.request());
+      journal.delivered(entry.request().eventId(), response);
+      return response;
+    } catch (RuntimeException exception) {
+      journal.failed(entry.request().eventId());
+      throw exception;
+    }
   }
 
   public EventResponse started(
