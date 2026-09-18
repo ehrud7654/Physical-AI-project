@@ -14,6 +14,7 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>lifecycle_msgs</depend>
+  <depend>rcl_interfaces</depend>   <!-- SetParameters: 정책 노드에 ckpt_path 주입 -->
   <exec_depend>python3-httpx</exec_depend>
 
   <!-- httpx·pytest 는 apt 패키지: rosdep install 로 자동, 또는 apt install python3-httpx python3-pytest -->

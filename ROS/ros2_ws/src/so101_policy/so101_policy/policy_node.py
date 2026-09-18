@@ -13,6 +13,8 @@ lifecycle (오케스트레이터 policy_control.py 계약과 일치):
 """
 from __future__ import annotations
 
+import os
+
 import rclpy
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from sensor_msgs.msg import JointState
@@ -30,6 +32,7 @@ class PolicyNode(LifecycleNode):
         super().__init__("so101_policy")
         self.declare_parameter("config_path", "")  # so101.yaml. 빈값이면 패키지 기본 탐색
         self.declare_parameter("dummy", True)       # ckpt 붙기 전 사인파 모드
+        self.declare_parameter("ckpt_path", "")     # 오케스트레이터가 configure 직전 세팅(배포 ckpt)
         self._joints = None       # [(name, lo, hi)] so101.yaml 순서
         self._latest = {}         # name -> 현재 관절각(rad), /joint_states 에서
         self._pub = None
@@ -47,9 +50,17 @@ class PolicyNode(LifecycleNode):
             self.get_logger().error(f"so101.yaml 로드 실패: {e}")
             return TransitionCallbackReturn.FAILURE
 
-        # ckpt 로드 슬롯. 지금은 더미라 None 유지.
-        if not self.get_parameter("dummy").value:
-            self.get_logger().warn("dummy=false 인데 ckpt 추론 미구현 → 더미로 폴백")
+        # ckpt 로드 슬롯. 오케스트레이터가 넘긴 경로를 여기서 로드해야 함.
+        ckpt = self.get_parameter("ckpt_path").value
+        if ckpt:
+            if not os.path.exists(ckpt):
+                self.get_logger().error(f"ckpt 없음: {ckpt}")
+                return TransitionCallbackReturn.FAILURE
+            # TODO(46): 실제 로드 = AI 추론 함수(load_ckpt). 지금은 경로만 인지, 추론은 미구현.
+            #   self._ckpt 를 truthy 로 만들면 _infer(미구현)로 빠지므로 더미 유지.
+            self.get_logger().info(f"ckpt 경로 수신: {ckpt} — 추론 미구현이라 더미로 실행")
+        else:
+            self.get_logger().info("ckpt_path 없음 — 더미(사인파) 모드")
 
         self._pub = self.create_lifecycle_publisher(Float64MultiArray, COMMAND_TOPIC, 10)
         self._sub = self.create_subscription(

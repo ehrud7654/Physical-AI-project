@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState
+from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+from rcl_interfaces.srv import SetParameters
 
 
 class PolicyControl:
@@ -28,6 +30,10 @@ class PolicyControl:
         # 정책 노드의 표준 lifecycle 서비스: /<node>/change_state
         self._cli = node.create_client(
             ChangeState, f"/{self.POLICY_NODE}/change_state"
+        )
+        # ckpt 경로 주입용 파라미터 서비스: /<node>/set_parameters
+        self._param_cli = node.create_client(
+            SetParameters, f"/{self.POLICY_NODE}/set_parameters"
         )
 
     def _change_state(self, transition_id: int, label: str) -> bool:
@@ -45,9 +51,25 @@ class PolicyControl:
         self._log.info(f"정책 노드 전이 요청: {label}")
         return True
 
+    def _set_ckpt_path(self, ckpt_path: str) -> bool:
+        """정책 노드의 ckpt_path 파라미터 세팅. configure 직전 호출 → on_configure 가 읽어 로드."""
+        if not self._param_cli.service_is_ready():
+            self._log.warn("정책 노드 set_parameters 미준비 — ckpt 경로 전달 스킵")
+            return False
+        req = SetParameters.Request(parameters=[Parameter(
+            name="ckpt_path",
+            value=ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=ckpt_path))])
+        self._param_cli.call_async(req)
+        self._log.info(f"정책 ckpt 경로 전달: {ckpt_path}")
+        return True
+
     # --- BE 명령 → lifecycle 매핑 ------------------------------------------
-    def configure(self) -> bool:
-        """load_ckpt 후 configure (ckpt 로드 반영)."""
+    def configure(self, ckpt_path: str | None = None) -> bool:
+        """ckpt 경로를 파라미터로 넣고(있으면) configure 전이.
+        ⚠️ call_async 순서 의존(param → transition). 단일스레드 정책 노드에선 순서 보장.
+        엄밀한 await 는 46 확정 후."""
+        if ckpt_path:
+            self._set_ckpt_path(ckpt_path)
         return self._change_state(Transition.TRANSITION_CONFIGURE, "configure")
 
     def activate(self) -> bool:

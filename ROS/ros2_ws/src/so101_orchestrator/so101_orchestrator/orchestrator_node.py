@@ -93,6 +93,7 @@ class OrchestratorNode(Node):
 
         self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
         self._seen_cmds: set[str] = set()       # commandId 중복 실행 차단(세션 한정, 재시작시 리셋)
+        self._deployed_ckpts: dict[str, str] = {}   # skillVersionId → 로드된 ckpt 경로(배포 성공분)
         self._cmd_q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         self._sse_thread = threading.Thread(target=self._run_sse, daemon=True)
@@ -183,6 +184,7 @@ class OrchestratorNode(Node):
         try:
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_DOWNLOADING, 10.0)
+            loaded: dict[str, str] = {}          # 이 배포에서 받은 svid → 경로 (성공시 반영)
             for model in manifest.get("models", []):
                 svid = model["skillVersionId"]
                 # 계약 검증 — actionSpace 는 BE enum 과 일치해야 함(관절공간만 실행 가능)
@@ -222,17 +224,21 @@ class OrchestratorNode(Node):
                         10.0, error={"code": "SHA256_MISMATCH",
                                      "message": f"{model['skillVersionId']} 무결성 실패"})
                     return
+                loaded[svid] = dest
 
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_VERIFYING, 60.0)
-            # 정책 노드에 ckpt 로드. ⚠️ TODO(46): configure에 ckpt 경로/manifest 메타 전달
-            #   (현재 policy_control.configure는 lifecycle 전이만). 46 인터페이스 확정 후 배관.
-            self._policy.configure()
+            # 정책 노드에 ckpt 로드. ponytail: 다중 스킬이면 첫 ckpt만 configure —
+            #   단일 스킬 데모 기준. 스텝별 스킬 전환이 필요해지면 SKILL step 에서 재configure.
+            first_ckpt = next(iter(loaded.values()), None)
+            if not self._policy.configure(first_ckpt):
+                self.get_logger().warn("정책 configure 미완(노드 미기동?) — 배포는 다운로드까지 완료")
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_APPLYING, 90.0)
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_SUCCEEDED, 100.0)
-            self.get_logger().info(f"배포 {dep_id} 적용 완료")
+            self._deployed_ckpts = loaded        # 성공한 것만 반영(실패시 이전 배포 유지)
+            self.get_logger().info(f"배포 {dep_id} 적용 완료 — 스킬 {list(loaded)}")
         except Exception as e:  # noqa: BLE001
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_FAILED, 0.0,
@@ -316,6 +322,12 @@ class OrchestratorNode(Node):
             # ponytail: 도달 확인 없이 정착 시간만 대기 — /joint_states 수렴 체크는 후속
             self._cancel.wait(float(timeout or self._motor_settle_sec))
         elif stype == st.STEP_SKILL:
+            svid = step.get("skillVersionId")
+            # 배포 때 로드한 스킬이어야 함. ponytail: 단일 스킬 데모라 configure 는 배포에서 끝냈고
+            #   여기선 activate 만. 스텝별 다른 스킬이면 여기서 configure(경로) 재호출 필요(후속).
+            if svid and svid not in self._deployed_ckpts:
+                raise RuntimeError(f"SKILL {svid} 미배포 — APPLY_DEPLOYMENT 먼저 필요")
+            self.get_logger().info(f"SKILL 실행: {svid} (로드된 ckpt로 정책 activate)")
             if not self._policy.activate():
                 raise RuntimeError("정책 노드 activate 실패 (so101_policy 미기동?)")
             # TODO(46): 정책 상태 토픽의 완료 이벤트로 교체. 지금은 timeoutSeconds 동안 실행.
