@@ -199,9 +199,11 @@ class OrchestratorNode(Node):
                         10.0, error={"code": "CONTRACT_MISMATCH",
                                      "message": f"{svid} actionSpace {asp} 미지원"})
                     return
+                # 모델 contractVersion 은 정책/액션 계약(예: umi-policy-v1) — 명령 계약
+                # (robot-command-v1)과 별개다. 정책 런타임 계약이 확정되면 그걸로 검증(46).
                 cv = model.get("contractVersion")
-                if cv and cv != self._contract:
-                    self.get_logger().warn(f"{svid} contractVersion {cv} ≠ {self._contract}")
+                if cv:
+                    self.get_logger().info(f"{svid} 모델 contractVersion={cv}")
                 dest = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
                 try:
                     self._be.download(model["downloadUrl"], dest)
