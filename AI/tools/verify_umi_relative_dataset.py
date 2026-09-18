@@ -27,6 +27,7 @@ def percentile(values: list[np.ndarray], points=(0, 50, 95, 100)) -> list[float]
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", type=Path)
+    parser.add_argument("--out", type=Path, help="optional JSON report path")
     args = parser.parse_args()
     index_path = args.dataset / "dataset.json"
     index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -134,7 +135,12 @@ def main() -> int:
         },
         "problems": problems,
     }
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    rendered = json.dumps(result, ensure_ascii=False, indent=2)
+    print(rendered)
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(rendered + "\n", encoding="utf-8")
+        print(f"saved: {args.out}")
     return 1 if problems else 0
 
 

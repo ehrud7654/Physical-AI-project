@@ -4,6 +4,39 @@
 > below.** The repository and uncommitted diff are the source of truth. Do not
 > reset, clean, pull, switch branches, or bulk-add files before reviewing §0.3.
 
+## 0.0A Latest ORB-SLAM3 intake state (2026-09-18)
+
+The new `raw.zip` delivery (92 demonstrations: 89 success, 1 failure, 2
+unrated) has now been processed end to end with the shared mapping-session
+Atlas workflow and fixed `DICT_4X4_50` ID 13 marker (measured black-square side
+0.16m). Three independently built Atlases passed marker alignment. A selector
+uses exactly one complete ORB run per episode and never splices pose rows
+between runs.
+
+The current provisional v10-style dataset is
+`AI/datasets/umi_real_relative_20260918_v10_orbslam_provisional_74ep`: 74
+episodes, 4,714 anchors, H=2, K=8, 10Hz, verifier `problems: []`. Of the 92
+inputs, 15 success episodes failed the strict pose gate and failure/unrated
+outcomes excluded three. Two additional success episodes had 17-frame gap
+missing runs against the unchanged 15-frame global gate. Manual timeline and
+RGB inspection established that those runs occur only before closure or after
+terminal reopening, outside grasp/lift. They are admitted through an explicit
+per-episode reviewed-exception file; the global gate was not relaxed. Every
+success input was attempted; 74/89 is the accepted set, not a partial batch.
+
+The current portable tar is
+`AI/datasets/umi_real_relative_20260918_v10_orbslam_provisional_74ep.tar`, size
+956,864,512 bytes, SHA-256
+`5d35c107bf2d9c6c7b29ae31ab33029ff1cd72beba730127ca0be049a119c36e`.
+The earlier 72-episode tar is retained as superseded evidence and must not be
+mixed with this revision.
+It contains `dataset.json`, the full Atlas/run selection report, camera-TCP
+config copy and verification report. It remains
+`PROVISIONAL_CALIBRATION_NOT_FOR_PHYSICAL_DEPLOYMENT`: fixed-marker size is
+measured, but camera-to-TCP is CAD provisional and video-derived gap metric
+scale still lacks an empty-gripper full-stroke check. See
+`AI/docs/REPORT_orbslam_aruco_v10_0918.md`.
+
 ## 0.0 Latest diagnostic state (2026-09-17; read before the historical §0.1-0.6)
 
 The historical §0.3 Git snapshot and K=2 next-action text below are **not the
@@ -166,8 +199,38 @@ deployment evidence. The local regression including the new analytic profile
 check passes 35/35. Details and ignored generated reports are listed in
 `AI/docs/MEASURE_v10_spatial_encoder_0918.md`.
 
-2026-09-18 pre-arrival work: HW expects to share a new ORB-SLAM3 + ArUco
-ID 11 episode, but no such episode has reached Track A yet. The
+2026-09-18 two-cycle follow-up: the selected `0.3s` smooth-H=2 simulator
+states and exact camera pairs were saved and restored with zero image MAE.
+On local CPU, both spatial4 best-val and last-epoch checkpoints completed two
+policy calls and executed v10 future indices `0..3` in each call for all four
+IK-valid episodes. Every first prefix lifted the object (`29.7--46.7mm`), but
+every second prediction reopened its first requested gap above the 40mm object
+width (`47.3--50.8mm`) and dropped it. Final stable grasp was 0/4 for each
+checkpoint. Thus execute-reobserve-repredict plumbing passes, while closed-loop
+grip retention fails. Do not cite the transient first-prefix lift as policy
+success. A label audit found 224 anchors with current gap `35--39mm`; their
+first future gap had median `36.86mm` and maximum `39.32mm`, so the observed
+`47.3--50.8mm` reopening is not a normal target in that closed-gap slice. The
+next diagnosis is post-grasp simulator covariate shift/model error and explicit
+task-phase representation before any further rollout-rate claim. Details and generated
+report patterns are in `AI/docs/MEASURE_v10_spatial_encoder_0918.md`.
+
+2026-09-18 controlled gap diagnosis: a local-only wrapper preserved all arm
+targets and capped only larger second-cycle gap predictions at the achieved
+cycle-start gap when bilateral pad contact was already present. Arm target
+arrays were bit-identical to the uncontrolled runs. Spatial4 last changed from
+0/4 to 4/4 stable grasps with final lift `57.33--72.18mm`; best changed from
+0/4 to 3/4. Best's remaining episode kept bilateral contact but lifted only
+`48.37mm`, 1.63mm below the 50mm simulator success threshold. This establishes
+gap reopening as the dominant failure in this narrow diagnostic, not a general
+claim that every arm trajectory is sufficient. The clamp uses privileged
+simulator contact state and is not a deployable fix or hardware approval.
+Post-grasp phase representation and training support remain the next model/data
+work. The local regression passes 35/35; generated reports and the representative
+GIF are listed in `AI/docs/MEASURE_v10_spatial_encoder_0918.md`.
+
+2026-09-18 pre-arrival work (historical; superseded by the intake result below):
+HW expected to share a new ORB-SLAM3 + ArUco ID 11 episode. The
 `AI/docs/PLAN_orbslam_aruco_umi_intake_0918.md` separates a read-only
 archive inventory from still-unverified pose/clock/gap/tracking checks.
 `AI/tools/inspect_umi_delivery.py` fingerprints a directory, ZIP or TAR
@@ -184,6 +247,59 @@ continuous collision clearance, ROS transport and physical approval remain
 unverified. None of this work runs learned inference on the shared server
 or sends motor commands. This account-transfer section describes related
 source/tests/docs, not generated recordings or media.
+
+2026-09-18 ORB intake update: `raw.zip` delivered 92 demonstrations (89
+success, one failure, two unrated) plus one 72.237s mapping recording. Although
+the team note named fixed marker ID 11, representative and mapping video detect
+ID 13 and detect ID 11 in zero frames. The handoff asset documentation and
+official UMI marker map also specify ID 13 with a 160mm black square, but the
+same asset document requires real mounting measurement, so physical size is
+not yet verified. A repaired local WSL
+ORB-SLAM3 runner now uses the original camera sensor timestamps, implements the
+previously stubbed Pinhole tag initialization, emits tracking/IMU sidecars and
+uses 2,500 ORB features. Three representative success episodes produced
+194/214, 281/300 and 199/213 valid poses, with first valid poses by 0.700s and
+no later losses. Tracking-to-camera timestamp error is effectively zero and
+valid pose timestamp error is below 0.001ms. These are pose results, not
+accepted training episodes: gap-marker missing runs are 13, 10 and 3 frames,
+the first two exceed the seven-frame gate, and all three have unverified jaw
+marker scale. `AI/tools/validate_orbslam_intake.py` now rejects late/low
+coverage trajectories, post-init loss, clock mismatch, bad quaternions, gap
+loss and unverified metric scale together; its five hardware-free checks pass.
+Do not build or claim a metric new dataset until HW confirms the physical ID 13
+black-square side is the documented 160mm and the empty-gripper 90mm calibration
+clip validates jaw scale. Full ArUco-frame alignment remains pending. The
+pose-independent preparation pass completed for all 89 success episodes
+(19,178 frames): 70 satisfy the predeclared jaw-marker maximum missing run of
+seven frames, while 19 have runs of 8--17 frames and are excluded before ORB
+batch work. Median bilateral marker detection is 85.82%. All 89 still report
+unverified jaw-marker metric scale, so the 70 are only provisional gap
+candidates. The resumable summary is generated by
+`AI/tools/summarize_umi_prepare_reports.py`; local report:
+`tmp/raw_0918_full/prepare_summary.json`. Details:
+`AI/docs/PLAN_orbslam_aruco_umi_intake_0918.md`.
+
+2026-09-18 ORB full-batch follow-up: all 70 gap candidates were processed with
+real sensor timestamps, ID 13, provisional 160mm and 2,500 ORB features. Only
+18 pass the strict pose/clock/gap structural gates before metric-scale checks;
+52 reject for pose coverage below 70%, and 51 of those also initialize later
+than 3s. The 18 passes have 87.1--97.5% coverage and first valid pose by
+0.20--1.07s. A corrected 72s mapping atlas advances initialization on sampled
+rejects but introduces repeated tracking loss; loading it with mapping enabled
+is unstable. It is not an accepted processing path. Fixed ID 13 appears at
+least once in all 70 videos, but median detection is only 40.6%; simple
+ArUco/ORB union reaches 70% coverage in 22/70 and has zero overlap in 14/70.
+Do not rescue the remainder by interpolation or relaxed gates. Local generated
+reports are `tmp/raw_0918_full/orb_batch_summary.json` and
+`tmp/raw_0918_full/fixed_aruco_orb_overlap.json`; tracked reproducibility tools
+are `AI/tools/summarize_orbslam_intake_batch.py` and
+`AI/tools/audit_fixed_aruco_visibility.py`. No episode is final until both
+fixed-board and jaw-marker metric scales are physically verified.
+Provisional 160mm ArUco alignment reduces the 18 strict ORB passes to 14
+alignment candidates; two reject for insufficient joint observations/inliers
+and two for translation p95 above 30mm. The reproducible local summary is
+`tmp/raw_0918_full/aruco_alignment_batch_summary.json`, generated by
+`AI/tools/summarize_aruco_alignment_batch.py`.
 
 The EEF-relative-chunk-to-joint-command ownership is now recorded as a
 **D-AI-55 proposal, not yet approved**, in
