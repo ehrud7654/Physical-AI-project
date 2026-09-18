@@ -145,8 +145,35 @@ class OrchestratorNode(Node):
         except Exception as e:  # noqa: BLE001
             self.get_logger().error(f"URDF 파싱 실패 (MOTOR step 불가): {e}")
 
+    # ── 재시작 복구 — BE 현재 배포를 로컬 상태에 반영 (§2.6) ─────────────
+    def _recover_current_deployment(self):
+        """재시작 시 BE가 '배포됨'으로 아는데 우린 메모리 비어 '미배포' 나던 것 방지.
+        current 조회 → 로컬 ckpt 있으면 _deployed_ckpts 채우고 정책 configure."""
+        try:
+            cur = self._be.get_current_deployment()
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"현재 배포 조회 실패(복구 스킵): {e}")
+            return
+        if not cur:
+            return
+        recovered: dict[str, str] = {}
+        for sk in cur.get("skills", []):
+            svid = sk.get("skillVersionId")
+            if not svid:
+                continue
+            path = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
+            if os.path.exists(path):
+                recovered[svid] = path
+            else:
+                self.get_logger().warn(f"복구: {svid} 로컬 ckpt 없음 — 재배포 필요")
+        if recovered:
+            self._deployed_ckpts = recovered
+            self._policy.configure(next(iter(recovered.values())))
+            self.get_logger().info(f"현재 배포 복구 — 스킬 {list(recovered)}")
+
     # ── 워커 스레드: 명령 처리 (HTTP·다운로드 블로킹 OK) ────────────────
     def _run_worker(self):
+        self._recover_current_deployment()   # 재시작 후 실행 명령만 와도 돌게
         while not self._stop.is_set():
             try:
                 cmd = self._cmd_q.get(timeout=0.5)
