@@ -1,81 +1,96 @@
 """정책 노드(so101_policy, S15P21A103-46) lifecycle 제어.
 
 오케스트레이터가 BE 명령을 ROS 동작으로 번역하는 부분.
-정책 노드를 managed(lifecycle) 노드로 가정한다:
-    load_ckpt  -> configure  (ckpt 로드, 파라미터 세팅)
-    start_skill-> activate    (30Hz 추론 루프 시작)
-    stop       -> deactivate  (루프 정지, 모터 홀드)
-
-⚠️ 정책 노드(46)가 아직 없으므로, 서비스 클라이언트 호출은 준비만 하고
-   대상이 없으면 경고만 남긴다. 46 완성되면 그대로 붙는다.
+정책 노드는 managed(lifecycle) 노드다:
+    unconfigured → (configure) → inactive → (activate) → active
+현재 상태를 GetState로 읽어 **유효한 전이만** 보낸다. 잘못된 전이는 정책 노드를
+크래시시키므로(예: unconfigured에서 activate) 절대 막보내지 않는다.
 """
-
 from __future__ import annotations
 
+import time
+
+from lifecycle_msgs.srv import ChangeState, GetState
 from lifecycle_msgs.msg import Transition
-from lifecycle_msgs.srv import ChangeState
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
 
 
 class PolicyControl:
-    """정책 노드의 lifecycle 전이를 호출하는 얇은 래퍼."""
-
-    # 대상 정책 노드 이름 (46에서 확정)
     POLICY_NODE = "so101_policy"
 
     def __init__(self, node):
         self._node = node
         self._log = node.get_logger()
-        # 정책 노드의 표준 lifecycle 서비스: /<node>/change_state
-        self._cli = node.create_client(
-            ChangeState, f"/{self.POLICY_NODE}/change_state"
-        )
-        # ckpt 경로 주입용 파라미터 서비스: /<node>/set_parameters
-        self._param_cli = node.create_client(
-            SetParameters, f"/{self.POLICY_NODE}/set_parameters"
-        )
+        self._change = node.create_client(ChangeState, f"/{self.POLICY_NODE}/change_state")
+        self._get = node.create_client(GetState, f"/{self.POLICY_NODE}/get_state")
+        self._param = node.create_client(SetParameters, f"/{self.POLICY_NODE}/set_parameters")
 
-    def _change_state(self, transition_id: int, label: str) -> bool:
-        if not self._cli.service_is_ready():
-            # 정책 노드(46)가 아직 안 떠 있으면 여기로. 골격 단계에선 정상.
-            self._log.warn(
-                f"정책 노드 lifecycle 서비스 미준비 — '{label}' 전이 스킵 "
-                f"(so101_policy/46 미구현?)"
-            )
+    # ── 서비스 호출 헬퍼 (워커 스레드에서 호출; executor가 future 완료시킴) ──
+    @staticmethod
+    def _wait(fut, timeout: float) -> bool:
+        end = time.time() + timeout
+        while time.time() < end:
+            if fut.done():
+                return True
+            time.sleep(0.02)
+        return False
+
+    def _state(self, timeout: float = 3.0) -> str | None:
+        """정책 노드 lifecycle 상태 라벨. 노드 없으면 None."""
+        if not self._get.wait_for_service(timeout_sec=timeout):
+            return None
+        fut = self._get.call_async(GetState.Request())
+        if not self._wait(fut, timeout) or fut.result() is None:
+            return None
+        return fut.result().current_state.label
+
+    def _transition(self, tid: int, label: str, timeout: float = 5.0) -> bool:
+        if not self._change.wait_for_service(timeout_sec=timeout):
+            self._log.warn(f"정책 change_state 미준비 — '{label}' 스킵")
             return False
         req = ChangeState.Request()
-        req.transition.id = transition_id
-        # 비동기 호출. 결과는 콜백/스핀에서 처리 (여기선 fire-and-forward 골격)
-        self._cli.call_async(req)
-        self._log.info(f"정책 노드 전이 요청: {label}")
-        return True
-
-    def _set_ckpt_path(self, ckpt_path: str) -> bool:
-        """정책 노드의 ckpt_path 파라미터 세팅. configure 직전 호출 → on_configure 가 읽어 로드."""
-        if not self._param_cli.service_is_ready():
-            self._log.warn("정책 노드 set_parameters 미준비 — ckpt 경로 전달 스킵")
+        req.transition.id = tid
+        fut = self._change.call_async(req)
+        if not self._wait(fut, timeout) or fut.result() is None:
+            self._log.warn(f"정책 '{label}' 응답 없음")
             return False
+        ok = fut.result().success
+        self._log.info(f"정책 전이 {label}: {'OK' if ok else '실패'}")
+        return ok
+
+    def _set_ckpt(self, ckpt_path: str) -> None:
+        if not self._param.wait_for_service(timeout_sec=3.0):
+            self._log.warn("정책 set_parameters 미준비 — ckpt 경로 전달 스킵")
+            return
         req = SetParameters.Request(parameters=[Parameter(
             name="ckpt_path",
             value=ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=ckpt_path))])
-        self._param_cli.call_async(req)
+        self._wait(self._param.call_async(req), 3.0)
         self._log.info(f"정책 ckpt 경로 전달: {ckpt_path}")
-        return True
 
-    # --- BE 명령 → lifecycle 매핑 ------------------------------------------
-    def configure(self, ckpt_path: str | None = None) -> bool:
-        """ckpt 경로를 파라미터로 넣고(있으면) configure 전이.
-        ⚠️ call_async 순서 의존(param → transition). 단일스레드 정책 노드에선 순서 보장.
-        엄밀한 await 는 46 확정 후."""
-        if ckpt_path:
-            self._set_ckpt_path(ckpt_path)
-        return self._change_state(Transition.TRANSITION_CONFIGURE, "configure")
+    # ── BE 명령 → lifecycle 구동 ────────────────────────────────────────
+    def start_skill(self, ckpt_path: str | None) -> bool:
+        """정책을 active 로 만든다. 현재 상태에서 configure→activate 까지 안전하게 구동.
+        이미 active/inactive 면 cleanup 후 새 ckpt 로 재설정(스킬 교체 대응)."""
+        st = self._state()
+        if st is None:
+            self._log.warn("정책 노드 미기동 — SKILL 실행 불가")
+            return False
+        if st == "active":
+            self._transition(Transition.TRANSITION_DEACTIVATE, "deactivate")
+            st = "inactive"
+        if st == "inactive":
+            self._transition(Transition.TRANSITION_CLEANUP, "cleanup")
+            st = "unconfigured"
+        if st == "unconfigured":
+            if ckpt_path:
+                self._set_ckpt(ckpt_path)
+            if not self._transition(Transition.TRANSITION_CONFIGURE, "configure"):
+                return False
+        return self._transition(Transition.TRANSITION_ACTIVATE, "activate")
 
-    def activate(self) -> bool:
-        """start_skill → activate (추론 루프 시작)."""
-        return self._change_state(Transition.TRANSITION_ACTIVATE, "activate")
-
-    def deactivate(self) -> bool:
-        """stop → deactivate (루프 정지, 모터 홀드)."""
-        return self._change_state(Transition.TRANSITION_DEACTIVATE, "deactivate")
+    def stop_skill(self) -> None:
+        """active 면 deactivate (아니면 아무것도 안 함 — 잘못된 전이 방지)."""
+        if self._state() == "active":
+            self._transition(Transition.TRANSITION_DEACTIVATE, "deactivate")

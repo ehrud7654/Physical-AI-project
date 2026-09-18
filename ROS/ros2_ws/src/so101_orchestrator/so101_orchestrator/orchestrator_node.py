@@ -128,7 +128,7 @@ class OrchestratorNode(Node):
         if (cmd.get("type") == bc.CMD_CANCEL_EXECUTION
                 and cmd.get("executionId") == self._active_exec):
             self._cancel.set()
-            self._policy.deactivate()
+            self._policy.stop_skill()
             self.get_logger().info(f"취소 요청 → 실행 {self._active_exec} 중단 플래그")
             return                      # CANCELED 리포트는 실행 루프가 함
         self._cmd_q.put(cmd)
@@ -148,16 +148,13 @@ class OrchestratorNode(Node):
     # ── 재시작 복구 — BE 현재 배포를 로컬 상태에 반영 (§2.6) ─────────────
     def _recover_current_deployment(self):
         """재시작 시 BE가 '배포됨'으로 아는데 우린 메모리 비어 '미배포' 나던 것 방지.
-        current 조회 → 로컬 ckpt 있으면 _deployed_ckpts 채우고 정책 configure."""
-        self.get_logger().info("복구 시작: 현재 배포 조회")
+        current 조회 → 로컬 ckpt 있으면 _deployed_ckpts 채움. 정책 로드는 SKILL step 때.
+        (configure를 여기서 안 함 — 이 시점엔 정책 노드가 아직 안 떴을 수 있음)"""
         try:
             cur = self._be.get_current_deployment()
         except Exception as e:  # noqa: BLE001
             self.get_logger().warn(f"현재 배포 조회 실패(복구 스킵): {e}")
             return
-        self.get_logger().info(
-            f"복구 조회 결과: {type(cur).__name__} "
-            f"{list(cur) if isinstance(cur, dict) else cur}")
         if not cur:
             return
         recovered: dict[str, str] = {}
@@ -172,7 +169,6 @@ class OrchestratorNode(Node):
                 self.get_logger().warn(f"복구: {svid} 로컬 ckpt 없음 — 재배포 필요")
         if recovered:
             self._deployed_ckpts = recovered
-            self._policy.configure(next(iter(recovered.values())))
             self.get_logger().info(f"현재 배포 복구 — 스킬 {list(recovered)}")
 
     # ── 워커 스레드: 명령 처리 (HTTP·다운로드 블로킹 OK) ────────────────
@@ -271,10 +267,7 @@ class OrchestratorNode(Node):
 
             # 2) VERIFYING — 항목 전부 DOWNLOADING→VERIFIED (SUCCEEDED 전제)
             rep(bc.DEPLOY_VERIFYING, 80.0, items=items_all("VERIFIED"))
-            # 3) 정책 configure. ponytail: 다중 스킬이면 첫 ckpt만 — 단일 스킬 데모 기준.
-            first_ckpt = next(iter(loaded.values()), None)
-            if not self._policy.configure(first_ckpt):
-                self.get_logger().warn("정책 configure 미완(노드 미기동?) — 배포는 다운로드까지 완료")
+            # 3) 정책 로드는 SKILL step 때 configure→activate 로 (배포 시엔 로컬 저장까지).
             # 4) APPLYING → 5) SUCCEEDED (항목 이미 VERIFIED 라 items 불필요)
             rep(bc.DEPLOY_APPLYING, 95.0)
             rep(bc.DEPLOY_SUCCEEDED, 100.0)
@@ -340,7 +333,7 @@ class OrchestratorNode(Node):
             rep(bc.EXEC_CANCELED, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
             self.get_logger().info(f"실행 {exec_id} 취소 (step {i}/{total})")
         except Exception as e:  # noqa: BLE001
-            self._policy.deactivate()
+            self._policy.stop_skill()
             rep(bc.EXEC_FAILED, current_step=max(i, 1),
                 progress=round((i - 1) * 100.0 / total, 1),
                 error={"code": "STEP_ERROR", "message": str(e)})
@@ -363,16 +356,16 @@ class OrchestratorNode(Node):
             self._cancel.wait(float(timeout or self._motor_settle_sec))
         elif stype == st.STEP_SKILL:
             svid = step.get("skillVersionId")
-            # 배포 때 로드한 스킬이어야 함. ponytail: 단일 스킬 데모라 configure 는 배포에서 끝냈고
-            #   여기선 activate 만. 스텝별 다른 스킬이면 여기서 configure(경로) 재호출 필요(후속).
-            if svid and svid not in self._deployed_ckpts:
-                raise RuntimeError(f"SKILL {svid} 미배포 — APPLY_DEPLOYMENT 먼저 필요")
-            self.get_logger().info(f"SKILL 실행: {svid} (로드된 ckpt로 정책 activate)")
-            if not self._policy.activate():
-                raise RuntimeError("정책 노드 activate 실패 (so101_policy 미기동?)")
+            path = self._deployed_ckpts.get(svid) if svid else None
+            if not path or not os.path.exists(path):
+                raise RuntimeError(f"SKILL {svid} ckpt 없음 — 배포 필요")
+            self.get_logger().info(f"SKILL 실행: {svid} — configure→activate")
+            # 정책 상태 보고 configure→activate 안전 구동 (unconfigured에 activate 크래시 방지)
+            if not self._policy.start_skill(path):
+                raise RuntimeError("정책 start_skill 실패 (so101_policy 미기동?)")
             # TODO(46): 정책 상태 토픽의 완료 이벤트로 교체. 지금은 timeoutSeconds 동안 실행.
             self._cancel.wait(float(timeout or self._skill_default_sec))
-            self._policy.deactivate()
+            self._policy.stop_skill()
         else:
             raise ValueError(f"알 수 없는 step type: {stype}")
 
@@ -390,7 +383,7 @@ class OrchestratorNode(Node):
         if exec_id == self._active_exec:
             self._cancel.set()
             return
-        self._policy.deactivate()
+        self._policy.stop_skill()
         self._be.report_execution(exec_id, self._report_id(), self._next_seq(f"exec:{exec_id}"),
                                   bc.EXEC_CANCELED, progress=0.0)
         self.get_logger().info(f"실행 {exec_id} 취소(비실행 상태)")
