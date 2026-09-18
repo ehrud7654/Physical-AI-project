@@ -4,6 +4,7 @@ import pytest
 
 from so101_orchestrator import be_client as bc
 from so101_orchestrator.be_client import BEClient
+from so101_orchestrator.orchestrator_node import OrchestratorNode   # import만, Node 생성 X
 
 
 def test_parse_sse_extracts_commands():
@@ -122,3 +123,34 @@ def test_patch_no_retry_on_4xx(monkeypatch):
     ok = c._patch("/x", {"status": "SUCCEEDED"}, "배포")
     assert ok is False
     assert len(calls) == 1
+
+
+# ── orchestrator_node 순수 헬퍼 (rclpy init 불필요) ─────────────────────
+def test_clock_drift_parses_z_suffix():
+    """'Z'·나노초 ISO 파싱 OK, 미래 시각은 +drift, 쓰레기는 None."""
+    from datetime import datetime, timedelta, timezone
+    future = (datetime.now(timezone.utc) + timedelta(seconds=120)).strftime(
+        "%Y-%m-%dT%H:%M:%S.123456789Z")
+    d = OrchestratorNode._clock_drift_sec(future)
+    assert d is not None and 110 < d < 130
+    assert abs(OrchestratorNode._clock_drift_sec(
+        datetime.now(timezone.utc).isoformat())) < 5
+    assert OrchestratorNode._clock_drift_sec("garbage") is None
+    assert OrchestratorNode._clock_drift_sec("") is None
+
+
+def test_find_model_url():
+    m = {"models": [{"skillVersionId": "a", "downloadUrl": "u-a"},
+                    {"skillVersionId": "b", "downloadUrl": "u-b"}]}
+    assert OrchestratorNode._find_model_url(m, "b") == "u-b"
+    assert OrchestratorNode._find_model_url(m, "zzz") is None
+    assert OrchestratorNode._find_model_url({}, "a") is None
+
+
+def test_verify_size(tmp_path):
+    p = tmp_path / "x.ckpt"
+    p.write_bytes(b"12345")
+    assert OrchestratorNode._verify_size(str(p), 5) is True
+    assert OrchestratorNode._verify_size(str(p), "5") is True      # 문자열 숫자도 허용
+    assert OrchestratorNode._verify_size(str(p), 6) is False
+    assert OrchestratorNode._verify_size(str(p), None) is True     # 서버가 안 주면 스킵

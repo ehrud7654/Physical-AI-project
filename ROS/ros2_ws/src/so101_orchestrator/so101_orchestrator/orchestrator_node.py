@@ -16,8 +16,10 @@ from __future__ import annotations
 import hashlib
 import os
 import queue
+import re
 import threading
 import uuid
+from datetime import datetime, timezone
 
 import rclpy
 from rclpy.node import Node
@@ -26,6 +28,11 @@ from std_msgs.msg import Bool
 from so101_orchestrator import be_client as bc
 from so101_orchestrator.be_client import BEClient
 from so101_orchestrator.policy_control import PolicyControl
+
+try:
+    import httpx
+except ImportError:  # be_client와 동일 — 빌드는 되게
+    httpx = None
 
 
 class OrchestratorNode(Node):
@@ -46,7 +53,7 @@ class OrchestratorNode(Node):
         # secret 은 param 우선, 없으면 env (로그·ros param 덤프에 안 남기려고 env 허용)
         self._device_secret = (self.get_parameter("device_secret").value
                                or os.environ.get("SO101_DEVICE_SECRET", ""))
-        hb = float(self.get_parameter("heartbeat_sec").value)
+        self._hb_period = float(self.get_parameter("heartbeat_sec").value)
         self._ckpt_dir = self.get_parameter("ckpt_dir").value
         self._contract = self.get_parameter("contract_version").value
         os.makedirs(self._ckpt_dir, exist_ok=True)
@@ -72,7 +79,7 @@ class OrchestratorNode(Node):
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._sse_thread.start()
         self._worker.start()
-        self.create_timer(hb, self._send_heartbeat)
+        self._hb_timer = self.create_timer(self._hb_period, self._send_heartbeat)
 
         self.get_logger().info(f"orchestrator 시작 — BE={base_url} device={device_id}")
 
@@ -134,8 +141,27 @@ class OrchestratorNode(Node):
             self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
                                        bc.DEPLOY_DOWNLOADING, 10.0)
             for model in manifest.get("models", []):
-                dest = os.path.join(self._ckpt_dir, f"{model['skillVersionId']}.ckpt")
-                self._be.download(model["downloadUrl"], dest)
+                svid = model["skillVersionId"]
+                dest = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
+                try:
+                    self._be.download(model["downloadUrl"], dest)
+                except Exception as e:  # noqa: BLE001
+                    # S3 presigned 만료(403) → manifest 재발급 후 1회 재시도 (JETSON-02)
+                    if not (httpx and isinstance(e, httpx.HTTPStatusError)
+                            and e.response.status_code == 403):
+                        raise
+                    url = self._find_model_url(self._be.renew_manifest(dep_id), svid)
+                    if url is None:
+                        raise
+                    self.get_logger().warn(f"{svid} downloadUrl 만료 — 재발급 후 재시도")
+                    self._be.download(url, dest)
+                # 크기 키(sizeBytes/size)는 BE 미확정 — 둘 다 없으면 스킵
+                if not self._verify_size(dest, model.get("sizeBytes", model.get("size"))):
+                    self._be.report_deployment(
+                        dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
+                        10.0, error={"code": "SIZE_MISMATCH",
+                                     "message": f"{svid} 크기 불일치"})
+                    return
                 if not self._verify_sha256(dest, model.get("sha256")):
                     self._be.report_deployment(
                         dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
@@ -168,6 +194,19 @@ class OrchestratorNode(Node):
             for chunk in iter(lambda: f.read(1 << 20), b""):
                 h.update(chunk)
         return h.hexdigest() == expected
+
+    @staticmethod
+    def _verify_size(path: str, expected) -> bool:
+        if expected is None:
+            return True  # 서버가 크기 안 주면 스킵
+        return os.path.getsize(path) == int(expected)
+
+    @staticmethod
+    def _find_model_url(manifest: dict, skill_version_id) -> str | None:
+        for m in manifest.get("models", []):
+            if m.get("skillVersionId") == skill_version_id:
+                return m.get("downloadUrl")
+        return None
 
     # ── 실행 플로우 (정책 activate → JETSON-06 리포트) ──────────────────
     def _execute_task(self, cmd: dict):
@@ -209,7 +248,38 @@ class OrchestratorNode(Node):
 
     # ── heartbeat ──────────────────────────────────────────────────────
     def _send_heartbeat(self):
-        self._be.heartbeat(contract=self._contract)  # 실패는 be_client가 로깅
+        resp = self._be.heartbeat(contract=self._contract)  # 실패는 be_client가 로깅
+        if not isinstance(resp, dict):
+            return
+        # 젯슨 RTC 죽어서 부팅마다 시각 리셋 — BE 시각과 비교해 경고(JWT exp·TLS 검증 영향)
+        drift = self._clock_drift_sec(resp.get("serverTime", ""))
+        if drift is not None and abs(drift) > 30:
+            self.get_logger().warn(f"BE 시각차 {drift:+.0f}s — 젯슨 RTC 확인(JWT/TLS 영향)")
+        # 서버가 원하는 heartbeat 주기 반영 (1~300s 클램프)
+        nxt = resp.get("nextHeartbeatSeconds")
+        if nxt is not None:
+            try:
+                period = min(300.0, max(1.0, float(nxt)))
+            except (TypeError, ValueError):
+                return
+            if period != self._hb_period:
+                self.destroy_timer(self._hb_timer)   # cancel+노드에서 제거
+                self._hb_timer = self.create_timer(period, self._send_heartbeat)
+                self.get_logger().info(f"heartbeat 주기 {self._hb_period:.0f}s → {period:.0f}s")
+                self._hb_period = period
+
+    @staticmethod
+    def _clock_drift_sec(server_time_iso: str) -> float | None:
+        """(서버 - 로컬) 초. py3.10 fromisoformat은 'Z'·7자리+ 소수초 미지원 → 치환·절단.
+        naive면 UTC로 간주. 파싱 실패 None."""
+        s = re.sub(r"(\.\d{6})\d+", r"\1", str(server_time_iso)).replace("Z", "+00:00")
+        try:
+            t = datetime.fromisoformat(s)
+        except ValueError:
+            return None
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (t - datetime.now(timezone.utc)).total_seconds()
 
     # ── 종료 ───────────────────────────────────────────────────────────
     def destroy_node(self):
