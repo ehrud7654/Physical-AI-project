@@ -176,7 +176,7 @@ class OrchestratorNode(Node):
         else:
             self.get_logger().warn(f"알 수 없는 명령 타입: {ctype}")
 
-    # ── 배포 플로우 (JETSON-01 조회 → 다운로드 → JETSON-03 리포트) ──────
+    # ── 배포 플로우 (BE 계약: PENDING→DOWNLOADING→VERIFYING→APPLYING→SUCCEEDED) ──
     def _apply_deployment(self, cmd: dict):
         dep_id = cmd.get("deploymentId")
         manifest = self._be.get_pending_deployment()
@@ -185,25 +185,35 @@ class OrchestratorNode(Node):
             return
         dep_id = manifest.get("deploymentId", dep_id)
         key = f"dep:{dep_id}"
+        models = manifest.get("models", [])
+        item_ids = [m["deploymentItemId"] for m in models if m.get("deploymentItemId")]
+        prog = [0.0]     # 마지막 보고 진행률(감소 금지) — 실패 보고가 참조
+
+        def rep(status, progress, *, items=None, error=None):
+            prog[0] = max(prog[0], progress)
+            return self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
+                                              status, prog[0], items=items, error=error)
+
+        def items_all(s):   # 항목 전이는 보고당 한 단계 (DOWNLOADING → VERIFIED)
+            return [{"deploymentItemId": i, "status": s} for i in item_ids] or None
+
+        def fail_item(iid, code, msg):
+            it = [{"deploymentItemId": iid, "status": "FAILED",
+                   "error": {"code": code, "message": msg}}] if iid else None
+            rep(bc.DEPLOY_FAILED, prog[0], items=it, error={"code": code, "message": msg})
 
         try:
-            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_DOWNLOADING, 10.0)
-            loaded: dict[str, str] = {}          # 이 배포에서 받은 svid → 경로 (성공시 반영)
-            item_reports: list = []              # SUCCEEDED 전 item VERIFIED 보고용
-            for model in manifest.get("models", []):
+            # 1) DOWNLOADING — 항목 전부 PENDING→DOWNLOADING (BE가 downloadedAt 자동 기록)
+            rep(bc.DEPLOY_DOWNLOADING, 10.0, items=items_all("DOWNLOADING"))
+            loaded: dict[str, str] = {}
+            for model in models:
                 svid = model["skillVersionId"]
-                # 계약 검증 — actionSpace 는 BE enum 과 일치해야 함(관절공간만 실행 가능)
+                iid = model.get("deploymentItemId")
                 asp = model.get("actionSpace")
                 if asp is not None and asp not in st.ACTION_SPACES:
-                    self._be.report_deployment(
-                        dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
-                        10.0, error={"code": "CONTRACT_MISMATCH",
-                                     "message": f"{svid} actionSpace {asp} 미지원"})
+                    fail_item(iid, "CONTRACT_MISMATCH", f"{svid} actionSpace {asp} 미지원")
                     return
-                # 모델 contractVersion 은 정책/액션 계약(예: umi-policy-v1) — 명령 계약
-                # (robot-command-v1)과 별개다. 정책 런타임 계약이 확정되면 그걸로 검증(46).
-                cv = model.get("contractVersion")
+                cv = model.get("contractVersion")   # 정책 계약(umi-policy-v1) — 명령 계약과 별개
                 if cv:
                     self.get_logger().info(f"{svid} 모델 contractVersion={cv}")
                 dest = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
@@ -221,41 +231,27 @@ class OrchestratorNode(Node):
                     self._be.download(url, dest)
                 # 크기 키(sizeBytes/size)는 BE 미확정 — 둘 다 없으면 스킵
                 if not self._verify_size(dest, model.get("sizeBytes", model.get("size"))):
-                    self._be.report_deployment(
-                        dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
-                        10.0, error={"code": "SIZE_MISMATCH",
-                                     "message": f"{svid} 크기 불일치"})
+                    fail_item(iid, "SIZE_MISMATCH", f"{svid} 크기 불일치")
                     return
                 if not self._verify_sha256(dest, model.get("sha256")):
-                    self._be.report_deployment(
-                        dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
-                        10.0, error={"code": "SHA256_MISMATCH",
-                                     "message": f"{model['skillVersionId']} 무결성 실패"})
+                    fail_item(iid, "CHECKSUM_MISMATCH", f"{svid} 무결성 실패")
                     return
                 loaded[svid] = dest
-                # BE: 모든 item VERIFIED 여야 SUCCEEDED 허용(JetsonDeploymentService).
-                # deploymentItemId 는 manifest Model 에 있어야 함(현재 BE 미포함 — 은찬 추가 필요).
-                iid = model.get("deploymentItemId")
-                if iid:
-                    item_reports.append({"deploymentItemId": iid, "status": "VERIFIED"})
 
-            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_VERIFYING, 60.0, items=item_reports or None)
-            # 정책 노드에 ckpt 로드. ponytail: 다중 스킬이면 첫 ckpt만 configure —
-            #   단일 스킬 데모 기준. 스텝별 스킬 전환이 필요해지면 SKILL step 에서 재configure.
+            # 2) VERIFYING — 항목 전부 DOWNLOADING→VERIFIED (SUCCEEDED 전제)
+            rep(bc.DEPLOY_VERIFYING, 80.0, items=items_all("VERIFIED"))
+            # 3) 정책 configure. ponytail: 다중 스킬이면 첫 ckpt만 — 단일 스킬 데모 기준.
             first_ckpt = next(iter(loaded.values()), None)
             if not self._policy.configure(first_ckpt):
                 self.get_logger().warn("정책 configure 미완(노드 미기동?) — 배포는 다운로드까지 완료")
-            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_APPLYING, 90.0)
-            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_SUCCEEDED, 100.0, items=item_reports or None)
+            # 4) APPLYING → 5) SUCCEEDED (항목 이미 VERIFIED 라 items 불필요)
+            rep(bc.DEPLOY_APPLYING, 95.0)
+            rep(bc.DEPLOY_SUCCEEDED, 100.0)
             self._deployed_ckpts = loaded        # 성공한 것만 반영(실패시 이전 배포 유지)
             self.get_logger().info(f"배포 {dep_id} 적용 완료 — 스킬 {list(loaded)}")
         except Exception as e:  # noqa: BLE001
-            self._be.report_deployment(dep_id, self._report_id(), self._next_seq(key),
-                                       bc.DEPLOY_FAILED, 0.0,
-                                       error={"code": "DEPLOY_ERROR", "message": str(e)})
+            # FAILED progress 는 감소 금지 — 마지막 보고값(prog) 사용
+            rep(bc.DEPLOY_FAILED, prog[0], error={"code": "DEPLOY_ERROR", "message": str(e)})
             raise
 
     @staticmethod
