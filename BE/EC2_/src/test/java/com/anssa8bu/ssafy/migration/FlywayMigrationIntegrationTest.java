@@ -19,8 +19,8 @@ import org.junit.jupiter.api.Test;
  * 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
  */
 class FlywayMigrationIntegrationTest {
-  static final int MIGRATION_COUNT = 12;
-  static final int TABLE_COUNT = 28;
+  static final int MIGRATION_COUNT = 1;
+  static final int TABLE_COUNT = 30;
   static final List<String> PARTIAL_UNIQUE_INDEXES =
       List.of(
           "uq_users_email_lower",
@@ -55,20 +55,6 @@ class FlywayMigrationIntegrationTest {
     assertSchemaAndSeed(url);
   }
 
-  @Test
-  void migratingV1FirstThenTheRestProducesSameSchema() throws SQLException {
-    String url = freshDatabase("mig_staged");
-
-    MigrateResult v1 = flyway(url, "1").migrate();
-    assertThat(v1.migrationsExecuted).isEqualTo(1);
-    // V1에는 잘못된 CHECK 두 개가 포함되어 있고 V2/V4/V5가 이를 정정하며 V8이 VLM 도메인을 제거한다
-    assertThat(count(url, "select count(*) from training_profiles")).isZero();
-
-    MigrateResult rest = flyway(url).migrate();
-    assertThat(rest.migrationsExecuted).isEqualTo(MIGRATION_COUNT - 1);
-    assertSchemaAndSeed(url);
-  }
-
   private void assertSchemaAndSeed(String url) throws SQLException {
     assertThat(count(url, "select count(*) from flyway_schema_history where success"))
         .isEqualTo(MIGRATION_COUNT);
@@ -85,7 +71,7 @@ class FlywayMigrationIntegrationTest {
           .isOne();
     }
     // seed: 중복 없이 정확히 1회만 적용
-    assertThat(count(url, "select count(*) from skills")).isEqualTo(7);
+    assertThat(count(url, "select count(*) from skills")).isEqualTo(2);
     assertThat(
             count(
                 url,
@@ -96,7 +82,7 @@ class FlywayMigrationIntegrationTest {
                 url,
                 "select count(*) from retention_policies where name = 'dev-provisional-retention'"))
         .isOne();
-    // V8: VLM 도메인 제거 확인
+    // 통합 baseline에는 폐기된 VLM 도메인이 존재하지 않는다.
     assertThat(
             count(
                 url,
@@ -110,7 +96,7 @@ class FlywayMigrationIntegrationTest {
                 "select count(*) from information_schema.columns where table_name = 'skills'"
                     + " and column_name = 'needs_vlm'"))
         .isZero();
-    // V9: FE 연동용 사용자 하위 Robot, 학습 결과와 Task 구성이 정확히 연결된다
+    // FE 연동용 사용자 하위 Robot, 학습 결과와 Task 구성이 정확히 연결된다.
     assertThat(
             count(
                 url,
@@ -141,14 +127,14 @@ class FlywayMigrationIntegrationTest {
                     + " where t.owner_id = '50000000-0000-4000-8000-000000000001'::uuid"
                     + " and t.task_key = 'raise_blue_flag'"))
         .isEqualTo(2);
-    // V2/V4가 제거한 잘못된 config_sha256 CHECK는 정규식 CHECK 하나만 남는다
+    // config_sha256 정규식 CHECK 하나만 남는다.
     assertThat(
             count(
                 url,
                 "select count(*) from pg_constraint where conrelid = 'training_profiles'::regclass"
                     + " and contype = 'c' and pg_get_constraintdef(oid) like '%config_sha256%'"))
         .isOne();
-    // V5: 구 status CHECK 제거, 신규 CHECK 4개
+    // Outbox 최종 CHECK 4개만 존재한다.
     assertThat(
             count(
                 url,
