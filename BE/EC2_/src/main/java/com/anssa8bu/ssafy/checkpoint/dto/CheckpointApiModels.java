@@ -12,7 +12,8 @@ public final class CheckpointApiModels {
   public record Metadata(@NotBlank String architecture, @NotBlank String framework,
       @NotBlank String frameworkVersion, @NotBlank String contractVersion,
       @NotNull UUID robotProfileId, @NotNull ActionSpace actionSpace,
-      @NotNull Map<String,Object> actionSpec, @Positive long nParams, @Positive BigDecimal controlRateHz,
+      @NotEmpty Map<String,Object> actionSpec, @NotEmpty Map<String,Object> runtimeSpec,
+      @Positive long nParams, @Positive BigDecimal controlRateHz,
       @NotEmpty List<String> cameraNames, @NotNull Map<String,Object> inputSchema,
       @NotNull Map<String,Object> outputSchema) {}
   public record UploadSessionRequest(@Positive int attempt, @NotBlank String leaseToken,

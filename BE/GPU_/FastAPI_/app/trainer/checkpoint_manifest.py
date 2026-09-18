@@ -15,7 +15,11 @@ def build_metadata(request: dict[str, Any]) -> dict[str, Any]:
         "actionSpace": os.getenv("MODEL_ACTION_SPACE", "EEF_RELATIVE_ROT6D"),
         "actionSpec": json.loads(os.getenv(
             "MODEL_ACTION_SPEC_JSON",
-            '{"dim":10,"horizon":8,"rateHz":10,"layout":["dx","dy","dz","r00","r01","r02","r10","r11","r12","gap_m"],"rotation":"rotmat_first_two_ROWS","compose":"T_next = T_cur @ A_relative","gapUnit":"m","execSlice":[1,5]}'
+            '{"schemaVersion":1,"dim":10,"horizon":8,"rateHz":10,"rateNote":"공칭. v10 원본 간격이 균일하지 않다. 실제 시각은 observation_timestamp","layout":["dx","dy","dz","r00","r01","r02","r10","r11","r12","gap_m"],"rotation":"ROTATION_MATRIX_ROWS_0_1","compose":"T_next = T_cur @ A_relative","gapUnit":"m","gapRange":[0,0.09]}'
+        )),
+        "runtimeSpec": json.loads(os.getenv(
+            "MODEL_RUNTIME_SPEC_JSON",
+            '{"consumerMustConvert":true,"convertedDim":7,"convertedLayout":["x","y","z","rx","ry","rz","gap_m"],"convertedRotation":"AXIS_ANGLE_ROTVEC","convertedFrame":"ABSOLUTE","execSlice":{"startInclusive":1,"endExclusive":5},"execSliceAppliesTo":"converted","actionPointRateHz":10,"reobserveRateHz":2.5}'
         )),
         "nParams": int(os.getenv("MODEL_PARAMETER_COUNT", "1")),
         "controlRateHz": int(os.getenv("MODEL_CONTROL_RATE_HZ", "10")),

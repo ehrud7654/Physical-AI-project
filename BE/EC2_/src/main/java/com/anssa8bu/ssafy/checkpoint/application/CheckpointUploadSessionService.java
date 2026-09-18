@@ -64,7 +64,8 @@ public class CheckpointUploadSessionService {
     SkillVersion value=new SkillVersion(UUID.randomUUID(), job.getSkillId(), job.getId(),
         m.robotProfileId(), next, bucket,
         key, request.sha256(), request.sizeBytes(), m.architecture(), m.framework(),
-        m.frameworkVersion(), m.contractVersion(), m.actionSpace(), m.actionSpec(), m.nParams(), m.controlRateHz(),
+        m.frameworkVersion(), m.contractVersion(), m.actionSpace(), m.actionSpec(), m.runtimeSpec(),
+        m.nParams(), m.controlRateHz(),
         m.cameraNames(), m.inputSchema(), m.outputSchema(), job.getBaseSkillVersionId());
     job.markModelUploading(request.modelCompletedAt());
     return versions.save(value);

@@ -34,6 +34,7 @@ public class CheckpointMetadataValidator {
         && version.getContractVersion().equals(metadata.contractVersion())
         && version.getActionSpace()==metadata.actionSpace()
         && version.getActionSpec().equals(metadata.actionSpec())
+        && version.getRuntimeSpec().equals(metadata.runtimeSpec())
         && version.getParameterCount()==metadata.nParams()
         && version.getControlRateHz().compareTo(metadata.controlRateHz())==0
         && version.getCameraNames().equals(metadata.cameraNames())

@@ -13,6 +13,7 @@ class CheckpointMetadata(ApiModel):
     robot_profile_id: str
     action_space: str
     action_spec: dict[str, Any]
+    runtime_spec: dict[str, Any]
     n_params: int = Field(ge=0)
     control_rate_hz: int = Field(gt=0)
     camera_names: list[str]

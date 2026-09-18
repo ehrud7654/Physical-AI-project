@@ -22,6 +22,7 @@ public final class CheckpointModels {
       UUID robotProfileId,
       ActionSpace actionSpace,
       Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec,
       long nParams,
       BigDecimal controlRateHz,
       List<String> cameraNames,

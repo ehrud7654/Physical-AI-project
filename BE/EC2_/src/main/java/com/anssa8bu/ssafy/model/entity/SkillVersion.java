@@ -64,6 +64,10 @@ public class SkillVersion extends CreatedEntity {
   @Column(name = "action_spec", nullable = false, columnDefinition = "jsonb")
   private Map<String, Object> actionSpec;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "runtime_spec", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> runtimeSpec;
+
   @Column(name = "n_params", nullable = false)
   private long parameterCount;
 
@@ -118,19 +122,21 @@ public class SkillVersion extends CreatedEntity {
   public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
       UUID robotProfileId, int version, String bucket, String key,
       String sha256, long bytes, String architecture, String framework, String frameworkVersion,
-      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec, long parameterCount,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec, long parameterCount,
       BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
       Map<String, Object> outputSchema) {
     this(id, skillId, trainingJobId, robotProfileId,
         version, bucket, key, sha256, bytes, architecture, framework, frameworkVersion,
-        contractVersion, actionSpace, actionSpec, parameterCount, controlRateHz, cameraNames, inputSchema,
+        contractVersion, actionSpace, actionSpec, runtimeSpec, parameterCount, controlRateHz, cameraNames, inputSchema,
         outputSchema, null);
   }
 
   public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
       UUID robotProfileId, int version, String bucket, String key,
       String sha256, long bytes, String architecture, String framework, String frameworkVersion,
-      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec, long parameterCount,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec, long parameterCount,
       BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
       Map<String, Object> outputSchema, UUID parentSkillVersionId) {
     this.id = Objects.requireNonNull(id);
@@ -150,6 +156,7 @@ public class SkillVersion extends CreatedEntity {
     this.contractVersion = Objects.requireNonNull(contractVersion);
     this.actionSpace = Objects.requireNonNull(actionSpace);
     this.actionSpec = Map.copyOf(Objects.requireNonNull(actionSpec));
+    this.runtimeSpec = Map.copyOf(Objects.requireNonNull(runtimeSpec));
     this.parameterCount = parameterCount;
     this.controlRateHz = Objects.requireNonNull(controlRateHz);
     this.cameraNames = List.copyOf(cameraNames);
@@ -230,6 +237,8 @@ public class SkillVersion extends CreatedEntity {
   }
 
   public Map<String, Object> getActionSpec() { return actionSpec; }
+
+  public Map<String, Object> getRuntimeSpec() { return runtimeSpec; }
 
   public long getParameterCount() {
     return parameterCount;
