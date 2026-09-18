@@ -121,15 +121,19 @@ class BEClient:
         backoff = self.reconnect_backoff
 
         while not should_stop():
-            headers = {**self._headers(), "Accept": "text/event-stream"}  # 토큰 최신값
+            # Accept-Encoding: identity — gzip 이면 httpx 가 스트림을 통째로 버퍼링해서
+            #   SSE 이벤트가 안 흘러온다(curl 은 gzip 요청 안 해서 됐던 것). 압축 끔.
+            headers = {**self._headers(), "Accept": "text/event-stream",
+                       "Accept-Encoding": "identity", "Cache-Control": "no-cache"}
             try:
                 timeout = httpx.Timeout(self.connect_timeout, read=None)
-                with httpx.Client(timeout=timeout) as client:
+                with httpx.Client(timeout=timeout, http2=False) as client:
                     with client.stream("GET", url, headers=headers) as resp:
                         if resp.status_code == 401 and self.reauth:
                             self.reauth()          # 토큰 만료 → 재발급 후 재연결
                         resp.raise_for_status()
                         backoff = self.reconnect_backoff   # 연결 성공 → 백오프 리셋
+                        print("[BEClient] command-stream 연결됨")
                         self._parse_sse(resp.iter_lines(), on_command, should_stop)
             except Exception as e:  # noqa: BLE001 — 어떤 오류든 재연결로 흡수
                 if should_stop():
