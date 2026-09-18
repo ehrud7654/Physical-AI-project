@@ -12,7 +12,10 @@
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
   <depend>lifecycle_msgs</depend>
+  <depend>so101_policy</depend>   <!-- config.load_joints: so101.yaml 관절 순서 단일 출처 -->
+  <depend>python3-yaml</depend>
   <exec_depend>python3-httpx</exec_depend>
 
   <!-- httpx·pytest 는 apt 패키지: rosdep install 로 자동, 또는 apt install python3-httpx python3-pytest -->

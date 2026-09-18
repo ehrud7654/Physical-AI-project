@@ -3,7 +3,7 @@
 BE(제어 평면) ↔ 젯슨 ROS(데이터 평면) 다리. BE 계약 v1.3.0 기준.
   - command-stream SSE로 명령 수신 (APPLY_DEPLOYMENT / EXECUTE_TASK / CANCEL_EXECUTION)
   - 배포: pending manifest → 모델 다운로드+sha256 → 정책 로드 → JETSON-03 리포트
-  - 실행: 정책 lifecycle activate → JETSON-06 리포트
+  - 실행: EXECUTE_TASK steps 펼쳐 MOTOR(관절 명령)/SKILL(정책 activate) 순차 → JETSON-06 리포트
   - heartbeat POST (liveness)
   - /estop 발행 (BE estop 명령 시)
 
@@ -23,11 +23,14 @@ from datetime import datetime, timezone
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool, Float64MultiArray
 
 from so101_orchestrator import be_client as bc
+from so101_orchestrator import steps as st
 from so101_orchestrator.be_client import BEClient
 from so101_orchestrator.policy_control import PolicyControl
+from so101_policy.config import load_joints
 
 try:
     import httpx
@@ -46,6 +49,10 @@ class OrchestratorNode(Node):
         self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
         self.declare_parameter("ckpt_dir", "/tmp/so101_ckpt")
         self.declare_parameter("contract_version", "robot-command-v1")
+        self.declare_parameter("config_path", "")          # so101.yaml (빈값=so101_policy 기본 탐색)
+        self.declare_parameter("max_width_m", 0.09)        # 그리퍼 폭 상한 (urdf max_width_m)
+        self.declare_parameter("motor_settle_sec", 2.0)    # MOTOR step: timeoutSeconds 없을 때 대기
+        self.declare_parameter("skill_default_sec", 10.0)  # SKILL step: timeoutSeconds 없을 때 실행
 
         base_url = self.get_parameter("base_url").value
         device_id = self.get_parameter("device_id").value
@@ -56,6 +63,14 @@ class OrchestratorNode(Node):
         self._hb_period = float(self.get_parameter("heartbeat_sec").value)
         self._ckpt_dir = self.get_parameter("ckpt_dir").value
         self._contract = self.get_parameter("contract_version").value
+        self._max_width_m = float(self.get_parameter("max_width_m").value)
+        self._motor_settle_sec = float(self.get_parameter("motor_settle_sec").value)
+        self._skill_default_sec = float(self.get_parameter("skill_default_sec").value)
+        try:   # J1..J6 → 관절 매핑의 단일 출처. 실패해도 MOTOR step 만 막히고 나머진 동작.
+            self._joints = load_joints(self.get_parameter("config_path").value or None)
+        except Exception as e:  # noqa: BLE001
+            self._joints = None
+            self.get_logger().warn(f"so101.yaml 로드 실패 (MOTOR step 불가): {e}")
         os.makedirs(self._ckpt_dir, exist_ok=True)
 
         self._be = BEClient(base_url, device_id, token=token)
@@ -70,6 +85,11 @@ class OrchestratorNode(Node):
             self.get_logger().warn("token·device_secret 둘 다 없음 — BE 인증 없이 시작(요청 401 예상)")
         self._policy = PolicyControl(self)
         self._estop_pub = self.create_publisher(Bool, "/estop", 10)
+        self._cmd_pub = self.create_publisher(Float64MultiArray, st.COMMAND_TOPIC, 10)
+        self._latest: dict[str, float] = {}     # /joint_states name→pos (MOTOR step 기준 자세)
+        self.create_subscription(JointState, "/joint_states", self._on_joint_state, 10)
+        self._cancel = threading.Event()        # 실행 중단 플래그 — SSE 콜백에서 즉시 세팅
+        self._active_exec: str | None = None    # 실행 중 executionId
 
         self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
         self._seen_cmds: set[str] = set()       # commandId 중복 실행 차단(세션 한정, 재시작시 리셋)
@@ -94,7 +114,22 @@ class OrchestratorNode(Node):
 
     # ── SSE 스레드 → 큐 ────────────────────────────────────────────────
     def _run_sse(self):
-        self._be.stream_commands(self._cmd_q.put, self._stop.is_set)
+        self._be.stream_commands(self._on_sse_command, self._stop.is_set)
+
+    def _on_sse_command(self, cmd: dict):
+        """SSE 스레드 콜백. 실행 중인 것의 CANCEL_EXECUTION 은 큐를 우회해 즉시 플래그 —
+        워커가 _execute_task 로 블로킹 중이라 큐에 넣으면 실행이 끝나야 취소가 먹는다."""
+        if (cmd.get("type") == bc.CMD_CANCEL_EXECUTION
+                and cmd.get("executionId") == self._active_exec):
+            self._cancel.set()
+            self._policy.deactivate()
+            self.get_logger().info(f"취소 요청 → 실행 {self._active_exec} 중단 플래그")
+            return                      # CANCELED 리포트는 실행 루프가 함
+        self._cmd_q.put(cmd)
+
+    def _on_joint_state(self, msg: JointState):
+        for name, pos in zip(msg.name, msg.position):
+            self._latest[name] = pos
 
     # ── 워커 스레드: 명령 처리 (HTTP·다운로드 블로킹 OK) ────────────────
     def _run_worker(self):
@@ -142,6 +177,17 @@ class OrchestratorNode(Node):
                                        bc.DEPLOY_DOWNLOADING, 10.0)
             for model in manifest.get("models", []):
                 svid = model["skillVersionId"]
+                # 계약 검증 — actionSpace 는 BE enum 과 일치해야 함(관절공간만 실행 가능)
+                asp = model.get("actionSpace")
+                if asp is not None and asp not in st.ACTION_SPACES:
+                    self._be.report_deployment(
+                        dep_id, self._report_id(), self._next_seq(key), bc.DEPLOY_FAILED,
+                        10.0, error={"code": "CONTRACT_MISMATCH",
+                                     "message": f"{svid} actionSpace {asp} 미지원"})
+                    return
+                cv = model.get("contractVersion")
+                if cv and cv != self._contract:
+                    self.get_logger().warn(f"{svid} contractVersion {cv} ≠ {self._contract}")
                 dest = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
                 try:
                     self._be.download(model["downloadUrl"], dest)
@@ -208,31 +254,86 @@ class OrchestratorNode(Node):
                 return m.get("downloadUrl")
         return None
 
-    # ── 실행 플로우 (정책 activate → JETSON-06 리포트) ──────────────────
+    # ── 실행 플로우 (steps 펼쳐 순차 실행 → JETSON-06 리포트) ───────────
     def _execute_task(self, cmd: dict):
         exec_id = cmd.get("executionId")
         key = f"exec:{exec_id}"
-        self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
-                                   bc.EXEC_STARTING, progress=0.0)
-        if not self._policy.activate():
-            self._be.report_execution(
-                exec_id, self._report_id(), self._next_seq(key), bc.EXEC_FAILED,
-                progress=0.0, error={"code": "POLICY_ACTIVATE_FAILED",
-                                     "message": "정책 노드 activate 실패"})
+
+        def rep(status, **kw):
+            return self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
+                                             status, **kw)
+
+        rep(bc.EXEC_STARTING, progress=0.0)
+        plan = st.expand_steps(cmd.get("steps") or [])
+        total = len(plan)
+        if total == 0:
+            rep(bc.EXEC_FAILED, error={"code": "NO_STEPS", "message": "실행할 step 없음"})
             return
-        self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
-                                   bc.EXEC_RUNNING, current_step=1, progress=5.0)
-        # ⚠️ TODO(46): 실행 완료(SUCCEEDED/FAILED)·진행률은 정책 노드가 알려줘야 함.
-        #   정책 노드 상태 인터페이스(토픽/서비스) 확정되면 구독→step 진행·완료 리포트.
-        self.get_logger().info(f"실행 {exec_id} 시작 — 완료 리포트는 정책 노드 상태 연동 후(46)")
+
+        self._cancel.clear()
+        self._active_exec = exec_id
+        i = 0
+        try:
+            for i, step in enumerate(plan, 1):
+                if self._cancel.is_set():
+                    break
+                rep(bc.EXEC_RUNNING, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
+                self._run_step(step)
+            else:                       # break 없이 완주
+                rep(bc.EXEC_SUCCEEDED, current_step=total, progress=100.0)
+                self.get_logger().info(f"실행 {exec_id} 완료 ({total} steps)")
+                return
+            rep(bc.EXEC_CANCELED, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
+            self.get_logger().info(f"실행 {exec_id} 취소 (step {i}/{total})")
+        except Exception as e:  # noqa: BLE001
+            self._policy.deactivate()
+            rep(bc.EXEC_FAILED, current_step=max(i, 1),
+                progress=round((i - 1) * 100.0 / total, 1),
+                error={"code": "STEP_ERROR", "message": str(e)})
+            raise
+        finally:
+            self._active_exec = None
+
+    def _run_step(self, step: dict):
+        """leaf step 1개 실행. 대기는 전부 self._cancel.wait 라 취소 시 즉시 빠져나옴."""
+        stype = step.get("type")
+        timeout = step.get("timeoutSeconds")
+        if stype == st.STEP_MOTOR:
+            if self._joints is None:
+                raise RuntimeError("so101.yaml 미로드 — MOTOR step 불가 (config_path 확인)")
+            out = Float64MultiArray()
+            out.data = st.motor_to_command(step.get("parameters") or {}, self._joints,
+                                           self._current_vector(), self._max_width_m)
+            self._cmd_pub.publish(out)
+            # ponytail: 도달 확인 없이 정착 시간만 대기 — /joint_states 수렴 체크는 후속
+            self._cancel.wait(float(timeout or self._motor_settle_sec))
+        elif stype == st.STEP_SKILL:
+            if not self._policy.activate():
+                raise RuntimeError("정책 노드 activate 실패 (so101_policy 미기동?)")
+            # TODO(46): 정책 상태 토픽의 완료 이벤트로 교체. 지금은 timeoutSeconds 동안 실행.
+            self._cancel.wait(float(timeout or self._skill_default_sec))
+            self._policy.deactivate()
+        else:
+            raise ValueError(f"알 수 없는 step type: {stype}")
+
+    def _current_vector(self) -> list[float]:
+        """/joint_states 최신값을 so101.yaml 순서 벡터로. 없는 관절 있으면 에러(안전)."""
+        try:
+            return [self._latest[name] for name, _, _ in self._joints]
+        except KeyError as e:
+            raise RuntimeError(f"/joint_states 에 {e} 없음 — 컨트롤러 기동 확인") from e
 
     def _cancel_execution(self, cmd: dict):
+        """큐 경로의 CANCEL — 실행 중인 건 SSE 콜백이 이미 처리(루프가 CANCELED 리포트).
+        여기 오는 건 실행 중이 아닌 것 → 즉시 CANCELED 리포트."""
         exec_id = cmd.get("executionId")
-        key = f"exec:{exec_id}"
+        if exec_id == self._active_exec:
+            self._cancel.set()
+            return
         self._policy.deactivate()
-        self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
-                                   bc.EXEC_CANCELED, progress=0.0)
-        self.get_logger().info(f"실행 {exec_id} 취소")
+        self._be.report_execution(exec_id, self._report_id(), self._next_seq(f"exec:{exec_id}"),
+                                  bc.EXEC_CANCELED, progress=0.0)
+        self.get_logger().info(f"실행 {exec_id} 취소(비실행 상태)")
 
     # ── 토큰 발급/갱신 (DEVICE-05) ──────────────────────────────────────
     def _renew_token(self, initial: bool = False) -> float:

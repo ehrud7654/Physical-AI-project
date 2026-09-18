@@ -8,6 +8,8 @@ BE 계약 v1.5.0 / 실제 Jetson 컨트롤러 구현 기준:
   manifest  POST /api/v1/robots/me/deployments/{id}/manifest  (URL 만료 재발급)
   배포 리포트 PATCH /api/v1/robots/me/deployments/{id}      (reportId·sequence)
   실행 리포트 PATCH /api/v1/robots/me/executions/{id}       (reportId·sequence)
+  현재 배포  GET  /api/v1/robots/me/deployment/current     (재시작 복구, JetsonStateController)
+  활성 스킬  GET  /api/v1/robots/me/skills/active
   모델 다운로드 GET <S3 presigned downloadUrl>              (Authorization 안 붙임)
 
 인증: JWT Bearer (DEVICE-05 device access token). 응답은 ApiResponse{data} 래퍼.
@@ -194,6 +196,20 @@ class BEClient:
         r = self._request("POST", url, timeout=15.0)
         r.raise_for_status()
         return self._unwrap(r)
+
+    def get_current_deployment(self) -> dict | None:
+        """GET 현재 적용 배포 {deploymentId, taskVersionId, steps, skills, appliedAt}. 없으면 None."""
+        r = self._request("GET", f"{self.api}/robots/me/deployment/current", timeout=15.0)
+        if r.status_code in (204, 404):
+            return None
+        r.raise_for_status()
+        return self._unwrap(r)
+
+    def get_active_skills(self) -> list:
+        """GET 활성 SkillVersion 목록 [{skillId, skillKey, skillVersionId, version, status, ...}]."""
+        r = self._request("GET", f"{self.api}/robots/me/skills/active", timeout=15.0)
+        r.raise_for_status()
+        return self._unwrap(r) or []
 
     def report_deployment(self, deployment_id: str, report_id: str, sequence: int,
                           status: str, progress: float, *, items: list | None = None,
