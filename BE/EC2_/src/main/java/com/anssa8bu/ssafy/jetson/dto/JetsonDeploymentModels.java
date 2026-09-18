@@ -31,6 +31,7 @@ public final class JetsonDeploymentModels {
       Instant generatedAt) {}
 
   public record Model(
+      UUID deploymentItemId,
       UUID skillVersionId,
       String downloadUrl,
       Instant expiresAt,

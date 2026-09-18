@@ -183,12 +183,11 @@ public class JetsonDeploymentService {
     Instant expiresAt = generatedAt.plus(urlTtl);
     List<Model> models =
         items.findAllByDeploymentId(deployment.getId()).stream()
-            .map(
-                item ->
-                    skills
-                        .findById(item.getSkillVersionId())
-                        .orElseThrow(() -> new ResourceNotFoundException("SkillVersion")))
-            .map(version -> model(version, expiresAt))
+            .map(item -> model(
+                item.getId(),
+                skills.findById(item.getSkillVersionId())
+                    .orElseThrow(() -> new ResourceNotFoundException("SkillVersion")),
+                expiresAt))
             .toList();
     List<com.anssa8bu.ssafy.jetson.dto.JetsonCommand.Step> workflow =
         steps.findAllByTaskVersionIdOrderByStepOrder(deployment.getTaskVersionId()).stream()
@@ -213,7 +212,7 @@ public class JetsonDeploymentService {
         generatedAt);
   }
 
-  private Model model(SkillVersion version, Instant expiresAt) {
+  private Model model(UUID deploymentItemId, SkillVersion version, Instant expiresAt) {
     URL url =
         presigner
             .presignGetObject(
@@ -227,6 +226,7 @@ public class JetsonDeploymentService {
                     .build())
             .url();
     return new Model(
+        deploymentItemId,
         version.getId(),
         url.toString(),
         expiresAt,
