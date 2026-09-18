@@ -5,10 +5,11 @@ import static com.anssa8bu.ssafy_gpu.fastapi.dto.FastApiTrainingModels.*;
 import com.anssa8bu.ssafy_gpu.checkpoint.application.CheckpointUploadService;
 import com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.LocalCheckpoint;
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
+import com.anssa8bu.ssafy_gpu.fastapi.persistence.CompletionReceiptStore;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingEventService;
+import com.anssa8bu.ssafy_gpu.training.cleanup.TrainingArtifactCleanupService;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import java.nio.file.Path;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,23 +18,32 @@ public class TrainingCompletionOrchestrator {
   private final TrainingEventService events;
   private final WorkerRuntimeState state;
   private final WorkerProperties worker;
-  private final ConcurrentHashMap<String, CompletionResponse> completed = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, Long> completionSequences = new ConcurrentHashMap<>();
+  private final TrainingArtifactCleanupService cleanup;
+  private final CompletionReceiptStore receipts;
+  private final java.util.concurrent.ConcurrentHashMap<String, Long> completionSequences = new java.util.concurrent.ConcurrentHashMap<>();
 
   public TrainingCompletionOrchestrator(
       CheckpointUploadService checkpoints,
       TrainingEventService events,
       WorkerRuntimeState state,
-      WorkerProperties worker) {
+      WorkerProperties worker, TrainingArtifactCleanupService cleanup,
+      CompletionReceiptStore receipts) {
     this.checkpoints = checkpoints;
     this.events = events;
     this.state = state;
     this.worker = worker;
+    this.cleanup = cleanup;
+    this.receipts = receipts;
   }
 
   public synchronized CompletionResponse complete(String runId, CompletionRequest request) {
-    CompletionResponse duplicate = completed.get(request.eventId());
-    if (duplicate != null) return duplicate;
+    String requestHash = receipts.hash(request);
+    var receipt = receipts.find(request.eventId());
+    if (receipt != null) {
+      if (!receipt.requestHash().equals(requestHash))
+        throw new IllegalStateException("같은 eventId에 다른 완료 payload가 요청되었습니다.");
+      return receipt.response();
+    }
     var assignment = state.require(request.trainingJobId(), request.attempt());
     if (assignment.runId() == null || !assignment.runId().equals(runId))
       throw new IllegalStateException("완료 콜백의 runId가 활성 학습과 일치하지 않습니다.");
@@ -54,8 +64,9 @@ public class TrainingCompletionOrchestrator {
     CompletionResponse response =
         new CompletionResponse(
             uploaded.skillVersionId(), uploaded.version(), uploaded.completion().status());
-    completed.put(request.eventId(), response);
+    receipts.save(request.eventId(), requestHash, response);
     state.release(assignment.gpuIndex());
+    cleanup.cleanup(request.trainingJobId(), request.attempt());
     return response;
   }
 

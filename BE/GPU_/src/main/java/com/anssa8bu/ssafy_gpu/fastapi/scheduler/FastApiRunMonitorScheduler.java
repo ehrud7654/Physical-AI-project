@@ -2,6 +2,7 @@ package com.anssa8bu.ssafy_gpu.fastapi.scheduler;
 
 import com.anssa8bu.ssafy_gpu.fastapi.application.FastApiRunService;
 import com.anssa8bu.ssafy_gpu.training.application.TrainingEventService;
+import com.anssa8bu.ssafy_gpu.training.cleanup.TrainingArtifactCleanupService;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState.ActiveTraining;
 import java.time.Instant;
@@ -16,12 +17,15 @@ public class FastApiRunMonitorScheduler {
   private final FastApiRunService fastApi;
   private final TrainingEventService events;
   private final WorkerRuntimeState state;
+  private final TrainingArtifactCleanupService cleanup;
 
   public FastApiRunMonitorScheduler(
-      FastApiRunService fastApi, TrainingEventService events, WorkerRuntimeState state) {
+      FastApiRunService fastApi, TrainingEventService events, WorkerRuntimeState state,
+      TrainingArtifactCleanupService cleanup) {
     this.fastApi = fastApi;
     this.events = events;
     this.state = state;
+    this.cleanup = cleanup;
   }
 
   @Scheduled(
@@ -52,6 +56,7 @@ public class FastApiRunMonitorScheduler {
               assignment.trainingJobId(), assignment.attempt(), assignment.leaseToken(), eventId,
               eventSequence, occurredAt(run.lastProgressAt()));
           state.release(assignment.gpuIndex());
+          cleanup.cleanup(assignment.trainingJobId(), assignment.attempt());
         }
         case "FAILED", "LOST" -> {
           String code = run.error() == null ? "FASTAPI_TRAINING_FAILED" : run.error().code();
@@ -60,6 +65,7 @@ public class FastApiRunMonitorScheduler {
               assignment.trainingJobId(), assignment.attempt(), assignment.leaseToken(), eventId,
               eventSequence, code, message, occurredAt(run.lastProgressAt()));
           state.release(assignment.gpuIndex());
+          cleanup.cleanup(assignment.trainingJobId(), assignment.attempt());
         }
         case "COMPLETED" -> {
           // Completion callback owns CKPT upload and final state transition.
