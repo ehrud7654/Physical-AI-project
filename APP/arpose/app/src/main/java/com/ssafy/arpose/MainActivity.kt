@@ -170,7 +170,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         recBtn.setOnClickListener {
             when {
                 recorder?.isRecording == true -> pendingToggle = true   // 정지는 항상 허용
-                !trackingOk -> Toast.makeText(this, "위치 잡는 중이에요 — 잠시 후 다시 시도", Toast.LENGTH_SHORT).show()
+                !trackingOk -> Toast.makeText(this, "카메라 안정 중이에요 — 잠시 후 다시 시도", Toast.LENGTH_SHORT).show()
                 !aeLock -> Toast.makeText(this, "밝기를 고정해 주세요 (설정 → 밝기 고정)", Toast.LENGTH_SHORT).show()
                 else -> pendingToggle = true
             }
@@ -632,14 +632,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         val imuText = imu.stop()
         val r = recorder
         val jumps = r?.jumpCount ?: 0
-        val maxJump = r?.maxJumpMm ?: 0.0
         val dir = r?.stop(imuText)
         val saved = r?.savedFrames ?: 0
         val dropped = r?.droppedFrames ?: 0
-        val verdict = when {
-            jumps == 0 -> "OK  점프 없음 — 그대로 사용 가능"
-            else -> "점프 ${jumps}회 (최대 ${"%.0f".format(maxJump)}mm) — 분할 필요"
-        }
         recStartMs = 0L
         runOnUiThread {
             recBtn.setBackgroundResource(R.drawable.bg_shutter)
@@ -834,8 +829,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     // 촬영 신호등 — 개발용 용어 대신 사람 말로
                     when {
                         lowSpaceNotice -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "저장공간 부족 — 녹화 불가" }
-                        trackingOk -> { sigDot.setTextColor(0xFF3FBF87.toInt()); sigText.text = if (recording) "녹화 중" else "촬영 준비 완료" }
-                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "위치 잡는 중 — 천천히 움직이세요" }
+                        trackingOk -> { sigDot.setTextColor(0xFF3FBF87.toInt()); sigText.text = if (recording) "녹화 중" else "동작 촬영 가능" }
+                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "카메라 안정 중 — 천천히 움직이세요" }
                         else -> { sigDot.setTextColor(0xFFE0A44E.toInt()); sigText.text = "준비 중…" }
                     }
                     aeBadge.visibility = if (aeLock) View.GONE else View.VISIBLE
