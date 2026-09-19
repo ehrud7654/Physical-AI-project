@@ -19,11 +19,13 @@ from paths import DEFAULT_CONFIG
 from sim.mujoco.build_scene import load_config
 from sim.mujoco.env import MujocoPickEnv
 from tools.probe_fixed_pose_object_only import _source_path, _suite_conditions
-from tools.probe_moving_history_object_only import _history_target, _simulate_history
+from tools.probe_moving_history_object_only import (
+    _history_target, _render_history, _simulate_history,
+)
 from tools.render_relative_chunk_rollout import (
     _diagnostic_object_xyz, _episode_approach_start, _registration,
 )
-from tools.umi_mujoco import MujocoIK, apply_kinematic_grasp
+from tools.umi_mujoco import MujocoIK, apply_kinematic_grasp, gap_from_angle
 from umi.convert import invert_gap_curve
 from umi.relative_robot_preflight import matrix_from_fk, real_limits
 from umi.visual_domain import apply_visual_domain, load_visual_domain
@@ -31,16 +33,25 @@ from umi.visual_domain import apply_visual_domain, load_visual_domain
 
 def audit(suite_path: Path, durations_s: tuple[float, ...], *,
           backoff_m: float, history_target_step_m: float,
-          open_gap_m: float) -> dict:
+          open_gap_m: float, snapshot_duration_s: float | None = None,
+          snapshot_dir: Path | None = None) -> dict:
     if (not durations_s or any(not np.isfinite(value) or value < 0.1
                                for value in durations_s)
             or tuple(sorted(set(durations_s))) != durations_s):
         raise ValueError("durations must be unique, sorted and >=0.1s")
+    if (snapshot_duration_s is None) != (snapshot_dir is None):
+        raise ValueError("snapshot duration and directory must be provided together")
+    if snapshot_duration_s is not None and snapshot_duration_s not in durations_s:
+        raise ValueError("snapshot duration must be in the predeclared sweep")
     conditions, episodes, _ = _suite_conditions(suite_path)
-    registration = _registration(_source_path(conditions["registration"]))
+    registration_path = _source_path(conditions["registration"])
+    visual_domain_path = _source_path(conditions["visual_domain"])
+    real_config_path = (Path(__file__).resolve().parents[1]
+                        / "configs/real/so101_ver1.json")
+    registration = _registration(registration_path)
     cfg = copy.deepcopy(load_config(DEFAULT_CONFIG))
     cfg = apply_visual_domain(
-        cfg, load_visual_domain(_source_path(conditions["visual_domain"])))
+        cfg, load_visual_domain(visual_domain_path))
     if isinstance(registration.get("kinematic_grasp"), dict):
         apply_kinematic_grasp(cfg, registration["kinematic_grasp"])
     cfg["task"]["object"]["half_size_m"] = (
@@ -52,17 +63,19 @@ def audit(suite_path: Path, durations_s: tuple[float, ...], *,
     approach = np.asarray(
         registration["desired_world_approach_axis"], dtype=float)
     approach /= np.linalg.norm(approach)
-    real = real_limits(Path(__file__).resolve().parents[1]
-                       / "configs/real/so101_ver1.json")
+    real = real_limits(real_config_path)
     speed_limit = float(real["max_speed_rad_s"])
     accel_limit = float(real["max_accel_rad_s2"])
 
     rows = []
-    with MujocoPickEnv(cfg, render=False, object_jitter_m=0.0) as env:
+    pending_snapshots: dict[tuple[str, float], dict[str, np.ndarray]] = {}
+    with MujocoPickEnv(
+            cfg, render=snapshot_dir is not None, object_jitter_m=0.0) as env:
         ik = MujocoIK(env.model, cfg)
         for episode in episodes:
             try:
-                _, arm, gap = _episode_approach_start(registration, episode)
+                source_row, arm, gap = _episode_approach_start(
+                    registration, episode)
                 _, object_xyz = _diagnostic_object_xyz(
                     registration, episode, np.zeros(2))
                 anchor_q = np.r_[arm, invert_gap_curve(gap, curve)]
@@ -92,14 +105,34 @@ def audit(suite_path: Path, durations_s: tuple[float, ...], *,
                     motion["tcp_translation_m"] = float(np.linalg.norm(
                         current_pose[:3, 3] - previous_pose[:3, 3]))
                     motion["configured_accel_limit_rad_s2"] = accel_limit
-                    rows.append({
+                    row = {
                         "episode": episode, "duration_s": duration,
+                        "source_row": source_row,
                         "endpoint_ik_valid": True, "ik": ik_details,
                         "motion": motion,
                         "acceleration_valid": bool(
                             motion["finite_difference_peak_accel_rad_s2"]
                             <= accel_limit + 1e-9),
-                    })
+                        "current_arm_rad": snapshots[1]["qpos"][:5].tolist(),
+                        "current_gap_m": gap_from_angle(
+                            float(snapshots[1]["qpos"][5]), curve),
+                    }
+                    rows.append(row)
+                    if (snapshot_duration_s is not None
+                            and duration == snapshot_duration_s
+                            and row["acceleration_valid"]):
+                        baseline = _render_history(
+                            env, snapshots, [(0.0, 0.0)])[0]
+                        pending_snapshots[(episode, duration)] = {
+                            "image": baseline["images"].copy(),
+                            "qpos": np.stack([
+                                snapshots[0]["qpos"], snapshots[1]["qpos"]]),
+                            "qvel": np.stack([
+                                snapshots[0]["qvel"], snapshots[1]["qvel"]]),
+                            "timestamp": np.asarray([
+                                snapshots[0]["time"], snapshots[1]["time"]],
+                                dtype=float),
+                        }
                 except (ValueError, OSError, KeyError) as exc:
                     rows.append({"episode": episode, "duration_s": duration,
                                  "endpoint_ik_valid": True,
@@ -130,9 +163,29 @@ def audit(suite_path: Path, durations_s: tuple[float, ...], *,
         })
     passing = [row["duration_s"] for row in summary
                if row["all_eligible_acceleration_valid"]]
+    shortest_passing = passing[0] if passing else None
+    if snapshot_duration_s is not None:
+        if snapshot_duration_s != shortest_passing:
+            raise ValueError(
+                "snapshot duration must equal the shortest all-episode "
+                "acceleration-valid duration")
+        expected = {(episode, snapshot_duration_s) for episode in eligible}
+        if set(pending_snapshots) != expected:
+            raise ValueError("selected snapshot duration is incomplete")
+        snapshot_dir.mkdir(parents=True, exist_ok=False)
+        for row in rows:
+            key = (row.get("episode"), row.get("duration_s"))
+            if key not in pending_snapshots:
+                continue
+            snapshot_path = snapshot_dir / f"{key[0]}.npz"
+            np.savez_compressed(snapshot_path, **pending_snapshots[key])
+            row["snapshot_npz"] = str(snapshot_path)
     return {
         "status": "POLICY_FREE_MOVING_H2_SMOOTH_PROFILE_AUDIT",
         "suite": str(suite_path),
+        "registration": str(registration_path),
+        "visual_domain": str(visual_domain_path),
+        "real_config": str(real_config_path),
         "command_profile": "quintic",
         "history_interval_s": 0.1,
         "endpoint_translation_span_m": history_target_step_m,
@@ -145,7 +198,9 @@ def audit(suite_path: Path, durations_s: tuple[float, ...], *,
         "predeclared_duration_sweep": list(durations_s),
         "summary": summary,
         "shortest_all_episode_acceleration_valid_duration_s": (
-            passing[0] if passing else None),
+            shortest_passing),
+        "snapshot_duration_s": snapshot_duration_s,
+        "snapshot_dir": str(snapshot_dir) if snapshot_dir is not None else None,
         "rows": rows,
         "training_ready": False,
         "limitations": [
@@ -164,6 +219,8 @@ def main() -> int:
     parser.add_argument("--backoff-m", type=float, default=0.01)
     parser.add_argument("--history-target-step-m", type=float, default=0.003)
     parser.add_argument("--open-gap-m", type=float, default=0.045)
+    parser.add_argument("--snapshot-duration-s", type=float)
+    parser.add_argument("--snapshot-dir", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if args.out.exists():
@@ -171,7 +228,9 @@ def main() -> int:
     result = audit(
         args.suite, tuple(args.durations_s), backoff_m=args.backoff_m,
         history_target_step_m=args.history_target_step_m,
-        open_gap_m=args.open_gap_m)
+        open_gap_m=args.open_gap_m,
+        snapshot_duration_s=args.snapshot_duration_s,
+        snapshot_dir=args.snapshot_dir)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8")

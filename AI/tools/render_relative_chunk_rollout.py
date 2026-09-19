@@ -170,6 +170,35 @@ def _audit_file_path(stored: str) -> Path:
     raise ValueError(f"far-start audit artifact is missing: {stored}")
 
 
+def _smooth_history_row(audit: dict, episode_id: str) -> dict:
+    """Select one exact snapshot from the predeclared shortest passing sweep."""
+    if audit.get("status") != "POLICY_FREE_MOVING_H2_SMOOTH_PROFILE_AUDIT":
+        raise ValueError("smooth history audit status mismatch")
+    duration = audit.get("snapshot_duration_s")
+    shortest = audit.get("shortest_all_episode_acceleration_valid_duration_s")
+    if (duration is None or not np.isfinite(duration)
+            or duration != shortest):
+        raise ValueError(
+            "smooth history snapshot is not the shortest passing duration")
+    matching = [
+        row for row in audit.get("rows", [])
+        if row.get("episode") == episode_id
+        and row.get("duration_s") == duration
+    ]
+    if len(matching) != 1:
+        raise ValueError("smooth history audit needs exactly one episode row")
+    row = matching[0]
+    arm = np.asarray(row.get("current_arm_rad"), dtype=float)
+    gap = float(row.get("current_gap_m", float("nan")))
+    source_row = int(row.get("source_row", -1))
+    if (row.get("acceleration_valid") is not True
+            or "snapshot_npz" not in row
+            or arm.shape != (5,) or not np.isfinite(arm).all()
+            or not np.isfinite(gap) or gap < 0.0 or source_row < 0):
+        raise ValueError("smooth history row is incomplete or did not pass")
+    return row
+
+
 def _policy_observation(images: deque[np.ndarray], poses: deque[np.ndarray],
                         gaps: deque[float]) -> dict[str, np.ndarray]:
     if not (len(images) == len(poses) == len(gaps) == 2):
@@ -305,6 +334,32 @@ class _GapPreloadPolicy:
         return {"action_pred": action}
 
 
+class _PostGraspGapRetentionPolicy:
+    """Diagnostic clamp that changes only post-contact reopening commands.
+
+    The wrapped policy still predicts the arm trajectory and gap normally.  If
+    a cycle starts with bilateral jaw contact, this wrapper caps every larger
+    gap target at the achieved cycle-start gap while preserving equal or
+    smaller (closing) targets.  This is intentionally not a deployable policy
+    fix; it isolates whether the second-cycle failure comes from grip phase or
+    from the predicted arm trajectory.
+    """
+
+    def __init__(self, policy, *, maximum_gap_m: float) -> None:
+        self.policy = policy
+        self.maximum_gap_m = float(maximum_gap_m)
+        self.requested_gap_m: np.ndarray | None = None
+        self.effective_gap_m: np.ndarray | None = None
+
+    def predict_action(self, observation):
+        output = self.policy.predict_action(observation)
+        action = np.asarray(output["action_pred"]).copy()
+        self.requested_gap_m = action[..., -1].copy()
+        action[..., -1] = np.minimum(action[..., -1], self.maximum_gap_m)
+        self.effective_gap_m = action[..., -1].copy()
+        return {"action_pred": action}
+
+
 def _save_gif(frames: list[np.ndarray], path: Path, fps: int) -> None:
     if not frames:
         raise ValueError("cannot save an empty rollout")
@@ -383,6 +438,13 @@ def main() -> int:
     parser.add_argument("--cycles", type=int, default=30)
     parser.add_argument("--far-start-audit", type=Path,
                         help="local policy-free passing audit with saved achieved H=2 state")
+    parser.add_argument(
+        "--history-start-audit", type=Path,
+        help=(
+            "local policy-free smooth moving-H=2 audit whose selected shortest "
+            "acceleration-valid duration includes exact saved camera/state history"
+        ),
+    )
     parser.add_argument("--min-policy-cycles", type=int, default=1,
                         help="local diagnostic: require this many prediction/execution cycles before success stop")
     parser.add_argument("--max-policy-time-scale", type=float,
@@ -437,6 +499,14 @@ def main() -> int:
     parser.add_argument(
         "--grip-preload-activation-gap-m", type=float, default=0.055,
         help="apply grip preload only at or below this target gap",
+    )
+    parser.add_argument(
+        "--prevent-postgrasp-gap-reopen", action="store_true",
+        help=(
+            "local learned-policy diagnosis only: when a cycle starts with "
+            "bilateral pad contact, preserve the achieved gap against larger "
+            "predicted gaps while leaving arm targets unchanged"
+        ),
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument(
@@ -509,7 +579,11 @@ def main() -> int:
             or not np.isfinite(args.image_noise_gray)
             or args.image_noise_gray <= 0.0):
         raise SystemExit("cycles, execute-steps and capture-every must be positive")
-    if args.far_start_audit is not None:
+    if (args.far_start_audit is not None
+            and args.history_start_audit is not None):
+        raise SystemExit("choose only one policy-free history-start audit")
+    history_audit_path = args.history_start_audit or args.far_start_audit
+    if history_audit_path is not None:
         if (args.oracle or args.observation_source != "simulation"
                 or args.use_registration_approach_start
                 or args.object_offset_x_m or args.object_offset_y_m
@@ -518,15 +592,17 @@ def main() -> int:
                 or not np.isfinite(args.max_policy_time_scale)
                 or args.max_policy_time_scale < 1):
             raise SystemExit(
-                "far-start audit requires a learned local simulation policy, "
+                "history-start audit requires a learned local simulation policy, "
                 "unshifted object, explicit visual domain and policy time cap")
     elif args.min_policy_cycles != 1 or args.max_policy_time_scale is not None:
-        raise SystemExit("minimum cycles and policy time cap require --far-start-audit")
+        raise SystemExit(
+            "minimum cycles and policy time cap require a policy-free "
+            "history-start audit")
 
     registration = _registration(args.registration)
     if (registration["status"] == "DIAGNOSTIC_CANONICAL_REPLAY_NOT_REGISTRATION"
             and not args.use_registration_approach_start
-            and args.far_start_audit is None):
+            and history_audit_path is None):
         raise SystemExit(
             "diagnostic canonical replay requires "
             "--use-registration-approach-start")
@@ -545,42 +621,65 @@ def main() -> int:
             registration, representative)
         if start_row >= len(episode["action"]):
             raise ValueError("fixed approach start is outside the episode")
-    far_audit = None
-    far_row = None
-    far_snapshot = None
-    if args.far_start_audit is not None:
-        far_audit = json.loads(args.far_start_audit.read_text(encoding="utf-8"))
-        if (far_audit.get("status")
-                != "POLICY_FREE_FIXED_START_TO_APPROACH_IK_TIMING_AUDIT"
-                or _audit_file_path(far_audit["registration"])
+    history_audit = None
+    history_row = None
+    history_snapshot = None
+    history_start_kind = None
+    if history_audit_path is not None:
+        history_audit = json.loads(
+            history_audit_path.read_text(encoding="utf-8"))
+        history_start_kind = (
+            "smooth_moving_h2"
+            if args.history_start_audit is not None else "far_start_warmup")
+        expected_status = (
+            "POLICY_FREE_MOVING_H2_SMOOTH_PROFILE_AUDIT"
+            if args.history_start_audit is not None else
+            "POLICY_FREE_FIXED_START_TO_APPROACH_IK_TIMING_AUDIT")
+        if (history_audit.get("status") != expected_status
+                or _audit_file_path(history_audit["registration"])
                 != args.registration.resolve()
-                or _audit_file_path(far_audit["visual_domain"])
+                or _audit_file_path(history_audit["visual_domain"])
                 != args.visual_domain.resolve()
-                or far_audit.get("diagnostic_cap_is_team_approved") is not False):
-            raise ValueError("far-start audit contract or provenance mismatch")
-        matching = [row for row in far_audit["rows"]
-                    if row["episode"] == representative]
-        if (len(matching) != 1
-                or matching[0].get("diagnostic_motion_pass") is not True
-                or matching[0].get("diagnostic_cap_pass") is not True
+                or _audit_file_path(history_audit["real_config"])
+                != args.real_config.resolve()):
+            raise ValueError("history-start audit contract or provenance mismatch")
+        if args.history_start_audit is not None:
+            matching = [_smooth_history_row(history_audit, representative)]
+            row_passes = lambda row: True
+        else:
+            if history_audit.get("diagnostic_cap_is_team_approved") is not False:
+                raise ValueError("far-start audit cap provenance mismatch")
+            matching = [row for row in history_audit["rows"]
+                        if row["episode"] == representative]
+            row_passes = lambda row: (
+                row.get("diagnostic_motion_pass") is True
+                and row.get("diagnostic_cap_pass") is True)
+        if (len(matching) != 1 or not row_passes(matching[0])
                 or "snapshot_npz" not in matching[0]):
-            raise ValueError("episode has no passing achieved H=2 far-start snapshot")
-        far_row = matching[0]
-        with np.load(_audit_file_path(far_row["snapshot_npz"]),
+            raise ValueError("episode has no passing achieved H=2 history snapshot")
+        history_row = matching[0]
+        with np.load(_audit_file_path(history_row["snapshot_npz"]),
                      allow_pickle=False) as stored:
-            far_snapshot = {name: stored[name].copy()
-                            for name in ("image", "qpos", "qvel", "timestamp")}
-        if (far_snapshot["image"].shape != (2, 3, 224, 224)
-                or far_snapshot["qpos"].ndim != 2
-                or far_snapshot["qpos"].shape[0] != 2
-                or far_snapshot["qvel"].shape[0] != 2
-                or far_snapshot["timestamp"].shape != (2,)
-                or not 0.09 <= np.diff(far_snapshot["timestamp"])[0] <= 0.11
+            history_snapshot = {name: stored[name].copy()
+                                for name in ("image", "qpos", "qvel", "timestamp")}
+        if (history_snapshot["image"].shape != (2, 3, 224, 224)
+                or history_snapshot["qpos"].ndim != 2
+                or history_snapshot["qpos"].shape[0] != 2
+                or history_snapshot["qvel"].shape[0] != 2
+                or history_snapshot["timestamp"].shape != (2,)
+                or not 0.09 <= np.diff(history_snapshot["timestamp"])[0] <= 0.11
                 or np.max(np.abs(np.diff(
-                    far_snapshot["qpos"][:, :5], axis=0))) < 1e-4):
-            raise ValueError("far-start snapshot does not contain distinct measured H=2")
-        start_arm = np.asarray(far_row["fixed_start_arm_rad"], dtype=float)
-        initial_gap = float(far_audit["fixed_start_gap_m"])
+                    history_snapshot["qpos"][:, :5], axis=0))) < 1e-4):
+            raise ValueError("history snapshot does not contain distinct measured H=2")
+        if args.history_start_audit is not None:
+            start_row = int(history_row["source_row"])
+            start_arm = np.asarray(history_row["current_arm_rad"], dtype=float)
+            initial_gap = float(history_row["current_gap_m"])
+        else:
+            start_arm = np.asarray(history_row["fixed_start_arm_rad"], dtype=float)
+            initial_gap = float(history_audit["fixed_start_gap_m"])
+        if start_row < 0 or start_row >= len(episode["action"]):
+            raise ValueError("history-start source row is outside the episode")
     if args.oracle:
         dataset_meta = json.loads(
             (args.data / "dataset.json").read_text(encoding="utf-8"))
@@ -606,6 +705,13 @@ def main() -> int:
         )
     if args.execute_final_oracle_tail and not args.oracle:
         raise SystemExit("--execute-final-oracle-tail requires --oracle")
+    if args.prevent_postgrasp_gap_reopen:
+        if args.oracle:
+            raise SystemExit(
+                "--prevent-postgrasp-gap-reopen is a learned-policy diagnosis")
+        if args.observation_source != "simulation":
+            raise SystemExit(
+                "--prevent-postgrasp-gap-reopen requires simulation observations")
 
     cfg = copy.deepcopy(load_config(args.config))
     if args.visual_domain is not None:
@@ -614,7 +720,7 @@ def main() -> int:
         # With the current 2ms MuJoCo integrator, 50Hz is exactly ten
         # substeps. Every fifth control tick is an actual 100ms observation.
         cfg["control"]["rate_hz"] = 50.0
-    if far_snapshot is not None:
+    if history_snapshot is not None:
         # Every fifth 50Hz tick gives an exact 100ms policy history sample.
         cfg["control"]["rate_hz"] = 50.0
     kinematic_grasp = registration.get("kinematic_grasp")
@@ -669,6 +775,8 @@ def main() -> int:
     max_pre_lift_object_xy_displacement = 0.0
     max_object_tilt_deg = 0.0
     cycle_trace: list[dict[str, object]] = []
+    gap_retention_cycles = 0
+    gap_retention_clamped_targets = 0
     command_trace: list[dict[str, object]] = []
     visual_alignment_trace: list[dict[str, object]] = []
     candidate_rows: dict[str, list[np.ndarray | int]] = {
@@ -697,24 +805,24 @@ def main() -> int:
     ) as env:
         observation = env.reset(seed=0, object_xy=object_xy, initial_q_rad=initial_q)
         ik = MujocoIK(env.model, cfg)
-        far_restore_image_mae = None
-        if far_snapshot is not None:
-            if (far_snapshot["qpos"].shape != (2, env.model.nq)
-                    or far_snapshot["qvel"].shape != (2, env.model.nv)):
-                raise ValueError("far-start MuJoCo state shape mismatch")
-            env.data.qpos[:] = far_snapshot["qpos"][1]
-            env.data.qvel[:] = far_snapshot["qvel"][1]
-            env.data.time = float(far_snapshot["timestamp"][1])
+        history_restore_image_mae = None
+        if history_snapshot is not None:
+            if (history_snapshot["qpos"].shape != (2, env.model.nq)
+                    or history_snapshot["qvel"].shape != (2, env.model.nv)):
+                raise ValueError("history-start MuJoCo state shape mismatch")
+            env.data.qpos[:] = history_snapshot["qpos"][1]
+            env.data.qvel[:] = history_snapshot["qvel"][1]
+            env.data.time = float(history_snapshot["timestamp"][1])
             env.data.ctrl[:6] = env.data.qpos[:6]
             sync_gripper_collision_proxy(env.model, env.data, env.cfg)
             mujoco.mj_forward(env.model, env.data)
             observation = env._observe()
-            far_restore_image_mae = float(np.mean(np.abs(
+            history_restore_image_mae = float(np.mean(np.abs(
                 observation.images["cam_wrist"].astype(float)
-                - far_snapshot["image"][1].astype(float))))
-            if far_restore_image_mae > 1.0:
+                - history_snapshot["image"][1].astype(float))))
+            if history_restore_image_mae > 1.0:
                 raise ValueError(
-                    "restored far-start scene differs from audited camera frame")
+                    "restored history-start scene differs from audited camera frame")
         solver = MujocoArmAdapter(ik, curve)
         current_q = env.joint_positions()
         current_pose = matrix_from_fk(env.model, ik, current_q)
@@ -740,7 +848,7 @@ def main() -> int:
         object_xy_displacement_threshold = max(
             0.01, 0.5 * float(np.min(registration["object_size_m"][:2])))
         object_tilt_threshold_deg = 30.0
-        if far_snapshot is None:
+        if history_snapshot is None:
             images: deque[np.ndarray] = deque(
                 [observation.images["cam_wrist"].copy()] * 2, maxlen=2)
             poses: deque[np.ndarray] = deque(
@@ -749,15 +857,15 @@ def main() -> int:
             observation_times: deque[float] = deque(
                 [float(observation.timestamp)] * 2, maxlen=2)
         else:
-            previous_q = far_snapshot["qpos"][0, :6]
+            previous_q = history_snapshot["qpos"][0, :6]
             previous_pose = matrix_from_fk(env.model, ik, previous_q)
             previous_gap = gap_from_angle(float(previous_q[5]), curve)
-            images = deque([far_snapshot["image"][0].copy(),
+            images = deque([history_snapshot["image"][0].copy(),
                             observation.images["cam_wrist"].copy()], maxlen=2)
             poses = deque([previous_pose, current_pose.copy()], maxlen=2)
             gaps = deque([previous_gap, current_gap], maxlen=2)
             observation_times = deque(
-                [float(value) for value in far_snapshot["timestamp"]], maxlen=2)
+                [float(value) for value in history_snapshot["timestamp"]], maxlen=2)
 
         debug_camera = mujoco.MjvCamera()
         debug_camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -803,10 +911,10 @@ def main() -> int:
                 cycle_history_times = [float(value) for value in observation_times]
                 cycle_history_image_mae = float(np.mean(np.abs(
                     images[-1].astype(float) - images[0].astype(float))))
-                if far_snapshot is not None and not np.isclose(
+                if history_snapshot is not None and not np.isclose(
                         cycle_history_times[1] - cycle_history_times[0],
                         0.1, atol=0.01, rtol=0):
-                    raise ValueError("far-start policy history is not two 10Hz frames")
+                    raise ValueError("policy history is not two measured 10Hz frames")
                 if args.measure_visual_alignment:
                     visual_alignment_trace.append({
                         "cycle": cycle,
@@ -856,6 +964,12 @@ def main() -> int:
                         preload_m=args.grip_preload_m,
                         activation_gap_m=args.grip_preload_activation_gap_m,
                     )
+                retention_policy = None
+                if (args.prevent_postgrasp_gap_reopen
+                        and env.has_bilateral_jaw_contact()):
+                    retention_policy = _PostGraspGapRetentionPolicy(
+                        base_candidate, maximum_gap_m=current_gap)
+                    base_candidate = retention_policy
                 candidate = base_candidate
                 if validation_horizon < action_horizon and not final_oracle_tail:
                     candidate = _ValidationPrefixPolicy(
@@ -907,6 +1021,21 @@ def main() -> int:
                     if not commands:
                         break
 
+                requested_gap_before_retention = None
+                effective_gap_after_retention = None
+                retention_clamped_count = 0
+                if retention_policy is not None:
+                    requested = retention_policy.requested_gap_m
+                    effective = retention_policy.effective_gap_m
+                    if requested is None or effective is None:
+                        raise RuntimeError("gap retention wrapper was not evaluated")
+                    requested_gap_before_retention = requested.tolist()
+                    effective_gap_after_retention = effective.tolist()
+                    retention_clamped_count = int(np.count_nonzero(
+                        requested > effective + 1e-12))
+                    gap_retention_cycles += 1
+                    gap_retention_clamped_targets += retention_clamped_count
+
                 arm_path = np.vstack([
                     current_q[:5],
                     *[command.arm_positions_rad for command in commands],
@@ -927,11 +1056,11 @@ def main() -> int:
                     schedule.waypoint_time_s[1] * args.tracking_time_margin)
                 ticks_per_command = max(1, int(np.ceil(
                     command_period * env.control_rate_hz)))
-                if far_snapshot is not None:
+                if history_snapshot is not None:
                     history_ticks = int(round(0.1 * env.control_rate_hz))
                     if not np.isclose(history_ticks / env.control_rate_hz,
                                       0.1, atol=1e-9, rtol=0):
-                        raise ValueError("far-start control rate is not exactly 10Hz-sampleable")
+                        raise ValueError("history-start control rate is not exactly 10Hz-sampleable")
                     ticks_per_command = int(np.ceil(
                         ticks_per_command / history_ticks)) * history_ticks
                     command_period = ticks_per_command / env.control_rate_hz
@@ -997,7 +1126,7 @@ def main() -> int:
                         action = normalize(interpolated_target, cfg, clip=True)
                         observation = env.step(action)
                         simulation_ticks += 1
-                        if (far_snapshot is not None
+                        if (history_snapshot is not None
                                 and simulation_ticks % history_ticks == 0):
                             measured_q = env.joint_positions()
                             images.append(observation.images["cam_wrist"].copy())
@@ -1153,15 +1282,24 @@ def main() -> int:
                     "jaw_contacts": env.jaw_contacts(),
                     "jaw_contact_counts": env.jaw_contact_counts(),
                     "bilateral_jaw_contact": env.has_bilateral_jaw_contact(),
+                    "postgrasp_gap_retention_active": retention_policy is not None,
+                    "postgrasp_gap_retention_max_gap_m": (
+                        retention_policy.maximum_gap_m
+                        if retention_policy is not None else None),
+                    "predicted_gap_before_retention_m": (
+                        requested_gap_before_retention),
+                    "effective_gap_after_retention_m": (
+                        effective_gap_after_retention),
+                    "postgrasp_gap_targets_clamped": retention_clamped_count,
                 })
-                if far_snapshot is None:
+                if history_snapshot is None:
                     images.append(observation.images["cam_wrist"].copy())
                     poses.append(current_pose.copy())
                     gaps.append(current_gap)
                     observation_times.append(float(observation.timestamp))
                 elif not np.isclose(observation_times[-1], observation.timestamp,
                                     atol=1e-8, rtol=0):
-                    raise ValueError("far-start cycle ended off the 10Hz observation grid")
+                    raise ValueError("history-start cycle ended off the 10Hz observation grid")
                 if env.is_success() and cycle + 1 >= args.min_policy_cycles:
                     break
 
@@ -1187,12 +1325,25 @@ def main() -> int:
             "image_perturb_seed": (
                 args.image_perturb_seed if args.image_perturb == "noise" else None),
             "registration": str(args.registration),
+            "history_start_audit": (
+                str(history_audit_path) if history_audit_path is not None else None),
+            "history_start_kind": history_start_kind,
+            "history_start_snapshot": (
+                history_row.get("snapshot_npz")
+                if history_row is not None else None),
+            "history_start_restored_image_mae_uint8": (
+                history_restore_image_mae),
             "far_start_audit": (str(args.far_start_audit)
-                                if args.far_start_audit is not None else None),
+                                 if args.far_start_audit is not None else None),
             "far_start_audit_snapshot": (
-                far_row.get("snapshot_npz") if far_row is not None else None),
-            "far_start_restored_image_mae_uint8": far_restore_image_mae,
-            "far_start_warmup_policy_free": far_snapshot is not None,
+                history_row.get("snapshot_npz")
+                if args.far_start_audit is not None
+                and history_row is not None else None),
+            "far_start_restored_image_mae_uint8": (
+                history_restore_image_mae
+                if args.far_start_audit is not None else None),
+            "far_start_warmup_policy_free": (
+                args.far_start_audit is not None),
             "min_policy_cycles": args.min_policy_cycles,
             "max_policy_time_scale": args.max_policy_time_scale,
             "registration_status": registration["status"],
@@ -1244,6 +1395,14 @@ def main() -> int:
             "simulation_grip_preload_m": args.grip_preload_m,
             "simulation_grip_preload_activation_gap_m": (
                 args.grip_preload_activation_gap_m),
+            "postgrasp_gap_reopen_prevention": bool(
+                args.prevent_postgrasp_gap_reopen),
+            "postgrasp_gap_retention_rule": (
+                "cap larger targets at achieved cycle-start gap after bilateral contact; "
+                "arm targets unchanged"
+                if args.prevent_postgrasp_gap_reopen else None),
+            "postgrasp_gap_retention_cycles": gap_retention_cycles,
+            "postgrasp_gap_targets_clamped": gap_retention_clamped_targets,
             "closest_pinch_xy_m": closest_xy,
             "closest_pinch_3d_m": closest_3d,
             "first_contact_cycle": first_contact_cycle,
