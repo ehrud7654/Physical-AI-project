@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <android.opengl.GLSurfaceView
+        android:id="@+id/glView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 구도 3분할 그리드 (메뉴에서 토글) -->
+    <ImageView
+        android:id="@+id/gridOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/grid_overlay"
+        android:contentDescription="구도 그리드"
+        android:visibility="gone" />
+
+    <!-- 상단바 (최상단 flush): 상태 신호등 + 드롭/밝기 경고 + REC 타이머 + 학습칩 + 메뉴 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/chrome"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="11dp">
+
+        <TextView
+            android:id="@+id/sigDot"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="●"
+            android:textColor="@color/silverMuted"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/sigText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="준비 중…"
+            android:textColor="@color/silver"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/dropWarn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="14dp"
+            android:text="⚠ 누락"
+            android:textColor="@color/stRed"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <!-- 밝기 안 잠겼을 때만 경고로 표시 (정상이면 숨김) -->
+        <TextView
+            android:id="@+id/aeBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="14dp"
+            android:text="밝기 자동 ⚠"
+            android:textColor="@color/stAmber"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/recTimer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="14dp"
+            android:text="● 00:00"
+            android:textColor="@color/stRed"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- 활성 학습 칩 (탭 → 학습 선택). 항상 보여 오배정 예방 -->
+        <TextView
+            android:id="@+id/learnBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_chip_camera"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="7dp"
+            android:text="학습: 미선택 ▾"
+            android:textColor="@color/silver"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/menuBtn"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_grid"
+            android:scaleType="centerInside"
+            android:contentDescription="메뉴" />
+    </LinearLayout>
+
+    <!-- 상세(개발용 원시값). 기본 숨김, 메뉴 → 상세값 표시로 토글 -->
+    <TextView
+        android:id="@+id/poseText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="56dp"
+        android:layout_marginStart="16dp"
+        android:background="#AA000000"
+        android:padding="10dp"
+        android:textColor="#00FF66"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:visibility="gone"
+        android:text="@string/waiting" />
+
+    <!-- 왼쪽 셔터 (가로 마운트에서 우상단 메뉴 확장과 안 겹치게 왼쪽) -->
+    <Button
+        android:id="@+id/recBtn"
+        android:layout_width="74dp"
+        android:layout_height="74dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="28dp"
+        android:background="@drawable/bg_shutter"
+        android:text="" />
+</FrameLayout>
