@@ -1,4 +1,5 @@
-"""Safety Controller (S15P21A103-49).
+"""
+Safety Controller (S15P21A103-49).
 
 관절 리밋·워치독·수동 트리거로 /estop 발행. estop_bridge가 /estop 받아 토크 off.
 리밋은 so101.yaml 단일 소스에서 읽는다(하드코딩 X). 리밋 없으면 기동 거부(fail-closed).
