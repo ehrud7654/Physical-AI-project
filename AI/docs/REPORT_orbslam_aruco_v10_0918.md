@@ -5,6 +5,55 @@
 관련 Jira: `S15P21A103-154`(UMI 상대 청크 데이터 경로),
 `S15P21A103-156`(실물 EEF·그리퍼 handoff 경계)
 
+> **2026-09-18 camera/TCP 정정:** 아래 최초 74편 결과의 shape·timestamp·gap 및
+> ORB/ArUco 선택 결과는 유효하지만, 포함된 CAD lens→`upright_v1` 축 가정
+> `Rz(180°)`은 0911 영상 hand-eye와 대조 시 90° 어긋났다. CAD `gripper_tcp`와
+> v10 canonical 축은 동일하므로 child 축을 돌리지 않고 camera/lens 매핑을
+> `Rz(-90°)`로 명시해 별도 74편을 재생성했다. 트랙 B 본 학습에는 아래 최초 tar가
+> 아니라
+> `umi_real_relative_20260918_v10_orbslam_cadtcp_video_aligned_provisional_74ep.tar`
+> (SHA-256
+> `3b355a7a42e00fda475890a2c8d1e554f9bf9ecc8192043f90fa81e2fbecc0d1`)
+> 를 사용한다. 근거와 잔여 원점 제한은
+> `MEASURE_camera_tcp_cad_video_alignment_0918.md`를 따른다.
+
+## 트랙 A 재현성 기준 묶음
+
+수정된 camera→TCP 축 매핑을 기준으로, 현재 검토 통과 74편에 대한 트랙 A
+기준 묶음을 별도로 생성했다.
+
+- 디렉터리:
+  `AI/datasets/umi_real_relative_20260918_v10_orbslam_cadtcp_video_aligned_provisional_74ep_reference`
+- TAR:
+  `AI/datasets/umi_real_relative_20260918_v10_orbslam_cadtcp_video_aligned_provisional_74ep_reference.tar`
+- TAR 크기: 7,383,040 bytes
+- TAR SHA-256:
+  `23fb4bd28f127f5112724f99844fc16a4c8bce7ba462feec5cc492a8f6343523`
+- 구성: 에피소드별 `pose.csv` 74개, `gripper.csv` 74개,
+  `manifest.json`, `verification_reference.json`, `bundle_checksums.sha256`
+- 전체 행: pose 16,075 / gripper 16,075
+- gap 상태: 직접 검출 `D` 13,650 / 보간 `M` 2,425 / 무효 `X` 0
+- 검증: `PASS_TRACK_A_REFERENCE_BUNDLE`, problems 0개
+
+`pose.csv`는 매 프레임의 `T_marker_camera`와
+`T_marker_tcp = T_marker_camera @ T_camera_tcp`를 함께 기록한다. 병진은 m,
+quaternion 순서는 `qx,qy,qz,qw`다. `gripper.csv`의 `gap_m`은 m 단위의
+양쪽 접촉 패드 내측 간격이며 직접 검출과 보간을 구분한다.
+
+`manifest.json`에는 선택 순서·탈락 사유, 입력 video/frames/trajectory/gap
+해시, 개별 pose/gap 해시, v10 NPZ 배열별 shape·dtype·원소 수·정규화 SHA-256,
+코드·설정·캘리브레이션 해시와 Python/NumPy/SciPy/OpenCV/BLAS 환경을 남겼다.
+RGB 배열 해시는 진단값이고 parity 합격 조건이 아니며, 원본 입력 동일성은
+`video.mp4`와 `frames.csv` SHA-256으로 고정한다.
+
+74편은 트랙 A가 전체 수집분을 ORB-SLAM3·outcome·pose·clock·gap 기준으로
+처리해 확정한 최종 채택 목록이다. 별도의 `pass_90.txt`를 트랙 B에서 다시
+받아야 하는 구조가 아니며, reference manifest의 selection SHA-256과 episode
+순서를 v10→공식 UMI Zarr parity 기준으로 사용한다. 위 reference TAR는 소스
+커밋 전에 생성돼 manifest에 `git_dirty=true`와 과거 `pass_90` 문구가 남은
+초기본이다. 코드·설정을 커밋한 뒤 동일 74편으로 재생성해 commit과 산출물을
+고정한다.
+
 ## 결론
 
 `raw.zip`의 시연 92편(성공 89, 실패 1, 미평가 2)과 mapping 녹화 1편을
