@@ -28,7 +28,7 @@
   `AI/datasets/umi_real_relative_20260918_v10_orbslam_cadtcp_video_aligned_provisional_74ep_reference.tar`
 - TAR 크기: 7,383,040 bytes
 - TAR SHA-256:
-  `23fb4bd28f127f5112724f99844fc16a4c8bce7ba462feec5cc492a8f6343523`
+  `46d9599c73a21a3069b7984749ca16a82bf42dc2dd60e7326bc1531316a63292`
 - 구성: 에피소드별 `pose.csv` 74개, `gripper.csv` 74개,
   `manifest.json`, `verification_reference.json`, `bundle_checksums.sha256`
 - 전체 행: pose 16,075 / gripper 16,075
@@ -49,10 +49,11 @@ RGB 배열 해시는 진단값이고 parity 합격 조건이 아니며, 원본 �
 74편은 트랙 A가 전체 수집분을 ORB-SLAM3·outcome·pose·clock·gap 기준으로
 처리해 확정한 최종 채택 목록이다. 별도의 `pass_90.txt`를 트랙 B에서 다시
 받아야 하는 구조가 아니며, reference manifest의 selection SHA-256과 episode
-순서를 v10→공식 UMI Zarr parity 기준으로 사용한다. 위 reference TAR는 소스
-커밋 전에 생성돼 manifest에 `git_dirty=true`와 과거 `pass_90` 문구가 남은
-초기본이다. 코드·설정을 커밋한 뒤 동일 74편으로 재생성해 commit과 산출물을
-고정한다.
+순서를 v10→공식 UMI Zarr parity 기준으로 사용한다. 위 reference TAR는
+`track_a_orbslam_v10_reference/0.2` exporter commit
+`c9b72336af4cf7feb15147949791d81bcdffddd8`로 다시 생성했다. manifest의
+관련 코드·캘리브레이션 범위 `git_dirty`는 `false`이며, 과거 `pass_90`
+미수령 문구도 제거했다.
 
 ## 결론
 
