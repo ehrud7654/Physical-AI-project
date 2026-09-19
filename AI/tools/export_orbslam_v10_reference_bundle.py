@@ -32,13 +32,49 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import cv2
 import numpy as np
-import scipy
-from scipy.spatial.transform import Rotation
+
+from umi.ik import matrix_to_quat, quat_to_matrix
+
+try:
+    import scipy
+    from scipy.spatial.transform import Rotation
+except ModuleNotFoundError:  # NumPy fallback keeps reference export portable.
+    scipy = None
+    Rotation = None
+
+try:
+    import cv2
+except ModuleNotFoundError:  # OpenCV is not required to export stored rows.
+    cv2 = None
 
 
 BUNDLE_SCHEMA = "track_a_orbslam_v10_reference/0.2"
+
+
+def rotation_from_quat_xyzw(value: list[float]) -> np.ndarray:
+    if Rotation is not None:
+        return Rotation.from_quat(value).as_matrix()
+    x, y, z, w = value
+    return quat_to_matrix(np.asarray([w, x, y, z], dtype=np.float64))
+
+
+def proper_rotation(value: np.ndarray) -> np.ndarray:
+    if Rotation is not None:
+        return Rotation.from_matrix(value).as_matrix()
+    u, _, vh = np.linalg.svd(np.asarray(value, dtype=np.float64))
+    result = u @ vh
+    if np.linalg.det(result) < 0:
+        u[:, -1] *= -1
+        result = u @ vh
+    return result
+
+
+def quat_xyzw_from_matrix(value: np.ndarray) -> np.ndarray:
+    if Rotation is not None:
+        return Rotation.from_matrix(value).as_quat()
+    w, x, y, z = matrix_to_quat(value)
+    return np.asarray([x, y, z, w], dtype=np.float64)
 
 
 def sha256_file(path: Path) -> str:
@@ -116,8 +152,8 @@ def environment_reference() -> dict[str, Any]:
         "python": platform.python_version(),
         "python_implementation": platform.python_implementation(),
         "numpy": np.__version__,
-        "scipy": scipy.__version__,
-        "opencv": cv2.__version__,
+        "scipy": scipy.__version__ if scipy is not None else "not-installed",
+        "opencv": cv2.__version__ if cv2 is not None else "not-installed",
         "os": platform.system(),
         "platform": platform.platform(),
         "machine": platform.machine(),
@@ -131,7 +167,7 @@ def environment_reference() -> dict[str, Any]:
 
 
 def pose_components(transform: np.ndarray) -> list[float]:
-    quaternion = Rotation.from_matrix(transform[:3, :3]).as_quat()
+    quaternion = quat_xyzw_from_matrix(transform[:3, :3])
     return [
         float(transform[0, 3]), float(transform[1, 3]), float(transform[2, 3]),
         float(quaternion[0]), float(quaternion[1]),
@@ -204,15 +240,14 @@ def write_episode_reference(
         pose_valid = tracking_state == 2 and not is_lost
         if pose_valid:
             world_camera = np.eye(4)
-            world_camera[:3, :3] = Rotation.from_quat([
+            world_camera[:3, :3] = rotation_from_quat_xyzw([
                 float(pose[key]) for key in ("q_x", "q_y", "q_z", "q_w")
-            ]).as_matrix()
+            ])
             world_camera[:3, 3] = [float(pose[key]) for key in ("x", "y", "z")]
             marker_camera = marker_world @ world_camera
-            marker_camera[:3, :3] = Rotation.from_matrix(
-                marker_camera[:3, :3]).as_matrix()
+            marker_camera[:3, :3] = proper_rotation(marker_camera[:3, :3])
             marker_tcp = marker_camera @ camera_tcp
-            marker_tcp[:3, :3] = Rotation.from_matrix(marker_tcp[:3, :3]).as_matrix()
+            marker_tcp[:3, :3] = proper_rotation(marker_tcp[:3, :3])
             camera_values: list[Any] = pose_components(marker_camera)
             tcp_values: list[Any] = pose_components(marker_tcp)
             tracked += 1
