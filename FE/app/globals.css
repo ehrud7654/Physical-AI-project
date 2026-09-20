@@ -2203,7 +2203,7 @@ button.device-card-content{cursor:pointer}
 .app-shell .active-execution-heading p,.app-shell .active-execution-list small,
 .app-shell .device-card dt,.app-shell .device-card dd,.app-shell .device-select-all{font-size:13px}
 .app-shell .training-title-button,.app-shell .saved-work-main strong,.app-shell .compact-robot-list strong,.app-shell .compact-training-list strong,.app-shell .active-execution-list strong{font-size:15px}
-.app-shell .dataset-status,.app-shell .training-badge,.app-shell .status-pill{font-size:12px!important}
+.app-shell .dataset-status,.app-shell .training-badge,.app-shell .status-pill{font-size:13px!important}
 .app-shell .table-empty,.app-shell .state-card p{font-size:14px}
 .app-shell .page-heading>div>p:last-child{font-size:15px}
 .app-shell .primary-button,.app-shell .secondary-button,.app-shell .danger-button,.app-shell .text-button,.app-shell .detail-link,.app-shell .global-auth{font-size:14px}
@@ -2282,12 +2282,52 @@ button.device-card-content{cursor:pointer}
    미디어쿼리는 실제 뷰포트 기준이므로 내부 레이아웃은 노트북 규칙 그대로 동작하고,
    폰트·간격·1280 캡이 전부 비례해 커진다. min-width 조건이라 작은 폭엔 영향 없음.
    .toast는 셸 밖 fixed 요소라 같은 배율을 따로 준다. */
-@media(min-width:1700px){
-  .app-shell,.toast{zoom:1.2}
+/* 노트북(1200~1699)도 기본 폰트가 작아 균일하게 10% 확대. 901~1199는 유효 폭이 900 아래로 내려가
+   사이드바 레이아웃이 깨질 수 있어 제외. */
+@media(min-width:1200px){
+  .app-shell,.toast{zoom:1.1}
   /* zoom 아래에서 100vh가 과확대될 수 있어 top/bottom 앵커로만 높이를 잡는다 */
   .app-shell>.app-sidebar{height:auto}
 }
+@media(min-width:1700px){.app-shell,.toast{zoom:1.2}}
 @media(min-width:1900px){.app-shell,.toast{zoom:1.35}}
 @media(min-width:2200px){.app-shell,.toast{zoom:1.55}}
 @media(min-width:2500px){.app-shell,.toast{zoom:1.7}}
 @media(min-width:3000px){.app-shell,.toast{zoom:2.05}}
+
+/* 휴대폰·소형 태블릿 폭(≤768) 목록 (S15P21A103-176)
+   6열 표는 가로 스크롤도, 셀별 라벨(629행 원래 규칙)도 가독성이 나빠 카드형으로 바꾼다.
+   769~900은 헤더 행 + 표를 그대로 유지(700대는 6열이 좁아 날짜가 4줄로 꺾여 768까지 카드). 위저드 에피소드 표엔 영향 없게 스코프한다. */
+@media(max-width:768px){
+  /* 동작 목록: 1행 이름+상태, 2행 설명, 3행 버전·날짜 — 값이 자명해 라벨 불필요, 날짜 둘만 접두어 */
+  .data-table-panel{overflow-x:visible}
+  .data-table-panel .episode-table{min-width:0}
+  .data-table-panel .skill-list-row.header{display:none}
+  .data-table-panel .skill-list-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:16px 18px;text-align:left}
+  .data-table-panel .skill-list-row>span{width:auto;min-width:0;text-align:left;font-size:13px}
+  .data-table-panel .skill-list-row>span::before{content:none}
+  .data-table-panel .skill-list-row>.skill-list-name{order:1;flex:1 1 auto;font-size:16px}
+  .data-table-panel .skill-list-row>span:nth-child(5){order:2}
+  .data-table-panel .skill-list-row>span:nth-child(2){order:3;flex:0 0 100%;color:#667085}
+  /* 3행 메타: 버전·날짜를 각자 한 줄(접두어 + 값)로 — 한 줄에 우겨넣으면 날짜가 내부 줄바꿈돼 지저분함 */
+  .data-table-panel .skill-list-row>.skill-list-version,.data-table-panel .skill-list-row>.skill-list-datetime{flex:0 0 100%;color:#475467;font-weight:600}
+  .data-table-panel .skill-list-row>.skill-list-version{order:4}
+  .data-table-panel .skill-list-row>.skill-list-datetime{order:5}
+  .data-table-panel .skill-list-row>.skill-list-version::before,.data-table-panel .skill-list-row>.skill-list-datetime::before{content:attr(data-label) ' ';display:inline;margin:0;color:#98a2b3;font-weight:400}
+  .data-table-panel .skill-list-row>.skill-list-datetime strong,.data-table-panel .skill-list-row>.skill-list-datetime small{display:inline;margin:0 0 0 4px;font-size:inherit;font-weight:inherit;color:inherit}
+  /* 작업 목록: 헤더·스크롤 제거하고 원래 스택형 카드(300행 디자인) 복원 */
+  .saved-work-list{overflow-x:visible}
+  .saved-work-list>.saved-work-columns{display:none}
+  .saved-work-list>.saved-work-select-row{min-width:0}
+  .saved-work-list .saved-work-row{grid-template-columns:1fr auto;gap:9px}
+  .saved-work-list .saved-work-duration,.saved-work-list .saved-work-updated{grid-column:1;margin-left:47px}
+  .saved-work-list .saved-work-updated{grid-column:2;grid-row:2;margin-left:0}
+  .saved-work-list .saved-work-chevron{grid-column:2;grid-row:1}
+}
+
+/* 폰트 바닥 (S15P21A103-176)
+   노트북 폭(1440)에서 13px 미만으로 렌더되는 텍스트는 실측상 이 집합뿐: 표 셀(12)·상태 배지(12)·진행률(11).
+   13px로 올린다. 노트북 zoom 1.1과 곱해져 최소 14.3px 렌더. 이름/버전(140%)은 기준값이 커지며 같이 커진다. */
+.app-shell .episode-row{font-size:13px}
+/* 상태 배지 13px은 2206행(!important)에서 직접 올림 */
+.app-shell .active-execution-progress em{font-size:13px}
