@@ -1783,7 +1783,6 @@ body,.app-shell>.content{
 .training-summary{
   display:grid;
   width:100%!important;
-  max-width:100%;
   grid-template-columns:repeat(4,minmax(0,1fr));
   margin-bottom:18px;
   padding:6px;
@@ -2277,3 +2276,18 @@ button.device-card-content{cursor:pointer}
 @media(min-width:561px) and (max-width:900px){.device-toolbar-actions{padding-bottom:9px}}
 /* 사이드바 nav 정렬: 가로 헤더용 left:100px가 세로 사이드바로 새어 nav가 우측으로 밀리던 것 제거(브랜드·인사말과 좌측 정렬) */
 @media(min-width:901px){.app-shell .app-sidebar .global-nav{position:static;left:auto}}
+
+/* 큰 화면 스케일링 (S15P21A103-176)
+   px 기반 노트북 디자인(유효 폭 ≈1450px)을 뷰포트 단계별로 통째로 확대한다.
+   미디어쿼리는 실제 뷰포트 기준이므로 내부 레이아웃은 노트북 규칙 그대로 동작하고,
+   폰트·간격·1280 캡이 전부 비례해 커진다. min-width 조건이라 작은 폭엔 영향 없음.
+   .toast는 셸 밖 fixed 요소라 같은 배율을 따로 준다. */
+@media(min-width:1700px){
+  .app-shell,.toast{zoom:1.2}
+  /* zoom 아래에서 100vh가 과확대될 수 있어 top/bottom 앵커로만 높이를 잡는다 */
+  .app-shell>.app-sidebar{height:auto}
+}
+@media(min-width:1900px){.app-shell,.toast{zoom:1.35}}
+@media(min-width:2200px){.app-shell,.toast{zoom:1.55}}
+@media(min-width:2500px){.app-shell,.toast{zoom:1.7}}
+@media(min-width:3000px){.app-shell,.toast{zoom:2.05}}
