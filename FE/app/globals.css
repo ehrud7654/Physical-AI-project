@@ -2342,13 +2342,23 @@ button.device-card-content{cursor:pointer}
 }
 /* 넓은 폭: 모바일 값(703행, ≤680)은 건드리지 않는다 */
 @media(min-width:681px){
-  .landing-simple-header{height:clamp(92px,5.5vw,128px)}
-  .landing-simple-logo{width:clamp(202px,13vw,300px);height:clamp(60px,3.9vw,90px)}
-  .landing-auth-actions button{min-width:clamp(112px,7.5vw,170px);height:clamp(46px,3vw,66px);padding:0 clamp(20px,1.3vw,30px);font-size:clamp(12px,.8vw,17px)}
-  .landing-page .landing-copy>p{font-size:clamp(12px,.8vw,18px)}
-  .landing-page .landing-copy h2{max-width:clamp(720px,48vw,1000px);font-size:clamp(17px,1.15vw,26px)}
-  .landing-page .landing-actions{margin-top:clamp(34px,2.3vw,52px)}
-  .landing-page .landing-actions button:first-child,.landing-page .landing-actions button:first-child:disabled{min-width:clamp(190px,12.5vw,280px);height:clamp(52px,3.4vw,74px);font-size:clamp(12px,.85vw,18px)}
+  /* 최솟값 = 노트북 기준. 기존 값(로고 202·버튼 46/12·부제 17)이 작아 한 단계 올렸다. */
+  .landing-simple-header{height:clamp(100px,6vw,140px)}
+  .landing-simple-logo{width:clamp(240px,15vw,340px);height:clamp(72px,4.5vw,100px)}
+  .landing-auth-actions button{min-width:clamp(132px,8.5vw,190px);height:clamp(54px,3.4vw,74px);padding:0 clamp(24px,1.5vw,34px);font-size:clamp(15px,.95vw,20px)}
+  .landing-page .landing-copy>p{font-size:clamp(14px,.9vw,20px)}
+  .landing-page .landing-copy h2{max-width:clamp(760px,50vw,1040px);font-size:clamp(20px,1.3vw,30px)}
+  .landing-page .landing-actions{margin-top:clamp(38px,2.5vw,56px)}
+  .landing-page .landing-actions button:first-child,.landing-page .landing-actions button:first-child:disabled{min-width:clamp(220px,14vw,320px);height:clamp(60px,3.8vw,82px);font-size:clamp(16px,1vw,22px)}
+}
+/* 모바일(≤680)도 한 단계 위로. 390에서 로고 150 + 버튼 2개(≈84×2+6)가 한 줄(≈360<390)에 들어가는 크기. */
+@media(max-width:680px){
+  .landing-simple-header{height:80px}
+  .landing-simple-logo{width:150px;height:46px}
+  .landing-auth-actions button{height:44px;padding:0 14px;font-size:13px}
+  .landing-page .landing-copy>p{font-size:13px}
+  .landing-page .landing-copy h2{font-size:16px}
+  .landing-page .landing-actions button:first-child,.landing-page .landing-actions button:first-child:disabled{min-width:200px;height:56px;font-size:15px}
 }
 
 /* 목록 페이지 헤딩 전체 통일 (S15P21A103-176)
