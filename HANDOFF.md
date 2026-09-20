@@ -4,6 +4,27 @@
 > below.** The repository and uncommitted diff are the source of truth. Do not
 > reset, clean, pull, switch branches, or bulk-add files before reviewing §0.3.
 
+## 0.0B Latest HW v4 receipt audit (2026-09-20)
+
+The server-downloaded `v4.zarr.zip` has now been inspected directly: 76
+episodes, 16,328 frames, size 1,596,844,538 bytes, SHA-256
+`62abd956c89e1057abbd24cf9966c994b4cea4f1969aecf00a93f49842ddd8ec`.
+This current receipt hash differs from the outer-ZIP hash recorded in the
+2026-09-18 handoff report. Array shapes and episode/frame counts match, so the
+older hash is retained as historical provenance rather than used to identify
+the received container.
+
+Against the Track A 74-episode reference, 64 episodes and 13,859 source frames
+are common. Gap agrees to float precision. The stored TCP labels differ by a
+median 89.93 degrees and 43.44 mm because HW v4 uses the older camera-to-TCP
+axis assumption. Re-composing Track A camera poses with that same old HW
+extrinsic reduces the comparison to median 0.65 degrees and 4.09 mm, showing
+that the dominant mismatch is the TCP convention rather than image rotation.
+Do not rotate raw images or use v4's existing EEF arrays as corrected labels.
+Use its images/gap/SLAM only after applying the explicit TCP correction and
+retaining per-episode provenance. See
+`AI/docs/AUDIT_hw_v4_vs_tracka_v10_0920.md`.
+
 ## 0.0A Latest ORB-SLAM3 intake state (2026-09-18)
 
 The new `raw.zip` delivery (92 demonstrations: 89 success, 1 failure, 2
