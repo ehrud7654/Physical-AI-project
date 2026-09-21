@@ -110,7 +110,13 @@ class OnboardingActivity : ComponentActivity() {
         enterApp(); finish()
     }
 
-    private fun enterApp() { startActivity(Intent(this, MainActivity::class.java)) }
+    /** 튜토리얼 미시청이면 먼저(끝나면 Main), 봤으면 바로 Main. */
+    private fun enterApp() {
+        val next = if (!Prefs.tutorialSeen(this))
+            Intent(this, TutorialActivity::class.java).putExtra("go_main", true)
+        else Intent(this, MainActivity::class.java)
+        startActivity(next)
+    }
 
     override fun onDestroy() { super.onDestroy(); analysisExec.shutdown() }
 

@@ -21,6 +21,10 @@ object Prefs {
     fun setSkillCatalog(ctx: Context, json: String) =
         sp(ctx).edit().putString("skill_catalog", json).apply()
 
+    /** 튜토리얼 최초 1회 표시. */
+    fun tutorialSeen(ctx: Context): Boolean = sp(ctx).getBoolean("tutorial_seen", false)
+    fun setTutorialSeen(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("tutorial_seen", v).apply()
+
     /** 장치 자격 — enroll 로 1회 수령. secret 은 Keystore 암호화 저장. */
     fun deviceId(ctx: Context): String = sp(ctx).getString("device_id", "") ?: ""
     fun deviceSecret(ctx: Context): String = SecureStore.decrypt(sp(ctx).getString("device_secret", "") ?: "")
