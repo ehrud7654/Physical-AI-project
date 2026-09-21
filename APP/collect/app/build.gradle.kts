@@ -42,6 +42,8 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.2")
+    // 업로드 큐(앱 종료·네트워크 끊김에도 재시도)
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     // QR 스캔(온보딩): CameraX 미리보기 + ML Kit 바코드(온디바이스)
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")

@@ -99,12 +99,38 @@ class HistoryActivity : Activity() {
                 text = "학습 $skill · $status · $len"
                 setTextColor(0xFF6B7280.toInt()); textSize = 13f; setPadding(0, dp(6), 0, 0)
             })
-            addView(TextView(this@HistoryActivity).apply {
-                text = "삭제"; setTextColor(0xFFE0685E.toInt()); textSize = 13f
-                setPadding(0, dp(8), 0, 0); gravity = Gravity.END
+            // ---- 하단 액션줄: 전송 상태/버튼(좌) ···· 삭제(우) ----
+            val actions = LinearLayout(this@HistoryActivity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(10), 0, 0)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
+            val uploaded = File(dir, ".uploaded").exists()
+            val queued = File(dir, ".queued").exists()
+            val sendable = !uploaded && !queued && m?.optString("status") == "recorded"
+            actions.addView(TextView(this@HistoryActivity).apply {
+                when {
+                    uploaded -> { text = "전송됨"; setTextColor(0xFF3FBF87.toInt()) }
+                    queued -> { text = "전송 대기"; setTextColor(0xFFE0A44E.toInt()) }
+                    sendable -> {
+                        text = "전송"; setTextColor(0xFFFFFFFF.toInt())
+                        setBackgroundResource(R.drawable.bg_btn_azure); setPadding(dp(20), dp(8), dp(20), dp(8))
+                        setOnClickListener {
+                            File(dir, ".queued").writeText("1"); UploadQueue.enqueue(this@HistoryActivity); render()
+                        }
+                    }
+                    else -> { text = "전송 불가"; setTextColor(0xFF8A909E.toInt()) }
+                }
+                textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            actions.addView(View(this@HistoryActivity), LinearLayout.LayoutParams(0, 1, 1f))  // spacer
+            actions.addView(TextView(this@HistoryActivity).apply {
+                text = "삭제"; setTextColor(0xFFE0685E.toInt()); textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(12), dp(8), dp(4), dp(8))
                 setOnClickListener { confirmDelete(dir) }
             })
+            addView(actions)
         }
     }
 
