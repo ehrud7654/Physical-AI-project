@@ -60,6 +60,8 @@ class OrchestratorNode(Node):
         # SKILL 실행 엔진: ros2_policy(정책노드 lifecycle, 시뮬 가능) | umi_runtime(팀원 런타임, 실물)
         self.declare_parameter("executor", "ros2_policy")
         self.declare_parameter("runtime_root", os.path.expanduser("~/S15P21A103/ROS"))
+        # 빈값이면 <runtime_root>/.venv/bin/python. 기존 venv 를 쓰려면 그 경로를 지정.
+        self.declare_parameter("runtime_python", "")
         self.declare_parameter("runtime_move", True)     # umi_runtime: 실제 모터 구동 여부
         self.declare_parameter("runtime_cycles", 0)      # 0 = 취소/타임아웃까지 계속
         # 배포 번들(tgz) 해제 위치. 영구 경로여야 함(/tmp 는 재부팅 시 소실).
@@ -82,7 +84,9 @@ class OrchestratorNode(Node):
         self._models_dir = (self.get_parameter("models_dir").value
                             or os.path.join(runtime_root, "models"))
         os.makedirs(self._models_dir, exist_ok=True)
-        self._runtime_exec = RuntimeExecutor(self, runtime_root=runtime_root)
+        self._runtime_exec = RuntimeExecutor(
+            self, runtime_root=runtime_root,
+            python=self.get_parameter("runtime_python").value)
         if self._executor == "umi_runtime":
             problem = self._runtime_exec.preflight()
             self.get_logger().info(

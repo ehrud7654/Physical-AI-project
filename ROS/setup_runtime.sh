@@ -21,11 +21,23 @@ if [ ! -d "$WHEELHOUSE" ]; then
 fi
 
 echo "venv 생성: $VENV"
-python3 -m venv "$VENV"
-"$VENV/bin/pip" install --upgrade pip
+# 젯슨엔 python3-venv(ensurepip)가 없을 수 있다. 그러면 venv 안에 pip 이 안 생긴다.
+# 그 경우 --without-pip 로 만들고 **시스템 pip** 으로 --prefix 설치한다.
+# (venv python 의 sys.path 에 $VENV/lib/pythonX.Y/site-packages 가 이미 있으므로 그대로 보인다)
+if python3 -c "import ensurepip" 2>/dev/null; then
+  python3 -m venv "$VENV"
+  PIP=("$VENV/bin/pip" install)
+else
+  echo "ensurepip 없음 → --without-pip + 시스템 pip(--prefix) 사용"
+  python3 -m venv --without-pip "$VENV"
+  PIP=(python3 -m pip install --prefix "$VENV")
+fi
 
 echo "오프라인 설치 (wheelhouse=$WHEELHOUSE)"
-"$VENV/bin/pip" install --no-index --find-links "$WHEELHOUSE" -r "$HERE/requirements-jetson.txt"
+"${PIP[@]}" --no-index --find-links "$WHEELHOUSE" -r "$HERE/requirements-jetson.txt"
+
+echo "설치 검증"
+"$VENV/bin/python" -c "import sys; print('site-packages:', [p for p in sys.path if 'site-packages' in p])"
 
 echo
 echo "설치 완료. torch 는 cusparselt 라이브러리 경로가 있어야 import 된다:"

@@ -23,10 +23,14 @@ from pathlib import Path
 class RuntimeExecutor:
     """런타임을 한 번 실행하고 끝날 때까지 지켜본다(블로킹). 워커 스레드에서 호출."""
 
-    def __init__(self, node, *, runtime_root: str, extra_args: list[str] | None = None):
+    def __init__(self, node, *, runtime_root: str, python: str = "",
+                 extra_args: list[str] | None = None):
         self._log = node.get_logger()
         self.root = Path(os.path.expanduser(runtime_root))
-        self.python = self.root / ".venv" / "bin" / "python"
+        # 인터프리터는 별도 지정 가능 — 젯슨에 python3-venv 가 없어 ROS/.venv 를 못 만들면
+        # 이미 구성된 기존 venv(예: stanford_umi_demo/.venv)를 그대로 가리킨다.
+        self.python = (Path(os.path.expanduser(python)) if python
+                       else self.root / ".venv" / "bin" / "python")
         self.shanks = self.root / "shanks"
         self.camera_tcp = self.root / "configs" / "s22_camera_tcp.json"
         self.extra_args = list(extra_args or [])
@@ -34,18 +38,24 @@ class RuntimeExecutor:
 
     # ── 환경 ────────────────────────────────────────────────────────────
     def _env(self) -> dict:
+        """torch import 에 cusparselt 가 필요하다. 인터프리터가 어느 venv 든 그 venv 의
+        site-packages 에서 찾는다(ROS/.venv 고정 아님)."""
         env = os.environ.copy()
-        cusparselt = self.root / ".venv/lib/python3.10/site-packages/cusparselt/lib"
-        env["LD_LIBRARY_PATH"] = ":".join(
-            [str(cusparselt), "/usr/local/cuda/lib64", env.get("LD_LIBRARY_PATH", "")]
-        ).rstrip(":")
+        venv = self.python.parent.parent          # <venv>/bin/python → <venv>
+        paths = [str(p) for p in venv.glob("lib/python*/site-packages/cusparselt/lib")]
+        paths.append("/usr/local/cuda/lib64")
+        if env.get("LD_LIBRARY_PATH"):
+            paths.append(env["LD_LIBRARY_PATH"])
+        env["LD_LIBRARY_PATH"] = ":".join(paths)
         return env
 
     def preflight(self) -> str | None:
         """실행 전 필수 경로 확인. 문제 있으면 사유 문자열, 없으면 None."""
-        for label, path in (("venv python", self.python), ("shanks", self.shanks)):
-            if not path.exists():
-                return f"{label} 없음: {path} (ROS/setup_runtime.sh 실행 필요?)"
+        if not self.python.exists():
+            return (f"인터프리터 없음: {self.python} "
+                    f"(ROS/setup_runtime.sh 실행, 또는 -p runtime_python:=<기존 venv>/bin/python)")
+        if not self.shanks.exists():
+            return f"shanks 없음: {self.shanks}"
         return None
 
     # ── 실행 ────────────────────────────────────────────────────────────
