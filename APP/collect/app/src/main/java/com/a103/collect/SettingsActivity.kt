@@ -10,7 +10,7 @@ import android.widget.TextView
 import java.io.File
 
 /**
- * 설정 — 장치 등록 상태, 수집 현황(학습별 N/GOAL편·총 세션·저장공간), 앱 정보.
+ * 설정 — 수집 현황(학습별 N/GOAL편·총 세션·저장공간), 앱 정보.
  * 스킬 카탈로그는 진입 시 자동 동기화(버튼 없음).
  */
 class SettingsActivity : Activity() {
@@ -44,10 +44,6 @@ class SettingsActivity : Activity() {
     private fun render() {
         body.removeAllViews()
 
-        body.addView(sectionTitle("장치"))
-        val id = Prefs.deviceId(this)
-        body.addView(card(valueText(if (id.isBlank()) "미등록 — QR 등록 필요" else "등록됨 · ${id.take(12)}…")))
-
         body.addView(sectionTitle("수집 현황"))
         val progress = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.bg_card_light); setPadding(dp(16), dp(14), dp(16), dp(14))
@@ -61,11 +57,10 @@ class SettingsActivity : Activity() {
 
         val total = root.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }?.size ?: 0
         val freeGb = root.usableSpace / (1024.0 * 1024 * 1024)
-        body.addView(card(valueText("총 세션 %d편 · 남은 저장 %.1f GB".format(total, freeGb))))
+        body.addView(card(valueText("총 영상 %d개 · 남은 저장 %.1f GB".format(total, freeGb))))
 
         body.addView(sectionTitle("정보"))
-        val host = BuildConfig.UPLOAD_BASE_URL.substringAfter("://")
-        body.addView(card(valueText("앱 v${BuildConfig_versionName()} · 서버 $host")))
+        body.addView(card(valueText("앱 v${BuildConfig_versionName()}")))
     }
 
     private fun progressRow(name: String, n: Int): View {

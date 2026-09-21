@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -27,6 +28,7 @@ class HistoryActivity : Activity() {
 
     private val selected = HashSet<String>()
     private var page = 0
+    private var filterKey: String? = null   // null=전체, ""=미분류, else skillKey
 
     private lateinit var root: File
     private lateinit var titleText: TextView
@@ -35,6 +37,7 @@ class HistoryActivity : Activity() {
     private lateinit var emptyText: TextView
     private lateinit var scroll: ScrollView
     private lateinit var pagerRow: LinearLayout
+    private lateinit var filterRow: LinearLayout
     private lateinit var actionBar: LinearLayout
     private lateinit var sendBtn: TextView
     private lateinit var deleteSelBtn: TextView
@@ -79,6 +82,13 @@ class HistoryActivity : Activity() {
         }
         bar.addView(selectAllBtn)
         outer.addView(bar)
+
+        // 학습 필터 칩 (가로 스크롤, 상단 고정)
+        filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        outer.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false; setPadding(dp(14), dp(2), dp(14), dp(8))
+            addView(filterRow)
+        })
 
         emptyText = TextView(this).apply {
             text = "촬영 기록이 없습니다"; setTextColor(0xFF8A909E.toInt()); textSize = 15f
@@ -128,8 +138,16 @@ class HistoryActivity : Activity() {
     private fun allRecNames(): List<String> =
         root.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }?.map { it.name } ?: emptyList()
 
+    /** 현재 필터에 맞는 편만 (전체=필터 없음, ""=미분류). 최신순. */
+    private fun visibleRecNames(): List<String> {
+        val fk = filterKey
+        return allRecNames()
+            .filter { fk == null || stampedSkillKey(File(root, it)) == fk }
+            .sortedByDescending { it }
+    }
+
     private fun toggleSelectAll() {
-        val all = allRecNames(); if (all.isEmpty()) return
+        val all = visibleRecNames(); if (all.isEmpty()) return
         if (selected.containsAll(all)) selected.clear() else { selected.clear(); selected.addAll(all) }
         populate()
     }
@@ -258,20 +276,49 @@ class HistoryActivity : Activity() {
         sendBtn.text = if (has) "전송 (${selected.size})" else "전송"
         deleteSelBtn.text = "선택 삭제 (${selected.size})"
         titleText.text = if (has) "${selected.size}개 선택" else "기록"
-        val all = allRecNames()
+        val all = visibleRecNames()
         selectAllBtn.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
         selectAllBtn.text = if (all.isNotEmpty() && selected.containsAll(all)) "전체 해제" else "전체 선택"
     }
 
+    /** 필터 칩: 전체 · 학습들 · 미분류. 선택된 칩은 꽉 찬 파랑+흰 글씨. */
+    private fun buildFilter() {
+        filterRow.removeAllViews()
+        fun chip(label: String, key: String?) {
+            val on = filterKey == key
+            filterRow.addView(TextView(this).apply {
+                text = label; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(if (on) 0xFFFFFFFF.toInt() else 0xFF4A5169.toInt())
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(999).toFloat()
+                    if (on) setColor(0xFF4F9CF9.toInt()) else { setColor(0xFFFFFFFF.toInt()); setStroke(dp(1), 0xFFDDE1E8.toInt()) }
+                }
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { marginEnd = dp(8) }
+                setOnClickListener { if (filterKey != key) { filterKey = key; selected.clear(); page = 0; populate() } }
+            })
+        }
+        chip("전체", null)
+        DeviceSkills.cached.forEach { chip(it.displayName, it.skillKey) }
+        chip("미분류", "")
+    }
+
     private fun populate() {
         listView.removeAllViews()
-        val recs = root.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }?.sortedByDescending { it.name } ?: emptyList()
-        if (recs.isEmpty()) { emptyText.visibility = View.VISIBLE; pagerRow.visibility = View.GONE; updateActionBar(); return }
+        buildFilter()
+        if (allRecNames().isEmpty()) {
+            emptyText.text = "촬영 기록이 없습니다"; emptyText.visibility = View.VISIBLE; pagerRow.visibility = View.GONE; updateActionBar(); return
+        }
+        val recs = visibleRecNames()
+        if (recs.isEmpty()) {
+            emptyText.text = "이 학습의 기록이 없습니다"; emptyText.visibility = View.VISIBLE; pagerRow.visibility = View.GONE; updateActionBar(); return
+        }
         emptyText.visibility = View.GONE
         val totalPages = (recs.size + PAGE_SIZE - 1) / PAGE_SIZE
         page = page.coerceIn(0, totalPages - 1)
         val from = page * PAGE_SIZE
-        recs.subList(from, minOf(from + PAGE_SIZE, recs.size)).forEach { listView.addView(cardFor(it)) }
+        recs.subList(from, minOf(from + PAGE_SIZE, recs.size)).forEach { listView.addView(cardFor(File(root, it))) }
         buildPager(totalPages)
         updateActionBar()
     }
