@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -27,7 +26,6 @@ import java.io.File
 class HistoryActivity : Activity() {
 
     private val selected = HashSet<String>()
-    private val expanded = HashSet<String>()
     private var page = 0
 
     private lateinit var root: File
@@ -139,14 +137,6 @@ class HistoryActivity : Activity() {
     private fun manifestOf(dir: File): JSONObject? =
         runCatching { JSONObject(File(dir, "manifest.json").readText()) }.getOrNull()
 
-    /** 품질 라벨+색 (manifest status/outcome). */
-    private fun qualityOf(m: JSONObject?): Pair<String, Int> = when {
-        m == null || m.optString("status") != "recorded" -> "미완료" to 0xFF8A909E.toInt()
-        m.optString("outcome") == "success" -> "사용 가능" to 0xFF3FBF87.toInt()
-        m.optString("outcome") == "failure" -> "실패" to 0xFFE0685E.toInt()
-        else -> "미판정" to 0xFFE0A44E.toInt()
-    }
-
     /** 전송 상태. */
     private fun uploadStatus(dir: File): Pair<String, Int> = when {
         File(dir, ".uploaded").exists() -> "전송됨" to 0xFF3FBF87.toInt()
@@ -253,12 +243,12 @@ class HistoryActivity : Activity() {
     }
 
     private fun confirmDelete(dir: File, name: String) =
-        deleteDialog("${prettyName(name)} 삭제할까요?") { dir.deleteRecursively(); selected.remove(name); expanded.remove(name) }
+        deleteDialog("${prettyName(name)} 삭제할까요?") { dir.deleteRecursively(); selected.remove(name) }
 
     private fun confirmDeleteSelected() {
         if (selected.isEmpty()) return
         deleteDialog("선택한 ${selected.size}편을 삭제할까요?") {
-            selected.forEach { nm -> File(root, nm).deleteRecursively(); expanded.remove(nm) }; selected.clear()
+            selected.forEach { nm -> File(root, nm).deleteRecursively() }; selected.clear()
         }
     }
 
@@ -325,9 +315,12 @@ class HistoryActivity : Activity() {
     private fun cardFor(dir: File): View {
         val name = dir.name
         val m = manifestOf(dir)
-        val (qLabel, qColor) = qualityOf(m)
         val (stText, stColor) = uploadStatus(dir)
         val sel = selected.contains(name)
+        val s = m?.optLong("start_elapsed_ns", 0L) ?: 0L
+        val e = m?.optLong("stop_elapsed_ns", 0L) ?: 0L
+        val secs = if (e > s && s > 0) ((e - s) / 1_000_000_000.0).toInt() else 0
+        val len = "%d:%02d".format(secs / 60, secs % 60)
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -361,71 +354,25 @@ class HistoryActivity : Activity() {
         })
         card.addView(header)
 
-        // 상태줄 + 상세/접기
-        val expandedNow = expanded.contains(name)
-        val statusLeft = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            addView(dotText(qLabel, qColor))
-            addView(dotText(stText, stColor).apply {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(14) }
-            })
-        }
-        val toggleText = TextView(this).apply { text = if (expandedNow) "접기" else "상세"; setTextColor(0xFF8A909E.toInt()); textSize = 13f }
-        val chevron = ImageView(this).apply {
-            setImageResource(R.drawable.ic_chevron_down); rotation = if (expandedNow) 180f else 0f
-            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginStart = dp(3) }
-        }
-        val toggle = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), dp(4), 0, dp(4))
-            addView(toggleText); addView(chevron)
-        }
-        card.addView(LinearLayout(this).apply {
+        // 상태줄: ● 전송상태 · 길이 ···· 삭제 (온디바이스에서 판정 못하는 품질/결과는 표시 안 함)
+        val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0)
-            addView(statusLeft); addView(toggle)
-        })
-
-        // 상세
-        val detail = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(0, dp(10), 0, 0); visibility = if (expandedNow) View.VISIBLE else View.GONE
         }
-        val s = m?.optLong("start_elapsed_ns", 0L) ?: 0L
-        val e = m?.optLong("stop_elapsed_ns", 0L) ?: 0L
-        val secs = if (e > s && s > 0) ((e - s) / 1_000_000_000.0).toInt() else 0
-        detail.addView(detailRow("길이", "%d:%02d".format(secs / 60, secs % 60)))
-        detail.addView(detailRow("결과", when (m?.optString("outcome")) { "success" -> "성공"; "failure" -> "실패"; else -> "미판정" }))
-        detail.addView(detailRow("상태", m?.optString("status") ?: "?"))
-        val del = TextView(this).apply {
-            text = "삭제"; setTextColor(0xFFE0685E.toInt()); textSize = 14f; setPadding(dp(18), dp(9), dp(18), dp(9))
-            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0x1AE0685E) }
-            setOnClickListener { confirmDelete(dir, name) }
-        }
-        detail.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(12), 0, 0)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            addView(del)
+        statusRow.addView(dotText(stText, stColor))
+        statusRow.addView(TextView(this).apply {
+            text = " · $len"; setTextColor(0xFF8A909E.toInt()); textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) }
         })
-        card.addView(detail)
+        statusRow.addView(TextView(this).apply {
+            text = "삭제"; setTextColor(0xFFE0685E.toInt()); textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(12), dp(6), dp(4), dp(6)); setOnClickListener { confirmDelete(dir, name) }
+        })
+        card.addView(statusRow)
 
         card.setOnClickListener {
             if (selected.contains(name)) selected.remove(name) else selected.add(name); populate()
         }
-        toggle.setOnClickListener {
-            val exp = !expanded.contains(name)
-            if (exp) expanded.add(name) else expanded.remove(name)
-            detail.visibility = if (exp) View.VISIBLE else View.GONE
-            toggleText.text = if (exp) "접기" else "상세"; chevron.rotation = if (exp) 180f else 0f
-        }
         return card
-    }
-
-    private fun detailRow(label: String, value: String): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(3), 0, dp(3))
-        addView(TextView(this@HistoryActivity).apply {
-            text = label; setTextColor(0xFF8A909E.toInt()); textSize = 14f
-            layoutParams = LinearLayout.LayoutParams(dp(72), LinearLayout.LayoutParams.WRAP_CONTENT)
-        })
-        addView(TextView(this@HistoryActivity).apply { text = value; setTextColor(0xFF6B7280.toInt()); textSize = 14f })
     }
 
     private fun prettyName(name: String): String {
