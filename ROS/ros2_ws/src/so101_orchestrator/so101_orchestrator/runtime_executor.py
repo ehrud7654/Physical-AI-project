@@ -42,7 +42,10 @@ class RuntimeExecutor:
         site-packages 에서 찾는다(ROS/.venv 고정 아님)."""
         env = os.environ.copy()
         venv = self.python.parent.parent          # <venv>/bin/python → <venv>
-        paths = [str(p) for p in venv.glob("lib/python*/site-packages/cusparselt/lib")]
+        # 표준 venv: lib/pythonX/site-packages · Debian pip --prefix: local/lib/pythonX/dist-packages
+        paths = [str(p) for pattern in ("lib/python*/site-packages/cusparselt/lib",
+                                        "local/lib/python*/dist-packages/cusparselt/lib")
+                 for p in venv.glob(pattern)]
         paths.append("/usr/local/cuda/lib64")
         if env.get("LD_LIBRARY_PATH"):
             paths.append(env["LD_LIBRARY_PATH"])

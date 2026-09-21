@@ -48,7 +48,9 @@ echo "휠 ${#WHEELS[@]}개 설치"
 
 echo
 echo "설치 검증 (torch import — cusparselt 경로 필요)"
-CUSPARSE="$(echo "$VENV"/lib/python*/site-packages/cusparselt/lib)"
+# 표준 venv(lib/.../site-packages)와 Debian pip --prefix(local/lib/.../dist-packages) 둘 다 탐색
+CUSPARSE="$(dirname "$(find "$VENV" -name 'libcusparseLt.so*' -print -quit 2>/dev/null)" 2>/dev/null || true)"
+[ -n "$CUSPARSE" ] && echo "cusparselt: $CUSPARSE" || echo "⚠️ cusparselt 를 못 찾음"
 LD_LIBRARY_PATH="$CUSPARSE:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}" \
   "$VENV/bin/python" -c \
   "import torch, diffusers, cv2; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
