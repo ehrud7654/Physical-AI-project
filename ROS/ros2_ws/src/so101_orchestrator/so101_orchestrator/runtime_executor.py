@@ -67,6 +67,44 @@ class RuntimeExecutor:
         env["LD_LIBRARY_PATH"] = ":".join(paths)
         return env
 
+    # ── 서보 진단 (런타임이 안 돌 때만 — 포트는 하나다) ──────────────────
+    _DIAG_SNIPPET = (
+        "import json,sys;"
+        "sys.path.insert(0, sys.argv[1]);"
+        "from common import ST3215Bus, ALL_IDS, retry_eintr;"
+        "bus=ST3215Bus(sys.argv[2]);"
+        "d={i: retry_eintr(lambda i=i: bus.read_diagnostics(i)) for i in ALL_IDS};"
+        "print(json.dumps({str(i): {'temperature_c': v['temperature_c'],"
+        " 'present_load_raw': v['present_load_raw'], 'torque_enabled': v['torque_enabled']}"
+        " for i,v in d.items()}))"
+    )
+
+    def read_diagnostics(self, motor_port: str = "/dev/ttyTHS1",
+                         timeout_s: float = 15.0) -> dict | None:
+        """서보 온도·부하를 읽는다. **런타임이 실행 중이면 호출 금지**(같은 시리얼 포트).
+        실패하면 None — 진단 실패가 실행을 막지는 않게 한다(호출자가 판단)."""
+        if self._proc and self._proc.poll() is None:
+            self._log.warn("런타임 실행 중 — 진단 읽기 생략(포트 점유)")
+            return None
+        if self.preflight():
+            return None
+        try:
+            out = subprocess.run(
+                [str(self.python), "-c", self._DIAG_SNIPPET, str(self.shanks), motor_port],
+                cwd=str(self.root), env=self._env(), capture_output=True,
+                text=True, timeout=timeout_s)
+        except Exception as e:  # noqa: BLE001
+            self._log.warn(f"서보 진단 실패: {e}")
+            return None
+        if out.returncode != 0:
+            self._log.warn(f"서보 진단 실패(rc={out.returncode}): {out.stderr.strip()[:200]}")
+            return None
+        try:
+            return json.loads(out.stdout.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError):
+            self._log.warn(f"서보 진단 파싱 실패: {out.stdout.strip()[:200]}")
+            return None
+
     def preflight(self) -> str | None:
         """실행 전 필수 경로 확인. 문제 있으면 사유 문자열, 없으면 None."""
         if not self.python.exists():

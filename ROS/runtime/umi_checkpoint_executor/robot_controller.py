@@ -74,6 +74,14 @@ def execute_chunk(candidates, common, args, report):
             off = [servo_id for servo_id, value in diagnostics.items() if not value["torque_enabled"]]
             if off:
                 raise RuntimeError(f"torque is OFF for servo(s) {off}; refusing checkpoint motion")
+            # Overheat gate (S15P21A103-46). The diagnostics above already carry the temperature,
+            # so this costs no extra bus traffic. Trips well below the servo's own ~70 C cutoff:
+            # when the servo protects itself it drops torque and the arm falls uncontrolled.
+            hot = {servo_id: value["temperature_c"] for servo_id, value in diagnostics.items()
+                   if value["temperature_c"] >= args.max_servo_temp_c}
+            if hot:
+                raise RuntimeError(
+                    f"servo overheating {hot} (limit {args.max_servo_temp_c} C); refusing motion")
             live_ticks = {servo_id: int(value["tick"]) for servo_id, value in diagnostics.items()}
             planned_targets = {
                 servo_id: candidate["arm_ticks"][servo_id - 1]

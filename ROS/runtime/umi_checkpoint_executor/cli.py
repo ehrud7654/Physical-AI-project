@@ -119,10 +119,11 @@ def self_check():
             raise AssertionError("model/config calibration mismatch accepted")
 
     class FakeBus:
-        def __init__(self, follows=True):
+        def __init__(self, follows=True, temperature_c=30):
             self.ticks = {i: 1000 for i in range(1, 7)}
             self.writes = []
             self.follows = follows
+            self.temperature_c = temperature_c
 
         def __enter__(self):
             return self
@@ -131,7 +132,8 @@ def self_check():
             pass
 
         def read_diagnostics(self, servo_id):
-            return {"tick": self.ticks[servo_id], "torque_enabled": True}
+            return {"tick": self.ticks[servo_id], "torque_enabled": True,
+                    "temperature_c": self.temperature_c}
 
         def write_positions(self, targets, speed, acceleration):
             self.writes.append((dict(targets), speed, acceleration))
@@ -160,6 +162,7 @@ def self_check():
         settle_tolerance=15,
         settle_residual=60,
         settle_timeout=1,
+        max_servo_temp_c=55,
     )
     fake_candidates = [
         {"action_index": i, "arm_ticks": [1000 + i] * 5, "gripper_tick": 1000}
@@ -194,6 +197,18 @@ def self_check():
     execute_chunk(gripper_candidates, fake_common, fake_args, gripper_report)
     assert gripper_report["motor_commands_sent"] == 4 and len(gripper_bus.writes) == 4
     assert gripper_report["settle_status"] == "skipped"
+
+    # Overheat gate: a servo at or above the limit must refuse before any motor write.
+    hot_bus = FakeBus(temperature_c=fake_args.max_servo_temp_c)
+    fake_common.ST3215Bus = lambda _port: hot_bus
+    hot_report = {"motor_commands_attempted": 0, "motor_commands_sent": 0, "executed_waypoints": 0}
+    try:
+        execute_chunk(gripper_candidates, fake_common, fake_args, hot_report)
+    except RuntimeError as error:
+        assert "overheating" in str(error)
+    else:
+        raise AssertionError("overheated servo accepted")
+    assert hot_report["motor_commands_sent"] == 0 and not hot_bus.writes
     print("UMI_CHECKPOINT_EXECUTOR_SELF_CHECK_OK")
 
 
@@ -410,6 +425,10 @@ def build_parser():
         help="extra margin inside configured joint limits (default: 0)",
     )
     parser.add_argument("--max-ik-error-mm", type=float, default=0.5)
+    # Overheat gate (S15P21A103-46): refuse motion at or above this servo temperature.
+    # The servo protects itself around 70 C by dropping torque, which makes the arm fall.
+    parser.add_argument("--max-servo-temp-c", type=int, default=55,
+                        help="refuse motion at or above this servo temperature (0 disables)")
     parser.add_argument("--observation-interval-ms", type=float, default=100)
     parser.add_argument("--observation-tolerance-ms", type=float, default=15)
     parser.add_argument("--min-z-mm", type=float, default=15)

@@ -64,6 +64,9 @@ class OrchestratorNode(Node):
         self.declare_parameter("runtime_python", "")
         self.declare_parameter("runtime_move", True)     # umi_runtime: 실제 모터 구동 여부
         self.declare_parameter("runtime_cycles", 0)      # 0 = 취소/타임아웃까지 계속
+        self.declare_parameter("motor_port", "/dev/ttyTHS1")
+        # 서보 과열 차단. 서보 자체 보호(~70°C)보다 먼저 막는다. 0 이면 검사 안 함.
+        self.declare_parameter("max_servo_temp_c", 55)
         # 배포 번들(tgz) 해제 위치. 영구 경로여야 함(/tmp 는 재부팅 시 소실).
         self.declare_parameter("models_dir", "")         # 빈값이면 <runtime_root>/models
 
@@ -407,6 +410,24 @@ class OrchestratorNode(Node):
         else:
             raise ValueError(f"알 수 없는 step type: {stype}")
 
+    def _check_servo_temp(self, when: str):
+        """서보 온도 확인 — 임계 초과면 RuntimeError(실행 거부/중단).
+        런타임이 포트를 잡기 **전/후**에만 읽을 수 있다(시리얼 포트가 하나라서)."""
+        limit = int(self.get_parameter("max_servo_temp_c").value)
+        if limit <= 0:
+            return
+        diag = self._runtime_exec.read_diagnostics(
+            self.get_parameter("motor_port").value)
+        if not diag:
+            self.get_logger().warn(f"서보 온도 확인 불가({when}) — 검사 생략")
+            return
+        temps = {sid: v.get("temperature_c", 0) for sid, v in diag.items()}
+        hottest = max(temps, key=temps.get)
+        self.get_logger().info(f"서보 온도({when}): {temps} (최고 servo {hottest})")
+        if temps[hottest] >= limit:
+            raise RuntimeError(
+                f"서보 {hottest} 과열 {temps[hottest]}°C ≥ {limit}°C — 식은 뒤 재시도")
+
     def _stop_engines(self):
         """실행 엔진 정지 — 어느 쪽이 돌든 안전하게(정책은 active 일 때만, 런타임은 SIGINT)."""
         self._runtime_exec.stop()
@@ -419,6 +440,7 @@ class OrchestratorNode(Node):
         run_dir = Path(self._models_dir).parent / "runs" / f"{self._active_exec}_{svid[:8]}"
         limit = float(timeout) if timeout else 0.0
         started = time.monotonic()
+        self._check_servo_temp("실행 전")      # 뜨거우면 여기서 중단(런타임 기동 안 함)
         self.get_logger().info(f"SKILL 실행(umi_runtime): {svid} model={model_dir}")
 
         def on_report(rep: dict):
@@ -442,6 +464,12 @@ class OrchestratorNode(Node):
             move=bool(self.get_parameter("runtime_move").value),
             cycles=int(self.get_parameter("runtime_cycles").value),
             on_report=on_report, should_cancel=should_cancel)
+
+        # 포트가 풀렸으니 실행 후 온도 기록(과열이면 다음 SKILL 이 거부됨)
+        try:
+            self._check_servo_temp("실행 후")
+        except RuntimeError as e:
+            self.get_logger().error(str(e))
 
         if self._cancel.is_set():
             return                      # 취소는 실행 루프가 CANCELED 로 보고

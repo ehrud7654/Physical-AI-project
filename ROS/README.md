@@ -88,14 +88,27 @@ ROS/.venv/bin/python -m umi_checkpoint_executor
 
 **왜 subprocess 인가:** 런타임은 torch/diffusers 가 깔린 **자기 venv 인터프리터**로 돌아야 하고, 오케스트레이터는 rclpy(시스템 python)다. 한 프로세스에 못 섞는다. 팀원의 `runtime/umi_checkpoint_executor_ros2/node.py` 도 같은 이유로 subprocess 래퍼다.
 
-⚠️ **런타임은 `/dev/ttyTHS1` 을 직접 잡는다.** `so101_hardware`(ros2_control)와 **동시 실행 불가** — 실물 실행 중엔 bringup 을 띄우지 않는다. FakeBus/시뮬·수동제어·estop 경로는 ros2_control 을 계속 쓴다.
+⚠️ **런타임은 `/dev/ttyTHS1` 을 직접 잡는다.** `so101_hardware`(ros2_control)와 **동시 실행 불가** — 실물 실행 중엔 bringup 을 띄우지 않는다. FakeBus/시뮬·수동제어는 ros2_control 을 계속 쓴다.
+
+### 런타임 모드의 안전 계층
+
+ros2_control 이 안 떠 있으므로 `/joint_states` 기반 워치독·리밋은 못 쓴다. 대신:
+
+| 층 | 수단 | 비고 |
+|---|---|---|
+| 리밋·워치독 | **런타임 자체 게이트** | workspace·joint margin·tick delta·live lag·IK residual·path_min_z·torque_enabled·settle timeout. 우리 safety_node 보다 촘촘하므로 **위임**한다 |
+| **estop** | `/estop` → `estop_bridge` → **`/tmp/umi_ESTOP` 파일** | 런타임이 매 청크마다 `refuse_if_estopped()` 로 확인. 포트 점유·프로세스와 무관하게 먹는 유일한 정지 수단. 해제는 팔 확인 후 **수동 삭제** |
+| **과열** | ① 오케스트레이터 **프리플라이트/사후 온도 체크**(포트 빈 시점) ② 런타임 **실행 중 게이트**(`--max-servo-temp-c`, 기본 55°C) | 진단에 온도가 이미 실려와 추가 버스 read 0. 서보 자체 보호(~70°C)는 토크를 끊어 **팔이 낙하**하므로 그 전에 막는다 |
+| 고아 프로세스 | **`PR_SET_PDEATHSIG`** | 오케스트레이터가 SIGKILL 돼도 런타임에 SIGINT → hold 후 종료 (젯슨에서 실증) |
+| 응답 없음 | SIGINT 후 10초 유예 → **SIGKILL** | |
+| 최종 | 하드웨어 전원 차단 | 소프트웨어로 못 덮는 층 |
 
 ### 디렉터리 (ROS/ 기준, ros2_ws 밖 = colcon 빌드 대상 아님)
 
 | 경로 | 내용 | git |
 |---|---|---|
 | `runtime/` | UMI 체크포인트 실행기 (cli·policy_runtime·motion_planner·robot_controller·camera_stream·calibration) | ✅ |
-| `shanks/` | SO-101 저수준 lib (`common`/`grasp`/`kinematics`) — 런타임이 `--shanks-dir` 로 동적 import | ✅ |
+| `shanks/` | SO-101 저수준 lib — 런타임이 `--shanks-dir` 로 동적 import. `common`/`grasp`/`kinematics` + **버스 드라이버 `servo_control.py`·캘리브 `robot_control_5dof.py`**(원래 `~/Workspace/so101_speed_measure` 에 있던 것, 자기완결 위해 편입) | ✅ |
 | `configs/s22_camera_tcp.json` | camera-TCP 캘리브 (provenance sha256 대조용) | ✅ |
 | `requirements-jetson.txt` · `setup_runtime.sh` | venv 재현 | ✅ |
 | `.venv/` | 런타임 전용 venv | ❌ |
