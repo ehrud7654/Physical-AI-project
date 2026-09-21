@@ -11,7 +11,7 @@ class RedisKeyGeneratorTest {
     var g = new RedisKeyGenerator("local", "umi");
     UUID id = UUID.randomUUID();
     assertThat(g.trainingLease(id)).isEqualTo("local:umi:training-lease:" + id);
-    assertThat(g.activeTrainingProfile()).isEqualTo("local:umi:training-profile:active");
+    assertThat(g.session(id)).isEqualTo("local:umi:session:" + id);
   }
 
   @Test

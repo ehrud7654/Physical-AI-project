@@ -2,7 +2,7 @@ export { fetchRobots, fetchRobotDetail, fetchUmis, registerDevice, startDeviceEn
 export type { DeviceEnrollment, RegisterDeviceInput } from './deviceService';
 export { fetchTrainings, fetchTrainingDetail, fetchTrainingSkills, fetchSkillOverviews, createCustomSkill, updateSkillDescription, createTrainingJob, cancelTraining, deleteTrainings, retryTraining } from './trainingService';
 export { fetchLearnedSkills, fetchSavedWorks, saveWork, deleteWorks } from './workService';
-export { login, logout, restoreAuthentication } from './authService';
+export { login, logout, signup, checkEmailAvailability, clearAuthentication, restoreAuthentication } from './authService';
 export { fetchDatasets } from './datasetService';
 export { fetchTaskReadiness, fetchDeployments, createDeployment, fetchDeployment, createRobotExecution, fetchRobotExecutions, cancelRobotExecution } from './executionService';
 export type { Deployment } from './executionService';

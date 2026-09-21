@@ -1,16 +1,12 @@
 package com.anssa8bu.ssafy.schema;
 
 import static com.anssa8bu.ssafy.support.assertion.PostgresConstraintAssertions.assertUniqueViolation;
-import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.anssa8bu.ssafy.event.entity.OutboxEvent;
 import com.anssa8bu.ssafy.storage.entity.RetentionPolicy;
 import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import com.anssa8bu.ssafy.support.fixture.DeploymentFixture;
-import com.anssa8bu.ssafy.support.fixture.TrainingModelFixture;
 import com.anssa8bu.ssafy.support.fixture.UserDeviceFixture;
-import com.anssa8bu.ssafy.training.entity.TrainingProfile;
-import com.anssa8bu.ssafy.training.entity.TrainingProfileStatus;
 import com.anssa8bu.ssafy.user.entity.User;
 import com.anssa8bu.ssafy.user.entity.UserStatus;
 import jakarta.persistence.EntityManager;
@@ -30,13 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 class UniqueConstraintIntegrationTest extends IntegrationTestBase {
   @Autowired EntityManager em;
   UserDeviceFixture users;
-  TrainingModelFixture training;
   DeploymentFixture deployments;
 
   @BeforeEach
   void fixtures() {
     users = new UserDeviceFixture(em);
-    training = new TrainingModelFixture(em);
     deployments = new DeploymentFixture(em);
   }
 
@@ -64,39 +58,6 @@ class UniqueConstraintIntegrationTest extends IntegrationTestBase {
             true,
             true));
     assertUniqueViolation("uq_retention_policy_default", em::flush);
-  }
-
-  @Test
-  void onlyOneActiveTrainingProfile() {
-    // seed(V2)에 ACTIVE 프로필이 이미 있다
-    training.profile(TrainingProfileStatus.ACTIVE);
-    assertUniqueViolation("uq_training_profiles_one_active", em::flush);
-  }
-
-  @Test
-  void multipleRetiredTrainingProfilesAreAllowed() {
-    training.retiredProfile();
-    training.retiredProfile();
-    assertThatCode(em::flush).doesNotThrowAnyException();
-  }
-
-  @Test
-  void trainingProfileKeyAndVersionAreUnique() {
-    String key = "dup-key-" + UUID.randomUUID();
-    for (int i = 0; i < 2; i++) {
-      UUID id = UUID.randomUUID();
-      em.persist(
-          new TrainingProfile(
-              id,
-              key,
-              1,
-              TrainingProfileStatus.RETIRED,
-              "ACT",
-              Map.of(),
-              TrainingModelFixture.sha256Like(id),
-              null));
-    }
-    assertUniqueViolation("training_profiles_profile_key_version_key", em::flush);
   }
 
   @Test

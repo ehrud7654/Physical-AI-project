@@ -19,13 +19,12 @@ import org.junit.jupiter.api.Test;
  * 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
  */
 class FlywayMigrationIntegrationTest {
-  static final int MIGRATION_COUNT = 1;
-  static final int TABLE_COUNT = 30;
+  static final int MIGRATION_COUNT = 10;
+  static final int TABLE_COUNT = 29;
   static final List<String> PARTIAL_UNIQUE_INDEXES =
       List.of(
           "uq_users_email_lower",
           "uq_retention_policy_default",
-          "uq_training_profiles_one_active",
           "uq_episode_active_purge_job",
           "uq_robot_active_deployment",
           "uq_robot_active_skill",
@@ -75,8 +74,8 @@ class FlywayMigrationIntegrationTest {
     assertThat(
             count(
                 url,
-                "select count(*) from training_profiles where profile_key = 'umi-act-default'"))
-        .isOne();
+                "select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'training_profiles'"))
+        .isZero();
     assertThat(
             count(
                 url,
@@ -127,14 +126,12 @@ class FlywayMigrationIntegrationTest {
                     + " where t.owner_id = '50000000-0000-4000-8000-000000000001'::uuid"
                     + " and t.task_key = 'raise_blue_flag'"))
         .isEqualTo(2);
-    // config_sha256 정규식 CHECK 하나만 남는다.
+    // V4 removes trainer-owned configuration from the EC2 orchestration schema.
     assertThat(
             count(
                 url,
-                "select count(*) from pg_constraint where conrelid = 'training_profiles'::regclass"
-                    + " and contype = 'c' and pg_get_constraintdef(oid) like '%config_sha256%'"))
-        .isOne();
-    // Outbox 최종 CHECK 4개만 존재한다.
+                "select count(*) from information_schema.columns where table_schema = 'public' and table_name in ('training_jobs', 'skill_versions') and column_name in ('training_profile_id', 'training_config_snapshot', 'training_config_sha256')"))
+        .isZero(); // Outbox 최종 CHECK 4개만 존재한다.
     assertThat(
             count(
                 url,

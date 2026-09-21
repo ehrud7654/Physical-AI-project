@@ -7,7 +7,6 @@ import com.anssa8bu.ssafy.support.IntegrationTestBase;
 import com.anssa8bu.ssafy.support.fixture.EpisodeFixture;
 import com.anssa8bu.ssafy.support.fixture.TrainingModelFixture;
 import com.anssa8bu.ssafy.support.fixture.UserDeviceFixture;
-import com.anssa8bu.ssafy.training.entity.TrainingProfile;
 import jakarta.persistence.EntityManager;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,24 +63,16 @@ class ForeignKeyConstraintIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void trainingJobConfigHashMustMatchProfile() {
+  void trainingJobSkillMustExist() {
     var g = episodes.graph();
-    TrainingProfile profile = training.retiredProfile();
-    // training_profile_id는 존재하지만 (id, config_sha256) 조합이 프로필과 다르다
-    training.job(
-        g.userId(),
-        g.skillId(),
-        g.deviceId(),
-        profile.getId(),
-        TrainingModelFixture.sha256Like(UUID.randomUUID()));
-    assertForeignKeyViolation("fk_training_jobs_13", em::flush);
+    training.job(g.userId(), UUID.randomUUID(), g.deviceId());
+    assertForeignKeyViolation("fk_training_jobs_15", em::flush);
   }
 
   @Test
-  void trainingJobWithMatchingProfileHashIsAccepted() {
+  void trainingJobWithoutProfileIsAccepted() {
     var g = episodes.graph();
-    TrainingProfile profile = training.retiredProfile();
-    training.job(g.userId(), g.skillId(), g.deviceId(), profile);
+    training.job(g.userId(), g.skillId(), g.deviceId());
     assertThatCode(em::flush).doesNotThrowAnyException();
   }
 }

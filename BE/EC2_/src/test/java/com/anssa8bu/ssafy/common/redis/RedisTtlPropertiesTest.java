@@ -13,7 +13,6 @@ class RedisTtlPropertiesTest {
             Duration.ofDays(30),
             Duration.ofSeconds(60),
             Duration.ofSeconds(60),
-            Duration.ofMinutes(10),
             Duration.ofSeconds(45),
             Duration.ofMinutes(10),
             Duration.ofMinutes(10),

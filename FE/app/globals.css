@@ -808,6 +808,7 @@ select:focus,input:focus{border-color:#697be0;box-shadow:0 0 0 3px rgba(82,103,2
 .tour-guide-point .tour-anchor-note::before,.tour-guide-point .tour-anchor-note::after{display:none}
 @media(min-width:801px){.tour-browser{width:340px}.tour-note-left .tour-anchor-note{right:calc(100% + 102px)}.tour-note-right .tour-anchor-note{left:calc(100% + 42px)}}
 @media(max-width:800px){.tour-connections{display:none}.tour-guide-point .tour-anchor-note{width:auto}.tour-anchor-note p span{white-space:normal}.tour-anchor-note p{font-size:12px}}
+.signup-email-status{font-size:13px;color:#64748b;margin:0 0 12px}
 .signup-card{width:min(460px,100%)}
 .signup-card h2{margin:0 0 20px;text-align:center}
 .signup-card label{display:flex;flex-direction:column;gap:7px}

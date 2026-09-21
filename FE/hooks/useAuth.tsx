@@ -3,8 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AuthenticatedUser } from '@/types';
-import { logout as clearAuthentication, restoreAuthentication } from '@/services';
-import { SESSION_EXPIRED_EVENT } from '@/services/client';
+import { logout as serverLogout, clearAuthentication, restoreAuthentication } from '@/services';
+import { ApiError, SESSION_EXPIRED_EVENT } from '@/services/client';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useToast } from '@/hooks/useToast';
 
@@ -15,7 +15,7 @@ interface AuthState {
   currentUserId: string;
   sessionExpiredMessage: string;
   login: (user: AuthenticatedUser) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -46,14 +46,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSessionExpiredMessage('');
   }, []);
 
-  const logout = useCallback(() => {
-    clearAuthentication();
+  const logout = useCallback(async () => {
+    try {
+      await serverLogout();
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) {
+        showToast('서버 로그아웃에 실패했습니다. 로그인 상태를 유지합니다. 다시 시도해 주세요.');
+      }
+      return;
+    }
+    resetLearningDraft();
     setCurrentUser(null);
     setAuthenticated(false);
     setSessionExpiredMessage('');
     router.push('/');
     showToast('로그아웃되었습니다.');
-  }, [router, showToast]);
+  }, [resetLearningDraft, router, showToast]);
 
   useEffect(() => {
     const handleSessionExpired = () => {

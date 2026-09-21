@@ -1,7 +1,23 @@
 import type { LoginResponse } from '@/types';
+import { emailValidationError, normalizeEmail } from '../lib/authValidation';
 import { apiRequest, clearAccessToken, setAccessToken } from './client';
 
 const AUTH_SESSION_KEY = 'ssafy:auth-session';
+
+export async function checkEmailAvailability(email: string, signal?: AbortSignal): Promise<{ email: string; available: boolean }> {
+  const error = emailValidationError(email);
+  if (error) throw new Error(error);
+  return apiRequest(`/auth/email-availability?email=${encodeURIComponent(normalizeEmail(email))}`, { signal, cache: 'no-store' });
+}
+
+export async function signup(name: string, email: string, password: string): Promise<LoginResponse['user']> {
+  const error = emailValidationError(email);
+  if (error) throw new Error(error);
+  return apiRequest('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ name: name.trim(), email: normalizeEmail(email), password }),
+  });
+}
 
 interface StoredAuthSession {
   accessToken: string;
@@ -54,8 +70,13 @@ export function restoreAuthentication(): LoginResponse['user'] | null {
   }
 }
 
-export function logout(): void {
+export function clearAuthentication(): void {
   clearAccessToken();
   removeStoredSession();
+}
+
+export async function logout(): Promise<void> {
+  await apiRequest<void>('/auth/logout', { method: 'POST' });
+  clearAuthentication();
 }
 

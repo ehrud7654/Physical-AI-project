@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import type { View } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useAuth } from '@/hooks/useAuth';
-import { login as requestLogin } from '@/services';
+import { login as requestLogin, signup as requestSignup, checkEmailAvailability } from '@/services';
+import { ApiError } from '@/services/client';
+import { emailValidationError, normalizeEmail } from '@/lib/authValidation';
 import { viewToPath } from '@/lib/routes';
 import Tutorial from './Tutorial';
 
@@ -29,6 +31,26 @@ export default function Landing() {
   const [signupPasswordConfirm, setSignupPasswordConfirm] = useState('');
   const [signupError, setSignupError] = useState('');
   const [signupComplete, setSignupComplete] = useState(false);
+  const [signupPending, setSignupPending] = useState(false);
+  const [emailCheck, setEmailCheck] = useState<{ email: string; status: 'checking' | 'available' | 'taken' | 'error' } | null>(null);
+  const normalizedEmail = normalizeEmail(signupId);
+  const emailError = emailValidationError(signupId);
+  const currentCheck = emailCheck?.email === normalizedEmail ? emailCheck : null;
+  useEffect(() => {
+    if (!signupOpen || emailError) return;
+    const controller = new AbortController();
+    let active = true;
+    const timer = setTimeout(async () => {
+      setEmailCheck({ email: normalizedEmail, status: 'checking' });
+      try {
+        const result = await checkEmailAvailability(normalizedEmail, controller.signal);
+        if (active) setEmailCheck({ email: normalizedEmail, status: result.available ? 'available' : 'taken' });
+      } catch {
+        if (active) setEmailCheck({ email: normalizedEmail, status: 'error' });
+      }
+    }, 400);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [signupOpen, normalizedEmail, emailError]);
   const loginForm = useRef<HTMLFormElement>(null);
   const signupForm = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -39,7 +61,7 @@ export default function Landing() {
     document.body.style.overflow = 'hidden';
     activeForm?.querySelector('input')?.focus();
     const handle = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setLoginOpen(false); setSignupOpen(false); }
+      if (event.key === 'Escape' && !signupPending) { setLoginOpen(false); setSignupOpen(false); }
       if (event.key !== 'Tab') return;
       const fields = activeForm?.querySelectorAll<HTMLElement>('button:not(:disabled), input');
       if (!fields?.length) return;
@@ -48,7 +70,7 @@ export default function Landing() {
     };
     document.addEventListener('keydown', handle);
     return () => { document.removeEventListener('keydown', handle); document.body.style.overflow = overflow; previous?.focus(); };
-  }, [loginOpen, signupOpen]);
+  }, [loginOpen, signupOpen, signupPending]);
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (sessionExpiredMessage) {
@@ -77,6 +99,35 @@ export default function Landing() {
       setLoginPending(false);
     }
   };
+  const submitSignup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (signupPending) return;
+    if (!signupName.trim()) { setSignupError('이름을 입력해 주세요.'); return; }
+    if (emailError) { setSignupError(emailError); return; }
+    if (currentCheck?.status !== 'available') { setSignupError('이메일 중복 확인을 완료해 주세요.'); return; }
+    if (signupPassword.length < 8 || new TextEncoder().encode(signupPassword).length > 72) {
+      setSignupError('비밀번호는 8자 이상, UTF-8 기준 72바이트 이하로 입력해 주세요.'); return;
+    }
+    if (signupPassword !== signupPasswordConfirm) { setSignupError('비밀번호가 일치하지 않아요.'); return; }
+    setSignupPending(true);
+    setSignupError('');
+    try {
+      await requestSignup(signupName, normalizedEmail, signupPassword);
+      setId(normalizedEmail);
+      setPassword('');
+      setSignupPassword('');
+      setSignupPasswordConfirm('');
+      setEmailCheck(null);
+      setSignupComplete(true);
+      setSignupOpen(false);
+      setPendingView('dashboard');
+      setLoginError('');
+      setLoginOpen(true);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) setEmailCheck({ email: normalizedEmail, status: 'taken' });
+      setSignupError(error instanceof Error ? error.message : '회원가입하지 못했어요. 다시 시도해 주세요.');
+    } finally { setSignupPending(false); }
+  };
   return <main className="landing-page">
     {tutorialOpen && <Tutorial onClose={() => setTutorialOpen(false)} />}
     <header className="landing-simple-header">
@@ -98,15 +149,16 @@ export default function Landing() {
       <label>이메일<input type="email" value={id} onChange={(event) => { setId(event.target.value); setLoginError(''); setSignupComplete(false); }} autoComplete="username" /></label><label htmlFor="login-password">비밀번호</label><div className="password-field"><input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => { setPassword(event.target.value); setLoginError(''); }} autoComplete="current-password" /><button type="button" aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.8-5 9-5 9 5 9 5-3.8 5-9 5-9-5-9-5z" /><circle cx="12" cy="12" r="2.5" />{showPassword && <path d="M4 4l16 16" />}</svg></button></div>{loginError && <p className="field-error" role="alert">{loginError}</p>}
       <button className="primary-button" disabled={loginPending}>{loginPending ? '로그인 중...' : '로그인'}</button>
     </form></div>}
-    {signupOpen && <div className="landing-login-backdrop" onMouseDown={() => setSignupOpen(false)}><form ref={signupForm} role="dialog" aria-modal="true" aria-label="회원가입" className="landing-login-card signup-card" onSubmit={(event) => { event.preventDefault(); if (!signupName.trim() || !signupId.trim() || !signupPassword || !signupPasswordConfirm) { setSignupError('모든 항목을 입력해 주세요.'); return; } if (signupPassword.length < 8) { setSignupError('비밀번호는 8자 이상 입력해 주세요.'); return; } if (signupPassword !== signupPasswordConfirm) { setSignupError('비밀번호가 일치하지 않아요.'); return; } setId(signupId.trim()); setPassword(signupPassword); setSignupComplete(true); setSignupOpen(false); setPendingView('dashboard'); setLoginOpen(true); }} onMouseDown={(event) => event.stopPropagation()}>
-      <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" onClick={() => setSignupOpen(false)} aria-label="회원가입 닫기">×</button></div>
-      <label>이름<input value={signupName} onChange={(event) => { setSignupName(event.target.value); setSignupError(''); }} autoComplete="name" placeholder="이름을 입력하세요" /></label>
-      <label>아이디<input value={signupId} onChange={(event) => { setSignupId(event.target.value); setSignupError(''); }} autoComplete="username" placeholder="사용할 아이디를 입력하세요" /></label>
-      <label>비밀번호<input type="password" value={signupPassword} onChange={(event) => { setSignupPassword(event.target.value); setSignupError(''); }} autoComplete="new-password" placeholder="8자 이상 입력하세요" /></label>
-      <label>비밀번호 확인<input type="password" value={signupPasswordConfirm} onChange={(event) => { setSignupPasswordConfirm(event.target.value); setSignupError(''); }} autoComplete="new-password" placeholder="비밀번호를 다시 입력하세요" /></label>
+    {signupOpen && <div className="landing-login-backdrop" onMouseDown={() => { if (!signupPending) setSignupOpen(false); }}><form ref={signupForm} role="dialog" aria-modal="true" aria-label="회원가입" className="landing-login-card signup-card" onSubmit={submitSignup} onMouseDown={(event) => event.stopPropagation()}>
+      <div className="landing-login-head"><img src="/ssafy-logo-alpha.png" alt="S.S.A.F.Y" /><button type="button" disabled={signupPending} onClick={() => setSignupOpen(false)} aria-label="회원가입 닫기">×</button></div>
+      <label>이름<input required maxLength={100} disabled={signupPending} value={signupName} onChange={(event) => { setSignupName(event.target.value); setSignupError(''); }} autoComplete="name" placeholder="이름을 입력하세요" /></label>
+      <label>아이디(이메일)<input type="email" required maxLength={320} disabled={signupPending} value={signupId} onChange={(event) => { if (normalizeEmail(event.target.value) !== normalizedEmail) setEmailCheck(null); setSignupId(event.target.value); setSignupError(''); }} aria-describedby="signup-email-status" autoComplete="username" placeholder="name@example.com" /></label>
+      <p id="signup-email-status" className={currentCheck?.status === 'available' ? 'signup-success' : 'signup-email-status'} role="status" aria-live="polite">{signupId && emailError ? emailError : !signupId ? '이메일을 입력하면 중복 여부를 확인합니다.' : currentCheck?.status === 'available' ? '사용 가능한 이메일입니다.' : currentCheck?.status === 'taken' ? '이미 사용 중인 이메일입니다.' : currentCheck?.status === 'error' ? '중복 확인에 실패했습니다. 이메일을 다시 입력해 주세요.' : '이메일 중복 확인 중...'}</p>
+      <label>비밀번호<input type="password" required minLength={8} maxLength={72} disabled={signupPending} value={signupPassword} onChange={(event) => { setSignupPassword(event.target.value); setSignupError(''); }} autoComplete="new-password" placeholder="8자 이상 입력하세요" /></label>
+      <label>비밀번호 확인<input type="password" required disabled={signupPending} value={signupPasswordConfirm} onChange={(event) => { setSignupPasswordConfirm(event.target.value); setSignupError(''); }} autoComplete="new-password" placeholder="비밀번호를 다시 입력하세요" /></label>
       {signupError && <p className="field-error" role="alert">{signupError}</p>}
-      <button className="primary-button">가입하기</button>
-      <button className="signup-login-link" type="button" onClick={() => { setSignupOpen(false); setLoginOpen(true); }}>이미 계정이 있어요 · 로그인</button>
+      <button className="primary-button" disabled={signupPending || !!emailError || currentCheck?.status !== 'available'}>{signupPending ? '가입 중...' : '가입하기'}</button>
+      <button className="signup-login-link" type="button" disabled={signupPending} onClick={() => { setSignupOpen(false); setLoginOpen(true); }}>이미 계정이 있어요 · 로그인</button>
     </form></div>}
   </main>;
 }

@@ -17,24 +17,16 @@ class TrainingEntityIntegrationTest extends IntegrationTestBase {
   @Test
   @Transactional
   @Rollback
-  void profileJsonUuidEnumSurviveFlushClearAndRollback() {
-    UUID id = UUID.randomUUID();
-    Map<String, Object> params = Map.of("epochs", 100, "batchSize", 8);
-    em.persist(
-        new TrainingProfile(
-            id,
-            "fixed-profile-" + id,
-            1,
-            TrainingProfileStatus.RETIRED,
-            "diffusion",
-            params,
-            "c".repeat(64),
-            null));
+  void jobJsonUuidEnumSurviveFlushClearAndRollback() {
+    var graph = new com.anssa8bu.ssafy.support.fixture.EpisodeFixture(em).graph();
+    var job =
+        new com.anssa8bu.ssafy.support.fixture.TrainingModelFixture(em)
+            .job(graph.userId(), graph.skillId(), graph.deviceId());
     em.flush();
     em.clear();
-    TrainingProfile loaded = em.find(TrainingProfile.class, id);
-    assertThat(loaded.getId()).isEqualTo(id);
-    assertThat(loaded.getStatus()).isEqualTo(TrainingProfileStatus.RETIRED);
-    assertThat(loaded.getHyperparameters()).isEqualTo(params);
+    TrainingJob loaded = em.find(TrainingJob.class, job.getId());
+    assertThat(loaded.getId()).isEqualTo(job.getId());
+    assertThat(loaded.getStatus()).isEqualTo(TrainingJobStatus.CREATED);
+    assertThat(loaded.getDatasetQuery()).isEqualTo(Map.of("skillId", graph.skillId().toString()));
   }
 }

@@ -24,7 +24,7 @@ class RedisInfrastructureIntegrationTest extends IntegrationTestBase {
   @Autowired RedisRateLimiter rateLimiter;
   @Autowired DevicePresenceRepository presence;
   @Autowired PurgeLeaseCacheRepository purgeLeases;
-  @Autowired TrainingProfileCacheRepository activeProfile;
+  @Autowired TrainingLeaseCacheRepository trainingLeases;
   @Autowired RedisTtlProperties ttl;
   UUID id;
 
@@ -129,18 +129,14 @@ class RedisInfrastructureIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void activeTrainingProfileCacheUsesConfiguredTtl() {
+  void trainingLeaseCacheUsesConfiguredTtl() {
     var cached =
-        new ActiveTrainingProfileCache(
-            1, UUID.randomUUID(), "umi-act-default", 1, "a".repeat(64), Map.of("epochs", 100));
-    try {
-      activeProfile.save(cached, ttl.trainingProfile());
-      assertThat(activeProfile.find()).contains(cached);
-      assertThat(redis.getExpire(keys.activeTrainingProfile(), TimeUnit.SECONDS))
-          .isBetween(ttl.trainingProfile().toSeconds() - 5, ttl.trainingProfile().toSeconds());
-    } finally {
-      activeProfile.delete();
-    }
+        new TrainingLeaseCache(
+            1, id, 1, "worker", "a".repeat(64), Instant.now().plus(ttl.trainingLease()));
+    trainingLeases.save(id, cached, ttl.trainingLease());
+    assertThat(trainingLeases.find(id)).contains(cached);
+    assertThat(redis.getExpire(keys.trainingLease(id), TimeUnit.SECONDS))
+        .isBetween(ttl.trainingLease().toSeconds() - 5, ttl.trainingLease().toSeconds());
   }
 
   private void awaitMissing(Callable<Boolean> c) {

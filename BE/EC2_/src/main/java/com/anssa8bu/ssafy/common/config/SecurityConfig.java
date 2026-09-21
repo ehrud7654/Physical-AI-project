@@ -1,11 +1,13 @@
 package com.anssa8bu.ssafy.common.config;
 
+import com.anssa8bu.ssafy.auth.security.SessionAuthenticationEntryPoint;
 import jakarta.servlet.DispatcherType;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -13,6 +15,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -27,6 +30,7 @@ public class SecurityConfig {
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
     "/api/v1/auth/signup",
+    "/api/v1/auth/email-availability",
     "/api/v1/device-auth/token",
     "/api/v1/device-auth/skills",
     "/api/v1/device-auth/enroll",
@@ -40,7 +44,8 @@ public class SecurityConfig {
   }
 
   @Bean
-  public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder)
+  public SecurityFilterChain securityFilterChain(
+      HttpSecurity http, JwtDecoder jwtDecoder, SessionAuthenticationEntryPoint entryPoint)
       throws Exception {
     http.csrf(csrf -> csrf.disable())
         .cors(Customizer.withDefaults())
@@ -58,9 +63,7 @@ public class SecurityConfig {
                         "/internal/skill-versions/**",
                         "/internal/storage-nodes/**")
                     .permitAll()
-                    .requestMatchers(
-                        "/api/v1/episode",
-                        "/api/v1/episode/**")
+                    .requestMatchers("/api/v1/episode", "/api/v1/episode/**")
                     .hasAuthority("SCOPE_device")
                     .requestMatchers("/api/v1/devices/*/heartbeat")
                     .hasAuthority("SCOPE_device")
@@ -68,7 +71,20 @@ public class SecurityConfig {
                     .hasAuthority("SCOPE_device")
                     .anyRequest()
                     .hasAuthority("SCOPE_user"))
-        .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)));
+        .oauth2ResourceServer(
+            oauth2 -> {
+              oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)).authenticationEntryPoint(entryPoint);
+              // The default failure handler rethrows AuthenticationServiceException.
+              // Route Redis outages to the explicit 503 response instead.
+              oauth2.addObjectPostProcessor(
+                  new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
+                    @Override
+                    public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
+                      filter.setAuthenticationFailureHandler(entryPoint::commence);
+                      return filter;
+                    }
+                  });
+            });
 
     return http.build();
   }
