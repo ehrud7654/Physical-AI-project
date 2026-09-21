@@ -39,6 +39,8 @@ class MainActivity : Activity() {
     private lateinit var learnBadge: TextView
     private lateinit var menuBtn: TextView
     private lateinit var shutter: View
+    private lateinit var redoBtn: TextView
+    private var lastDir: File? = null
 
     private val worker = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
@@ -124,6 +126,17 @@ class MainActivity : Activity() {
         }
         outer.addView(shutter, FrameLayout.LayoutParams(dp(74), dp(74), Gravity.START or Gravity.CENTER_VERTICAL)
             .apply { marginStart = dp(28) })
+
+        // 직전 촬영 재촬영(삭제 후 다시). 저장 직후에만 노출.
+        redoBtn = TextView(this).apply {
+            text = "↻ 재촬영"; setTextColor(0xFFFFFFFF.toInt()); textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(dp(16), dp(9), dp(16), dp(9))
+            background = GradientDrawable().apply { cornerRadius = dp(999).toFloat(); setColor(0xCC1B2440.toInt()) }
+            visibility = View.GONE
+            setOnClickListener { redoLast() }
+        }
+        outer.addView(redoBtn, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(120) })
 
         setContentView(outer)
         updateLearnBadge()
@@ -254,6 +267,7 @@ class MainActivity : Activity() {
         if (!preview.holder.surface.isValid) { sigText.text = "화면 준비 후 다시"; return }
         busy = true
         shutter.isEnabled = false
+        lastDir = null; redoBtn.visibility = View.GONE
         setSignal(SIG_BUSY)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val pc = previewCam; previewCam = null   // 같은 카메라 → 녹화 전에 프리뷰 세션 해제
@@ -308,18 +322,19 @@ class MainActivity : Activity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setSignal(SIG_IDLE)
         maybeStartPreview()   // 녹화 세션 해제됨 → 대기 프리뷰 재개
-        if (err != null) { sigText.text = "오류: $err"; return }
-        sigText.text = "저장 완료"
-        if (rec != null && !isFinishing && !isDestroyed) {
-            val opts = listOf("성공" to "success", "실패" to "failure", "장비 시험 / 미판정" to "unrated")
-            cardSheet("시연 결과", opts.map { (label, outcome) ->
-                CardRow(label, false) {
-                    worker.execute {
-                        try { rec.outcome(outcome) } catch (e: Exception) { ui.post { sigText.text = "결과 저장 실패: $e" } }
-                    }
-                }
-            })
-        }
+        if (err != null) { sigText.text = "오류: $err"; lastDir = null; redoBtn.visibility = View.GONE; return }
+        // 기본 성공. 망했으면 ↻ 재촬영으로 삭제 후 다시.
+        rec?.let { r -> worker.execute { try { r.outcome("success") } catch (_: Exception) {} } }
+        lastDir = rec?.dir
+        android.widget.Toast.makeText(this, "저장됨 · 성공", android.widget.Toast.LENGTH_SHORT).show()
+        redoBtn.visibility = if (lastDir != null) View.VISIBLE else View.GONE
+    }
+
+    private fun redoLast() {
+        val d = lastDir ?: return
+        lastDir = null; redoBtn.visibility = View.GONE
+        worker.execute { try { d.deleteRecursively() } catch (_: Exception) {} }
+        setSignal(SIG_IDLE); sigText.text = "재촬영 — 셔터를 누르세요"
     }
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<String>, g: IntArray) {
