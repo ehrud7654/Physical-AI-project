@@ -21,7 +21,6 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
-import org.json.JSONArray
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -76,6 +75,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         root = File(getExternalFilesDir(null), "sessions").apply { mkdirs() }
+        DeviceSkills.load(this)
 
         val outer = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         preview = SurfaceView(this).apply {
@@ -179,17 +179,18 @@ class MainActivity : Activity() {
         }
         val pop = PopupWindow(container, dp(180), LinearLayout.LayoutParams.WRAP_CONTENT, true)
             .apply { isOutsideTouchable = true; elevation = dp(8).toFloat() }
-        val row = TextView(this).apply {
-            text = "기록"; setTextColor(0xFFFFFFFF.toInt()); textSize = 17f
-            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_history, 0, 0, 0)
+        fun row(label: String, icon: Int, target: Class<*>) = TextView(this).apply {
+            text = label; setTextColor(0xFFFFFFFF.toInt()); textSize = 17f
+            setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
             compoundDrawablePadding = dp(14); setPadding(dp(16), dp(15), dp(16), dp(15))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             setOnClickListener {
-                if (!busy && !recording) startActivity(Intent(this@MainActivity, HistoryActivity::class.java))
+                if (!busy && !recording) startActivity(Intent(this@MainActivity, target))
                 pop.dismiss()
             }
         }
-        container.addView(row)
+        container.addView(row("기록", R.drawable.ic_history, HistoryActivity::class.java))
+        container.addView(row("설정", R.drawable.ic_tune, SettingsActivity::class.java))
         pop.showAsDropDown(menuBtn)
     }
 
@@ -237,14 +238,10 @@ class MainActivity : Activity() {
         rows.add(CardRow("미분류 (나중에 지정)", activeKey.isBlank()) {
             Prefs.setActiveSkill(this, "", "미분류"); updateLearnBadge()
         })
-        runCatching {
-            val arr = JSONArray(Prefs.skillCatalog(this).ifBlank { "[]" })
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i); val key = o.optString("key"); val name = o.optString("name")
-                rows.add(CardRow(name, key == activeKey && key.isNotBlank()) {
-                    Prefs.setActiveSkill(this, key, name); updateLearnBadge()
-                })
-            }
+        for (s in DeviceSkills.cached) {
+            rows.add(CardRow(s.displayName, s.skillKey == activeKey && s.skillKey.isNotBlank()) {
+                Prefs.setActiveSkill(this, s.skillKey, s.displayName); updateLearnBadge()
+            })
         }
         cardSheet("학습 선택", rows)
     }

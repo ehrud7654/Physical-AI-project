@@ -34,5 +34,11 @@
             android:exported="false"
             android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>
 </manifest>
