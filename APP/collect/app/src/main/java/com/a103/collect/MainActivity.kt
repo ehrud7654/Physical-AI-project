@@ -74,7 +74,10 @@ class MainActivity : Activity() {
         startBtn = Button(this).apply { text = "녹화 시작"; setOnClickListener { begin() } }
         stopBtn = Button(this).apply { text = "녹화 종료"; isEnabled = false; setOnClickListener { finishRecording(null) } }
         learnBtn = Button(this).apply { setOnClickListener { pickLearning() } }
-        val listBtn = Button(this).apply { text = "저장 기록"; setOnClickListener { showSessions() } }
+        val listBtn = Button(this).apply {
+            text = "기록"
+            setOnClickListener { if (!recording && !busy) startActivity(android.content.Intent(this@MainActivity, HistoryActivity::class.java)) }
+        }
         bar.addView(startBtn); bar.addView(stopBtn); bar.addView(learnBtn); bar.addView(listBtn)
         col.addView(bar)
         updateLearnLabel()
@@ -105,15 +108,6 @@ class MainActivity : Activity() {
                 Prefs.setActiveSkill(this, keys[i], names[i].substringBefore(" ("))
                 updateLearnLabel()
             }.show()
-    }
-
-    private fun showSessions() {
-        if (busy || recording) return
-        val names = root.list()
-        AlertDialog.Builder(this)
-            .setTitle("USB 내보내기: Android/data/$packageName/files/sessions")
-            .setMessage(if (names.isNullOrEmpty()) "아직 기록 없음" else names.sorted().joinToString("\n"))
-            .setPositiveButton("확인", null).show()
     }
 
     private fun begin() {
