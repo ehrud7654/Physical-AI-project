@@ -1,9 +1,9 @@
 package com.anssa8bu.ssafy_gpu.training.application;
 
-import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.ClaimResponse;
-import com.anssa8bu.ssafy_gpu.training.storage.EpisodeArchiveDownloader;
-import com.anssa8bu.ssafy_gpu.training.storage.BaseModelDownloader;
 import com.anssa8bu.ssafy_gpu.fastapi.application.FastApiRunService;
+import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.ClaimResponse;
+import com.anssa8bu.ssafy_gpu.training.storage.BaseModelDownloader;
+import com.anssa8bu.ssafy_gpu.training.storage.EpisodeArchiveDownloader;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
 import java.time.Instant;
 import java.util.*;
@@ -47,8 +47,12 @@ public class TrainingInputPreparationService {
       var baseModel = baseModels.download(claim);
       var run = fastApi.start(claim, gpuIndex, episodes, baseModel);
       events.started(
-          claim.job().id(), claim.attempt(), claim.leaseToken(),
-          "run-started-" + claim.job().id() + "-" + claim.attempt(), 1, Instant.now());
+          claim.job().id(),
+          claim.attempt(),
+          claim.leaseToken(),
+          "run-started-" + claim.job().id() + "-" + claim.attempt(),
+          1,
+          Instant.now());
       state.forwarded(gpuIndex, 1);
       log.info(
           "학습 입력 준비 및 FastAPI 실행 완료: trainingJobId={}, attempt={}, runId={}, episodeCount={}, trainingMode={}, baseModel={}, gpuIndex={}",

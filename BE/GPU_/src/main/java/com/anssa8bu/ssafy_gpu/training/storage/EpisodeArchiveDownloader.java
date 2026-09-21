@@ -49,13 +49,15 @@ public class EpisodeArchiveDownloader {
     }
   }
 
-  private LocalEpisode download(EpisodeData episode, int inputOrder, Path directory) throws Exception {
+  private LocalEpisode download(EpisodeData episode, int inputOrder, Path directory)
+      throws Exception {
     var archive = episode.archive();
     if (!archive.expiresAt().isAfter(Instant.now()))
       throw new IllegalStateException("Episode Presigned URL이 만료되었습니다: " + episode.episodeId());
 
     Path target = directory.resolve(episode.episodeId() + ".zip").normalize();
-    if (!target.getParent().equals(directory)) throw new IllegalStateException("허용되지 않은 Episode 경로입니다.");
+    if (!target.getParent().equals(directory))
+      throw new IllegalStateException("허용되지 않은 Episode 경로입니다.");
     Path temporary = directory.resolve(episode.episodeId() + ".part").normalize();
 
     log.info("Episode 다운로드 시작: episodeId={}, inputOrder={}", episode.episodeId(), inputOrder);
@@ -67,11 +69,19 @@ public class EpisodeArchiveDownloader {
         throw new IllegalStateException("Episode 다운로드 실패: HTTP " + response.statusCode());
       verify(temporary, archive.sizeBytes(), archive.sha256());
       try {
-        Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        Files.move(
+            temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
       } catch (AtomicMoveNotSupportedException ignored) {
         Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
       }
-      String storageKey = properties.storageRoot().toAbsolutePath().normalize().relativize(target).toString().replace('\\', '/');
+      String storageKey =
+          properties
+              .storageRoot()
+              .toAbsolutePath()
+              .normalize()
+              .relativize(target)
+              .toString()
+              .replace('\\', '/');
       log.info(
           "Episode 다운로드 및 검증 완료: episodeId={}, sizeBytes={}, storageKey={}",
           episode.episodeId(),

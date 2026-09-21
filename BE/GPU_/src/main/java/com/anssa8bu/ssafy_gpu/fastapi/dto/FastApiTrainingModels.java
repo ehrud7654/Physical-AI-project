@@ -33,8 +33,7 @@ public final class FastApiTrainingModels {
       List<EpisodeInput> episodes,
       Instant executionLeaseExpiresAt) {}
 
-  public record CreateRunResponse(
-      String runId, UUID trainingJobId, int attempt, String status) {}
+  public record CreateRunResponse(String runId, UUID trainingJobId, int attempt, String status) {}
 
   public record RunError(String code, String message) {}
 
@@ -58,7 +57,9 @@ public final class FastApiTrainingModels {
       RunError error) {}
 
   public record CancelRequest(String reason) {}
+
   public record LeaseRequest(Instant executionLeaseExpiresAt) {}
+
   public record CompletionRequest(
       String eventId,
       UUID trainingJobId,

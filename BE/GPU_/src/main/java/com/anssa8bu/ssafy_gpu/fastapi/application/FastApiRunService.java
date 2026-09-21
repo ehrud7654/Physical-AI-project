@@ -30,28 +30,51 @@ public class FastApiRunService {
         baseModel == null
             ? null
             : new BaseModelInput(
-                baseModel.skillVersionId(), baseModel.version(), baseModel.storageKey(),
-                baseModel.sha256(), claim.job().baseModel().architecture(),
-                claim.job().baseModel().framework(), claim.job().baseModel().frameworkVersion(),
+                baseModel.skillVersionId(),
+                baseModel.version(),
+                baseModel.storageKey(),
+                baseModel.sha256(),
+                claim.job().baseModel().architecture(),
+                claim.job().baseModel().framework(),
+                claim.job().baseModel().frameworkVersion(),
                 claim.job().baseModel().contractVersion());
     List<EpisodeInput> inputs =
         episodes.stream()
-            .map(value -> new EpisodeInput(
-                value.inputOrder(), value.episodeId(), value.storageKey(), value.sha256(),
-                value.contractVersion()))
+            .map(
+                value ->
+                    new EpisodeInput(
+                        value.inputOrder(),
+                        value.episodeId(),
+                        value.storageKey(),
+                        value.sha256(),
+                        value.contractVersion()))
             .toList();
+    var currentAssignment = state.require(claim.job().id(), claim.attempt());
     CreateRunResponse response =
         client.create(
             new CreateRunRequest(
-                claim.job().id(), claim.attempt(), worker.workerId(), state.storageNodeId(),
-                gpuIndex, claim.job().trainingMode().name(), base,
-                claim.job().inputSnapshotSha256(), inputs, claim.leaseExpiresAt()));
+                claim.job().id(),
+                claim.attempt(),
+                worker.workerId(),
+                state.storageNodeId(),
+                gpuIndex,
+                claim.job().trainingMode().name(),
+                base,
+                claim.job().inputSnapshotSha256(),
+                inputs,
+                currentAssignment.leaseExpiresAt()));
     state.bindRun(gpuIndex, response.runId());
     return response;
   }
 
-  public RunResponse get(String runId) { return client.get(runId); }
-  public void cancel(String runId) { client.cancel(runId, "EC2_CANCEL_REQUESTED"); }
+  public RunResponse get(String runId) {
+    return client.get(runId);
+  }
+
+  public void cancel(String runId) {
+    client.cancel(runId, "EC2_CANCEL_REQUESTED");
+  }
+
   public void renewLease(String runId, java.time.Instant expiresAt) {
     client.renewLease(runId, expiresAt);
   }

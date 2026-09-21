@@ -3,7 +3,6 @@ package com.anssa8bu.ssafy_gpu.common.config;
 import java.net.http.HttpClient;
 import java.util.concurrent.*;
 import org.slf4j.*;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
