@@ -181,6 +181,7 @@ select:focus,input:focus{border-color:#315efb;box-shadow:0 0 0 3px #e3eaff}tr.se
 /* Learning data selection summary (S15P21A103-91). */
 .episode-selection-toolbar,.episode-selection-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border-radius:9px;background:#f2f4f7}
 .episode-selection-toolbar span{color:#475467;font-size:12px;font-weight:700}.episode-selection-toolbar button{padding:4px 0}.episode-selection-summary{margin-top:2px;background:#f8f9fa}.episode-selection-summary strong{font-size:13px}.episode-selection-summary span{color:#667085;font-size:12px}
+.episode-role-section{margin:24px 0 10px}.episode-role-section:first-of-type{margin-top:0}.episode-role-section h3{font-size:16px}.episode-role-section p{margin-top:5px;color:#667085;font-size:12px}.mapping-episode-list{margin-bottom:4px}
 @media(max-width:680px){.episode-selection-toolbar,.episode-selection-summary{align-items:flex-start;flex-direction:column}}
 
 /* Bright S.S.A.F.Y concept */

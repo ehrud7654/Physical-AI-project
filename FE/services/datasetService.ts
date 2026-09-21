@@ -10,10 +10,11 @@ interface ApiEpisode {
   skillKey: string | null;
   skillDisplayName: string | null;
   status: 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID' | 'DELETING' | 'DELETED' | 'DELETE_FAILED';
+  qualityStatus: 'PENDING' | 'VALID' | 'WARNING' | 'INVALID';
   startedAt: string;
   endedAt: string;
   retentionExpiresAt: string;
-  archive: { sizeBytes: number } | null;
+  archive: { sizeBytes: number; status: 'UPLOADING' | 'AVAILABLE' | 'DELETING' | 'DELETED' | 'DELETE_FAILED' } | null;
   trainable: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
@@ -43,6 +44,7 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     tone: TONES[Math.abs(hash(episode.id)) % TONES.length],
     skillKey: episode.skillKey ?? '',
     skillName: episode.skillDisplayName ?? episode.skillKey ?? '알 수 없는 동작',
+    umiDeviceId: episode.umiDeviceId,
     umiId: episode.umiDeviceHandleNumber ?? episode.umiDeviceId,
     calibrationId: normalizeCalibrationId(episode.qualitySummary?.values?.calibrationId),
     ready: status === 'READY',
@@ -51,6 +53,10 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     retentionDays: Math.max(0, Math.ceil((Date.parse(episode.retentionExpiresAt) - Date.now()) / 86_400_000)),
     retentionExpiresAt: episode.retentionExpiresAt,
     trainable: episode.trainable,
+    mappingEligible:
+      status === 'READY'
+      && (episode.qualityStatus === 'VALID' || episode.qualityStatus === 'WARNING')
+      && episode.archive?.status === 'AVAILABLE',
     blockingReasons: episode.blockingReasons,
     recoveryAction: episode.recoveryAction,
   };

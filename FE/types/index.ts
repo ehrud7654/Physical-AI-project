@@ -106,6 +106,8 @@ export interface Dataset {
   tone: string;
   skillKey: string;
   skillName: string;
+  /** 서버 devices.id(UUID). 매핑·시연 Episode가 같은 UMI인지 판별할 때 사용한다. */
+  umiDeviceId: string;
   umiId: string;
   /** 품질 메타데이터의 calibrationId를 화면 표시용 문자열로 정규화한 값. */
   calibrationId: string;
@@ -115,6 +117,8 @@ export interface Dataset {
   retentionDays: number;
   retentionExpiresAt: string;
   trainable: boolean;
+  /** ORB-SLAM 공간 매핑 입력으로 선택할 수 있는지 나타낸다. */
+  mappingEligible: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
 }

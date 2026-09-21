@@ -36,6 +36,7 @@ interface ApiDevice {
 interface ApiEpisodeInput {
   episodeId: string;
   inputOrder: number;
+  inputRole: 'MAPPING' | 'DEMONSTRATION';
 }
 
 interface ApiSkill {
@@ -81,6 +82,7 @@ export async function updateSkillDescription(
 
 type CreateTrainingJobInput = {
   umiDeviceId: string;
+  mappingEpisodeId: string;
   episodeIds: string[];
 } & (
   | { skillKey: string; newSkill?: never }
@@ -129,13 +131,21 @@ export async function retryTraining(training: Training): Promise<Training[]> {
   if (episodes.length === 0) {
     throw new Error('다시 학습할 Episode가 없습니다.');
   }
+  const mapping = episodes.find((item) => item.inputRole === 'MAPPING');
+  const demonstrations = episodes
+    .filter((item) => item.inputRole === 'DEMONSTRATION')
+    .sort((a, b) => a.inputOrder - b.inputOrder);
+  if (!mapping || demonstrations.length === 0) {
+    throw new Error('다시 학습할 매핑 또는 시연 Episode가 없습니다.');
+  }
   await apiRequest<ApiTrainingJob>('/training-jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       skillKey: training.skillKey,
       umiDeviceId: training.umiDeviceId,
-      episodeIds: episodes.sort((a, b) => a.inputOrder - b.inputOrder).map((item) => item.episodeId),
+      mappingEpisodeId: mapping.episodeId,
+      episodeIds: demonstrations.map((item) => item.episodeId),
     }),
   });
   return fetchTrainings();
