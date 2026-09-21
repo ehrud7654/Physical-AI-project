@@ -18,8 +18,8 @@ export default function Landing() {
   const [signupOpen, setSignupOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [pendingView, setPendingView] = useState<View>('dashboard');
-  const [id, setId] = useState('admin01@ssafy.local');
-  const [password, setPassword] = useState('12345678');
+  const [id, setId] = useState('');
+  const [password, setPassword] = useState('');
   const [loginPending, setLoginPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');

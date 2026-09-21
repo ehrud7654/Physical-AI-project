@@ -17,7 +17,7 @@ pnpm install
 pnpm dev
 ```
 
-브라우저에서 [http://localhost:3000](http://localhost:3000)을 엽니다. 로그인 폼에는 데모 계정 `admin01@ssafy.local` / `12345678`이 기본 입력되어 있으며, 실제 `POST /auth/login`으로 인증합니다.
+브라우저에서 [http://localhost:3000](http://localhost:3000)을 엽니다. 로그인 폼에 계정 정보를 입력하면 실제 `POST /auth/login`으로 인증합니다.
 
 ### 배포 서버 API를 로컬에서 쓰기
 

@@ -118,7 +118,7 @@ pnpm install
 pnpm dev
 ```
 
-기본 주소는 [http://localhost:3000](http://localhost:3000)입니다. 로그인 폼에는 데모 계정(`admin01@ssafy.local` / `12345678`)이 입력되어 있습니다.
+기본 주소는 [http://localhost:3000](http://localhost:3000)입니다. 로그인 폼에 계정 정보를 직접 입력해 로그인합니다.
 
 ### API 주소
 
