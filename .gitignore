@@ -4,3 +4,5 @@ Claude outputs/
 
 # 삭제 권한이 없어 옮겨둔 git lock 잔여물 (세션 한정)
 _to_delete/
+AI/notebooks/work_*.ipynb
+.ipynb_checkpoints/
