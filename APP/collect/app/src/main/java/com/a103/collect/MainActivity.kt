@@ -12,6 +12,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import org.json.JSONArray
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -27,6 +28,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var startBtn: Button
     private lateinit var stopBtn: Button
+    private lateinit var learnBtn: Button
 
     private val worker = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
@@ -71,13 +73,38 @@ class MainActivity : Activity() {
         val bar = LinearLayout(this)
         startBtn = Button(this).apply { text = "녹화 시작"; setOnClickListener { begin() } }
         stopBtn = Button(this).apply { text = "녹화 종료"; isEnabled = false; setOnClickListener { finishRecording(null) } }
+        learnBtn = Button(this).apply { setOnClickListener { pickLearning() } }
         val listBtn = Button(this).apply { text = "저장 기록"; setOnClickListener { showSessions() } }
-        bar.addView(startBtn); bar.addView(stopBtn); bar.addView(listBtn)
+        bar.addView(startBtn); bar.addView(stopBtn); bar.addView(learnBtn); bar.addView(listBtn)
         col.addView(bar)
+        updateLearnLabel()
 
         preview = SurfaceView(this).apply { holder.setFixedSize(1920, 1080) }
         col.addView(preview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(col)
+    }
+
+    private fun updateLearnLabel() {
+        learnBtn.text = "학습: ${Prefs.activeSkillName(this)}"
+    }
+
+    /** 학습 선택. 미분류 + 서버 카탈로그 캐시(없으면 미분류만). */
+    private fun pickLearning() {
+        if (recording) return
+        val keys = arrayListOf("")               // "" = 미분류
+        val names = arrayListOf("미분류 (나중에 지정)")
+        runCatching {
+            val arr = JSONArray(Prefs.skillCatalog(this).ifBlank { "[]" })
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                keys.add(o.optString("key")); names.add(o.optString("name"))
+            }
+        }
+        AlertDialog.Builder(this).setTitle("학습 선택")
+            .setItems(names.toTypedArray()) { _, i ->
+                Prefs.setActiveSkill(this, keys[i], names[i].substringBefore(" ("))
+                updateLearnLabel()
+            }.show()
     }
 
     private fun showSessions() {
@@ -103,7 +130,7 @@ class MainActivity : Activity() {
             try {
                 if (root.usableSpace < 300L * 1024 * 1024) throw IOException("저장 공간 300MB 이상 필요")
                 val cam = CameraCapture(this)
-                val rec = Recording(root, cam.metadata)
+                val rec = Recording(root, cam.metadata, Prefs.activeSkillKey(this))
                 val im = ImuCapture(this).also { it.start(rec) }
                 val vid = VideoCapture(rec)
                 camera = cam; current = rec; imu = im; video = vid

@@ -18,9 +18,11 @@ import java.util.UUID
  * 모든 타임스탬프는 elapsedRealtimeNanos 단일 시간축(카메라 SENSOR_TIMESTAMP·IMU event.timestamp 와 동일).
  * 스키마·필드는 S22 UMI 파이프라인 계약(schema_version 2)을 그대로 따른다.
  */
-class Recording(root: File, camera: JSONObject) {
+class Recording(root: File, camera: JSONObject, skillKey: String) {
 
     val dir: File = File(root, "rec_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}")
+    /** 에피소드 식별자 = UUID v4. 촬영 1회당 1개, 업로드 단위. */
+    val sessionId: String = UUID.randomUUID().toString().lowercase()
     val manifest = JSONObject()
     @Volatile var error: String? = null
 
@@ -33,6 +35,8 @@ class Recording(root: File, camera: JSONObject) {
             .put("schema_version", 2)
             .put("app_version", BuildConfig_VERSION)
             .put("status", "incomplete")
+            .put("session_id", sessionId)
+            .put("skill_key", skillKey)        // "" = 미분류(나중에 지정)
             .put("camera", camera)
             .put("device", Build.MODEL)
             .put("android", Build.VERSION.RELEASE)
