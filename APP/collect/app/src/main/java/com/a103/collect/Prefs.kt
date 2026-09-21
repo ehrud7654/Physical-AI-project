@@ -20,4 +20,10 @@ object Prefs {
     fun skillCatalog(ctx: Context): String = sp(ctx).getString("skill_catalog", "") ?: ""
     fun setSkillCatalog(ctx: Context, json: String) =
         sp(ctx).edit().putString("skill_catalog", json).apply()
+
+    /** 장치 자격 — enroll 로 1회 수령. secret 은 Keystore 암호화 저장. */
+    fun deviceId(ctx: Context): String = sp(ctx).getString("device_id", "") ?: ""
+    fun deviceSecret(ctx: Context): String = SecureStore.decrypt(sp(ctx).getString("device_secret", "") ?: "")
+    fun setDeviceCreds(ctx: Context, id: String, secret: String) =
+        sp(ctx).edit().putString("device_id", id).putString("device_secret", SecureStore.encrypt(secret)).apply()
 }
