@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
@@ -44,6 +45,7 @@ class MainActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
 
     private var camera: CameraCapture? = null
+    private var previewCam: CameraCapture? = null
     private var video: VideoCapture? = null
     private var imu: ImuCapture? = null
     private var current: Recording? = null
@@ -76,7 +78,14 @@ class MainActivity : Activity() {
         root = File(getExternalFilesDir(null), "sessions").apply { mkdirs() }
 
         val outer = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
-        preview = SurfaceView(this).apply { holder.setFixedSize(1920, 1080) }
+        preview = SurfaceView(this).apply {
+            holder.setFixedSize(1920, 1080)
+            holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(h: SurfaceHolder) { maybeStartPreview() }
+                override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
+                override fun surfaceDestroyed(h: SurfaceHolder) { stopPreview() }
+            })
+        }
         outer.addView(preview, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
         // 상단바
@@ -119,6 +128,35 @@ class MainActivity : Activity() {
         setContentView(outer)
         updateLearnBadge()
         setSignal(SIG_IDLE)
+    }
+
+    private var previewRetry = 0
+
+    /** 녹화 대기 중 초광각 라이브 프리뷰. 이미 켜졌거나 녹화/준비 중이면 무시. */
+    private fun maybeStartPreview() {
+        if (recording || busy || previewCam != null) return
+        if (!preview.holder.surface.isValid) return
+        val cam = try { CameraCapture(this) } catch (e: Exception) { sigText.text = "카메라 사용 불가: ${e.message}"; return }
+        previewCam = cam
+        cam.openPreview(preview.holder.surface, object : CameraCapture.Listener {
+            override fun ready() { ui.post { previewRetry = 0; if (!recording && !busy) setSignal(SIG_IDLE) } }
+            override fun failed(reason: String) {
+                ui.post {
+                    val pc = previewCam; previewCam = null
+                    worker.execute { try { pc?.stop() } catch (_: Exception) {} }
+                    // 직전 화면(온보딩 QR)의 카메라가 아직 해제 중이면 잠시 후 재시도.
+                    if (!recording && !busy && previewRetry < 5) {
+                        previewRetry++; ui.postDelayed({ maybeStartPreview() }, 700)
+                    } else sigText.text = "프리뷰 실패: $reason"
+                }
+            }
+        })
+    }
+
+    private fun stopPreview() {
+        val pc = previewCam ?: return
+        previewCam = null
+        worker.execute { try { pc.stop() } catch (_: Exception) {} }
     }
 
     private fun setSignal(state: Int) {
@@ -221,8 +259,10 @@ class MainActivity : Activity() {
         shutter.isEnabled = false
         setSignal(SIG_BUSY)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val pc = previewCam; previewCam = null   // 같은 카메라 → 녹화 전에 프리뷰 세션 해제
         worker.execute {
             try {
+                try { pc?.stop() } catch (_: Exception) {}
                 if (root.usableSpace < 300L * 1024 * 1024) throw IOException("저장 공간 300MB 이상 필요")
                 val cam = CameraCapture(this)
                 val rec = Recording(root, cam.metadata, Prefs.activeSkillKey(this))
@@ -270,6 +310,7 @@ class MainActivity : Activity() {
         recTimer.visibility = View.GONE
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setSignal(SIG_IDLE)
+        maybeStartPreview()   // 녹화 세션 해제됨 → 대기 프리뷰 재개
         if (err != null) { sigText.text = "오류: $err"; return }
         sigText.text = "저장 완료"
         if (rec != null && !isFinishing && !isDestroyed) {
@@ -288,8 +329,10 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(rc, p, g)
     }
 
+    override fun onResume() { super.onResume(); maybeStartPreview() }
+
     override fun onPause() {
-        if (recording || busy) finishRecording("앱이 백그라운드로 전환됨")
+        if (recording || busy) finishRecording("앱이 백그라운드로 전환됨") else stopPreview()
         super.onPause()
     }
 

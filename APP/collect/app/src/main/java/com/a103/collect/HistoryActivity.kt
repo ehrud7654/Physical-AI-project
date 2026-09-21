@@ -27,10 +27,19 @@ class HistoryActivity : Activity() {
         root = File(getExternalFilesDir(null), "sessions").apply { mkdirs() }
 
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(0xFFF3F4F7.toInt()) }
-        outer.addView(TextView(this).apply {
-            text = "기록"; textSize = 22f; setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFF1B2233.toInt()); setPadding(dp(20), dp(18), dp(20), dp(12))
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(14), dp(20), dp(12))
+        }
+        header.addView(TextView(this).apply {
+            text = "‹"; textSize = 30f; setTextColor(0xFF1B2233.toInt())
+            setPadding(dp(8), 0, dp(12), dp(4)); setOnClickListener { finish() }
         })
+        header.addView(TextView(this).apply {
+            text = "기록"; textSize = 22f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFF1B2233.toInt())
+        })
+        outer.addView(header)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(14), dp(20)) }
         outer.addView(ScrollView(this).apply { addView(list) })
         setContentView(outer)

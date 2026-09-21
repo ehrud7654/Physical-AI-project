@@ -102,19 +102,53 @@ class CameraCapture(context: Context) {
         }
     }
 
-    private fun configure(device: CameraDevice, preview: Surface, encoder: Surface, recording: Recording, listener: Listener) {
-        val req = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-        req.addTarget(preview); req.addTarget(encoder)
-        req.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadataOff.AF_OFF)
-        req.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CameraMetadataOff.EIS_OFF)
+    /** AF/EIS/OIS/왜곡보정 OFF + 고정 30fps. 프리뷰·녹화 공통. */
+    private fun applyDefaults(req: CaptureRequest.Builder) {
+        req.set(CaptureRequest.CONTROL_AF_MODE, 0)
+        req.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, 0)
         characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)
             ?.takeIf { it.contains(0) }?.let { req.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, 0) }
         characteristics.get(CameraCharacteristics.DISTORTION_CORRECTION_AVAILABLE_MODES)
             ?.takeIf { it.contains(0) }?.let { req.set(CaptureRequest.DISTORTION_CORRECTION_MODE, 0) }
-
         val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
         if (fpsRanges == null || !fpsRanges.contains(Range(30, 30))) throw Exception("고정 30fps 미지원")
         req.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 30))
+    }
+
+    /** 녹화 없이 초광각 라이브 프리뷰만. 촬영 대기 화면용. */
+    fun openPreview(preview: Surface, listener: Listener) {
+        handler.post {
+            try {
+                manager.openCamera(id, object : CameraDevice.StateCallback() {
+                    override fun onOpened(device: CameraDevice) {
+                        if (closed) { device.close(); return }
+                        camera = device
+                        try {
+                            val req = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                            req.addTarget(preview); applyDefaults(req)
+                            device.createCaptureSessionByOutputConfigurations(listOf(OutputConfiguration(preview)),
+                                object : CameraCaptureSession.StateCallback() {
+                                    override fun onConfigured(cs: CameraCaptureSession) {
+                                        if (closed) { cs.close(); return }
+                                        session = cs
+                                        try { cs.setRepeatingRequest(req.build(), null, handler); listener.ready() }
+                                        catch (e: Exception) { listener.failed(e.toString()) }
+                                    }
+                                    override fun onConfigureFailed(cs: CameraCaptureSession) { listener.failed("프리뷰 세션 구성 실패") }
+                                }, handler)
+                        } catch (e: Exception) { listener.failed(e.toString()) }
+                    }
+                    override fun onDisconnected(device: CameraDevice) { device.close(); if (!closed) listener.failed("카메라 연결 종료") }
+                    override fun onError(device: CameraDevice, err: Int) { device.close(); if (!closed) listener.failed("카메라 오류 $err") }
+                }, handler)
+            } catch (e: Exception) { listener.failed(e.toString()) }
+        }
+    }
+
+    private fun configure(device: CameraDevice, preview: Surface, encoder: Surface, recording: Recording, listener: Listener) {
+        val req = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+        req.addTarget(preview); req.addTarget(encoder)
+        applyDefaults(req)
 
         recording.manifest
             .put("auto_exposure", "continuous; per-frame exposure recorded")
@@ -178,6 +212,4 @@ class CameraCapture(context: Context) {
         thread.quitSafely()
         thread.join(2000)
     }
-
-    private object CameraMetadataOff { const val AF_OFF = 0; const val EIS_OFF = 0 }
 }
