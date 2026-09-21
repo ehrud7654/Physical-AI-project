@@ -135,8 +135,9 @@ class MainActivity : Activity() {
             visibility = View.GONE
             setOnClickListener { redoLast() }
         }
+        // 셔터(74dp, 세로중앙) 바로 아래. 세로중앙 기준 + 아래로 오프셋.
         outer.addView(redoBtn, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(120) })
+            Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(24); topMargin = dp(104) })
 
         setContentView(outer)
         updateLearnBadge()
