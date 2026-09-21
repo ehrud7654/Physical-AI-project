@@ -55,12 +55,4 @@ object DeviceSkills {
         } catch (e: Exception) { Log.w(TAG, "스킬 목록 실패: ${e.message}"); cached }
         finally { conn.disconnect() }
     }
-
-    /** 테스트용 수동 학습 추가(서버 미연동 시 학습 분류 검증용). displayName=skillKey. */
-    fun addLocal(ctx: Context, skillKey: String, displayName: String) {
-        val arr = try { JSONArray(Prefs.skillCatalog(ctx).ifBlank { "[]" }) } catch (e: Exception) { JSONArray() }
-        arr.put(JSONObject().put("id", skillKey).put("skillKey", skillKey).put("displayName", displayName))
-        Prefs.setSkillCatalog(ctx, arr.toString())
-        cached = parse(arr)
-    }
 }

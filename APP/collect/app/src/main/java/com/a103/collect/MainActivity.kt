@@ -22,7 +22,6 @@ import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import java.io.File
-import java.io.IOException
 import java.util.concurrent.Executors
 
 /**
@@ -143,6 +142,7 @@ class MainActivity : Activity() {
         setContentView(outer)
         updateLearnBadge()
         setSignal(SIG_IDLE)
+        syncSkills()   // 앱 진입 시 카탈로그 자동 동기화
     }
 
     private var engineRetry = 0
@@ -187,14 +187,18 @@ class MainActivity : Activity() {
 
     private fun setSignal(state: Int) {
         val (color, text) = when (state) {
-            SIG_REC -> 0xFF3FBF87.toInt() to "녹화 중"
-            SIG_BUSY -> 0xFFE0A44E.toInt() to "카메라 준비 중…"
-            else -> 0xFF8A93AD.toInt() to "대기 — 셔터를 누르세요"
+            SIG_REC -> 0xFFE0685E.toInt() to "녹화 중"                 // 빨강
+            SIG_BUSY -> 0xFFE0A44E.toInt() to "카메라 준비 중…"        // 주황
+            else -> 0xFF3FBF87.toInt() to "촬영 가능 — 동작 준비 완료"   // 초록(대기 = 준비됨)
         }
         sigDot.setTextColor(color); sigText.text = text
     }
 
-    private fun updateLearnBadge() { learnBadge.text = "학습: ${Prefs.activeSkillName(this)} ▾" }
+    private fun updateLearnBadge() {
+        val name = Prefs.activeSkillName(this)
+        val n = Episodes.count(root, Prefs.activeSkillKey(this))
+        learnBadge.text = "학습: $name · $n/${Episodes.GOAL}편 ▾"
+    }
 
     /** 우상단 메뉴 — 다크 커스텀 팝업(기본 PopupMenu 대신). */
     private fun showMenu() {
@@ -220,9 +224,9 @@ class MainActivity : Activity() {
         pop.showAsDropDown(menuBtn)
     }
 
-    private data class CardRow(val label: String, val active: Boolean, val onClick: () -> Unit)
+    private data class CardRow(val label: String, val sub: String, val active: Boolean, val onClick: () -> Unit)
 
-    /** 다크 카드 시트 — 학습 선택·시연 결과 등에 공용(기본 AlertDialog 대신). */
+    /** 다크 카드 시트 — 학습 선택 등 공용. 지정 높이(화면 90%) 초과 시 내부 스크롤. */
     private fun cardSheet(title: String, rows: List<CardRow>) {
         val dialog = Dialog(this)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -243,6 +247,9 @@ class MainActivity : Activity() {
                 text = r.label; setTextColor(0xFFFFFFFF.toInt()); textSize = 16f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            if (r.sub.isNotEmpty()) row.addView(TextView(this).apply {
+                text = r.sub; setTextColor(0xFFB8C0D8.toInt()); textSize = 13f; setPadding(0, 0, dp(10), 0)
+            })
             row.addView(TextView(this).apply {
                 text = if (r.active) "●" else ""; setTextColor(0xFF4F9CF9.toInt()); textSize = 16f
             })
@@ -253,23 +260,35 @@ class MainActivity : Activity() {
         }
         dialog.setContentView(scroll)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.setLayout(dp(340), LinearLayout.LayoutParams.WRAP_CONTENT)
+        // 크기 고정 + 초과 시 스크롤: 추정 높이를 화면 90%로 상한.
+        val maxH = (resources.displayMetrics.heightPixels * 0.9f).toInt()
+        val approx = dp(80) + rows.size * dp(74)
+        dialog.window?.setLayout(dp(360), minOf(approx, maxH))
         dialog.show()
     }
 
     private fun pickLearning() {
         if (recording) return
+        DeviceSkills.load(this)
         val activeKey = Prefs.activeSkillKey(this)
         val rows = ArrayList<CardRow>()
-        rows.add(CardRow("미분류 (나중에 지정)", activeKey.isBlank()) {
-            Prefs.setActiveSkill(this, "", "미분류"); updateLearnBadge()
-        })
+        // 실제 학습 먼저, 미분류는 맨 아래.
         for (s in DeviceSkills.cached) {
-            rows.add(CardRow(s.displayName, s.skillKey == activeKey && s.skillKey.isNotBlank()) {
+            rows.add(CardRow(s.displayName, "${Episodes.count(root, s.skillKey)}/${Episodes.GOAL}편",
+                s.skillKey == activeKey && s.skillKey.isNotBlank()) {
                 Prefs.setActiveSkill(this, s.skillKey, s.displayName); updateLearnBadge()
             })
         }
+        rows.add(CardRow("미분류 (나중에 지정)", "${Episodes.count(root, "")}/${Episodes.GOAL}편", activeKey.isBlank()) {
+            Prefs.setActiveSkill(this, "", "미분류"); updateLearnBadge()
+        })
         cardSheet("학습 선택", rows)
+        syncSkills()   // 열 때 백그라운드로 카탈로그 최신화(다음 열람 반영)
+    }
+
+    /** 스킬 카탈로그 백그라운드 동기화 후 배지 갱신. */
+    private fun syncSkills() {
+        worker.execute { DeviceSkills.refresh(this); ui.post { updateLearnBadge() } }
     }
 
     private fun begin() {
@@ -349,7 +368,7 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(rc, p, g)
     }
 
-    override fun onResume() { super.onResume(); startEngine() }
+    override fun onResume() { super.onResume(); startEngine(); if (::learnBadge.isInitialized) updateLearnBadge() }
 
     override fun onPause() {
         if (recording || busy) finishRecording("앱이 백그라운드로 전환됨")

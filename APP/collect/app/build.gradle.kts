@@ -22,7 +22,8 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "UPLOAD_BASE_URL", "\"http://j15a103.p.ssafy.io\"")
+            // 서버는 HTTPS 전용(http는 301 리다이렉트 → HttpURLConnection이 안 따라감).
+            buildConfigField("String", "UPLOAD_BASE_URL", "\"https://j15a103.p.ssafy.io\"")
         }
         release {
             isMinifyEnabled = false
