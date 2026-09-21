@@ -1,8 +1,9 @@
 package com.a103.collect
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.app.Dialog
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.text.format.DateFormat
 import android.view.Gravity
@@ -98,10 +99,39 @@ class HistoryActivity : Activity() {
         }
     }
 
+    /** 삭제 확인 — 라이트 커스텀 다이얼로그(기본 AlertDialog 대신). */
     private fun confirmDelete(dir: File) {
-        AlertDialog.Builder(this).setTitle("삭제")
-            .setMessage("이 세션을 삭제할까요?\n${dir.name}")
-            .setPositiveButton("삭제") { _, _ -> dir.deleteRecursively(); render() }
-            .setNegativeButton("취소", null).show()
+        val dialog = Dialog(this)
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_dialog_light); setPadding(dp(22), dp(20), dp(22), dp(16))
+        }
+        card.addView(TextView(this).apply {
+            text = "삭제"; setTextColor(0xFF1B2233.toInt()); textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        card.addView(TextView(this).apply {
+            text = "이 세션을 삭제할까요?\n${dir.name}"; setTextColor(0xFF6B7280.toInt()); textSize = 14f
+            setPadding(0, dp(10), 0, dp(18))
+        })
+        val btns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        btns.addView(TextView(this).apply {
+            text = "취소"; setTextColor(0xFF6B7280.toInt()); textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(18), dp(10), dp(18), dp(10)); setOnClickListener { dialog.dismiss() }
+        })
+        btns.addView(TextView(this).apply {
+            text = "삭제"; setTextColor(0xFFFFFFFF.toInt()); textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setBackgroundResource(R.drawable.bg_btn_azure); setPadding(dp(22), dp(10), dp(22), dp(10))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dp(10) }
+            setOnClickListener { dir.deleteRecursively(); dialog.dismiss(); render() }
+        })
+        card.addView(btns)
+        dialog.setContentView(card)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(dp(320), LinearLayout.LayoutParams.WRAP_CONTENT)
+        dialog.show()
     }
 }

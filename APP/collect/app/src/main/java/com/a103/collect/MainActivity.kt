@@ -1,9 +1,11 @@
 package com.a103.collect
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -15,7 +17,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.PopupMenu
+import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONArray
 import java.io.File
@@ -129,30 +132,83 @@ class MainActivity : Activity() {
 
     private fun updateLearnBadge() { learnBadge.text = "학습: ${Prefs.activeSkillName(this)} ▾" }
 
+    /** 우상단 메뉴 — 다크 커스텀 팝업(기본 PopupMenu 대신). */
     private fun showMenu() {
         if (recording) return
-        PopupMenu(this, menuBtn).apply {
-            menu.add("기록")
-            setOnMenuItemClickListener {
-                if (!busy && !recording) startActivity(Intent(this@MainActivity, HistoryActivity::class.java)); true
-            }
-            show()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_menu_dark); setPadding(dp(6), dp(6), dp(6), dp(6))
         }
+        val pop = PopupWindow(container, dp(180), LinearLayout.LayoutParams.WRAP_CONTENT, true)
+            .apply { isOutsideTouchable = true; elevation = dp(8).toFloat() }
+        val row = TextView(this).apply {
+            text = "기록"; setTextColor(0xFFFFFFFF.toInt()); textSize = 17f
+            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_history, 0, 0, 0)
+            compoundDrawablePadding = dp(14); setPadding(dp(16), dp(15), dp(16), dp(15))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setOnClickListener {
+                if (!busy && !recording) startActivity(Intent(this@MainActivity, HistoryActivity::class.java))
+                pop.dismiss()
+            }
+        }
+        container.addView(row)
+        pop.showAsDropDown(menuBtn)
+    }
+
+    private data class CardRow(val label: String, val active: Boolean, val onClick: () -> Unit)
+
+    /** 다크 카드 시트 — 학습 선택·시연 결과 등에 공용(기본 AlertDialog 대신). */
+    private fun cardSheet(title: String, rows: List<CardRow>) {
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(TextView(this).apply {
+            text = title; setTextColor(0xFFFFFFFF.toInt()); textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(dp(4), 0, dp(4), dp(12))
+        })
+        rows.forEach { r ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setBackgroundResource(if (r.active) R.drawable.bg_pick_card_active else R.drawable.bg_pick_card)
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { bottomMargin = dp(8) }
+                setOnClickListener { r.onClick(); dialog.dismiss() }
+            }
+            row.addView(TextView(this).apply {
+                text = r.label; setTextColor(0xFFFFFFFF.toInt()); textSize = 16f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(TextView(this).apply {
+                text = if (r.active) "●" else ""; setTextColor(0xFF4F9CF9.toInt()); textSize = 16f
+            })
+            root.addView(row)
+        }
+        val scroll = ScrollView(this).apply {
+            setBackgroundResource(R.drawable.bg_menu_dark); setPadding(dp(16), dp(16), dp(16), dp(16)); addView(root)
+        }
+        dialog.setContentView(scroll)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(dp(340), LinearLayout.LayoutParams.WRAP_CONTENT)
+        dialog.show()
     }
 
     private fun pickLearning() {
         if (recording) return
-        val keys = arrayListOf(""); val names = arrayListOf("미분류 (나중에 지정)")
+        val activeKey = Prefs.activeSkillKey(this)
+        val rows = ArrayList<CardRow>()
+        rows.add(CardRow("미분류 (나중에 지정)", activeKey.isBlank()) {
+            Prefs.setActiveSkill(this, "", "미분류"); updateLearnBadge()
+        })
         runCatching {
             val arr = JSONArray(Prefs.skillCatalog(this).ifBlank { "[]" })
             for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i); keys.add(o.optString("key")); names.add(o.optString("name"))
+                val o = arr.getJSONObject(i); val key = o.optString("key"); val name = o.optString("name")
+                rows.add(CardRow(name, key == activeKey && key.isNotBlank()) {
+                    Prefs.setActiveSkill(this, key, name); updateLearnBadge()
+                })
             }
         }
-        AlertDialog.Builder(this).setTitle("학습 선택")
-            .setItems(names.toTypedArray()) { _, i ->
-                Prefs.setActiveSkill(this, keys[i], names[i].substringBefore(" (")); updateLearnBadge()
-            }.show()
+        cardSheet("학습 선택", rows)
     }
 
     private fun begin() {
@@ -217,13 +273,14 @@ class MainActivity : Activity() {
         if (err != null) { sigText.text = "오류: $err"; return }
         sigText.text = "저장 완료"
         if (rec != null && !isFinishing && !isDestroyed) {
-            AlertDialog.Builder(this).setTitle("시연 결과")
-                .setItems(arrayOf("성공", "실패", "장비 시험 / 미판정")) { _, i ->
-                    val outcome = arrayOf("success", "failure", "unrated")[i]
+            val opts = listOf("성공" to "success", "실패" to "failure", "장비 시험 / 미판정" to "unrated")
+            cardSheet("시연 결과", opts.map { (label, outcome) ->
+                CardRow(label, false) {
                     worker.execute {
                         try { rec.outcome(outcome) } catch (e: Exception) { ui.post { sigText.text = "결과 저장 실패: $e" } }
                     }
-                }.show()
+                }
+            })
         }
     }
 
