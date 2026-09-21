@@ -117,8 +117,6 @@ export interface Dataset {
   retentionDays: number;
   retentionExpiresAt: string;
   trainable: boolean;
-  /** ORB-SLAM 공간 매핑 입력으로 선택할 수 있는지 나타낸다. */
-  mappingEligible: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
 }

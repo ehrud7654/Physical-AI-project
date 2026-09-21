@@ -17,8 +17,7 @@ public final class TrainingJobApiModels {
       @NotNull UUID umiDeviceId,
       List<UUID> episodeIds,
       TrainingMode trainingMode,
-      UUID baseSkillVersionId,
-      @NotNull UUID mappingEpisodeId) {}
+      UUID baseSkillVersionId) {}
 
   public record JobResponse(
       UUID id,

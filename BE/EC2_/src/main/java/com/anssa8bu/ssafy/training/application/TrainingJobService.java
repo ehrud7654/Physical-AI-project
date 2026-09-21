@@ -77,18 +77,19 @@ public class TrainingJobService {
             .filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
             .orElseThrow(() -> new ResourceNotFoundException("UMI Device"));
     List<Episode> selected = selectEpisodes(owner, skill, request);
-    Episode mapping = selectMappingEpisode(owner, device, request, selected);
+    if (selected.stream().anyMatch(episode -> !episode.getUmiDeviceId().equals(device.getId())))
+      throw new BusinessConflictException(
+          "EPISODE_DEVICE_MISMATCH", "선택한 Episode와 UMI 장치가 일치하지 않습니다.");
     TrainingMode trainingMode =
         request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
     SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
-    int expected = selected.size() + 1;
+    int expected = selected.size();
     if (expected < 1)
       throw new BusinessConflictException("INVALID_EPISODE_COUNT", "Episode 수는 1 이상이어야 합니다.");
     Map<String, Object> query = new LinkedHashMap<>();
     query.put("skillKey", skill.getSkillKey());
     query.put("inputMode", TrainingInputMode.EXISTING_EPISODES.name());
     query.put("trainingMode", trainingMode.name());
-    query.put("mappingEpisodeId", mapping.getId().toString());
     if (baseVersion != null) query.put("baseSkillVersionId", baseVersion.getId().toString());
     TrainingJob job =
         jobs.save(
@@ -103,10 +104,9 @@ public class TrainingJobService {
                 trainingMode,
                 baseVersion == null ? null : baseVersion.getId()));
     job.planInput(expected, true);
-    attach(job, mapping, 1, TrainingEpisodeRole.MAPPING);
     for (int i = 0; i < selected.size(); i++)
-      attach(job, selected.get(i), i + 2, TrainingEpisodeRole.DEMONSTRATION);
-    job.fixInputSnapshotSha256(inputSnapshotHash(mapping, selected));
+      attach(job, selected.get(i), i + 1, TrainingEpisodeRole.DEMONSTRATION);
+    job.fixInputSnapshotSha256(inputSnapshotHash(selected));
     idempotency.complete(
         owner, "POST", "/api/v1/training-jobs", claim, 201, "TRAINING_JOB", job.getId());
     return map(job, skill);
@@ -203,32 +203,6 @@ public class TrainingJobService {
     return request.episodeIds().stream().map(byId::get).toList();
   }
 
-  private Episode selectMappingEpisode(
-      UUID owner, Device device, CreateRequest request, List<Episode> demonstrations) {
-    if (demonstrations.stream().anyMatch(e -> e.getId().equals(request.mappingEpisodeId())))
-      throw new BusinessConflictException(
-          "MAPPING_EPISODE_DUPLICATED", "매핑 Episode를 시연 Episode로 중복 사용할 수 없습니다.");
-    Episode mapping =
-        episodes
-            .findById(request.mappingEpisodeId())
-            .orElseThrow(() -> new ResourceNotFoundException("MappingEpisode"));
-    if (!mapping.getOwnerId().equals(owner)
-        || !mapping.getUmiDeviceId().equals(device.getId())
-        || mapping.getStatus() != EpisodeStatus.READY
-        || !(mapping.getQualityStatus() == EpisodeQualityStatus.VALID
-            || mapping.getQualityStatus() == EpisodeQualityStatus.WARNING))
-      throw new BusinessConflictException(
-          "MAPPING_EPISODE_INVALID", "매핑에 사용할 수 없는 Episode입니다.");
-    archives
-        .findByEpisodeId(mapping.getId())
-        .filter(a -> a.getStatus() == EpisodeArchiveStatus.AVAILABLE)
-        .orElseThrow(
-            () ->
-                new BusinessConflictException(
-                    "MAPPING_EPISODE_NOT_AVAILABLE", "매핑 Episode 파일을 사용할 수 없습니다."));
-    return mapping;
-  }
-
   private void attach(
       TrainingJob job, Episode episode, int order, TrainingEpisodeRole inputRole) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
@@ -246,13 +220,12 @@ public class TrainingJobService {
             clock.instant()));
   }
 
-  private String inputSnapshotHash(Episode mapping, List<Episode> selected) {
+  private String inputSnapshotHash(List<Episode> selected) {
     try {
       StringBuilder canonical = new StringBuilder();
-      appendSnapshot(canonical, 1, TrainingEpisodeRole.MAPPING, mapping);
       for (int index = 0; index < selected.size(); index++) {
         Episode episode = selected.get(index);
-        appendSnapshot(canonical, index + 2, TrainingEpisodeRole.DEMONSTRATION, episode);
+        appendSnapshot(canonical, index + 1, TrainingEpisodeRole.DEMONSTRATION, episode);
       }
       return HexFormat.of().formatHex(
           MessageDigest.getInstance("SHA-256")

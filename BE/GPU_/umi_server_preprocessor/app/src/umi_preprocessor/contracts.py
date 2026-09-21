@@ -89,8 +89,8 @@ def validate_raw_layout(root: Path, require_mapping: bool = True) -> dict:
     root = Path(root).resolve()
     sessions = _validate_sessions(root / "raw")
     mappings = _validate_sessions(root / "raw_mapping")
-    if len(sessions) < 2:
-        raise ValueError(f"at least 2 demonstration sessions are required, found {len(sessions)}")
+    if len(sessions) < 1:
+        raise ValueError("at least 1 demonstration session is required")
     if require_mapping and not mappings:
         raise ValueError("raw_mapping must contain one mapping session")
     return {

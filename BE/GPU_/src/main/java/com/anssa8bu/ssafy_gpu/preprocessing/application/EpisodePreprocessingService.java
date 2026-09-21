@@ -39,18 +39,10 @@ public class EpisodePreprocessingService {
     Path root = worker.storageRoot().resolve("preprocessing-jobs").resolve(jobId).toAbsolutePath().normalize();
     Path allowed = worker.storageRoot().resolve("preprocessing-jobs").toAbsolutePath().normalize();
     if (!root.startsWith(allowed)) throw new IllegalStateException("허용되지 않은 전처리 작업 경로입니다.");
-    List<LocalEpisode> mappings =
-        episodes.stream().filter(e -> e.inputRole() == TrainingEpisodeRole.MAPPING).toList();
     List<LocalEpisode> demonstrations =
         episodes.stream().filter(e -> e.inputRole() == TrainingEpisodeRole.DEMONSTRATION).toList();
-    if (mappings.size() != 1)
-      throw new IllegalStateException("전처리에는 정확히 하나의 매핑 Episode가 필요합니다.");
     if (demonstrations.isEmpty())
       throw new IllegalStateException("전처리에는 하나 이상의 시연 Episode가 필요합니다.");
-    LocalEpisode mapping = mappings.getFirst();
-    extractor.extract(
-        mapping,
-        root.resolve("raw_mapping").resolve("rec_mapping_" + mapping.episodeId()));
     for (LocalEpisode episode : demonstrations) {
       extractor.extract(
           episode,

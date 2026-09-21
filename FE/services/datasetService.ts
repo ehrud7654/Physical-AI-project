@@ -10,11 +10,10 @@ interface ApiEpisode {
   skillKey: string | null;
   skillDisplayName: string | null;
   status: 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID' | 'DELETING' | 'DELETED' | 'DELETE_FAILED';
-  qualityStatus: 'PENDING' | 'VALID' | 'WARNING' | 'INVALID';
   startedAt: string;
   endedAt: string;
   retentionExpiresAt: string;
-  archive: { sizeBytes: number; status: 'UPLOADING' | 'AVAILABLE' | 'DELETING' | 'DELETED' | 'DELETE_FAILED' } | null;
+  archive: { sizeBytes: number } | null;
   trainable: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
@@ -53,10 +52,6 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     retentionDays: Math.max(0, Math.ceil((Date.parse(episode.retentionExpiresAt) - Date.now()) / 86_400_000)),
     retentionExpiresAt: episode.retentionExpiresAt,
     trainable: episode.trainable,
-    mappingEligible:
-      status === 'READY'
-      && (episode.qualityStatus === 'VALID' || episode.qualityStatus === 'WARNING')
-      && episode.archive?.status === 'AVAILABLE',
     blockingReasons: episode.blockingReasons,
     recoveryAction: episode.recoveryAction,
   };

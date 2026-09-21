@@ -34,7 +34,7 @@ def main() -> None:
     parser.add_argument("--archive", type=Path, help="optional .tgz/.tar.gz/.zip to extract into an empty root")
     parser.add_argument("--dataset-name", default="dataset")
     parser.add_argument("--config-dir", type=Path)
-    parser.add_argument("--require-mapping", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--require-mapping", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--allow-unrated", action="store_true")
     parser.add_argument("--allow-tracking-loss", action="store_true")
     parser.add_argument("--allow-missing-tag", action="store_true")
