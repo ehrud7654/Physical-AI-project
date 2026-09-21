@@ -40,7 +40,7 @@ export function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { on
 }
 
 const dashboardRobotStatusLabel: Record<DashboardRobotStatus, RobotStatus> = {
-  AVAILABLE: '온라인', BUSY: '작업 중', OFFLINE: '오프라인',
+  AVAILABLE: '온라인', BUSY: '작업 중', OFFLINE: '오프라인', UNKNOWN: '상태 확인 불가',
 };
 
 function dashboardTrainingStatus(status: string): TrainingStatus {

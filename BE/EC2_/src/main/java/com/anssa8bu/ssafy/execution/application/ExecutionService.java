@@ -4,6 +4,7 @@ import static com.anssa8bu.ssafy.execution.dto.ExecutionApiModels.*;
 
 import com.anssa8bu.ssafy.common.exception.*;
 import com.anssa8bu.ssafy.common.idempotency.IdempotencyGuard;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
 import com.anssa8bu.ssafy.deployment.entity.*;
 import com.anssa8bu.ssafy.deployment.repository.DeploymentRepository;
 import com.anssa8bu.ssafy.execution.entity.*;
@@ -27,6 +28,7 @@ public class ExecutionService {
           RobotExecutionStatus.RUNNING,
           RobotExecutionStatus.CANCEL_REQUESTED,
           RobotExecutionStatus.STATUS_UNKNOWN);
+  private final RuntimeStateService runtime;
   private final RobotExecutionRepository executions;
   private final RobotRepository robots;
   private final DeploymentRepository deployments;
@@ -40,13 +42,15 @@ public class ExecutionService {
       DeploymentRepository d,
       TaskStepRepository s,
       Clock c,
-      IdempotencyGuard idempotency) {
+      IdempotencyGuard idempotency,
+      RuntimeStateService runtime) {
     executions = e;
     robots = r;
     deployments = d;
     steps = s;
     clock = c;
     this.idempotency = idempotency;
+    this.runtime = runtime;
   }
 
   @Transactional
@@ -59,8 +63,7 @@ public class ExecutionService {
         robots
             .findByIdAndOwnerId(robotId, owner)
             .orElseThrow(() -> new ResourceNotFoundException("Robot"));
-    if (robot.getConnectionStatus() != RobotConnectionStatus.ONLINE)
-      throw new BusinessConflictException("ROBOT_OFFLINE", "로봇이 오프라인입니다.");
+    runtime.requireOnline(robot.getJetsonDeviceId());
     if (executions.existsByRobotIdAndStatusIn(robotId, ACTIVE))
       throw new BusinessConflictException("ROBOT_BUSY", "이미 실행 중인 작업이 있습니다.");
     Deployment deployment =

@@ -1,6 +1,7 @@
 package com.anssa8bu.ssafy.common.exception;
 
 import com.anssa8bu.ssafy.auth.security.SessionStoreUnavailableException;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
 import com.anssa8bu.ssafy.common.response.ErrorResponse;
 import com.anssa8bu.ssafy.device.exception.DeviceAlreadyRegisteredException;
 import com.anssa8bu.ssafy.device.exception.DeviceNotFoundException;
@@ -16,6 +17,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  @ExceptionHandler(RuntimeStateUnavailableException.class)
+  public ResponseEntity<ErrorResponse> handleRuntimeUnavailable(
+      RuntimeStateUnavailableException exception) {
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(new ErrorResponse("RUNTIME_STATE_UNAVAILABLE", exception.getMessage()));
+  }
 
   @ExceptionHandler(SessionStoreUnavailableException.class)
   public ResponseEntity<ErrorResponse> handleSessionUnavailable(

@@ -1,13 +1,14 @@
 package com.anssa8bu.ssafy.device.application;
 
 import com.anssa8bu.ssafy.common.exception.BusinessConflictException;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
 import com.anssa8bu.ssafy.device.dto.DeviceCreateRequest;
 import com.anssa8bu.ssafy.device.dto.DeviceResponse;
 import com.anssa8bu.ssafy.device.dto.DeviceUpdateRequest;
 import com.anssa8bu.ssafy.device.entity.Device;
 import com.anssa8bu.ssafy.device.entity.DeviceConnectionStatus;
-import com.anssa8bu.ssafy.device.entity.DeviceType;
 import com.anssa8bu.ssafy.device.entity.DeviceRegistrationStatus;
+import com.anssa8bu.ssafy.device.entity.DeviceType;
 import com.anssa8bu.ssafy.device.exception.DeviceAlreadyRegisteredException;
 import com.anssa8bu.ssafy.device.exception.DeviceNotFoundException;
 import com.anssa8bu.ssafy.device.repository.DeviceRepository;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DeviceService {
 
+  private final RuntimeStateService runtime;
   private final DeviceRepository deviceRepository;
   private final RobotRepository robotRepository;
   private final RobotProfileRepository robotProfileRepository;
@@ -30,10 +32,12 @@ public class DeviceService {
   public DeviceService(
       DeviceRepository deviceRepository,
       RobotRepository robotRepository,
-      RobotProfileRepository robotProfileRepository) {
+      RobotProfileRepository robotProfileRepository,
+      RuntimeStateService runtime) {
     this.deviceRepository = deviceRepository;
     this.robotRepository = robotRepository;
     this.robotProfileRepository = robotProfileRepository;
+    this.runtime = runtime;
   }
 
   @Transactional
@@ -73,7 +77,7 @@ public class DeviceService {
               RobotConnectionStatus.OFFLINE));
     }
 
-    return DeviceResponse.from(savedDevice);
+    return response(savedDevice);
   }
 
   @Transactional(readOnly = true)
@@ -85,13 +89,13 @@ public class DeviceService {
                 ownerId, deviceType);
     return devices.stream()
         .filter(device -> device.getRegistrationStatus() == DeviceRegistrationStatus.REGISTERED)
-        .map(DeviceResponse::from)
+        .map(this::response)
         .toList();
   }
 
   @Transactional(readOnly = true)
   public DeviceResponse findOne(UUID ownerId, UUID deviceId) {
-    return DeviceResponse.from(findOwnedDevice(ownerId, deviceId));
+    return response(findOwnedDevice(ownerId, deviceId));
   }
 
   @Transactional
@@ -99,7 +103,22 @@ public class DeviceService {
     Device device = findOwnedDevice(ownerId, deviceId);
     device.rename(request.name().trim());
     device.changeLocation(request.location());
-    return DeviceResponse.from(device);
+    return response(device);
+  }
+
+  private DeviceResponse response(Device device) {
+    var live = runtime.device(device.getId(), device.getLastSeenAt());
+    return new DeviceResponse(
+        device.getId(),
+        device.getOwnerId(),
+        device.getDeviceType(),
+        device.getHandleNumber(),
+        device.getName(),
+        device.getLocation(),
+        live.status(),
+        device.getRegistrationStatus(),
+        live.lastSeenAt(),
+        device.getCreatedAt());
   }
 
   private Device findOwnedDevice(UUID ownerId, UUID deviceId) {

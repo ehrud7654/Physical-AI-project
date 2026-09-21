@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
 
+@org.hibernate.annotations.DynamicUpdate
 @Entity
 @Table(name = "robots")
 public class Robot extends AuditableEntity {
@@ -93,5 +94,7 @@ public class Robot extends AuditableEntity {
     currentDeploymentId = deploymentId;
   }
 
-  public void markOffline() { connectionStatus = RobotConnectionStatus.OFFLINE; }
+  public void markOffline() {
+    connectionStatus = RobotConnectionStatus.OFFLINE;
+  }
 }

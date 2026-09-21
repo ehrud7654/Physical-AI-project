@@ -5,6 +5,7 @@ import static com.anssa8bu.ssafy.task.dto.TaskApiModels.*;
 import com.anssa8bu.ssafy.common.exception.BusinessConflictException;
 import com.anssa8bu.ssafy.common.exception.ResourceNotFoundException;
 import com.anssa8bu.ssafy.common.idempotency.IdempotencyGuard;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
 import com.anssa8bu.ssafy.execution.entity.RobotExecutionStatus;
 import com.anssa8bu.ssafy.model.entity.SkillVersion;
 import com.anssa8bu.ssafy.model.entity.SkillVersionStatus;
@@ -45,6 +46,7 @@ public class TaskService {
           new double[] {-120, 120},
           "J6",
           new double[] {-360, 360});
+  private final RuntimeStateService runtime;
   private final TaskRepository tasks;
   private final TaskVersionRepository versions;
   private final TaskStepRepository steps;
@@ -60,7 +62,8 @@ public class TaskService {
       SkillVersionRepository skillVersions,
       RobotRepository robots,
       Clock clock,
-      IdempotencyGuard idempotency) {
+      IdempotencyGuard idempotency,
+      RuntimeStateService runtime) {
     this.tasks = tasks;
     this.versions = versions;
     this.steps = steps;
@@ -68,6 +71,7 @@ public class TaskService {
     this.robots = robots;
     this.clock = clock;
     this.idempotency = idempotency;
+    this.runtime = runtime;
   }
 
   @Transactional
@@ -166,7 +170,10 @@ public class TaskService {
             .collect(Collectors.toMap(SkillVersion::getId, Function.identity()));
     var issues = new java.util.ArrayList<ValidationIssue>();
     if (versionSteps.isEmpty()) issues.add(issue("EMPTY_TASK", "실행할 동작이 없습니다.", "NONE"));
-    if (robot.getConnectionStatus() != RobotConnectionStatus.ONLINE)
+    var connection = runtime.device(robot.getJetsonDeviceId(), robot.getLastSeenAt()).status();
+    if (connection == LiveConnectionStatus.UNKNOWN)
+      issues.add(issue("RUNTIME_STATE_UNAVAILABLE", "로봇 연결 상태를 확인할 수 없습니다.", "WAIT"));
+    else if (connection != LiveConnectionStatus.ONLINE)
       issues.add(issue("ROBOT_OFFLINE", "로봇이 오프라인입니다.", "WAIT"));
     if (skillMap.size() != referencedSkills.size()
         || skillMap.values().stream()

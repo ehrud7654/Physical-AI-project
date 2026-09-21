@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
+@org.hibernate.annotations.DynamicUpdate
 @Entity
 @Table(name = "devices")
 public class Device extends AuditableEntity {
@@ -149,5 +150,7 @@ public class Device extends AuditableEntity {
     return lastSeenAt;
   }
 
-  public void markOffline() { connectionStatus = DeviceConnectionStatus.OFFLINE; }
+  public void markOffline() {
+    connectionStatus = DeviceConnectionStatus.OFFLINE;
+  }
 }
