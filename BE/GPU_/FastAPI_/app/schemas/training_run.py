@@ -45,15 +45,32 @@ class TrainingInput(ApiModel):
     storage_key: str = Field(min_length=1)
     size_bytes: int = Field(gt=0)
     sha256: str
-    dataset_sha256: str
+    report_storage_key: str = Field(min_length=1)
     report_sha256: str
     episode_count: int = Field(gt=0)
+    training_input_status: str
+    format: str
+    world_frame: str = Field(min_length=1)
 
-    @field_validator("sha256", "dataset_sha256", "report_sha256")
+    @field_validator("sha256", "report_sha256")
     @classmethod
     def validate_hash(cls, value: str) -> str:
         if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
             raise ValueError("hash must be a lowercase SHA-256")
+        return value
+
+    @field_validator("training_input_status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        if value != "ready":
+            raise ValueError("trainingInputStatus must be ready")
+        return value
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, value: str) -> str:
+        if value != "ZARR_ZIP":
+            raise ValueError("format must be ZARR_ZIP")
         return value
 
 

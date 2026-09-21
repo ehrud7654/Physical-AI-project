@@ -1,10 +1,9 @@
-"""Create the small handoff archive consumed by the GPU training server."""
+"""Describe the local Zarr input consumed directly by the GPU training server."""
 from __future__ import annotations
 
 import hashlib
 import json
 from pathlib import Path
-import tarfile
 
 
 def sha256(path: Path) -> str:
@@ -20,25 +19,13 @@ def package_training_input(dataset: Path) -> dict:
     report = dataset.with_suffix(".report.json")
     if not dataset.is_file() or not report.is_file():
         raise FileNotFoundError("Zarr archive or its report is missing")
-    name = dataset.name.removesuffix(".zarr.zip")
-    manifest_path = dataset.parent / f"{name}_gpu_input.manifest.json"
-    archive = dataset.parent / f"{name}_gpu_input.tgz"
     manifest = {
         "schema_version": 1,
-        "dataset": dataset.name,
+        "dataset": str(dataset),
         "dataset_sha256": sha256(dataset),
-        "report": report.name,
+        "report": str(report),
         "report_sha256": sha256(report),
     }
-    if archive.exists():
-        previous = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else None
-        if previous != manifest:
-            raise FileExistsError(f"existing archive does not match current inputs: {archive}")
-        return {**manifest, "archive": str(archive), "archive_sha256": sha256(archive), "reused": True}
-
+    manifest_path = dataset.parent / f"{dataset.name.removesuffix('.zarr.zip')}_gpu_input.manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    with tarfile.open(archive, "w:gz") as bundle:
-        bundle.add(dataset, arcname=dataset.name)
-        bundle.add(report, arcname=report.name)
-        bundle.add(manifest_path, arcname=manifest_path.name)
-    return {**manifest, "archive": str(archive), "archive_sha256": sha256(archive), "reused": False}
+    return manifest

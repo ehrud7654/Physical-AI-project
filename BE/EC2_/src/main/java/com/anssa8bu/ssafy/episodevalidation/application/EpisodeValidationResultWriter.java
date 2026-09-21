@@ -1,6 +1,5 @@
 package com.anssa8bu.ssafy.episodevalidation.application;
 
-import com.anssa8bu.ssafy.episode.entity.ArchiveCompressionMethod;
 import com.anssa8bu.ssafy.episode.entity.Episode;
 import com.anssa8bu.ssafy.episode.entity.EpisodeArchive;
 import com.anssa8bu.ssafy.episode.entity.EpisodeArchiveStatus;
@@ -42,7 +41,13 @@ public class EpisodeValidationResultWriter {
   static final UUID EPISODE_S3_STORAGE_NODE_ID =
       UUID.fromString("18000000-0000-4000-8000-000000000001");
   private static final Set<String> MANIFEST_FILES =
-      Set.of("meta.json", "frames.csv", "pose.csv", "imu.csv", "gripper.csv");
+      Set.of(
+          "manifest.json",
+          "frames.csv",
+          "encoded.csv",
+          "accelerometer.csv",
+          "gyroscope.csv",
+          "video.mp4");
 
   private final EpisodeUploadSessionRepository sessions;
   private final EpisodeRepository episodes;
@@ -72,7 +77,8 @@ public class EpisodeValidationResultWriter {
     RetentionPolicy retention =
         retentionPolicies
             .findFirstByDefaultPolicyTrueAndActiveTrue()
-            .orElseThrow(() -> new IllegalStateException("active default retention policy is missing"));
+            .orElseThrow(
+                () -> new IllegalStateException("active default retention policy is missing"));
     if (!storageNodes.existsById(EPISODE_S3_STORAGE_NODE_ID))
       throw new IllegalStateException("episode S3 storage node is missing");
     Skill skill =
@@ -83,10 +89,7 @@ public class EpisodeValidationResultWriter {
     EpisodeQualityStatus qualityStatus = normalizedQuality(result.qualityStatus());
     Instant now = Instant.now();
     Map<String, Object> qualitySummary = new LinkedHashMap<>(session.getSummary());
-    qualitySummary.put("gripper", Map.of(
-        "detected", result.gripperDetectedCount(),
-        "total", result.gripperSampleCount(),
-        "longestX", result.gripperLongestX()));
+    qualitySummary.putAll(result.qualityDetails());
     Episode episode =
         new Episode(
             session.getEpisodeId(),
@@ -135,6 +138,7 @@ public class EpisodeValidationResultWriter {
     Map<String, Object> manifestDetails = new LinkedHashMap<>();
     manifestDetails.put("bucket", session.getBucketName());
     manifestDetails.put("frameCount", result.frameCount());
+    manifestDetails.put("manifest", result.manifest());
     EpisodeArchive archive =
         new EpisodeArchive(
             UUID.randomUUID(),
@@ -169,7 +173,9 @@ public class EpisodeValidationResultWriter {
 
   private EpisodeUploadSession validatingSession(UUID id) {
     EpisodeUploadSession session =
-        sessions.findForUpdateById(id).orElseThrow(() -> new IllegalStateException("upload session is missing"));
+        sessions
+            .findForUpdateById(id)
+            .orElseThrow(() -> new IllegalStateException("upload session is missing"));
     if (session.getStatus() != EpisodeUploadStatus.VALIDATING)
       throw new IllegalStateException("upload session is not validating");
     return session;

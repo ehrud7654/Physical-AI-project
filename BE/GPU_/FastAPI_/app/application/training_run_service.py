@@ -1,4 +1,5 @@
 from datetime import timezone
+import json
 
 from app.core.canonical_json import sha256_hex
 from app.core.config import Settings
@@ -89,4 +90,17 @@ class TrainingRunService:
             raise DomainError(422, "TRAINING_INPUT_SIZE_MISMATCH", "전처리 학습 입력 크기가 일치하지 않습니다.")
         if sha256_file(training_input) != request.training_input.sha256:
             raise DomainError(422, "TRAINING_INPUT_HASH_MISMATCH", "전처리 학습 입력 hash가 일치하지 않습니다.")
+        report_path = self.paths.resolve_existing_file(request.training_input.report_storage_key)
+        if sha256_file(report_path) != request.training_input.report_sha256:
+            raise DomainError(422, "TRAINING_REPORT_HASH_MISMATCH", "전처리 보고서 hash가 일치하지 않습니다.")
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise DomainError(422, "TRAINING_REPORT_INVALID", "전처리 보고서를 읽을 수 없습니다.") from error
+        if report.get("status") != "pass" or report.get("training_input_status") != "ready":
+            raise DomainError(422, "TRAINING_INPUT_NOT_READY", "검증을 통과한 Zarr만 학습할 수 있습니다.")
+        if report.get("episodes") != request.training_input.episode_count:
+            raise DomainError(422, "TRAINING_INPUT_EPISODE_MISMATCH", "Zarr Episode 수가 일치하지 않습니다.")
+        if report.get("world_frame") != request.training_input.world_frame:
+            raise DomainError(422, "TRAINING_INPUT_WORLD_FRAME_MISMATCH", "Zarr 좌표계 정보가 일치하지 않습니다.")
 

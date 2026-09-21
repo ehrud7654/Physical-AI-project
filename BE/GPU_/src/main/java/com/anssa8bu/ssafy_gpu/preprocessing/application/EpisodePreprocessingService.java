@@ -8,6 +8,7 @@ import com.anssa8bu.ssafy_gpu.preprocessing.config.UmiPreprocessorProperties;
 import com.anssa8bu.ssafy_gpu.preprocessing.storage.*;
 import com.anssa8bu.ssafy_gpu.preprocessing.storage.PreprocessedArtifactVerifier.PreprocessedTrainingInput;
 import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.ClaimResponse;
+import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole;
 import com.anssa8bu.ssafy_gpu.training.storage.EpisodeArchiveDownloader.LocalEpisode;
 import java.nio.file.*;
 import java.time.*;
@@ -38,8 +39,23 @@ public class EpisodePreprocessingService {
     Path root = worker.storageRoot().resolve("preprocessing-jobs").resolve(jobId).toAbsolutePath().normalize();
     Path allowed = worker.storageRoot().resolve("preprocessing-jobs").toAbsolutePath().normalize();
     if (!root.startsWith(allowed)) throw new IllegalStateException("허용되지 않은 전처리 작업 경로입니다.");
-    for (LocalEpisode episode : episodes) {
-      extractor.extract(episode, root.resolve("raw").resolve(String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId())));
+    List<LocalEpisode> mappings =
+        episodes.stream().filter(e -> e.inputRole() == TrainingEpisodeRole.MAPPING).toList();
+    List<LocalEpisode> demonstrations =
+        episodes.stream().filter(e -> e.inputRole() == TrainingEpisodeRole.DEMONSTRATION).toList();
+    if (mappings.size() != 1)
+      throw new IllegalStateException("전처리에는 정확히 하나의 매핑 Episode가 필요합니다.");
+    if (demonstrations.isEmpty())
+      throw new IllegalStateException("전처리에는 하나 이상의 시연 Episode가 필요합니다.");
+    LocalEpisode mapping = mappings.getFirst();
+    extractor.extract(
+        mapping,
+        root.resolve("raw_mapping").resolve("rec_mapping_" + mapping.episodeId()));
+    for (LocalEpisode episode : demonstrations) {
+      extractor.extract(
+          episode,
+          root.resolve("raw")
+              .resolve(String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId())));
     }
     boolean acquired = false;
     try {
@@ -54,7 +70,7 @@ public class EpisodePreprocessingService {
         JobStatus status = client.get(jobId).orElse(null);
         if (status != null && "ready".equalsIgnoreCase(status.status())) {
           log.info("Episode 전처리 완료: trainingJobId={}, jobId={}", claim.job().id(), jobId);
-          return verifier.verify(status.artifact(), episodes.size());
+          return verifier.verify(status.artifact(), demonstrations.size());
         }
         if (status != null && ("failed".equalsIgnoreCase(status.status()) || "cancelled".equalsIgnoreCase(status.status())))
           throw new IllegalStateException("Episode 전처리 실패: status=" + status.status() + ", error=" + status.error());

@@ -59,6 +59,12 @@ def main() -> None:
                      args.require_mapping, args.allow_missing_tag)
         if report.get("status") != "ready":
             raise RuntimeError(report.get("stopped", "pipeline did not produce a ready dataset"))
+        dataset_report = report.get("dataset") or {}
+        if dataset_report.get("training_input_status") != "ready":
+            raise RuntimeError(
+                "dataset training_input_status is not ready: "
+                f"{dataset_report.get('training_input_status', 'missing')}"
+            )
         artifact = package_training_input(Path(report["dataset"]["dataset"]))
         status.update(status="ready", completedUtc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       report=str(root / "pipeline_report.json"), artifact=artifact)

@@ -15,9 +15,12 @@ public final class FastApiTrainingModels {
       String storageKey,
       long sizeBytes,
       String sha256,
-      String datasetSha256,
+      String reportStorageKey,
       String reportSha256,
-      int episodeCount) {}
+      int episodeCount,
+      String trainingInputStatus,
+      String format,
+      String worldFrame) {}
 
   public record BaseModelInput(
       UUID skillVersionId,

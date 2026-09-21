@@ -9,8 +9,9 @@ public record EpisodeSampleSummary(
     int trackingGapCount,
     long trackingLostDurationNs) {
   public EpisodeSampleSummary {
-    if (frameCount < 1 || poseSampleCount < 1 || imuSampleCount < 1 || gripperSampleCount < 1) {
-      throw new IllegalArgumentException("sample counts must be at least one");
+    if (frameCount < 1 || imuSampleCount < 1 || poseSampleCount < 0 || gripperSampleCount < 0) {
+      throw new IllegalArgumentException(
+          "frame and IMU counts must be positive; derived counts may be zero");
     }
     if (missingFrameCount < 0 || trackingGapCount < 0 || trackingLostDurationNs < 0) {
       throw new IllegalArgumentException("quality counters must be zero or positive");

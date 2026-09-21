@@ -18,9 +18,7 @@ public final class UmiPreprocessorModels {
       String dataset,
       @JsonProperty("dataset_sha256") String datasetSha256,
       String report,
-      @JsonProperty("report_sha256") String reportSha256,
-      String archive,
-      @JsonProperty("archive_sha256") String archiveSha256) {}
+      @JsonProperty("report_sha256") String reportSha256) {}
 
   public record JobStatus(String status, Artifact artifact, Map<String, Object> input, Object error) {}
 }

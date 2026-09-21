@@ -93,7 +93,7 @@ public class EpisodeArchiveDownloader {
   private LocalEpisode localEpisode(EpisodeData episode, int inputOrder, Path target) {
     String storageKey = properties.storageRoot().toAbsolutePath().normalize().relativize(target)
         .toString().replace('\\', '/');
-    return new LocalEpisode(inputOrder, episode.episodeId(), storageKey,
+    return new LocalEpisode(inputOrder, episode.episodeId(), episode.inputRole(), storageKey,
         episode.archive().sha256(), episode.contractVersion(), target);
   }
 
@@ -110,6 +110,7 @@ public class EpisodeArchiveDownloader {
   public record LocalEpisode(
       int inputOrder,
       UUID episodeId,
+      com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole inputRole,
       String storageKey,
       String sha256,
       String contractVersion,

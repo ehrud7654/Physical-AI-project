@@ -17,7 +17,8 @@ public final class TrainingJobApiModels {
       @NotNull UUID umiDeviceId,
       List<UUID> episodeIds,
       TrainingMode trainingMode,
-      UUID baseSkillVersionId) {}
+      UUID baseSkillVersionId,
+      @NotNull UUID mappingEpisodeId) {}
 
   public record JobResponse(
       UUID id,
@@ -43,6 +44,7 @@ public final class TrainingJobApiModels {
 
   public record ErrorInfo(String code, String message, String recoveryAction) {}
 
-  public record EpisodeInputResponse(UUID episodeId, int inputOrder) {}
+  public record EpisodeInputResponse(
+      UUID episodeId, int inputOrder, TrainingEpisodeRole inputRole) {}
 
 }

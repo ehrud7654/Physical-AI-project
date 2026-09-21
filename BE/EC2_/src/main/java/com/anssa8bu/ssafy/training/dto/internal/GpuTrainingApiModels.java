@@ -16,8 +16,8 @@ public final class GpuTrainingApiModels {
       @PositiveOrZero Long storageCapacityBytes, @PositiveOrZero Long storageAvailableBytes) {}
   public record ArchiveData(String downloadUrl, Instant expiresAt, String contentType,
       long sizeBytes, String sha256) {}
-  public record EpisodeData(UUID episodeId, String sessionId, String qualityStatus, String contractVersion,
-      ArchiveData archive) {}
+  public record EpisodeData(UUID episodeId, TrainingEpisodeRole inputRole, String sessionId,
+      String qualityStatus, String contractVersion, ArchiveData archive) {}
   public record BaseModelData(UUID skillVersionId, int version, String downloadUrl,
       Instant expiresAt, String contentType, long sizeBytes, String sha256,
       String architecture, String framework, String frameworkVersion, String contractVersion) {}

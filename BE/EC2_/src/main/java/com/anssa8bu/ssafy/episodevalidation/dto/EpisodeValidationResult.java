@@ -29,6 +29,8 @@ public record EpisodeValidationResult(
     Map<String, Object> camera,
     Map<String, Object> coordinateSystem,
     Map<String, Object> units,
+    Map<String, Object> qualityDetails,
+    Map<String, Object> manifest,
     Map<String, String> fileSha256,
     long uncompressedSizeBytes,
     int entryCount) {}

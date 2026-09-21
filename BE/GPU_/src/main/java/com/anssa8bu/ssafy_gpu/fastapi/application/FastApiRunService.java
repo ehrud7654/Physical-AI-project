@@ -64,9 +64,16 @@ public class FastApiRunService {
                 base,
                 claim.job().inputSnapshotSha256(),
                 inputs,
-                new TrainingInput(trainingInput.storageKey(), trainingInput.sizeBytes(),
-                    trainingInput.sha256(), trainingInput.datasetSha256(),
-                    trainingInput.reportSha256(), trainingInput.episodeCount()),
+                new TrainingInput(
+                    trainingInput.storageKey(),
+                    trainingInput.sizeBytes(),
+                    trainingInput.sha256(),
+                    trainingInput.reportStorageKey(),
+                    trainingInput.reportSha256(),
+                    trainingInput.episodeCount(),
+                    trainingInput.trainingInputStatus(),
+                    trainingInput.format(),
+                    trainingInput.worldFrame()),
                 currentAssignment.leaseExpiresAt()));
     state.bindRun(gpuIndex, response.runId());
     return response;
