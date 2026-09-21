@@ -18,7 +18,7 @@ import json
 import os
 import signal
 import subprocess
-import time
+import threading
 from pathlib import Path
 
 _PR_SET_PDEATHSIG = 1      # linux/prctl.h
@@ -48,6 +48,9 @@ class RuntimeExecutor:
         self.shanks = self.root / "shanks"
         self.camera_tcp = self.root / "configs" / "s22_camera_tcp.json"
         self.extra_args = list(extra_args or [])
+        # 실행 대상 모듈. 테스트에서 스텁으로 갈아끼운다(실물 없이 통합 검증).
+        self.launch = ["-m", "runtime.umi_checkpoint_executor"]
+        self.stop_grace_s = 10.0        # SIGINT 후 SIGKILL 까지 유예
         self._proc: subprocess.Popen | None = None
         self._stop_requested = False
 
@@ -125,7 +128,7 @@ class RuntimeExecutor:
             return 1, problem
 
         cmd = [
-            str(self.python), "-m", "runtime.umi_checkpoint_executor",
+            str(self.python), *self.launch,
             "--model", str(model_dir),
             "--out", str(out_dir),
             "--shanks-dir", str(self.shanks),
@@ -175,7 +178,7 @@ class RuntimeExecutor:
                 except Exception as e:  # noqa: BLE001
                     self._log.warn(f"report 콜백 오류: {e}")
         finally:
-            code = self._wait_exit(self._proc)
+            code = self._proc.wait()
             self._proc = None
         return code, last_error
 
@@ -200,7 +203,8 @@ class RuntimeExecutor:
 
     def stop(self):
         """SIGINT 만 보내고 즉시 반환(논블로킹) — SSE 스레드에서 불려도 막히지 않게.
-        안 죽으면 run() 의 종료 대기에서 SIGKILL 로 에스컬레이션한다."""
+        유예 내 안 죽으면 타이머가 SIGKILL 한다. run() 의 stdout 루프는 SIGINT 를
+        씹는 프로세스에서 EOF 를 영영 못 보므로, 에스컬레이션은 루프 밖에 있어야 한다."""
         proc = self._proc
         if not proc or proc.poll() is not None:
             return
@@ -210,17 +214,14 @@ class RuntimeExecutor:
             self._log.info("런타임에 SIGINT (정지 요청)")
         except Exception as e:  # noqa: BLE001
             self._log.warn(f"런타임 SIGINT 실패: {e}")
+            return
+        threading.Timer(self.stop_grace_s, self._kill_if_alive, [proc]).start()
 
-    def _wait_exit(self, proc, grace_s: float = 10.0) -> int:
-        """정지를 요청했으면 유예 후 SIGKILL. 아니면 그냥 기다린다."""
-        if not self._stop_requested:
-            return proc.wait()
-        end = time.time() + grace_s
-        while time.time() < end:
-            code = proc.poll()
-            if code is not None:
-                return code
-            time.sleep(0.2)
-        self._log.error(f"런타임이 {grace_s:.0f}s 내 정지 안 됨 → SIGKILL")
-        proc.kill()
-        return proc.wait()
+    def _kill_if_alive(self, proc):
+        if proc.poll() is not None:
+            return
+        self._log.error(f"런타임이 {self.stop_grace_s:.0f}s 내 정지 안 됨 → SIGKILL")
+        try:
+            proc.kill()
+        except Exception as e:  # noqa: BLE001
+            self._log.warn(f"런타임 SIGKILL 실패: {e}")
