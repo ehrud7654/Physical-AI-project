@@ -6,6 +6,7 @@ SO-101 로봇 팔의 **배포·실물 제어** ROS2 (Humble) 워크스페이스.
 > 이 문서는 **살아있는 설계 문서**다. 구조·계약이 바뀌면 여기부터 고친다.
 > 마지막 갱신(2026-09-09): **ros2_control 표준층 전환**. 커스텀 `so101_driver`·`so101_msgs` 폐기 → `so101_hardware`(132)+`so101_bringup`(150). 정책=EE pose 액션, IK는 AI측. FakeBus 30Hz end-to-end 검증 완료.
 > 같은 날: **정책 노드 골격(46)** — lifecycle + 더미 사인 모드. 정책노드→/commands→FakeBus→/joint_states 루프 닫힘 확인. ckpt·관측·IK 는 슬롯만.
+> **2026-09-21 (46): 실행 엔진 = UMI 체크포인트 런타임 채택.** 실물 검증된 팀원 런타임(카메라→추론→IK→모터)을 `ROS/runtime/`+`ROS/shanks/` 로 들여오고, 오케스트레이터가 **subprocess 로 기동 + stdout/exit 파싱 → BE 리포트**. 자체 추론 이식(so101_policy 슬롯 채우기)은 병행 발전 트랙으로 유지. 상세 §3.5.
 
 ---
 
@@ -65,6 +66,62 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 - **bus 스왑:** `bus:=fake`(기본, 실물 없이 검증) ↔ `bus:=st3215`(실물, 151 완료 후). 같은 그래프, 하드웨어 플러그인만 교체.
 - **리허설(팔 없을 때):** FakeBus 로 controller_manager 까지 그대로 돎 (검증 완료). MuJoCo 연동은 별도.
 - **정책 노드 = lifecycle** (`/so101_policy`, configure/activate/deactivate). 오케스트레이터가 `/so101_policy/change_state` 로 전이. ckpt 없으면 **더미 사인파**로 팔을 흔들어 배관 검증. 상세: `ros2_ws/src/so101_policy/README.md`.
+
+---
+
+## 3.5 실행 엔진 — UMI 체크포인트 런타임 (46, A안)
+
+실물 추론은 **팀원이 하드웨어 검증을 끝낸 독립 런타임**을 그대로 쓴다. 우리는 **켜고·끄고·상태를 BE에 올리는** 어댑터만 담당한다(코드 복사·재구현 없음).
+
+```
+오케스트레이터(rclpy, 시스템 python)
+   │ APPLY_DEPLOYMENT → tgz 다운로드·sha256 → ROS/models/<skillVersionId>/ 압축해제
+   │ SKILL step       → subprocess 기동 (별도 venv 인터프리터)
+   ▼
+ROS/.venv/bin/python -m umi_checkpoint_executor
+   --model ROS/models/<svid> --shanks-dir ROS/shanks --camera-tcp ROS/configs/...
+   → 카메라(S22 TCP) → TorchScript 추론 → IK → 안전게이트 → ST3215 직접 제어
+   → stdout(JSON report)·exit code
+   ▲
+   └ 오케스트레이터가 파싱 → report_execution(RUNNING/SUCCEEDED/FAILED)
+```
+
+**왜 subprocess 인가:** 런타임은 torch/diffusers 가 깔린 **자기 venv 인터프리터**로 돌아야 하고, 오케스트레이터는 rclpy(시스템 python)다. 한 프로세스에 못 섞는다. 팀원의 `runtime/umi_checkpoint_executor_ros2/node.py` 도 같은 이유로 subprocess 래퍼다.
+
+⚠️ **런타임은 `/dev/ttyTHS1` 을 직접 잡는다.** `so101_hardware`(ros2_control)와 **동시 실행 불가** — 실물 실행 중엔 bringup 을 띄우지 않는다. FakeBus/시뮬·수동제어·estop 경로는 ros2_control 을 계속 쓴다.
+
+### 디렉터리 (ROS/ 기준, ros2_ws 밖 = colcon 빌드 대상 아님)
+
+| 경로 | 내용 | git |
+|---|---|---|
+| `runtime/` | UMI 체크포인트 실행기 (cli·policy_runtime·motion_planner·robot_controller·camera_stream·calibration) | ✅ |
+| `shanks/` | SO-101 저수준 lib (`common`/`grasp`/`kinematics`) — 런타임이 `--shanks-dir` 로 동적 import | ✅ |
+| `configs/s22_camera_tcp.json` | camera-TCP 캘리브 (provenance sha256 대조용) | ✅ |
+| `requirements-jetson.txt` · `setup_runtime.sh` | venv 재현 | ✅ |
+| `.venv/` | 런타임 전용 venv | ❌ |
+| `models/` | 배포 tgz 압축해제본 | ❌ |
+
+### 모델 배포 아티팩트 = **export 번들 tgz** (raw ckpt 아님)
+
+런타임은 단일 `.ckpt` 를 못 읽는다. GPU 학습 후 **TorchScript export** 된 번들이 필요하다.
+
+```
+GPU 학습 → best.ckpt → export(smoke_export/export_so101_pick_v1) → <name>_jetson.tgz → S3 → 젯슨
+```
+tgz 내용(필수 4): `encoder.pt` · `denoiser.pt` · `metadata.json` · `dataset.report.json`
+(참고 포함 권장: `config.yaml` · `pc_check.json` · `reference.npz` · `*.manifest.json`)
+
+- **export 는 학습(GPU) 쪽에서** — hydra/diffusion_policy 등 학습 스택이 필요해 젯슨에서 못 돈다.
+- BE `Model.downloadUrl`/`sha256`/`sizeBytes` = **tgz 하나** 기준 → 기존 다운로드·검증 로직 그대로.
+
+### venv 세팅 (젯슨, 1회)
+
+```bash
+cd ROS
+./setup_runtime.sh [wheelhouse 경로]   # 기본 ~/Workspace/stanford_umi_demo/wheelhouse-jetson
+```
+젯슨 torch 는 PyPI 에 없다(JetPack aarch64 전용 휠) → **wheelhouse 오프라인 설치**.
+실행 시 `LD_LIBRARY_PATH` 에 `cusparselt/lib` 가 없으면 `libcusparseLt.so.0` 로 **torch import 부터 실패** → 오케스트레이터가 subprocess env 에 넣어준다.
 
 ---
 
