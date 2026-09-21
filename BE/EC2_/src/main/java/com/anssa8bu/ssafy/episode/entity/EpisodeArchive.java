@@ -88,7 +88,7 @@ public class EpisodeArchive extends AuditableEntity {
       String sha256,
       ArchiveManifestSummary manifestSummary,
       EpisodeArchiveStatus status) {
-    if (sizeBytes <= 0 || uncompressedSizeBytes <= 0 || entryCount < 7)
+    if (sizeBytes <= 0 || uncompressedSizeBytes <= 0 || entryCount < 6)
       throw new IllegalArgumentException("invalid archive size or entry count");
     if (sha256 == null || !sha256.matches("[0-9a-f]{64}"))
       throw new IllegalArgumentException("invalid sha256");
