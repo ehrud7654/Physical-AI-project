@@ -1,0 +1,3 @@
+umi:
+  preprocessor:
+    base-url: http://umi-preprocessor:8080

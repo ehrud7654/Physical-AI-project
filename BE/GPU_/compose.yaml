@@ -172,6 +172,22 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  umi-preprocessor:
+    build:
+      context: ./umi_server_preprocessor
+      dockerfile: Dockerfile
+      args:
+        JOBS: "4"
+    image: umi-server-preprocessor:1.0.0
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18181:8080"
+    volumes:
+      - ./umi_server_preprocessor/jobs:/jobs
+      - ./umi_server_preprocessor/profiles:/profiles:ro
+    stop_grace_period: 30s
+
 volumes:
   gpu_data:
   model_cache:
