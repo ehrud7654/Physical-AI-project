@@ -45,11 +45,12 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
 
+    // 카메라 세션·인코더는 지속형(프리뷰~녹화 내내 유지). IMU·Recording 만 녹화 단위.
     private var camera: CameraCapture? = null
-    private var previewCam: CameraCapture? = null
-    private var video: VideoCapture? = null
+    private var encoder: VideoEncoder? = null
     private var imu: ImuCapture? = null
     private var current: Recording? = null
+    @Volatile private var engineReady = false
 
     @Volatile private var busy = false
     @Volatile private var recording = false
@@ -83,9 +84,9 @@ class MainActivity : Activity() {
         preview = SurfaceView(this).apply {
             holder.setFixedSize(1920, 1080)
             holder.addCallback(object : SurfaceHolder.Callback {
-                override fun surfaceCreated(h: SurfaceHolder) { maybeStartPreview() }
+                override fun surfaceCreated(h: SurfaceHolder) { startEngine() }
                 override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
-                override fun surfaceDestroyed(h: SurfaceHolder) { stopPreview() }
+                override fun surfaceDestroyed(h: SurfaceHolder) { stopEngine() }
             })
         }
         outer.addView(preview, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -144,33 +145,44 @@ class MainActivity : Activity() {
         setSignal(SIG_IDLE)
     }
 
-    private var previewRetry = 0
+    private var engineRetry = 0
+    @Volatile private var engineStarting = false
 
-    /** 녹화 대기 중 초광각 라이브 프리뷰. 이미 켜졌거나 녹화/준비 중이면 무시. */
-    private fun maybeStartPreview() {
-        if (recording || busy || previewCam != null) return
+    /** 카메라 세션+인코더를 열어 연속 프리뷰(녹화 내내 유지). 한 번만. 실패 시(직전 화면 카메라 해제 중) 재시도. */
+    private fun startEngine() {
+        if (engineReady || engineStarting) return
         if (!preview.holder.surface.isValid) return
-        val cam = try { CameraCapture(this) } catch (e: Exception) { sigText.text = "카메라 사용 불가: ${e.message}"; return }
-        previewCam = cam
-        cam.openPreview(preview.holder.surface, object : CameraCapture.Listener {
-            override fun ready() { ui.post { previewRetry = 0; if (!recording && !busy) setSignal(SIG_IDLE) } }
-            override fun failed(reason: String) {
-                ui.post {
-                    val pc = previewCam; previewCam = null
-                    worker.execute { try { pc?.stop() } catch (_: Exception) {} }
-                    // 직전 화면(온보딩 QR)의 카메라가 아직 해제 중이면 잠시 후 재시도.
-                    if (!recording && !busy && previewRetry < 5) {
-                        previewRetry++; ui.postDelayed({ maybeStartPreview() }, 700)
-                    } else sigText.text = "프리뷰 실패: $reason"
+        engineStarting = true
+        setSignal(SIG_BUSY)
+        val surface = preview.holder.surface
+        worker.execute {
+            val enc = try { VideoEncoder() }
+            catch (e: Exception) { engineStarting = false; ui.post { sigText.text = "인코더 실패: ${e.message}" }; return@execute }
+            val cam = try { CameraCapture(this) }
+            catch (e: Exception) { enc.release(); engineStarting = false; ui.post { sigText.text = "카메라 사용 불가: ${e.message}" }; return@execute }
+            camera = cam; encoder = enc
+            cam.open(surface, enc.cameraSurface, object : CameraCapture.Listener {
+                override fun ready() { ui.post { engineStarting = false; engineReady = true; engineRetry = 0; if (!recording && !busy) setSignal(SIG_IDLE) } }
+                override fun failed(reason: String) {
+                    ui.post {
+                        engineStarting = false; stopEngine()
+                        // 직전 화면(온보딩 QR)의 카메라가 아직 해제 중이면 잠시 후 재시도.
+                        if (!recording && !busy && engineRetry < 5) { engineRetry++; ui.postDelayed({ startEngine() }, 700) }
+                        else sigText.text = "카메라 실패: $reason"
+                    }
                 }
-            }
-        })
+            })
+        }
     }
 
-    private fun stopPreview() {
-        val pc = previewCam ?: return
-        previewCam = null
-        worker.execute { try { pc.stop() } catch (_: Exception) {} }
+    private fun stopEngine() {
+        engineReady = false; engineStarting = false
+        val cam = camera; val enc = encoder
+        worker.execute {
+            try { cam?.close() } catch (_: Exception) {}
+            try { enc?.release() } catch (_: Exception) {}
+            camera = null; encoder = null
+        }
     }
 
     private fun setSignal(state: Int) {
@@ -265,35 +277,31 @@ class MainActivity : Activity() {
         if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 1); return
         }
-        if (!preview.holder.surface.isValid) { sigText.text = "화면 준비 후 다시"; return }
+        val cam = camera; val enc = encoder
+        if (!engineReady || cam == null || enc == null) { sigText.text = "카메라 준비 중 — 잠시 후 다시"; return }
+        if (root.usableSpace < 300L * 1024 * 1024) { sigText.text = "저장 공간 300MB 이상 필요"; return }
         busy = true
         shutter.isEnabled = false
         lastDir = null; redoBtn.visibility = View.GONE
         setSignal(SIG_BUSY)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val pc = previewCam; previewCam = null   // 같은 카메라 → 녹화 전에 프리뷰 세션 해제
         worker.execute {
             try {
-                try { pc?.stop() } catch (_: Exception) {}
-                if (root.usableSpace < 300L * 1024 * 1024) throw IOException("저장 공간 300MB 이상 필요")
-                val cam = CameraCapture(this)
+                // 카메라 세션은 이미 열려 있음 → 녹화는 파일만 시작(재구성 없음, 멈춤 없음).
                 val rec = Recording(root, cam.metadata, Prefs.activeSkillKey(this))
                 val im = ImuCapture(this).also { it.start(rec) }
-                val vid = VideoCapture(rec)
-                camera = cam; current = rec; imu = im; video = vid
-                cam.open(preview.holder.surface, vid.surface, rec, object : CameraCapture.Listener {
-                    override fun ready() { ui.post {
-                        if (!busy || stopping) return@post
-                        busy = false; recording = true
-                        shutter.isEnabled = true
-                        shutter.setBackgroundResource(R.drawable.bg_shutter_stop)
-                        recTimer.visibility = View.VISIBLE
-                        setSignal(SIG_REC)
-                        started = SystemClock.elapsedRealtime()
-                        ticker.run()
-                    } }
-                    override fun failed(reason: String) { ui.post { finishRecording(reason) } }
-                })
+                enc.startFile(rec)
+                cam.rec = rec               // frames.csv 기록 시작
+                current = rec; imu = im
+                ui.post {
+                    busy = false; recording = true
+                    shutter.isEnabled = true
+                    shutter.setBackgroundResource(R.drawable.bg_shutter_stop)
+                    recTimer.visibility = View.VISIBLE
+                    setSignal(SIG_REC)
+                    started = SystemClock.elapsedRealtime()
+                    ticker.run()
+                }
             } catch (e: Exception) { ui.post { finishRecording(e.toString()) } }
         }
     }
@@ -306,8 +314,8 @@ class MainActivity : Activity() {
         setSignal(SIG_BUSY); sigText.text = "파일 마무리 중…"
         worker.execute {
             var err = reason
-            try { camera?.stop() } catch (e: Exception) { err = e.toString() }; camera = null
-            try { video?.stop() } catch (e: Exception) { err = e.toString() }; video = null
+            camera?.rec = null                                        // frames.csv 중단
+            try { encoder?.stopFile() } catch (e: Exception) { err = e.toString() }   // muxer 마무리(세션은 유지)
             try { imu?.stop() } catch (e: Exception) { err = e.toString() }; imu = null
             val rec = current; current = null
             if (rec != null) try { rec.finish(err) } catch (e: Exception) { err = e.toString() }
@@ -321,8 +329,7 @@ class MainActivity : Activity() {
         shutter.setBackgroundResource(R.drawable.bg_shutter)
         recTimer.visibility = View.GONE
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setSignal(SIG_IDLE)
-        maybeStartPreview()   // 녹화 세션 해제됨 → 대기 프리뷰 재개
+        setSignal(SIG_IDLE)   // 카메라 세션은 계속 살아있음 → 프리뷰 그대로, 멈춤 없음
         if (err != null) { sigText.text = "오류: $err"; lastDir = null; redoBtn.visibility = View.GONE; return }
         // 기본 성공. 망했으면 ↻ 재촬영으로 삭제 후 다시.
         rec?.let { r -> worker.execute { try { r.outcome("success") } catch (_: Exception) {} } }
@@ -342,10 +349,11 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(rc, p, g)
     }
 
-    override fun onResume() { super.onResume(); maybeStartPreview() }
+    override fun onResume() { super.onResume(); startEngine() }
 
     override fun onPause() {
-        if (recording || busy) finishRecording("앱이 백그라운드로 전환됨") else stopPreview()
+        if (recording || busy) finishRecording("앱이 백그라운드로 전환됨")
+        stopEngine()
         super.onPause()
     }
 

@@ -24,9 +24,12 @@ import java.util.concurrent.TimeUnit
  * 각 프레임 제출 시 presentation time 을 카메라 프레임의 SurfaceTexture.timestamp(센서 시각, ns)로 박는다
  * → 인코더 PTS 가 센서 타임스탬프가 되어 frames.csv/IMU 와 정렬된다(파이프라인 계약).
  */
-class RotatedVideoSurface(encoderInput: Surface, private val recording: Recording) {
+class RotatedVideoSurface(encoderInput: Surface, private val onError: (String) -> Unit) {
 
     val surface: Surface
+
+    /** 녹화 중일 때만 인코더로 프레임을 밀어넣는다. 대기(프리뷰) 중엔 카메라 프레임을 흘려보내기만 함. */
+    @Volatile var active = false
 
     private val thread = HandlerThread("collect-video-rotation").apply { start() }
     private val handler = Handler(thread.looper)
@@ -116,7 +119,8 @@ class RotatedVideoSurface(encoderInput: Surface, private val recording: Recordin
 
     private fun onFrame() {
         try {
-            texture.updateTexImage()
+            texture.updateTexImage()          // 대기 중에도 버퍼는 흘려보내야 카메라가 안 막힘
+            if (!active) return                // 녹화 아닐 땐 인코더로 안 보냄(공급 중단 = freeze 없이 세션 유지)
             texture.getTransformMatrix(xform)
             GLES20.glViewport(0, 0, 1920, 1080)
             GLES20.glUseProgram(program)
@@ -137,7 +141,7 @@ class RotatedVideoSurface(encoderInput: Surface, private val recording: Recordin
             EGLExt.eglPresentationTimeANDROID(display, output, texture.timestamp)
             if (!EGL14.eglSwapBuffers(display, output)) throw Exception("회전 프레임 제출 실패")
         } catch (e: Exception) {
-            recording.error = e.toString()
+            onError(e.toString())
         }
     }
 
