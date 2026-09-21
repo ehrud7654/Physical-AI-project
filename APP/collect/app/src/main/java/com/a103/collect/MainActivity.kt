@@ -2,15 +2,20 @@ package com.a103.collect
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.Gravity
 import android.view.SurfaceView
+import android.view.View
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
 import org.json.JSONArray
 import java.io.File
@@ -18,17 +23,19 @@ import java.io.IOException
 import java.util.concurrent.Executors
 
 /**
- * 수집 화면. SurfaceView 프리뷰 + 시작/종료/기록. 초광각 카메라 + IMU + 영상(회전 baked)을
- * 동시에 기록해 세션 폴더 6파일을 만든다. 종료 시 성공/실패/미판정 결과를 manifest 에 남긴다.
+ * 촬영 화면(가로 오버레이). 카메라 프리뷰 위에 상단바(신호등·학습칩·메뉴)와 좌측 원형 셔터.
+ * 셔터로 녹화 토글, 종료 시 성공/실패/미판정. 초광각+IMU+영상 6파일을 세션 폴더에 남긴다.
  */
 class MainActivity : Activity() {
 
     private lateinit var root: File
     private lateinit var preview: SurfaceView
-    private lateinit var status: TextView
-    private lateinit var startBtn: Button
-    private lateinit var stopBtn: Button
-    private lateinit var learnBtn: Button
+    private lateinit var sigDot: TextView
+    private lateinit var sigText: TextView
+    private lateinit var recTimer: TextView
+    private lateinit var learnBadge: TextView
+    private lateinit var menuBtn: TextView
+    private lateinit var shutter: View
 
     private val worker = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
@@ -43,6 +50,8 @@ class MainActivity : Activity() {
     @Volatile private var stopping = false
     private var started = 0L
 
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
     private val ticker = object : Runnable {
         override fun run() {
             if (!recording) return
@@ -52,7 +61,7 @@ class MainActivity : Activity() {
                 root.usableSpace < 100L * 1024 * 1024 -> finishRecording("저장 공간 부족")
                 else -> {
                     val sec = (SystemClock.elapsedRealtime() - started) / 1000
-                    status.text = "녹화 중 · 초광각 고정초점 · ${sec}초\n영상 + 가속도 + 자이로 저장 중"
+                    recTimer.text = "● %02d:%02d".format(sec / 60, sec % 60)
                     ui.postDelayed(this, 1000)
                 }
             }
@@ -63,50 +72,86 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         root = File(getExternalFilesDir(null), "sessions").apply { mkdirs() }
 
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 8, 16, 8) }
-        status = TextView(this).apply {
-            textSize = 18f
-            text = "UMI 수집 · 1080p / 30fps · IMU 200Hz 요청\n녹화 시작 후 접근 → 잡기 → 들기 → 3초 유지"
-        }
-        col.addView(status)
-
-        val bar = LinearLayout(this)
-        startBtn = Button(this).apply { text = "녹화 시작"; setOnClickListener { begin() } }
-        stopBtn = Button(this).apply { text = "녹화 종료"; isEnabled = false; setOnClickListener { finishRecording(null) } }
-        learnBtn = Button(this).apply { setOnClickListener { pickLearning() } }
-        val listBtn = Button(this).apply {
-            text = "기록"
-            setOnClickListener { if (!recording && !busy) startActivity(android.content.Intent(this@MainActivity, HistoryActivity::class.java)) }
-        }
-        bar.addView(startBtn); bar.addView(stopBtn); bar.addView(learnBtn); bar.addView(listBtn)
-        col.addView(bar)
-        updateLearnLabel()
-
+        val outer = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         preview = SurfaceView(this).apply { holder.setFixedSize(1920, 1080) }
-        col.addView(preview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        setContentView(col)
+        outer.addView(preview, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+
+        // 상단바
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(0xCC0E1524.toInt()); setPadding(dp(16), dp(11), dp(16), dp(11))
+        }
+        sigDot = TextView(this).apply { text = "●"; textSize = 18f; setTextColor(0xFF8A93AD.toInt()) }
+        sigText = TextView(this).apply {
+            textSize = 16f; setTextColor(0xFFDCE3F2.toInt()); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(8), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        recTimer = TextView(this).apply {
+            text = "● 00:00"; textSize = 16f; setTextColor(0xFFE0685E.toInt())
+            setTypeface(typeface, android.graphics.Typeface.BOLD); visibility = View.GONE
+            setPadding(0, 0, dp(14), 0)
+        }
+        learnBadge = TextView(this).apply {
+            background = GradientDrawable().apply { cornerRadius = dp(999).toFloat(); setColor(0xFF2E4A6B.toInt()) }
+            setPadding(dp(14), dp(7), dp(14), dp(7)); textSize = 14f; setTextColor(0xFFDCE3F2.toInt())
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setOnClickListener { pickLearning() }
+        }
+        menuBtn = TextView(this).apply {
+            text = "☰"; textSize = 22f; setTextColor(0xFFDCE3F2.toInt()); setPadding(dp(12), dp(2), dp(4), dp(2))
+            setOnClickListener { showMenu() }
+        }
+        bar.addView(sigDot); bar.addView(sigText); bar.addView(recTimer); bar.addView(learnBadge); bar.addView(menuBtn)
+        outer.addView(bar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+
+        // 좌측 원형 셔터
+        shutter = View(this).apply {
+            setBackgroundResource(R.drawable.bg_shutter)
+            setOnClickListener { if (recording) finishRecording(null) else begin() }
+        }
+        outer.addView(shutter, FrameLayout.LayoutParams(dp(74), dp(74), Gravity.START or Gravity.CENTER_VERTICAL)
+            .apply { marginStart = dp(28) })
+
+        setContentView(outer)
+        updateLearnBadge()
+        setSignal(SIG_IDLE)
     }
 
-    private fun updateLearnLabel() {
-        learnBtn.text = "학습: ${Prefs.activeSkillName(this)}"
+    private fun setSignal(state: Int) {
+        val (color, text) = when (state) {
+            SIG_REC -> 0xFF3FBF87.toInt() to "녹화 중"
+            SIG_BUSY -> 0xFFE0A44E.toInt() to "카메라 준비 중…"
+            else -> 0xFF8A93AD.toInt() to "대기 — 셔터를 누르세요"
+        }
+        sigDot.setTextColor(color); sigText.text = text
     }
 
-    /** 학습 선택. 미분류 + 서버 카탈로그 캐시(없으면 미분류만). */
+    private fun updateLearnBadge() { learnBadge.text = "학습: ${Prefs.activeSkillName(this)} ▾" }
+
+    private fun showMenu() {
+        if (recording) return
+        PopupMenu(this, menuBtn).apply {
+            menu.add("기록")
+            setOnMenuItemClickListener {
+                if (!busy && !recording) startActivity(Intent(this@MainActivity, HistoryActivity::class.java)); true
+            }
+            show()
+        }
+    }
+
     private fun pickLearning() {
         if (recording) return
-        val keys = arrayListOf("")               // "" = 미분류
-        val names = arrayListOf("미분류 (나중에 지정)")
+        val keys = arrayListOf(""); val names = arrayListOf("미분류 (나중에 지정)")
         runCatching {
             val arr = JSONArray(Prefs.skillCatalog(this).ifBlank { "[]" })
             for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                keys.add(o.optString("key")); names.add(o.optString("name"))
+                val o = arr.getJSONObject(i); keys.add(o.optString("key")); names.add(o.optString("name"))
             }
         }
         AlertDialog.Builder(this).setTitle("학습 선택")
             .setItems(names.toTypedArray()) { _, i ->
-                Prefs.setActiveSkill(this, keys[i], names[i].substringBefore(" ("))
-                updateLearnLabel()
+                Prefs.setActiveSkill(this, keys[i], names[i].substringBefore(" (")); updateLearnBadge()
             }.show()
     }
 
@@ -115,10 +160,10 @@ class MainActivity : Activity() {
         if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 1); return
         }
-        if (!preview.holder.surface.isValid) { status.text = "화면 준비 후 다시 시작하세요."; return }
+        if (!preview.holder.surface.isValid) { sigText.text = "화면 준비 후 다시"; return }
         busy = true
-        startBtn.isEnabled = false
-        status.text = "초광각과 IMU 준비 중…"
+        shutter.isEnabled = false
+        setSignal(SIG_BUSY)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         worker.execute {
             try {
@@ -132,24 +177,25 @@ class MainActivity : Activity() {
                     override fun ready() { ui.post {
                         if (!busy || stopping) return@post
                         busy = false; recording = true
-                        stopBtn.isEnabled = true
+                        shutter.isEnabled = true
+                        shutter.setBackgroundResource(R.drawable.bg_shutter_stop)
+                        recTimer.visibility = View.VISIBLE
+                        setSignal(SIG_REC)
                         started = SystemClock.elapsedRealtime()
                         ticker.run()
                     } }
                     override fun failed(reason: String) { ui.post { finishRecording(reason) } }
                 })
-            } catch (e: Exception) {
-                ui.post { finishRecording(e.toString()) }
-            }
+            } catch (e: Exception) { ui.post { finishRecording(e.toString()) } }
         }
     }
 
     private fun finishRecording(reason: String?) {
         if (stopping || (!busy && !recording)) return
         stopping = true; recording = false; busy = true
-        stopBtn.isEnabled = false
+        shutter.isEnabled = false
         ui.removeCallbacks(ticker)
-        status.text = "파일 마무리 중…"
+        setSignal(SIG_BUSY); sigText.text = "파일 마무리 중…"
         worker.execute {
             var err = reason
             try { camera?.stop() } catch (e: Exception) { err = e.toString() }; camera = null
@@ -163,16 +209,19 @@ class MainActivity : Activity() {
 
     private fun afterStop(err: String?, rec: Recording?) {
         busy = false; stopping = false
-        startBtn.isEnabled = true
+        shutter.isEnabled = true
+        shutter.setBackgroundResource(R.drawable.bg_shutter)
+        recTimer.visibility = View.GONE
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        status.text = if (err == null) "저장 완료 · ${rec?.dir?.name}" else "불완전 녹화 / 오류: $err"
-        if (err == null && rec != null && !isFinishing && !isDestroyed) {
+        setSignal(SIG_IDLE)
+        if (err != null) { sigText.text = "오류: $err"; return }
+        sigText.text = "저장 완료"
+        if (rec != null && !isFinishing && !isDestroyed) {
             AlertDialog.Builder(this).setTitle("시연 결과")
                 .setItems(arrayOf("성공", "실패", "장비 시험 / 미판정")) { _, i ->
                     val outcome = arrayOf("success", "failure", "unrated")[i]
                     worker.execute {
-                        try { rec.outcome(outcome) }
-                        catch (e: Exception) { ui.post { status.text = "결과 저장 실패: $e" } }
+                        try { rec.outcome(outcome) } catch (e: Exception) { ui.post { sigText.text = "결과 저장 실패: $e" } }
                     }
                 }.show()
         }
@@ -186,4 +235,6 @@ class MainActivity : Activity() {
         if (recording || busy) finishRecording("앱이 백그라운드로 전환됨")
         super.onPause()
     }
+
+    companion object { private const val SIG_IDLE = 0; private const val SIG_BUSY = 1; private const val SIG_REC = 2 }
 }
