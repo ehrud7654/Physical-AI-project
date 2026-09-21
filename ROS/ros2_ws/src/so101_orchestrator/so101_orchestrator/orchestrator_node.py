@@ -18,8 +18,10 @@ import os
 import queue
 import re
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -28,10 +30,12 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float64MultiArray, String
 
 from so101_orchestrator import be_client as bc
+from so101_orchestrator import bundle
 from so101_orchestrator import robot_model as rm
 from so101_orchestrator import steps as st
 from so101_orchestrator.be_client import BEClient
 from so101_orchestrator.policy_control import PolicyControl
+from so101_orchestrator.runtime_executor import RuntimeExecutor
 
 try:
     import httpx
@@ -48,13 +52,18 @@ class OrchestratorNode(Node):
         self.declare_parameter("token", "")                          # 고정 JWT (없으면 secret 로 발급)
         self.declare_parameter("device_secret", "")                  # DEVICE-05 — 절대 소스/깃에 X
         self.declare_parameter("heartbeat_sec", 15.0)                # <20s (젯슨 offline 임계)
-        # 영구 경로 — /tmp 는 재부팅 시 소실(젯슨 RTC 죽어 재부팅 잦음). ~/.so101/ckpt 로.
-        self.declare_parameter("ckpt_dir", os.path.expanduser("~/.so101/ckpt"))
         self.declare_parameter("contract_version", "robot-command-v1")
         self.declare_parameter("firmware_version", "jetson-runtime-1.0.0")  # BE @NotBlank
         self.declare_parameter("runtime_version", "policy-runner-1.0.0")    # BE @NotBlank
         self.declare_parameter("motor_settle_sec", 2.0)    # MOTOR step: timeoutSeconds 없을 때 대기
         self.declare_parameter("skill_default_sec", 10.0)  # SKILL step: timeoutSeconds 없을 때 실행
+        # SKILL 실행 엔진: ros2_policy(정책노드 lifecycle, 시뮬 가능) | umi_runtime(팀원 런타임, 실물)
+        self.declare_parameter("executor", "ros2_policy")
+        self.declare_parameter("runtime_root", os.path.expanduser("~/S15P21A103/ROS"))
+        self.declare_parameter("runtime_move", True)     # umi_runtime: 실제 모터 구동 여부
+        self.declare_parameter("runtime_cycles", 0)      # 0 = 취소/타임아웃까지 계속
+        # 배포 번들(tgz) 해제 위치. 영구 경로여야 함(/tmp 는 재부팅 시 소실).
+        self.declare_parameter("models_dir", "")         # 빈값이면 <runtime_root>/models
 
         base_url = self.get_parameter("base_url").value
         device_id = self.get_parameter("device_id").value
@@ -63,13 +72,24 @@ class OrchestratorNode(Node):
         self._device_secret = (self.get_parameter("device_secret").value
                                or os.environ.get("SO101_DEVICE_SECRET", ""))
         self._hb_period = float(self.get_parameter("heartbeat_sec").value)
-        self._ckpt_dir = self.get_parameter("ckpt_dir").value
         self._contract = self.get_parameter("contract_version").value
         self._firmware = self.get_parameter("firmware_version").value
-        self._runtime = self.get_parameter("runtime_version").value
+        self._runtime_version = self.get_parameter("runtime_version").value
         self._motor_settle_sec = float(self.get_parameter("motor_settle_sec").value)
         self._skill_default_sec = float(self.get_parameter("skill_default_sec").value)
-        os.makedirs(self._ckpt_dir, exist_ok=True)
+        self._executor = self.get_parameter("executor").value
+        runtime_root = os.path.expanduser(self.get_parameter("runtime_root").value)
+        self._models_dir = (self.get_parameter("models_dir").value
+                            or os.path.join(runtime_root, "models"))
+        os.makedirs(self._models_dir, exist_ok=True)
+        self._runtime_exec = RuntimeExecutor(self, runtime_root=runtime_root)
+        if self._executor == "umi_runtime":
+            problem = self._runtime_exec.preflight()
+            self.get_logger().info(
+                f"실행 엔진=umi_runtime (root={runtime_root})"
+                + (f" ⚠️ {problem}" if problem else ""))
+        else:
+            self.get_logger().info(f"실행 엔진={self._executor} (정책 노드 lifecycle)")
 
         # 관절 순서·한계 = URDF(/robot_description) 단일 출처. latched 라 기동 직후 도착.
         # MOTOR step 이 오기 전(실행은 한참 뒤)에 채워짐. 못 받았으면 MOTOR 만 막힘.
@@ -128,7 +148,7 @@ class OrchestratorNode(Node):
         if (cmd.get("type") == bc.CMD_CANCEL_EXECUTION
                 and cmd.get("executionId") == self._active_exec):
             self._cancel.set()
-            self._policy.stop_skill()
+            self._stop_engines()
             self.get_logger().info(f"취소 요청 → 실행 {self._active_exec} 중단 플래그")
             return                      # CANCELED 리포트는 실행 루프가 함
         self._cmd_q.put(cmd)
@@ -162,11 +182,11 @@ class OrchestratorNode(Node):
             svid = sk.get("skillVersionId")
             if not svid:
                 continue
-            path = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
-            if os.path.exists(path):
-                recovered[svid] = path
-            else:
-                self.get_logger().warn(f"복구: {svid} 로컬 ckpt 없음 — 재배포 필요")
+            unpacked = Path(self._models_dir) / svid
+            try:                       # 번들이 한 겹 감싸져 있을 수도 있어 실제 위치를 찾는다
+                recovered[svid] = str(bundle.locate_model_dir(unpacked))
+            except (FileNotFoundError, OSError):
+                self.get_logger().warn(f"복구: {svid} 로컬 번들 없음 — 재배포 필요")
         if recovered:
             self._deployed_ckpts = recovered
             self.get_logger().info(f"현재 배포 복구 — 스킬 {list(recovered)}")
@@ -243,7 +263,8 @@ class OrchestratorNode(Node):
                 cv = model.get("contractVersion")   # 정책 계약(umi-policy-v1) — 명령 계약과 별개
                 if cv:
                     self.get_logger().info(f"{svid} 모델 contractVersion={cv}")
-                dest = os.path.join(self._ckpt_dir, f"{svid}.ckpt")
+                # 배포 아티팩트 = TorchScript export 번들 tgz (raw ckpt 아님)
+                dest = os.path.join(self._models_dir, f"{svid}.tgz")
                 try:
                     self._be.download(model["downloadUrl"], dest)
                 except Exception as e:  # noqa: BLE001
@@ -263,7 +284,17 @@ class OrchestratorNode(Node):
                 if not self._verify_sha256(dest, model.get("sha256")):
                     fail_item(iid, "CHECKSUM_MISMATCH", f"{svid} 무결성 실패")
                     return
-                loaded[svid] = dest
+                # 번들 해제 → 런타임이 --model 로 받을 디렉터리
+                try:
+                    model_dir = bundle.extract_bundle(Path(dest), Path(self._models_dir) / svid)
+                except Exception as e:  # noqa: BLE001
+                    fail_item(iid, "BUNDLE_INVALID", f"{svid} 번들 해제 실패: {e}")
+                    return
+                lacking = bundle.missing_recommended(model_dir)
+                if lacking:
+                    self.get_logger().warn(
+                        f"{svid} 번들에 {', '.join(lacking)} 없음 — 실물 실행 시 provenance 검증 실패 가능")
+                loaded[svid] = str(model_dir)
 
             # 2) VERIFYING — 항목 전부 DOWNLOADING→VERIFIED (SUCCEEDED 전제)
             rep(bc.DEPLOY_VERIFYING, 80.0, items=items_all("VERIFIED"))
@@ -333,7 +364,7 @@ class OrchestratorNode(Node):
             rep(bc.EXEC_CANCELED, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
             self.get_logger().info(f"실행 {exec_id} 취소 (step {i}/{total})")
         except Exception as e:  # noqa: BLE001
-            self._policy.stop_skill()
+            self._stop_engines()
             rep(bc.EXEC_FAILED, current_step=max(i, 1),
                 progress=round((i - 1) * 100.0 / total, 1),
                 error={"code": "STEP_ERROR", "message": str(e)})
@@ -358,16 +389,62 @@ class OrchestratorNode(Node):
             svid = step.get("skillVersionId")
             path = self._deployed_ckpts.get(svid) if svid else None
             if not path or not os.path.exists(path):
-                raise RuntimeError(f"SKILL {svid} ckpt 없음 — 배포 필요")
-            self.get_logger().info(f"SKILL 실행: {svid} — configure→activate")
-            # 정책 상태 보고 configure→activate 안전 구동 (unconfigured에 activate 크래시 방지)
-            if not self._policy.start_skill(path):
-                raise RuntimeError("정책 start_skill 실패 (so101_policy 미기동?)")
-            # TODO(46): 정책 상태 토픽의 완료 이벤트로 교체. 지금은 timeoutSeconds 동안 실행.
-            self._cancel.wait(float(timeout or self._skill_default_sec))
-            self._policy.stop_skill()
+                raise RuntimeError(f"SKILL {svid} 모델 없음 — 배포 필요")
+            if self._executor == "umi_runtime":
+                self._run_skill_runtime(svid, Path(path), timeout)
+            else:
+                self.get_logger().info(f"SKILL 실행: {svid} — configure→activate")
+                # 정책 상태 보고 configure→activate 안전 구동 (unconfigured activate 크래시 방지)
+                if not self._policy.start_skill(path):
+                    raise RuntimeError("정책 start_skill 실패 (so101_policy 미기동?)")
+                # TODO(46): 정책 상태 토픽의 완료 이벤트로 교체. 지금은 timeoutSeconds 동안 실행.
+                self._cancel.wait(float(timeout or self._skill_default_sec))
+                self._policy.stop_skill()
         else:
             raise ValueError(f"알 수 없는 step type: {stype}")
+
+    def _stop_engines(self):
+        """실행 엔진 정지 — 어느 쪽이 돌든 안전하게(정책은 active 일 때만, 런타임은 SIGINT)."""
+        self._runtime_exec.stop()
+        self._policy.stop_skill()
+
+    def _run_skill_runtime(self, svid: str, model_dir: Path, timeout):
+        """UMI 런타임 subprocess 로 SKILL 실행. 런타임 report 를 그대로 BE 진행률에 반영.
+        런타임은 수정하지 않는다 — stdout(JSON)·exit code 만 읽는다."""
+        key = f"exec:{self._active_exec}"
+        run_dir = Path(self._models_dir).parent / "runs" / f"{self._active_exec}_{svid[:8]}"
+        limit = float(timeout) if timeout else 0.0
+        started = time.monotonic()
+        self.get_logger().info(f"SKILL 실행(umi_runtime): {svid} model={model_dir}")
+
+        def on_report(rep: dict):
+            # 런타임 사이클 리포트 → BE RUNNING 진행률(사이클 수 기반, 상한 95%)
+            cycle = int(rep.get("cycle", 0)) + 1
+            phase = rep.get("phase", "")
+            pct = min(95.0, 5.0 + cycle * 5.0)
+            self._be.report_execution(self._active_exec, self._report_id(),
+                                      self._next_seq(key), bc.EXEC_RUNNING,
+                                      current_step=cycle, progress=pct)
+            self.get_logger().info(f"[런타임] cycle={cycle} phase={phase} "
+                                   f"status={rep.get('status')}")
+
+        def should_cancel() -> bool:
+            if self._cancel.is_set():
+                return True
+            return bool(limit and (time.monotonic() - started) >= limit)
+
+        code, err = self._runtime_exec.run(
+            model_dir, run_dir,
+            move=bool(self.get_parameter("runtime_move").value),
+            cycles=int(self.get_parameter("runtime_cycles").value),
+            on_report=on_report, should_cancel=should_cancel)
+
+        if self._cancel.is_set():
+            return                      # 취소는 실행 루프가 CANCELED 로 보고
+        if code != 0 and not (limit and (time.monotonic() - started) >= limit):
+            # 시간 만료로 우리가 SIGINT 를 보낸 경우는 정상 종료로 본다
+            raise RuntimeError(f"런타임 종료 코드 {code}: {err or '로그 확인'}")
+        self.get_logger().info(f"SKILL {svid} 런타임 종료(code={code})")
 
     def _current_vector(self) -> list[float]:
         """/joint_states 최신값을 URDF 관절 순서 벡터로. 없는 관절 있으면 에러(안전)."""
@@ -382,8 +459,9 @@ class OrchestratorNode(Node):
         exec_id = cmd.get("executionId")
         if exec_id == self._active_exec:
             self._cancel.set()
+            self._stop_engines()
             return
-        self._policy.stop_skill()
+        self._stop_engines()
         self._be.report_execution(exec_id, self._report_id(), self._next_seq(f"exec:{exec_id}"),
                                   bc.EXEC_CANCELED, progress=0.0)
         self.get_logger().info(f"실행 {exec_id} 취소(비실행 상태)")
@@ -402,7 +480,7 @@ class OrchestratorNode(Node):
 
     # ── heartbeat ──────────────────────────────────────────────────────
     def _send_heartbeat(self):
-        resp = self._be.heartbeat(firmware=self._firmware, runtime=self._runtime,
+        resp = self._be.heartbeat(firmware=self._firmware, runtime=self._runtime_version,
                                   contract=self._contract)  # 실패는 be_client가 로깅
         if not isinstance(resp, dict):
             return
