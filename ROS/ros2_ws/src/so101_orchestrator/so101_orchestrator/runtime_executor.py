@@ -13,11 +13,25 @@
 """
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import signal
 import subprocess
+import time
 from pathlib import Path
+
+_PR_SET_PDEATHSIG = 1      # linux/prctl.h
+
+
+def _die_with_parent():
+    """자식 쪽에서 실행 — 부모가 죽으면 커널이 나에게 SIGINT 를 보내게 등록.
+    오케스트레이터가 크래시/SIGKILL 돼도 런타임이 고아로 남아 팔을 계속 움직이는 것 방지.
+    (런타임은 SIGINT 를 받으면 hold_current 후 종료한다)"""
+    try:
+        ctypes.CDLL("libc.so.6").prctl(_PR_SET_PDEATHSIG, signal.SIGINT)
+    except Exception:       # noqa: BLE001 — 리눅스 아니면 그냥 넘어감(개발 PC)
+        pass
 
 
 class RuntimeExecutor:
@@ -35,6 +49,7 @@ class RuntimeExecutor:
         self.camera_tcp = self.root / "configs" / "s22_camera_tcp.json"
         self.extra_args = list(extra_args or [])
         self._proc: subprocess.Popen | None = None
+        self._stop_requested = False
 
     # ── 환경 ────────────────────────────────────────────────────────────
     def _env(self) -> dict:
@@ -85,10 +100,12 @@ class RuntimeExecutor:
         cmd += self.extra_args
 
         self._log.info(f"런타임 실행: {' '.join(cmd[-8:])}")
+        self._stop_requested = False
         self._proc = subprocess.Popen(
             cmd, cwd=str(self.root), env=self._env(),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, bufsize=1,
+            preexec_fn=_die_with_parent,     # 부모 사망 시 동반 종료(고아 방지)
         )
         # --move 는 런타임이 "MOVE" 입력을 기다린다(대화식). 자동 승인.
         if move and self._proc.stdin:
@@ -120,7 +137,7 @@ class RuntimeExecutor:
                 except Exception as e:  # noqa: BLE001
                     self._log.warn(f"report 콜백 오류: {e}")
         finally:
-            code = self._proc.wait()
+            code = self._wait_exit(self._proc)
             self._proc = None
         return code, last_error
 
@@ -144,11 +161,28 @@ class RuntimeExecutor:
         return None
 
     def stop(self):
-        """SIGINT — 런타임이 현재 tick hold 시도 후 종료한다."""
+        """SIGINT 만 보내고 즉시 반환(논블로킹) — SSE 스레드에서 불려도 막히지 않게.
+        안 죽으면 run() 의 종료 대기에서 SIGKILL 로 에스컬레이션한다."""
         proc = self._proc
-        if proc and proc.poll() is None:
-            try:
-                proc.send_signal(signal.SIGINT)
-                self._log.info("런타임에 SIGINT (정지 요청)")
-            except Exception as e:  # noqa: BLE001
-                self._log.warn(f"런타임 정지 실패: {e}")
+        if not proc or proc.poll() is not None:
+            return
+        self._stop_requested = True
+        try:
+            proc.send_signal(signal.SIGINT)
+            self._log.info("런타임에 SIGINT (정지 요청)")
+        except Exception as e:  # noqa: BLE001
+            self._log.warn(f"런타임 SIGINT 실패: {e}")
+
+    def _wait_exit(self, proc, grace_s: float = 10.0) -> int:
+        """정지를 요청했으면 유예 후 SIGKILL. 아니면 그냥 기다린다."""
+        if not self._stop_requested:
+            return proc.wait()
+        end = time.time() + grace_s
+        while time.time() < end:
+            code = proc.poll()
+            if code is not None:
+                return code
+            time.sleep(0.2)
+        self._log.error(f"런타임이 {grace_s:.0f}s 내 정지 안 됨 → SIGKILL")
+        proc.kill()
+        return proc.wait()

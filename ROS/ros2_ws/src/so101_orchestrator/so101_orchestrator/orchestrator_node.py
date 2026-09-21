@@ -521,6 +521,8 @@ class OrchestratorNode(Node):
     # ── 종료 ───────────────────────────────────────────────────────────
     def destroy_node(self):
         self._stop.set()
+        self._cancel.set()
+        self._runtime_exec.stop()   # 정상 종료 경로에서 자식 런타임 정리(고아 방지)
         return super().destroy_node()
 
 
