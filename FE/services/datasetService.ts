@@ -18,6 +18,7 @@ interface ApiEpisode {
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
   error: { code: string; message: string; recoveryAction: RecoveryAction } | null;
+  qualitySummary: { values: Record<string, unknown> };
   createdAt: string;
 }
 
@@ -43,6 +44,7 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     skillKey: episode.skillKey ?? '',
     skillName: episode.skillDisplayName ?? episode.skillKey ?? '알 수 없는 동작',
     umiId: episode.umiDeviceHandleNumber ?? episode.umiDeviceId,
+    calibrationId: normalizeCalibrationId(episode.qualitySummary?.values?.calibrationId),
     ready: status === 'READY',
     status,
     validationErrors: status === 'INVALID' ? episode.blockingReasons.map((reason) => reason.message) : undefined,
@@ -52,6 +54,10 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     blockingReasons: episode.blockingReasons,
     recoveryAction: episode.recoveryAction,
   };
+}
+
+function normalizeCalibrationId(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value : '미등록';
 }
 
 function formatDate(iso: string): string {

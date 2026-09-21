@@ -107,6 +107,8 @@ export interface Dataset {
   skillKey: string;
   skillName: string;
   umiId: string;
+  /** 품질 메타데이터의 calibrationId를 화면 표시용 문자열로 정규화한 값. */
+  calibrationId: string;
   ready: boolean;
   status: DatasetStatus;
   validationErrors?: string[];
