@@ -33,11 +33,25 @@ else
   PIP=(python3 -m pip install --prefix "$VENV")
 fi
 
+# wheelhouse 의 휠 = 검증된 런타임 의존 세트. 이름으로 풀지 않고 파일을 직접 넣는다.
+# --ignore-installed: 시스템 dist-packages 가 보여도 venv 안에 확실히 설치되게.
 echo "오프라인 설치 (wheelhouse=$WHEELHOUSE)"
-"${PIP[@]}" --no-index --find-links "$WHEELHOUSE" -r "$HERE/requirements-jetson.txt"
+shopt -s nullglob
+WHEELS=("$WHEELHOUSE"/*.whl)
+shopt -u nullglob
+if [ ${#WHEELS[@]} -eq 0 ]; then
+  echo "wheelhouse 에 .whl 이 없습니다: $WHEELHOUSE" >&2
+  exit 1
+fi
+echo "휠 ${#WHEELS[@]}개 설치"
+"${PIP[@]}" --no-index --find-links "$WHEELHOUSE" --ignore-installed "${WHEELS[@]}"
 
-echo "설치 검증"
-"$VENV/bin/python" -c "import sys; print('site-packages:', [p for p in sys.path if 'site-packages' in p])"
+echo
+echo "설치 검증 (torch import — cusparselt 경로 필요)"
+CUSPARSE="$(echo "$VENV"/lib/python*/site-packages/cusparselt/lib)"
+LD_LIBRARY_PATH="$CUSPARSE:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}" \
+  "$VENV/bin/python" -c \
+  "import torch, diffusers, cv2; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 
 echo
 echo "설치 완료. torch 는 cusparselt 라이브러리 경로가 있어야 import 된다:"
