@@ -84,4 +84,9 @@ class TrainingRunService:
             path = self.paths.resolve_existing_file(episode.storage_key)
             if sha256_file(path) != episode.sha256:
                 raise DomainError(422, "EPISODE_HASH_MISMATCH", f"Episode hash가 일치하지 않습니다: {episode.episode_id}")
+        training_input = self.paths.resolve_existing_file(request.training_input.storage_key)
+        if training_input.stat().st_size != request.training_input.size_bytes:
+            raise DomainError(422, "TRAINING_INPUT_SIZE_MISMATCH", "전처리 학습 입력 크기가 일치하지 않습니다.")
+        if sha256_file(training_input) != request.training_input.sha256:
+            raise DomainError(422, "TRAINING_INPUT_HASH_MISMATCH", "전처리 학습 입력 hash가 일치하지 않습니다.")
 

@@ -41,6 +41,22 @@ class EpisodeInput(ApiModel):
         return value
 
 
+class TrainingInput(ApiModel):
+    storage_key: str = Field(min_length=1)
+    size_bytes: int = Field(gt=0)
+    sha256: str
+    dataset_sha256: str
+    report_sha256: str
+    episode_count: int = Field(gt=0)
+
+    @field_validator("sha256", "dataset_sha256", "report_sha256")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("hash must be a lowercase SHA-256")
+        return value
+
+
 class CreateTrainingRunRequest(ApiModel):
     training_job_id: str = Field(min_length=1)
     attempt: int = Field(ge=1)
@@ -51,6 +67,7 @@ class CreateTrainingRunRequest(ApiModel):
     base_model: BaseModelInput | None = None
     input_snapshot_sha256: str
     episodes: list[EpisodeInput] = Field(min_length=1)
+    training_input: TrainingInput
     execution_lease_expires_at: datetime
 
     @field_validator("input_snapshot_sha256")

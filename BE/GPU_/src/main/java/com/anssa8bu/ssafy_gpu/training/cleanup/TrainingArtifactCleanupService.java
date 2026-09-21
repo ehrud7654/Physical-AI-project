@@ -43,6 +43,7 @@ public class TrainingArtifactCleanupService {
     }
     boolean success = deleteTree(resolve("training-inputs", jobId, attempt));
     success &= deleteTree(resolve("training-results", jobId, attempt));
+    success &= deleteTree(resolvePreprocessing(jobId, attempt));
     String key = jobId + ":" + attempt;
     if (success) retries.remove(key);
     else retries.put(key, new CleanupTarget(jobId, attempt));
@@ -52,6 +53,7 @@ public class TrainingArtifactCleanupService {
     if (!properties.enabled()) return;
     scan(root.resolve("training-inputs"));
     scan(root.resolve("training-results"));
+    scanPreprocessing(root.resolve("preprocessing-jobs"));
     retries.values().forEach(target -> cleanup(target.jobId(), target.attempt()));
   }
 
@@ -98,6 +100,35 @@ public class TrainingArtifactCleanupService {
     Path path = kindRoot.resolve(jobId.toString()).resolve(Integer.toString(attempt)).normalize();
     if (!path.startsWith(kindRoot)) throw new IllegalArgumentException("허용되지 않은 경로입니다.");
     return path;
+  }
+
+  private Path resolvePreprocessing(UUID jobId, int attempt) {
+    Path kindRoot = root.resolve("preprocessing-jobs").normalize();
+    Path path = kindRoot.resolve(jobId + "_" + attempt).normalize();
+    if (!path.startsWith(kindRoot)) throw new IllegalArgumentException("허용되지 않은 경로입니다.");
+    return path;
+  }
+
+  private void scanPreprocessing(Path artifactRoot) {
+    if (!Files.isDirectory(artifactRoot)) return;
+    Instant threshold = Instant.now().minus(properties.orphanGracePeriod());
+    try (var paths = Files.list(artifactRoot)) {
+      paths.filter(Files::isDirectory).forEach(path -> {
+        String name = path.getFileName().toString();
+        int separator = name.lastIndexOf('_');
+        if (separator < 0) return;
+        try {
+          UUID jobId = UUID.fromString(name.substring(0, separator));
+          int attempt = Integer.parseInt(name.substring(separator + 1));
+          if (!isActive(jobId, attempt) && !checkpoints.isFinalizationPending(jobId, attempt)
+              && Files.getLastModifiedTime(path).toInstant().isBefore(threshold)) deleteTree(path);
+        } catch (IllegalArgumentException | IOException ignored) {
+          // 규칙과 다른 디렉터리는 자동 삭제하지 않는다.
+        }
+      });
+    } catch (IOException exception) {
+      log.warn("전처리 artifact orphan 탐색 실패: root={}", artifactRoot, exception);
+    }
   }
 
   private boolean isActive(UUID jobId, int attempt) {

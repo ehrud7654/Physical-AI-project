@@ -4,6 +4,7 @@ import static com.anssa8bu.ssafy_gpu.fastapi.dto.FastApiTrainingModels.*;
 
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.fastapi.client.FastApiTrainingClient;
+import com.anssa8bu.ssafy_gpu.preprocessing.storage.PreprocessedArtifactVerifier.PreprocessedTrainingInput;
 import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.ClaimResponse;
 import com.anssa8bu.ssafy_gpu.training.storage.BaseModelDownloader.LocalBaseModel;
 import com.anssa8bu.ssafy_gpu.training.storage.EpisodeArchiveDownloader.LocalEpisode;
@@ -25,7 +26,8 @@ public class FastApiRunService {
   }
 
   public CreateRunResponse start(
-      ClaimResponse claim, int gpuIndex, List<LocalEpisode> episodes, LocalBaseModel baseModel) {
+      ClaimResponse claim, int gpuIndex, List<LocalEpisode> episodes,
+      PreprocessedTrainingInput trainingInput, LocalBaseModel baseModel) {
     BaseModelInput base =
         baseModel == null
             ? null
@@ -62,6 +64,9 @@ public class FastApiRunService {
                 base,
                 claim.job().inputSnapshotSha256(),
                 inputs,
+                new TrainingInput(trainingInput.storageKey(), trainingInput.sizeBytes(),
+                    trainingInput.sha256(), trainingInput.datasetSha256(),
+                    trainingInput.reportSha256(), trainingInput.episodeCount()),
                 currentAssignment.leaseExpiresAt()));
     state.bindRun(gpuIndex, response.runId());
     return response;

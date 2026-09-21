@@ -11,6 +11,14 @@ public final class FastApiTrainingModels {
   public record EpisodeInput(
       int inputOrder, UUID episodeId, String storageKey, String sha256, String contractVersion) {}
 
+  public record TrainingInput(
+      String storageKey,
+      long sizeBytes,
+      String sha256,
+      String datasetSha256,
+      String reportSha256,
+      int episodeCount) {}
+
   public record BaseModelInput(
       UUID skillVersionId,
       int version,
@@ -31,6 +39,7 @@ public final class FastApiTrainingModels {
       BaseModelInput baseModel,
       String inputSnapshotSha256,
       List<EpisodeInput> episodes,
+      TrainingInput trainingInput,
       Instant executionLeaseExpiresAt) {}
 
   public record CreateRunResponse(String runId, UUID trainingJobId, int attempt, String status) {}

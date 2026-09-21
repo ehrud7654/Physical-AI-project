@@ -52,13 +52,17 @@ public class EpisodeArchiveDownloader {
   private LocalEpisode download(EpisodeData episode, int inputOrder, Path directory)
       throws Exception {
     var archive = episode.archive();
-    if (!archive.expiresAt().isAfter(Instant.now()))
-      throw new IllegalStateException("Episode Presigned URL이 만료되었습니다: " + episode.episodeId());
-
     Path target = directory.resolve(episode.episodeId() + ".zip").normalize();
     if (!target.getParent().equals(directory))
       throw new IllegalStateException("허용되지 않은 Episode 경로입니다.");
     Path temporary = directory.resolve(episode.episodeId() + ".part").normalize();
+
+    if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+      verify(target, archive.sizeBytes(), archive.sha256());
+      return localEpisode(episode, inputOrder, target);
+    }
+    if (!archive.expiresAt().isAfter(Instant.now()))
+      throw new IllegalStateException("Episode Presigned URL이 만료되었습니다: " + episode.episodeId());
 
     log.info("Episode 다운로드 시작: episodeId={}, inputOrder={}", episode.episodeId(), inputOrder);
     try {
@@ -74,29 +78,23 @@ public class EpisodeArchiveDownloader {
       } catch (AtomicMoveNotSupportedException ignored) {
         Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
       }
-      String storageKey =
-          properties
-              .storageRoot()
-              .toAbsolutePath()
-              .normalize()
-              .relativize(target)
-              .toString()
-              .replace('\\', '/');
+      String storageKey = localEpisode(episode, inputOrder, target).storageKey();
       log.info(
           "Episode 다운로드 및 검증 완료: episodeId={}, sizeBytes={}, storageKey={}",
           episode.episodeId(),
           archive.sizeBytes(),
           storageKey);
-      return new LocalEpisode(
-          inputOrder,
-          episode.episodeId(),
-          storageKey,
-          archive.sha256(),
-          episode.contractVersion(),
-          target);
+      return localEpisode(episode, inputOrder, target);
     } finally {
       Files.deleteIfExists(temporary);
     }
+  }
+
+  private LocalEpisode localEpisode(EpisodeData episode, int inputOrder, Path target) {
+    String storageKey = properties.storageRoot().toAbsolutePath().normalize().relativize(target)
+        .toString().replace('\\', '/');
+    return new LocalEpisode(inputOrder, episode.episodeId(), storageKey,
+        episode.archive().sha256(), episode.contractVersion(), target);
   }
 
   private void verify(Path file, long expectedSize, String expectedSha256) throws Exception {
