@@ -41,14 +41,27 @@ public class EpisodePreprocessingService {
     if (!root.startsWith(allowed)) throw new IllegalStateException("허용되지 않은 전처리 작업 경로입니다.");
     List<LocalEpisode> demonstrations =
         episodes.stream().filter(e -> e.inputRole() == TrainingEpisodeRole.DEMONSTRATION).toList();
+    List<LocalEpisode> mappings =
+        episodes.stream().filter(e -> e.inputRole() == TrainingEpisodeRole.MAPPING).toList();
     if (demonstrations.isEmpty())
       throw new IllegalStateException("전처리에는 하나 이상의 시연 Episode가 필요합니다.");
+    if (mappings.size() > 1)
+      throw new IllegalStateException("전처리에는 공간 매핑 Episode를 하나만 사용할 수 있습니다.");
+    for (LocalEpisode episode : mappings) {
+      extractor.extract(
+          episode,
+          root.resolve("raw_mapping")
+              .resolve(String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId())));
+    }
     for (LocalEpisode episode : demonstrations) {
       extractor.extract(
           episode,
           root.resolve("raw")
               .resolve(String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId())));
     }
+    log.info(
+        "Episode 역할별 압축 해제 완료: trainingJobId={}, mappingCount={}, demonstrationCount={}",
+        claim.job().id(), mappings.size(), demonstrations.size());
     boolean acquired = false;
     try {
       singleWorker.acquire(); acquired = true;
