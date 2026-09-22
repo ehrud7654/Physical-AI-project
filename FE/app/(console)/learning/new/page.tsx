@@ -32,6 +32,6 @@ function NewLearningInner() {
     onNavigate={(view) => router.push(viewToPath(view))}
     onToast={showToast}
     presetSkillKey={presetSkillKey}
-    onDone={presetSkillKey ? () => router.push(`/skills/${encodeURIComponent(presetSkillKey)}`) : undefined}
+    onDone={(trainingId) => router.replace(trainingId ? `/learning/${encodeURIComponent(trainingId)}` : viewToPath('training'))}
   />;
 }
