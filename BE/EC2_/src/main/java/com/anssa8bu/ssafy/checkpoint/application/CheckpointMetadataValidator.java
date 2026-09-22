@@ -18,6 +18,8 @@ public class CheckpointMetadataValidator {
   }
 
   public void validate(Metadata metadata, RobotProfile robotProfile) {
+    if (metadata.nParams() <= 1)
+      conflict("nParams는 실제 CKPT에서 계산한 1보다 큰 값이어야 합니다.");
     if (!robotProfile.getContractVersion().equals(metadata.contractVersion()))
       conflict("RobotProfile contractVersion과 CKPT 계약 버전이 다릅니다.");
     Object actionType = robotProfile.getActionContract().get("actionSpace");

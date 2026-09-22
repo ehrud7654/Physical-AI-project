@@ -49,6 +49,7 @@ public class CheckpointUploadService {
       LocalCheckpoint checkpoint,
       Runnable afterUpload) {
     Path file = validatePath(checkpoint.path());
+    validateMetadata(checkpoint.metadata());
     try {
       long size = Files.size(file);
       if (size <= 0) throw new IllegalArgumentException("CKPT 파일이 비어 있습니다.");
@@ -106,6 +107,12 @@ public class CheckpointUploadService {
     } finally {
       state.uploadFinished();
     }
+  }
+
+  private void validateMetadata(Metadata metadata) {
+    if (metadata == null) throw new IllegalArgumentException("CKPT metadata가 필요합니다.");
+    if (metadata.nParams() <= 1)
+      throw new IllegalArgumentException("CKPT nParams는 실제 모델에서 계산한 1보다 큰 값이어야 합니다.");
   }
 
   private Path validatePath(Path path) {

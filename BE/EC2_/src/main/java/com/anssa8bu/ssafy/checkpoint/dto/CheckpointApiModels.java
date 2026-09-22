@@ -13,7 +13,7 @@ public final class CheckpointApiModels {
       @NotBlank String frameworkVersion, @NotBlank String contractVersion,
       @NotNull UUID robotProfileId, @NotNull ActionSpace actionSpace,
       @NotEmpty Map<String,Object> actionSpec, @NotEmpty Map<String,Object> runtimeSpec,
-      @Positive long nParams, @Positive BigDecimal controlRateHz,
+      @Min(2) long nParams, @Positive BigDecimal controlRateHz,
       @NotEmpty List<String> cameraNames, @NotNull Map<String,Object> inputSchema,
       @NotNull Map<String,Object> outputSchema) {}
   public record UploadSessionRequest(@Positive int attempt, @NotBlank String leaseToken,
