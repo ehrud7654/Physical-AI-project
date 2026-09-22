@@ -3,10 +3,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 const steps = [
-  { label: '대시 보드', title: '전체 상태를 한눈에 봐요', description: '장치 연결과 학습 진행 상황을 모아 보여줘요.', items: ['연결된 UMI와 사용 가능한 로봇 수 확인', '로봇별 상태와 최근 학습 진행률 확인'] },
-  { label: '학습', title: '로봇에게 동작을 가르쳐요', description: '진행 중이거나 끝난 학습을 한눈에 보고, 가르친 동작은 동작 목록에서 볼 수 있어요.', items: ['학습 현황: 학습 진행률과 결과 확인', '가르친 동작은 동작 목록에서 확인'] },
-  { label: '작업', title: '배운 동작을 묶어 실행해요', description: '로봇이 할 일을 순서대로 만들고 실행해요.', items: ['작업 목록: 저장한 작업의 상세 확인·수정·실행', '작업 생성: 동작을 순서대로 추가하고 실행 준비'] },
-  { label: '장치 관리', title: '수집 장치와 로봇을 관리해요', description: '동작을 기록하는 수집 장치(UMI)와 학습한 동작을 실행할 로봇을 관리해요.', items: ['로봇·UMI 탭에서 장치 정보와 연결 상태 확인', '장치 등록으로 새로운 장치 추가'] },
+  { label: '대시 보드', title: '전체 상태를 한눈에 봐요', description: '장치 연결과 학습 진행 상황을 모아 보여줘요.' },
+  { label: '학습', title: '로봇에게 동작을 가르쳐요', description: '진행 중이거나 끝난 학습을 한눈에 보고, 가르친 동작은 동작 목록에서 볼 수 있어요.' },
+  { label: '작업', title: '배운 동작을 묶어 실행해요', description: '로봇이 할 일을 순서대로 만들고 실행해요.' },
+  { label: '장치 관리', title: '수집 장치와 로봇을 관리해요', description: '동작을 기록하는 수집 핸들과 학습한 동작을 실행할 로봇을 관리해요.' },
 ];
 
 /* 실제 콘솔 사이드바 5개 메뉴. steps(4개)의 index를 실제 활성 메뉴로 매핑한다. */
@@ -18,7 +18,7 @@ const LEGENDS = [
   [['실행 중인 작업', '지금 로봇이 하는 일과 진행률을 확인해요'], ['요약 지표', '등록 장치·진행 중 학습·오늘 완료 작업을 한눈에']],
   [['상태 요약', '전체·진행 중·완료·확인 필요 수'], ['학습 진행', '진행률·현재 단계·성공/실패 확인']],
   [['실행 중인 작업', '로봇에서 도는 작업을 확인하고 중지해요'], ['작업 목록', '저장한 작업을 열어 수정·실행']],
-  [['UMI·로봇 탭', '보고 싶은 장치 종류를 전환해요'], ['장치 카드', '장치 정보와 연결 상태를 확인해요']],
+  [['수집 핸들·로봇 탭', '보고 싶은 장치 종류를 전환해요'], ['장치 카드', '장치 정보와 연결 상태를 확인해요']],
 ];
 
 /* 1번은 왼쪽 노트, 2번은 오른쪽 노트로 이어지므로 핀도 각각 대상의 좌·우 모서리에 붙인다(연결선이 목업을 가로지르지 않게). */
@@ -33,8 +33,8 @@ function ScreenBody({ index }: { index: number }) {
       <div className="tour-row"><span className="tour-av">R</span><div className="tour-rmain"><strong>청기 잡기</strong><small>SHANKS · 1/1 단계</small></div><em className="tour-badge ghost">중지 요청</em></div>
     </div>
     <div className="tour-stat4 tour-spot"><Pin n={2} />
-      <span><small>등록된 UMI</small><strong>1<i>대</i></strong></span>
-      <span><small>등록된 로봇</small><strong>2<i>대</i></strong></span>
+      <span><small>수집 핸들</small><strong>1<i>개</i></strong></span>
+      <span><small>등록된 로봇</small><strong>2<i>개</i></strong></span>
       <span><small>진행 중 학습</small><strong>1<i>건</i></strong></span>
       <span><small>오늘 완료</small><strong>0<i>건</i></strong></span>
     </div>
@@ -64,7 +64,7 @@ function ScreenBody({ index }: { index: number }) {
   </>;
   return <>
     <h3>장치 관리</h3>
-    <div className="tour-dtabs tour-spot"><Pin n={1} /><span className="on">UMI <b>1</b></span><span>로봇 <b>2</b></span></div>
+    <div className="tour-dtabs tour-spot"><Pin n={1} /><span className="on">수집 핸들 <b>1</b></span><span>로봇 <b>2</b></span></div>
     <div className="tour-dcard tour-spot"><Pin n={2} />
       <div className="tour-dcard-top"><span className="tour-device-icon">U</span><em className="tour-badge soft">● 온라인</em></div>
       <strong>UMI-001</strong><small>801호</small>

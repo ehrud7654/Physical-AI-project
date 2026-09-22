@@ -66,14 +66,14 @@ export function WorkflowLibraryView({ onEdit, onOpen, onToast }: { onEdit: (work
 
     <section className="workflow-library-toolbar" aria-label="작업 검색">
       {selectingWorks && <div className="selection-summary"><input className="list-select-checkbox" type="checkbox" aria-label="작업 전체 선택" disabled={!filteredWorks.length} checked={filteredWorks.length > 0 && selectedWorkIds.length === filteredWorks.length} onChange={() => setSelectedWorkIds(selectedWorkIds.length === filteredWorks.length ? [] : filteredWorks.map(work => work.id))} /><span>{selectedWorkIds.length}개 선택됨</span></div>}
+      <button className={`${selectingWorks ? 'danger-button' : 'secondary-button'} list-delete-button`} onClick={() => { if (!selectingWorks) setSelectingWorks(true); else if (selectedWorkIds.length) setDeleteWorksOpen(true); else setSelectingWorks(false); }}>삭제</button>
       <label className="workflow-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="작업명 또는 포함된 블록 검색" aria-label="저장된 작업 검색" /></label>
       <select className="work-sort-select" value={workSort} onChange={(event) => setWorkSort(event.target.value as WorkSortKey)} aria-label="작업 정렬">{WORK_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-      <button className={`${selectingWorks ? 'danger-button' : 'secondary-button'} list-delete-button`} onClick={() => { if (!selectingWorks) setSelectingWorks(true); else if (selectedWorkIds.length) setDeleteWorksOpen(true); else setSelectingWorks(false); }}>삭제</button>
     </section>
 
     <div className="workflow-library-layout">
       <section className="card saved-work-list" aria-label="저장된 작업 목록">
-        <div className="saved-work-columns" aria-hidden="true"><span>작업</span><span>예상 시간</span><span>최근 수정일</span><span className="saved-work-total">전체 {savedWorks.length}개</span></div>
+        <div className="saved-work-columns" aria-hidden="true"><span>작업</span><span>예상 시간</span><span>최근 수정일</span></div>
         {filteredWorks.length ? pageItems.map((work) => {
           const workBlocks = flattenWorkflowBlocks(work.blocks);
           const workSkills = workBlocks.filter(isSkillBlock).length;
