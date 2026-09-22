@@ -3,9 +3,9 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://umi-studio-wireframe.michael3252.chatgpt.site'),
+  metadataBase: new URL('https://j15a103.p.ssafy.io'),
   title: 'S.S.A.F.Y · 로봇 학습 플랫폼',
-  description: '누구나 쉽게 로봇에게 새로운 작업을 가르치는 UMI 기반 학습 플랫폼',
+  description: '누구나 쉽게 가르치는 로봇 학습 플랫폼',
   openGraph: {
     title: 'S.S.A.F.Y · 로봇 학습 플랫폼',
     description: '누구나 쉽게 가르치는 로봇 학습 플랫폼',

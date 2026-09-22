@@ -27,8 +27,8 @@ export function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { on
     <div className="page-heading title-divider"><div><h1>대시 보드</h1></div></div>
     <ActiveRobotExecutionsCard />
     <div className="overview-cards">
-      <button onClick={() => onOpenDevices('umi')}><div><small>등록된 UMI</small><strong>{summary.umi.totalCount}<em>대</em></strong><p><i className="online-dot" /> {summary.umi.onlineCount}대 연결됨</p></div></button>
-      <button onClick={() => onOpenDevices('robot')}><div><small>등록된 로봇</small><strong>{summary.robots.totalCount}<em>대</em></strong><p><i className="online-dot" /> {summary.robots.availableCount}대 사용 가능</p></div></button>
+      <button onClick={() => onOpenDevices('umi')}><div><small>등록된 수집 핸들</small><strong>{summary.umi.totalCount}<em>개</em></strong></div></button>
+      <button onClick={() => onOpenDevices('robot')}><div><small>등록된 로봇</small><strong>{summary.robots.totalCount}<em>개</em></strong><p><i className="online-dot" /> {summary.robots.availableCount}개 사용 가능</p></div></button>
       <button onClick={() => onNavigate('training')}><div><small>진행 중인 학습</small><strong>{summary.trainings.runningCount}<em>건</em></strong><p>평균 진행률 {Math.round(summary.trainings.averageProgressPercent)}%</p></div></button>
       <button onClick={() => onNavigate('library')}><div><small>오늘 완료한 작업</small><strong>{summary.executions.completedTodayCount}<em>건</em></strong><p>성공률 {Math.round(summary.executions.successRatePercent)}%</p></div></button>
     </div>

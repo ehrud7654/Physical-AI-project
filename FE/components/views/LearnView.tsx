@@ -63,7 +63,7 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
       : [...selected, episodeId];
     const nextData = readyData.filter((item) => nextSelected.includes(item.id));
     if (nextData.length && nextData.some((item) => item.umiDeviceId !== nextData[0].umiDeviceId)) {
-      onToast('같은 UMI에서 수집한 데이터만 함께 선택할 수 있어요.');
+      onToast('같은 수집 핸들에서 수집한 데이터만 함께 선택할 수 있어요.');
       return;
     }
     updateLearningDraft({ selected: nextSelected });
@@ -73,7 +73,7 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
     if (!skill || !selectedData.length) return;
     const umi = umis.find((item) => item.deviceId === selectedData[0].umiDeviceId);
     if (!umi) {
-      onToast('수집 데이터의 UMI 장치를 확인할 수 없어요.');
+      onToast('수집 데이터의 수집 핸들을 확인할 수 없어요.');
       return;
     }
     setSubmitting(true);
@@ -89,7 +89,7 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
       if (onDone) onDone();
       else onNavigate('training');
     } catch {
-      onToast('학습 작업을 생성하지 못했어요. 선택한 데이터와 UMI 정보를 확인해 주세요.');
+      onToast('학습 작업을 생성하지 못했어요. 선택한 데이터와 수집 핸들 정보를 확인해 주세요.');
     } finally {
       setSubmitting(false);
     }
@@ -113,6 +113,6 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
 
     {step === 2 && <section className="card learning-wizard-card"><div className="wizard-title"><span>{2 - stepOffset}</span><div><h2>학습에 사용할 수집 데이터를 선택해 주세요</h2></div></div><div className="episode-select-list"><div className="episode-selection-toolbar"><span>학습 가능 {readyData.length}개</span><button className="text-button" type="button" disabled={!readyData.length} onClick={() => updateLearningDraft({ selected: allSelected ? [] : readyData.map((item) => item.id) })}>{allSelected ? '전체 선택 해제' : '전체 선택'}</button></div>{availableData.map((item) => <label key={item.id} className={`${selected.includes(item.id) ? 'selected' : ''}${!item.trainable ? ' disabled' : ''}`}><input type="checkbox" disabled={!item.trainable} checked={selected.includes(item.id)} onChange={() => toggleEpisode(item.id)} /><span><strong>데이터 {String(item.seq).padStart(3, '0')}</strong><small>{item.date} · {item.duration} · {item.umiId}</small></span><em>{item.trainable ? '확인 완료 · 학습 가능' : recoveryActionLabel[item.recoveryAction]}</em></label>)}{!availableData.length && <p className="table-empty">이 동작에 수집된 데이터가 없습니다.</p>}<div className="episode-selection-summary" role="status"><strong>{selectedData.length}개 선택됨</strong><span>{selectedData.length ? '선택한 데이터로 학습을 생성할 수 있어요.' : '학습할 데이터를 선택해 주세요.'}</span></div></div><div className="wizard-actions">{preset ? <span /> : <button className="secondary-button" onClick={() => updateLearningDraft({ step: 1, selected: [] })}>← 이전</button>}<button className="primary-button" disabled={!selectedData.length} onClick={() => updateLearningDraft({ step: 3 })}>다음: 최종 확인 →</button></div></section>}
 
-    {step === 3 && skill && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>{3 - stepOffset}</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.displayName}</dd></div><div><dt>선택 데이터</dt><dd>{selectedData.length}개</dd></div><div><dt>수집 UMI</dt><dd>{selectedData[0]?.umiId ?? '확인할 수 없음'}</dd></div></dl><div className="review-notice"><strong>생성하면 학습 목록에서 진행 상태를 확인할 수 있습니다.</strong></div><div className="wizard-actions"><button className="secondary-button" onClick={() => updateLearningDraft({ step: 2 })}>← 이전</button><button className="primary-button" disabled={submitting || !selectedData.length} onClick={() => void submitTraining()}>{submitting ? '생성 중...' : '학습 작업 생성'}</button></div></section>}
+    {step === 3 && skill && <section className="card learning-wizard-card review-card"><div className="wizard-title"><span>{3 - stepOffset}</span><div><h2>학습 내용을 확인해 주세요</h2></div></div><dl><div><dt>학습 동작</dt><dd>{skill.displayName}</dd></div><div><dt>선택 데이터</dt><dd>{selectedData.length}개</dd></div><div><dt>수집 핸들</dt><dd>{selectedData[0]?.umiId ?? '확인할 수 없음'}</dd></div></dl><div className="review-notice"><strong>생성하면 학습 목록에서 진행 상태를 확인할 수 있습니다.</strong></div><div className="wizard-actions"><button className="secondary-button" onClick={() => updateLearningDraft({ step: 2 })}>← 이전</button><button className="primary-button" disabled={submitting || !selectedData.length} onClick={() => void submitTraining()}>{submitting ? '생성 중...' : '학습 작업 생성'}</button></div></section>}
   </>;
 }
