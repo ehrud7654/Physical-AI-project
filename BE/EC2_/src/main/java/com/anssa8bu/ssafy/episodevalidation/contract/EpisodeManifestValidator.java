@@ -2,6 +2,8 @@ package com.anssa8bu.ssafy.episodevalidation.contract;
 
 import com.anssa8bu.ssafy.episodevalidation.exception.EpisodeArchiveValidationException;
 import java.util.List;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -72,7 +74,8 @@ public final class EpisodeManifestValidator {
     required(manifest, "android");
 
     return new ManifestValidationResult(
-        schemaVersion, startNs, stopNs, requestedHz, outcome, Map.copyOf(camera));
+        schemaVersion, startNs, stopNs, requestedHz, outcome,
+        Collections.unmodifiableMap(new LinkedHashMap<>(camera)));
   }
 
   private Object required(Map<String, Object> source, String key) {

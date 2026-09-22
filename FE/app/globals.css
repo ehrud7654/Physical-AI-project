@@ -2507,7 +2507,3 @@ button.device-card-content{cursor:pointer}
   .workflow-library-toolbar>.list-delete-button{margin-right:auto}
   .workflow-library-toolbar .workflow-search{flex:0 1 430px}
 }
-
-.skill-data-file{min-width:0;display:flex;flex-direction:column;gap:4px}
-.skill-data-file strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-.skill-data-file small{color:var(--product-muted)}
