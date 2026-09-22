@@ -77,6 +77,9 @@ public class TrainingJobService {
             .filter(d -> d.getDeviceType() == DeviceType.UMI_CAMERA)
             .orElseThrow(() -> new ResourceNotFoundException("UMI Device"));
     List<Episode> selected = selectEpisodes(owner, skill, request);
+    if (selected.stream().anyMatch(episode -> !episode.getUmiDeviceId().equals(device.getId())))
+      throw new BusinessConflictException(
+          "EPISODE_DEVICE_MISMATCH", "선택한 Episode와 UMI 장치가 일치하지 않습니다.");
     TrainingMode trainingMode =
         request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
     SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
@@ -97,11 +100,12 @@ public class TrainingJobService {
                 device.getId(),
                 TrainingInputMode.EXISTING_EPISODES,
                 query,
-                selected.size(),
+                expected,
                 trainingMode,
                 baseVersion == null ? null : baseVersion.getId()));
-    job.planInput(expected, !selected.isEmpty());
-    for (int i = 0; i < selected.size(); i++) attach(job, selected.get(i), i + 1);
+    job.planInput(expected, true);
+    for (int i = 0; i < selected.size(); i++)
+      attach(job, selected.get(i), i + 1, TrainingEpisodeRole.DEMONSTRATION);
     job.fixInputSnapshotSha256(inputSnapshotHash(selected));
     idempotency.complete(
         owner, "POST", "/api/v1/training-jobs", claim, 201, "TRAINING_JOB", job.getId());
@@ -145,7 +149,8 @@ public class TrainingJobService {
   public List<EpisodeInputResponse> inputEpisodes(UUID owner, UUID id) {
     owned(owner, id);
     return inputs.findAllByIdTrainingJobIdOrderByInputOrder(id).stream()
-        .map(input -> new EpisodeInputResponse(input.getId().episodeId(), input.getInputOrder()))
+        .map(input -> new EpisodeInputResponse(
+            input.getId().episodeId(), input.getInputOrder(), input.getInputRole()))
         .toList();
   }
 
@@ -198,12 +203,14 @@ public class TrainingJobService {
     return request.episodeIds().stream().map(byId::get).toList();
   }
 
-  private void attach(TrainingJob job, Episode episode, int order) {
+  private void attach(
+      TrainingJob job, Episode episode, int order, TrainingEpisodeRole inputRole) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     inputs.save(
         new TrainingJobEpisode(
             new TrainingJobEpisodeId(job.getId(), episode.getId()),
             order,
+            inputRole,
             archive.getSha256(),
             episode.getContractVersion(),
             episode.getSource(),
@@ -218,10 +225,7 @@ public class TrainingJobService {
       StringBuilder canonical = new StringBuilder();
       for (int index = 0; index < selected.size(); index++) {
         Episode episode = selected.get(index);
-        EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
-        canonical.append(index + 1).append('|').append(episode.getId()).append('|')
-            .append(archive.getSha256()).append('|').append(episode.getContractVersion())
-            .append('\n');
+        appendSnapshot(canonical, index + 1, TrainingEpisodeRole.DEMONSTRATION, episode);
       }
       return HexFormat.of().formatHex(
           MessageDigest.getInstance("SHA-256")
@@ -229,6 +233,22 @@ public class TrainingJobService {
     } catch (java.security.NoSuchAlgorithmException e) {
       throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
     }
+  }
+
+  private void appendSnapshot(
+      StringBuilder canonical, int order, TrainingEpisodeRole role, Episode episode) {
+    EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
+    canonical
+        .append(order)
+        .append('|')
+        .append(role)
+        .append('|')
+        .append(episode.getId())
+        .append('|')
+        .append(archive.getSha256())
+        .append('|')
+        .append(episode.getContractVersion())
+        .append('\n');
   }
 
   private SkillVersion validateBaseVersion(

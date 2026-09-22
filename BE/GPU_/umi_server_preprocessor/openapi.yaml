@@ -1,0 +1,58 @@
+openapi: 3.0.3
+info:
+  title: UMI Preprocessor Internal API
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      responses:
+        "200":
+          description: Healthy
+  /internal/v1/jobs:
+    post:
+      summary: Start one preprocessing job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobRequest"
+      responses:
+        "202":
+          description: Accepted
+        "400":
+          description: Invalid input or missing RAW directory
+        "409":
+          description: Another job is running
+  /internal/v1/jobs/{jobId}:
+    get:
+      summary: Read persisted job status
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}
+      responses:
+        "200": {description: Current status}
+        "404": {description: Job not found}
+  /internal/v1/jobs/{jobId}/cancel:
+    post:
+      summary: Stop the active job process group
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: {type: string}
+      responses:
+        "204": {description: Cancelled}
+        "409": {description: Job is not running}
+components:
+  schemas:
+    JobRequest:
+      type: object
+      required: [job_id]
+      properties:
+        job_id: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}
+        dataset_name: {type: string, default: dataset}
+        calibration_profile: {type: string, default: s22_20260921}
+        require_mapping: {type: boolean, default: true}

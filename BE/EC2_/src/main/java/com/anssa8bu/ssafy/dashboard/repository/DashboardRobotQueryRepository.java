@@ -1,92 +1,72 @@
 package com.anssa8bu.ssafy.dashboard.repository;
 
-import com.anssa8bu.ssafy.dashboard.dto.DashboardRobotResponse;
-import com.anssa8bu.ssafy.dashboard.dto.DashboardRobotStatus;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
+import com.anssa8bu.ssafy.dashboard.dto.*;
 import com.anssa8bu.ssafy.dashboard.dto.DashboardSummaryResponse.RobotSummary;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class DashboardRobotQueryRepository {
-
-  private static final String ACTIVE_EXECUTION_STATUSES =
-      "'REQUESTED', 'STARTING', 'RUNNING', 'CANCEL_REQUESTED'";
-
   private final JdbcClient jdbcClient;
+  private final RuntimeStateService runtime;
 
-  public DashboardRobotQueryRepository(JdbcClient jdbcClient) {
+  public DashboardRobotQueryRepository(JdbcClient jdbcClient, RuntimeStateService runtime) {
     this.jdbcClient = jdbcClient;
+    this.runtime = runtime;
   }
 
-  public RobotSummary summarize(UUID ownerId) {
+  private List<DashboardRobotResponse> query(UUID ownerId, Integer limit) {
     String sql =
         """
-        SELECT COUNT(*) AS total_count,
-               COUNT(*) FILTER (
-                   WHERE r.connection_status = 'ONLINE'
-                     AND NOT EXISTS (
-                         SELECT 1 FROM robot_executions e
-                          WHERE e.robot_id = r.id
-                            AND e.status IN (%s)
-                     )
-               ) AS available_count
-          FROM robots r
-         WHERE r.owner_id = :ownerId
-        """
-            .formatted(ACTIVE_EXECUTION_STATUSES);
-
-    return jdbcClient
-        .sql(sql)
-        .param("ownerId", ownerId)
+        select r.*, exists(select 1 from robot_executions e where e.robot_id=r.id
+          and e.status in ('REQUESTED','STARTING','RUNNING','CANCEL_REQUESTED','STATUS_UNKNOWN')) as busy
+        from robots r where r.owner_id=:ownerId order by r.updated_at desc,r.id
+        """;
+    var query =
+        jdbcClient.sql(sql + (limit == null ? "" : " limit :limit")).param("ownerId", ownerId);
+    if (limit != null) query.param("limit", limit);
+    return query
         .query(
-            (rs, rowNum) ->
-                new RobotSummary(rs.getLong("total_count"), rs.getLong("available_count")))
-        .single();
-  }
-
-  public List<DashboardRobotResponse> findRecent(UUID ownerId, int limit) {
-    String sql =
-        """
-        SELECT r.id,
-               r.name,
-               r.last_seen_at,
-               r.current_deployment_id,
-               CASE
-                 WHEN r.connection_status <> 'ONLINE' THEN 'OFFLINE'
-                 WHEN EXISTS (
-                     SELECT 1 FROM robot_executions e
-                      WHERE e.robot_id = r.id
-                        AND e.status IN (%s)
-                 ) THEN 'BUSY'
-                 ELSE 'AVAILABLE'
-               END AS dashboard_status
-          FROM robots r
-         WHERE r.owner_id = :ownerId
-         ORDER BY r.updated_at DESC, r.id
-         LIMIT :limit
-        """
-            .formatted(ACTIVE_EXECUTION_STATUSES);
-
-    return jdbcClient
-        .sql(sql)
-        .param("ownerId", ownerId)
-        .param("limit", limit)
-        .query(
-            (rs, rowNum) ->
-                new DashboardRobotResponse(
-                    rs.getObject("id", UUID.class),
-                    rs.getString("name"),
-                    DashboardRobotStatus.valueOf(rs.getString("dashboard_status")),
-                    toInstant(rs.getTimestamp("last_seen_at")),
-                    rs.getObject("current_deployment_id", UUID.class)))
+            (rs, n) -> {
+              var live =
+                  runtime.device(
+                      rs.getObject("jetson_device_id", UUID.class),
+                      toInstant(rs.getTimestamp("last_seen_at")));
+              var status =
+                  switch (live.status()) {
+                    case UNKNOWN -> DashboardRobotStatus.UNKNOWN;
+                    case OFFLINE -> DashboardRobotStatus.OFFLINE;
+                    case ONLINE ->
+                        rs.getBoolean("busy")
+                            ? DashboardRobotStatus.BUSY
+                            : DashboardRobotStatus.AVAILABLE;
+                  };
+              return new DashboardRobotResponse(
+                  rs.getObject("id", UUID.class),
+                  rs.getString("name"),
+                  status,
+                  live.lastSeenAt(),
+                  rs.getObject("current_deployment_id", UUID.class));
+            })
         .list();
   }
 
-  private static Instant toInstant(Timestamp timestamp) {
-    return timestamp == null ? null : timestamp.toInstant();
+  public RobotSummary summarize(UUID ownerId) {
+    var robots = query(ownerId, null);
+    return new RobotSummary(
+        robots.size(),
+        robots.stream().filter(r -> r.status() == DashboardRobotStatus.AVAILABLE).count());
+  }
+
+  public List<DashboardRobotResponse> findRecent(UUID ownerId, int limit) {
+    return query(ownerId, limit);
+  }
+
+  private static Instant toInstant(Timestamp time) {
+    return time == null ? null : time.toInstant();
   }
 }

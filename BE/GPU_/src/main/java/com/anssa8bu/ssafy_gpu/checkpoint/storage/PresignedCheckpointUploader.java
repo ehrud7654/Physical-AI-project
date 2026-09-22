@@ -1,13 +1,13 @@
 package com.anssa8bu.ssafy_gpu.checkpoint.storage;
 
 import com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.UploadSessionResponse;
+import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
 import java.net.URI;
 import java.net.http.*;
 import java.nio.file.*;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Component;
-import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
 
 @Component
 public class PresignedCheckpointUploader {
@@ -41,8 +41,7 @@ public class PresignedCheckpointUploader {
       }
       HttpRequest request = builder.build();
       for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
-        HttpResponse<Void> response =
-            client.send(request, HttpResponse.BodyHandlers.discarding());
+        HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
         if (response.statusCode() >= 200 && response.statusCode() < 300) return;
         if (response.statusCode() < 500 || attempt == properties.maxAttempts())
           throw new IllegalStateException("S3 CKPT 업로드 실패: HTTP " + response.statusCode());

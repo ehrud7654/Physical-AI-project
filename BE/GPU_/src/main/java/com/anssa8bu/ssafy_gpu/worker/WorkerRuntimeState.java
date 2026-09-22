@@ -4,9 +4,9 @@ import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.file.*;
-import java.util.UUID;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,14 +19,19 @@ public class WorkerRuntimeState {
   private final AtomicReference<UUID> storageNodeId = new AtomicReference<>();
   private final AtomicInteger activeUploads = new AtomicInteger();
   private final AtomicInteger activeTrainings = new AtomicInteger();
-  private final ConcurrentHashMap<Integer, ActiveTraining> trainingsByGpu = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<Integer, ActiveTraining> trainingsByGpu =
+      new ConcurrentHashMap<>();
   private final ObjectMapper objectMapper;
   private final Path journalPath;
 
   public WorkerRuntimeState(ObjectMapper objectMapper, WorkerProperties properties) {
     this.objectMapper = objectMapper;
-    this.journalPath = properties.storageRoot().resolve("journal/gpu-spring/active-trainings.json")
-        .toAbsolutePath().normalize();
+    this.journalPath =
+        properties
+            .storageRoot()
+            .resolve("journal/gpu-spring/active-trainings.json")
+            .toAbsolutePath()
+            .normalize();
   }
 
   public record ActiveTraining(
@@ -38,11 +43,7 @@ public class WorkerRuntimeState {
       String runId,
       long lastForwardedSequence) {
     public ActiveTraining(
-        int gpuIndex,
-        UUID trainingJobId,
-        int attempt,
-        String leaseToken,
-        Instant leaseExpiresAt) {
+        int gpuIndex, UUID trainingJobId, int attempt, String leaseToken, Instant leaseExpiresAt) {
       this(gpuIndex, trainingJobId, attempt, leaseToken, leaseExpiresAt, null, 0L);
     }
   }
@@ -51,8 +52,8 @@ public class WorkerRuntimeState {
   void restore() {
     if (!Files.isRegularFile(journalPath)) return;
     try {
-      List<ActiveTraining> restored = objectMapper.readValue(
-          journalPath.toFile(), new TypeReference<>() {});
+      List<ActiveTraining> restored =
+          objectMapper.readValue(journalPath.toFile(), new TypeReference<>() {});
       restored.forEach(value -> trainingsByGpu.put(value.gpuIndex(), value));
       activeTrainings.set(trainingsByGpu.size());
     } catch (RuntimeException exception) {
@@ -98,7 +99,10 @@ public class WorkerRuntimeState {
 
   public boolean activate(ActiveTraining training) {
     boolean added = trainingsByGpu.putIfAbsent(training.gpuIndex(), training) == null;
-    if (added) { trainingStarted(); persist(); }
+    if (added) {
+      trainingStarted();
+      persist();
+    }
     return added;
   }
 
@@ -122,8 +126,12 @@ public class WorkerRuntimeState {
         gpuIndex,
         (ignored, current) ->
             new ActiveTraining(
-                current.gpuIndex(), current.trainingJobId(), current.attempt(),
-                current.leaseToken(), current.leaseExpiresAt(), runId,
+                current.gpuIndex(),
+                current.trainingJobId(),
+                current.attempt(),
+                current.leaseToken(),
+                current.leaseExpiresAt(),
+                runId,
                 current.lastForwardedSequence()));
     persist();
   }
@@ -133,8 +141,13 @@ public class WorkerRuntimeState {
         gpuIndex,
         (ignored, current) ->
             new ActiveTraining(
-                current.gpuIndex(), current.trainingJobId(), current.attempt(),
-                current.leaseToken(), current.leaseExpiresAt(), current.runId(), sequence));
+                current.gpuIndex(),
+                current.trainingJobId(),
+                current.attempt(),
+                current.leaseToken(),
+                current.leaseExpiresAt(),
+                current.runId(),
+                sequence));
     persist();
   }
 
@@ -146,7 +159,10 @@ public class WorkerRuntimeState {
   }
 
   public void release(int gpuIndex) {
-    if (trainingsByGpu.remove(gpuIndex) != null) { trainingFinished(); persist(); }
+    if (trainingsByGpu.remove(gpuIndex) != null) {
+      trainingFinished();
+      persist();
+    }
   }
 
   public List<ActiveTraining> activeTrainingAssignments() {
@@ -159,7 +175,10 @@ public class WorkerRuntimeState {
       Path temporary = journalPath.resolveSibling(journalPath.getFileName() + ".tmp");
       objectMapper.writeValue(temporary.toFile(), activeTrainingAssignments());
       try {
-        Files.move(temporary, journalPath, StandardCopyOption.ATOMIC_MOVE,
+        Files.move(
+            temporary,
+            journalPath,
+            StandardCopyOption.ATOMIC_MOVE,
             StandardCopyOption.REPLACE_EXISTING);
       } catch (AtomicMoveNotSupportedException ignored) {
         Files.move(temporary, journalPath, StandardCopyOption.REPLACE_EXISTING);

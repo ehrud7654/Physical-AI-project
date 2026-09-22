@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
+@org.hibernate.annotations.DynamicUpdate
 @Entity
 @Table(name = "storage_nodes")
 public class StorageNode extends AuditableEntity {

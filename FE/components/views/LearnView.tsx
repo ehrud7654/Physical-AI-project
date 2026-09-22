@@ -57,13 +57,21 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
   const selectSkill = (nextSkillKey: string) => {
     updateLearningDraft({ skillKey: nextSkillKey, method: 'existing', selected: [], name: '' });
   };
-  const toggleEpisode = (episodeId: string) => updateLearningDraft({
-    selected: selected.includes(episodeId) ? selected.filter((id) => id !== episodeId) : [...selected, episodeId],
-  });
+  const toggleEpisode = (episodeId: string) => {
+    const nextSelected = selected.includes(episodeId)
+      ? selected.filter((id) => id !== episodeId)
+      : [...selected, episodeId];
+    const nextData = readyData.filter((item) => nextSelected.includes(item.id));
+    if (nextData.length && nextData.some((item) => item.umiDeviceId !== nextData[0].umiDeviceId)) {
+      onToast('같은 UMI에서 수집한 데이터만 함께 선택할 수 있어요.');
+      return;
+    }
+    updateLearningDraft({ selected: nextSelected });
+  };
 
   const submitTraining = async () => {
     if (!skill || !selectedData.length) return;
-    const umi = umis.find((item) => item.id === selectedData[0].umiId);
+    const umi = umis.find((item) => item.deviceId === selectedData[0].umiDeviceId);
     if (!umi) {
       onToast('수집 데이터의 UMI 장치를 확인할 수 없어요.');
       return;

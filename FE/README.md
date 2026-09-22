@@ -2,7 +2,7 @@
 
 S.S.A.F.Y(Show Simply Arm Follows You)는 UMI로 수집한 동작 데이터를 학습하고, 학습된 동작과 제어 블록을 조합해 로봇 작업을 만드는 웹 플랫폼입니다.
 
-프론트엔드는 **React 19 + TypeScript + Next.js App Router(vinext/Vite 런타임)** 기반이며, 화면 데이터는 모두 백엔드 REST API(`/api/v1`)에서 가져옵니다. 관리자 화면과 회원가입 모달만 아직 UI 목업입니다.
+프론트엔드는 **React 19 + TypeScript + Next.js App Router(vinext/Vite 런타임)** 기반이며, 화면 데이터는 모두 백엔드 REST API(`/api/v1`)에서 가져옵니다. 관리자 화면은 아직 UI 목업입니다.
 
 ## 사용자 흐름
 
@@ -39,7 +39,8 @@ S.S.A.F.Y(Show Simply Arm Follows You)는 UMI로 수집한 동작 데이터를 �
 - 저장: `localStorage['ssafy:auth-session']`에 토큰·만료 시각·사용자 정보 보존 → 새로고침해도 유지, 만료 시 자동 삭제
 - 요청: `Authorization: Bearer {accessToken}` 헤더를 `services/client.ts`가 자동 부착
 - 만료·401: 세션 만료 이벤트를 발생시켜 랜딩으로 이동
-- 회원가입 모달은 서버 호출 없이 입력값을 로그인 폼으로 넘기는 UI 목업입니다
+- 로그아웃: `POST /auth/logout`으로 Redis 세션을 삭제한 뒤 로컬 토큰을 정리합니다. 네트워크·503 실패 시 로그인 상태를 유지하고 재시도 안내를 표시합니다.
+- 회원가입은 이메일 형식 검증 후 `/auth/email-availability`로 자동 중복 확인하고, `/auth/signup`으로 계정을 생성합니다. 가입 완료 후 로그인합니다
 - 알려진 한계: 토큰이 `localStorage`에 있어 XSS에 노출될 수 있습니다. httpOnly 쿠키 전환은 BE와 함께 결정할 항목으로 남겨 두었습니다
 
 ## 데이터 동기화
@@ -118,7 +119,7 @@ pnpm install
 pnpm dev
 ```
 
-기본 주소는 [http://localhost:3000](http://localhost:3000)입니다. 로그인 폼에는 데모 계정(`admin01@ssafy.local` / `12345678`)이 입력되어 있습니다.
+기본 주소는 [http://localhost:3000](http://localhost:3000)입니다. 로그인 폼에 계정 정보를 직접 입력해 로그인합니다.
 
 ### API 주소
 
@@ -146,7 +147,6 @@ vinext는 빌드 시 타입 검사를 하지 않습니다. `npx tsc --noEmit`으
 ## 아직 목업인 범위
 
 - 관리자 화면의 사용자·권한 데이터(`mocks/users.ts`)와 저장 동작
-- 회원가입 모달(서버 호출 없음)
 - Episode 미리보기 세션 URL(`createEpisodePreviewSession`) — BE 엔드포인트 확정 전
 - 동작·작업의 삭제 API(목록 UI는 BE 삭제 API 이후 추가 예정)
 

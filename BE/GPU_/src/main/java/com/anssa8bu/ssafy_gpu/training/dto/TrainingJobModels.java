@@ -16,6 +16,11 @@ public final class TrainingJobModels {
     FINE_TUNE
   }
 
+  public enum TrainingEpisodeRole {
+    DEMONSTRATION,
+    MAPPING
+  }
+
   public enum TrainingJobStatus {
     QUEUED,
     PREPARING,
@@ -50,6 +55,7 @@ public final class TrainingJobModels {
 
   public record EpisodeData(
       UUID episodeId,
+      TrainingEpisodeRole inputRole,
       String sessionId,
       String qualityStatus,
       String contractVersion,

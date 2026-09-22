@@ -1,6 +1,7 @@
 package com.anssa8bu.ssafy.robot.presentation;
 
 import com.anssa8bu.ssafy.common.exception.ResourceNotFoundException;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
 import com.anssa8bu.ssafy.common.response.ApiResponse;
 import com.anssa8bu.ssafy.deployment.repository.DeploymentRepository;
 import com.anssa8bu.ssafy.execution.entity.RobotExecutionStatus;
@@ -29,6 +30,7 @@ public class RobotController {
           RobotExecutionStatus.RUNNING,
           RobotExecutionStatus.CANCEL_REQUESTED,
           RobotExecutionStatus.STATUS_UNKNOWN);
+  private final RuntimeStateService runtime;
   private final RobotRepository robots;
   private final RobotExecutionRepository executions;
   private final DeploymentRepository deployments;
@@ -38,11 +40,13 @@ public class RobotController {
       RobotRepository r,
       RobotExecutionRepository e,
       DeploymentRepository d,
-      RobotRegistrationService registrationService) {
+      RobotRegistrationService registrationService,
+      RuntimeStateService runtime) {
     robots = r;
     executions = e;
     deployments = d;
     this.registrationService = registrationService;
+    this.runtime = runtime;
   }
 
   @PostMapping
@@ -81,17 +85,18 @@ public class RobotController {
                 .findById(r.getCurrentDeploymentId())
                 .map(d -> d.getTaskVersionId())
                 .orElse(null);
+    var live = runtime.device(r.getJetsonDeviceId(), r.getLastSeenAt());
     return new RobotResponse(
         r.getId(),
         r.getOwnerId(),
         r.getJetsonDeviceId(),
         r.getRobotProfileId(),
         r.getName(),
-        r.getConnectionStatus(),
+        live.status(),
         executions.existsByRobotIdAndStatusIn(r.getId(), ACTIVE),
         r.getCurrentDeploymentId(),
         taskVersion,
-        r.getLastSeenAt(),
+        live.lastSeenAt(),
         r.getCreatedAt());
   }
 

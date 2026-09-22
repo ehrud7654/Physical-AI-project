@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
@@ -29,11 +30,20 @@ public class JwtConfig {
   }
 
   @Bean
-  JwtDecoder jwtDecoder(SecretKey jwtSecretKey, JwtProperties properties) {
+  JwtDecoder jwtDecoder(
+      SecretKey jwtSecretKey, JwtProperties properties, LoginSessionValidator sessions) {
     NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey).build();
     decoder.setJwtValidator(
         new DelegatingOAuth2TokenValidator<Jwt>(
             JwtValidators.createDefaultWithIssuer(properties.issuer())));
-    return decoder;
+    // Check Redis only after signature, issuer and timestamp validation succeeds.
+    return token -> {
+      Jwt jwt = decoder.decode(token);
+      var result = sessions.validate(jwt);
+      if (result.hasErrors()) {
+        throw new JwtValidationException("Invalid login session", result.getErrors());
+      }
+      return jwt;
+    };
   }
 }

@@ -10,7 +10,7 @@ interface ApiDevice {
   handleNumber: string;
   name: string;
   location: string | null;
-  connectionStatus: 'ONLINE' | 'OFFLINE';
+  connectionStatus: 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
   registrationStatus: 'PENDING' | 'REGISTERED';
   lastSeenAt: string | null;
   createdAt: string;
@@ -20,7 +20,7 @@ interface ApiRobot {
   id: string;
   jetsonDeviceId: string;
   name: string;
-  connectionStatus: 'ONLINE' | 'OFFLINE';
+  connectionStatus: 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
   busy: boolean;
   currentDeploymentId: string | null;
   currentTaskVersionId: string | null;
@@ -62,7 +62,7 @@ export async function fetchRobotDetail(robotId: string): Promise<RobotDetail> {
     id: robot.id,
     jetsonDeviceId: robot.jetsonDeviceId,
     name: robot.name,
-    status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    status: robot.connectionStatus === 'UNKNOWN' ? '상태 확인 불가' : robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     currentDeploymentId: robot.currentDeploymentId,
     currentTaskVersionId: robot.currentTaskVersionId,
     lastSeenAt: robot.lastSeenAt,
@@ -145,7 +145,7 @@ function toRobot(robot: ApiRobot, device?: ApiDevice): Robot {
     jetsonDeviceId: robot.jetsonDeviceId,
     name: robot.name,
     location: device?.location ?? '위치 미지정',
-    status: robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    status: robot.connectionStatus === 'UNKNOWN' ? '상태 확인 불가' : robot.busy ? '작업 중' : robot.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     model: 'API로 호출할 수 없습니다',
   };
 }
@@ -156,7 +156,7 @@ function toRobotDevice(device: ApiDevice): Robot {
     jetsonDeviceId: device.id,
     name: device.name,
     location: device.location ?? '위치 미지정',
-    status: device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    status: device.connectionStatus === 'UNKNOWN' ? '상태 확인 불가' : device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     model: 'API로 호출할 수 없습니다',
   };
 }
@@ -166,7 +166,7 @@ function toUmi(device: ApiDevice): Umi {
     id: device.handleNumber,
     deviceId: device.id,
     place: device.location ?? '위치 미지정',
-    status: device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
+    status: device.connectionStatus === 'UNKNOWN' ? '상태 확인 불가' : device.connectionStatus === 'ONLINE' ? '온라인' : '오프라인',
     collected: device.lastSeenAt ? formatLastSeen(device.lastSeenAt) : '사용 기록 없음',
     data: 0,
   };

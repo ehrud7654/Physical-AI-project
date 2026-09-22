@@ -11,6 +11,17 @@ public final class FastApiTrainingModels {
   public record EpisodeInput(
       int inputOrder, UUID episodeId, String storageKey, String sha256, String contractVersion) {}
 
+  public record TrainingInput(
+      String storageKey,
+      long sizeBytes,
+      String sha256,
+      String reportStorageKey,
+      String reportSha256,
+      int episodeCount,
+      String trainingInputStatus,
+      String format,
+      String worldFrame) {}
+
   public record BaseModelInput(
       UUID skillVersionId,
       int version,
@@ -31,10 +42,10 @@ public final class FastApiTrainingModels {
       BaseModelInput baseModel,
       String inputSnapshotSha256,
       List<EpisodeInput> episodes,
+      TrainingInput trainingInput,
       Instant executionLeaseExpiresAt) {}
 
-  public record CreateRunResponse(
-      String runId, UUID trainingJobId, int attempt, String status) {}
+  public record CreateRunResponse(String runId, UUID trainingJobId, int attempt, String status) {}
 
   public record RunError(String code, String message) {}
 
@@ -58,7 +69,9 @@ public final class FastApiTrainingModels {
       RunError error) {}
 
   public record CancelRequest(String reason) {}
+
   public record LeaseRequest(Instant executionLeaseExpiresAt) {}
+
   public record CompletionRequest(
       String eventId,
       UUID trainingJobId,

@@ -34,6 +34,13 @@ services:
       GPU_TRAINING_CLEANUP_ENABLED: ${GPU_TRAINING_CLEANUP_ENABLED:-true}
       GPU_ORPHAN_GRACE_PERIOD: ${GPU_ORPHAN_GRACE_PERIOD:-24h}
       GPU_CLEANUP_SCAN_INTERVAL: ${GPU_CLEANUP_SCAN_INTERVAL:-1h}
+      UMI_PREPROCESSOR_BASE_URL: http://umi-preprocessor:8080
+      UMI_PREPROCESSOR_CONNECT_TIMEOUT: ${UMI_PREPROCESSOR_CONNECT_TIMEOUT:-3s}
+      UMI_PREPROCESSOR_READ_TIMEOUT: ${UMI_PREPROCESSOR_READ_TIMEOUT:-30s}
+      UMI_PREPROCESSOR_POLL_INTERVAL: ${UMI_PREPROCESSOR_POLL_INTERVAL:-2s}
+      UMI_PREPROCESSOR_TIMEOUT: ${UMI_PREPROCESSOR_TIMEOUT:-30m}
+      UMI_PREPROCESSOR_CALIBRATION_PROFILE: ${UMI_PREPROCESSOR_CALIBRATION_PROFILE:-s22_20260921}
+      UMI_PREPROCESSOR_REQUIRE_MAPPING: ${UMI_PREPROCESSOR_REQUIRE_MAPPING:-false}
     volumes:
       - gpu_data:/data/ssafy-gpu
     healthcheck:
@@ -171,6 +178,33 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+
+  umi-preprocessor:
+    build:
+      context: ./umi_server_preprocessor
+      dockerfile: Dockerfile
+      args:
+        JOBS: "4"
+    image: umi-server-preprocessor:1.0.0
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18181:8080"
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+      - ./umi_server_preprocessor/profiles:/profiles:ro
+    environment:
+      UMI_JOBS_ROOT: /data/ssafy-gpu/preprocessing-jobs
+      UMI_PROFILES_ROOT: /profiles
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)" || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
 
 volumes:
   gpu_data:

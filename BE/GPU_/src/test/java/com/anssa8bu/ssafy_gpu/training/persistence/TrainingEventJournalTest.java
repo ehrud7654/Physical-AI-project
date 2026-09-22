@@ -64,7 +64,6 @@ public class TrainingEventJournalTest {
         "node",
         "name",
         root,
-        Set.of("ACT"),
         1,
         Duration.ofSeconds(15),
         true,

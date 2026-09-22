@@ -40,6 +40,14 @@ public class RedisKeyGenerator {
     return key("device-presence", id);
   }
 
+  public String deviceOnline(UUID id) {
+    return key("device-online", id);
+  }
+
+  public String storageNode(UUID id) {
+    return key("storage-node", id);
+  }
+
   public String sseEvents(UUID userId) {
     return key("sse-events", userId);
   }

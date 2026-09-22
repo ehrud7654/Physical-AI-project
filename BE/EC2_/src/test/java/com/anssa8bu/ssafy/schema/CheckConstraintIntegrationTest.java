@@ -61,26 +61,31 @@ class CheckConstraintIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void trainingProfileConfigHashMustBeLowercaseHex64() {
-    UUID id = training.retiredProfile().getId();
+  void inputSnapshotHashMustBeLowercaseHex64() {
+    var g = episodes.graph();
+    var job = training.job(g.userId(), g.skillId(), g.deviceId());
+    job.fixInputSnapshotSha256("a".repeat(64));
     em.flush();
     assertCheckViolation(
-        "training_profiles_config_sha256_check",
+        "training_jobs_input_snapshot_sha256_check",
         () ->
             jdbc.update(
-                "update training_profiles set config_sha256 = upper(config_sha256) where id = ?",
-                id));
+                "update training_jobs set input_snapshot_sha256 = upper(input_snapshot_sha256) where id = ?",
+                job.getId()));
   }
 
   @Test
-  void trainingProfileHyperparametersMustBeValidJson() {
-    UUID id = training.retiredProfile().getId();
+  void datasetQueryMustBeValidJson() {
+    var g = episodes.graph();
+    var job = training.job(g.userId(), g.skillId(), g.deviceId());
     em.flush();
     assertSqlState(
         INVALID_TEXT,
         () ->
             jdbc.update(
-                "update training_profiles set hyperparameters = ?::jsonb where id = ?", "{", id));
+                "update training_jobs set dataset_query = ?::jsonb where id = ?",
+                "{",
+                job.getId()));
   }
 
   @Test

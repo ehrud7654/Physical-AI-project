@@ -41,6 +41,39 @@ class EpisodeInput(ApiModel):
         return value
 
 
+class TrainingInput(ApiModel):
+    storage_key: str = Field(min_length=1)
+    size_bytes: int = Field(gt=0)
+    sha256: str
+    report_storage_key: str = Field(min_length=1)
+    report_sha256: str
+    episode_count: int = Field(gt=0)
+    training_input_status: str
+    format: str
+    world_frame: str = Field(min_length=1)
+
+    @field_validator("sha256", "report_sha256")
+    @classmethod
+    def validate_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("hash must be a lowercase SHA-256")
+        return value
+
+    @field_validator("training_input_status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        if value != "ready":
+            raise ValueError("trainingInputStatus must be ready")
+        return value
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, value: str) -> str:
+        if value != "ZARR_ZIP":
+            raise ValueError("format must be ZARR_ZIP")
+        return value
+
+
 class CreateTrainingRunRequest(ApiModel):
     training_job_id: str = Field(min_length=1)
     attempt: int = Field(ge=1)
@@ -51,6 +84,7 @@ class CreateTrainingRunRequest(ApiModel):
     base_model: BaseModelInput | None = None
     input_snapshot_sha256: str
     episodes: list[EpisodeInput] = Field(min_length=1)
+    training_input: TrainingInput
     execution_lease_expires_at: datetime
 
     @field_validator("input_snapshot_sha256")

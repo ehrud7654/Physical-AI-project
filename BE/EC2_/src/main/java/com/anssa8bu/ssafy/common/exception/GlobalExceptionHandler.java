@@ -1,11 +1,13 @@
 package com.anssa8bu.ssafy.common.exception;
 
+import com.anssa8bu.ssafy.auth.security.SessionStoreUnavailableException;
+import com.anssa8bu.ssafy.common.redis.runtime.*;
 import com.anssa8bu.ssafy.common.response.ErrorResponse;
 import com.anssa8bu.ssafy.device.exception.DeviceAlreadyRegisteredException;
 import com.anssa8bu.ssafy.device.exception.DeviceNotFoundException;
-import com.anssa8bu.ssafy.episodeupload.exception.EpisodeUploadException;
 import com.anssa8bu.ssafy.deviceauth.exception.InvalidDeviceCredentialsException;
 import com.anssa8bu.ssafy.deviceenrollment.exception.DeviceEnrollmentException;
+import com.anssa8bu.ssafy.episodeupload.exception.EpisodeUploadException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,9 +18,22 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  @ExceptionHandler(RuntimeStateUnavailableException.class)
+  public ResponseEntity<ErrorResponse> handleRuntimeUnavailable(
+      RuntimeStateUnavailableException exception) {
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(new ErrorResponse("RUNTIME_STATE_UNAVAILABLE", exception.getMessage()));
+  }
+
+  @ExceptionHandler(SessionStoreUnavailableException.class)
+  public ResponseEntity<ErrorResponse> handleSessionUnavailable(
+      SessionStoreUnavailableException exception) {
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(new ErrorResponse("AUTH_SESSION_UNAVAILABLE", exception.getMessage()));
+  }
+
   @ExceptionHandler(DeviceEnrollmentException.class)
-  public ResponseEntity<ErrorResponse> handleDeviceEnrollment(
-      DeviceEnrollmentException exception) {
+  public ResponseEntity<ErrorResponse> handleDeviceEnrollment(DeviceEnrollmentException exception) {
     return ResponseEntity.status(exception.getStatus())
         .body(new ErrorResponse(exception.getCode(), exception.getMessage()));
   }

@@ -2,7 +2,7 @@ export type View = 'dashboard' | 'skills' | 'library' | 'devices' | 'robot-detai
 
 export type BlockKind = 'umi' | 'vlm' | 'motor' | 'repeat';
 
-export type RobotStatus = '온라인' | '오프라인' | '작업 중' | '오류';
+export type RobotStatus = '온라인' | '오프라인' | '작업 중' | '오류' | '상태 확인 불가';
 
 export type TrainingStatus = '진행 중' | '취소 요청' | '취소됨' | '완료' | '실패';
 
@@ -22,7 +22,7 @@ export interface LoginResponse {
   user: AuthenticatedUser;
 }
 
-export type DashboardRobotStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE';
+export type DashboardRobotStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'UNKNOWN';
 
 export interface DashboardData {
   summary: {
@@ -86,7 +86,7 @@ export interface Umi {
   /** 서버 devices.id(UUID). 화면 표시용 핸들 번호인 id와 구분한다. */
   deviceId: string;
   place: string;
-  status: '온라인' | '오프라인';
+  status: '온라인' | '오프라인' | '상태 확인 불가';
   collected: string;
   data: number;
 }
@@ -106,7 +106,11 @@ export interface Dataset {
   tone: string;
   skillKey: string;
   skillName: string;
+  /** 서버 devices.id(UUID). 매핑·시연 Episode가 같은 UMI인지 판별할 때 사용한다. */
+  umiDeviceId: string;
   umiId: string;
+  /** 품질 메타데이터의 calibrationId를 화면 표시용 문자열로 정규화한 값. */
+  calibrationId: string;
   ready: boolean;
   status: DatasetStatus;
   validationErrors?: string[];

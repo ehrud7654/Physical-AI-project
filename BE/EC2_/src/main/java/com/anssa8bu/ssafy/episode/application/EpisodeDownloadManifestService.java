@@ -32,7 +32,8 @@ public class EpisodeDownloadManifestService {
           .filter(a -> a.getStatus()==EpisodeArchiveStatus.AVAILABLE)
           .orElseThrow(() -> new BusinessConflictException("EPISODE_NOT_AVAILABLE", "학습 입력 파일을 사용할 수 없습니다."));
       var signed=downloads.issue(properties.bucket(), archive.getStorageKey(), properties.presignTtl());
-      return new EpisodeData(id, episode.getSessionId(), episode.getQualityStatus().name(),
+      return new EpisodeData(id, input.getInputRole(), episode.getSessionId(),
+          episode.getQualityStatus().name(),
           episode.getContractVersion(),
           new ArchiveData(signed.url(), signed.expiresAt(), archive.getContentType(),
               archive.getSizeBytes(), archive.getSha256()));

@@ -1,10 +1,13 @@
 package com.anssa8bu.ssafy.episodevalidation.application;
 
 import com.anssa8bu.ssafy.episodeupload.entity.EpisodeUploadSession;
+import com.anssa8bu.ssafy.episodevalidation.contract.EpisodeArchiveContract;
+import com.anssa8bu.ssafy.episodevalidation.contract.EpisodeCsvValidator;
+import com.anssa8bu.ssafy.episodevalidation.contract.EpisodeCsvValidator.CsvValidationResult;
+import com.anssa8bu.ssafy.episodevalidation.contract.EpisodeManifestValidator;
+import com.anssa8bu.ssafy.episodevalidation.contract.EpisodeManifestValidator.ManifestValidationResult;
 import com.anssa8bu.ssafy.episodevalidation.dto.EpisodeValidationResult;
 import com.anssa8bu.ssafy.episodevalidation.exception.EpisodeArchiveValidationException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,18 +22,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class EpisodeArchiveValidator {
-  private static final Set<String> REQUIRED =
-      Set.of("meta.json", "summary.json", "frames.csv", "pose.csv", "imu.csv", "gripper.csv");
-  private static final String GRIPPER = "gripper.csv";
-  private static final int MAX_ENTRIES = 100_000;
+  private static final int MAX_ENTRIES = 64;
   private final ObjectMapper objectMapper;
+  private final EpisodeManifestValidator manifestValidator = new EpisodeManifestValidator();
+  private final EpisodeCsvValidator csvValidator = new EpisodeCsvValidator();
 
   public EpisodeArchiveValidator(ObjectMapper objectMapper) {
     this.objectMapper = objectMapper;
@@ -38,253 +41,154 @@ public class EpisodeArchiveValidator {
 
   public EpisodeValidationResult validate(
       InputStream source, EpisodeUploadSession session, long maxUncompressedBytes) {
+    ArchiveContents archive = readArchive(source, maxUncompressedBytes);
+    Map<String, Object> manifest = json(archive.files().get(EpisodeArchiveContract.MANIFEST));
+    ManifestValidationResult manifestResult = manifestValidator.validate(manifest);
+    CsvValidationResult csv =
+        csvValidator.validate(
+            archive.files().get(EpisodeArchiveContract.FRAMES),
+            archive.files().get(EpisodeArchiveContract.ENCODED),
+            archive.files().get(EpisodeArchiveContract.ACCELEROMETER),
+            archive.files().get(EpisodeArchiveContract.GYROSCOPE),
+            manifestResult.startElapsedNs(),
+            manifestResult.stopElapsedNs());
+    validateVideo(archive.files().get(EpisodeArchiveContract.VIDEO));
+    validateRequestConsistency(session, manifest, manifestResult, csv);
+
+    Map<String, Object> requestMetadata = session.getMetadata();
+    String outcome = manifestResult.outcome();
+    Boolean success =
+        switch (outcome) {
+          case "success" -> true;
+          case "failure" -> false;
+          default -> null;
+        };
+    String labelStatus = success == null ? "UNLABELED" : "LABELED";
+
+    Map<String, Object> quality = new LinkedHashMap<>();
+    quality.put("trainingReady", true);
+    quality.put("captureStatus", "recorded");
+    quality.put("outcome", outcome);
+    quality.put("encodedSampleCount", csv.encodedSampleCount());
+    quality.put("keyframeCount", csv.keyframeCount());
+    quality.put("accelerometerSampleCount", csv.accelerometerSampleCount());
+    quality.put("gyroscopeSampleCount", csv.gyroscopeSampleCount());
+    quality.put("accelerometerObservedHz", csv.accelerometer().observedHz());
+    quality.put("gyroscopeObservedHz", csv.gyroscope().observedHz());
+    quality.put("imuRequestedHz", manifestResult.imuRequestedHz());
+    quality.put("calibrationId", manifest.get("calibration_id"));
+
+    Map<String, Object> coordinateSystem = new LinkedHashMap<>();
+    coordinateSystem.put("timestampBase", "elapsedRealtimeNanos");
+    coordinateSystem.put("imuAxes", manifest.get("imu_axes"));
+    coordinateSystem.put("imuRotationApplied", manifest.get("imu_rotation_applied"));
+    coordinateSystem.put("imageOrientation", manifest.get("image_orientation_contract"));
+
+    return new EpisodeValidationResult(
+        string(requestMetadata, "contractVersion"),
+        manifestResult.schemaVersion(),
+        manifestResult.schemaVersion(),
+        string(requestMetadata, "skillKey"),
+        success,
+        labelStatus,
+        Instant.parse(string(requestMetadata, "startedAt")),
+        Instant.parse(string(requestMetadata, "endedAt")),
+        manifestResult.startElapsedNs(),
+        csv.firstFrameTimestampNs(),
+        csv.lastFrameTimestampNs(),
+        csv.frameCount(),
+        0,
+        csv.accelerometerSampleCount() + csv.gyroscopeSampleCount(),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        "VALID",
+        object(manifest, "device"),
+        manifestResult.camera(),
+        Map.copyOf(coordinateSystem),
+        Map.of("time", "ns", "acceleration", "m/s^2", "angularVelocity", "rad/s"),
+        Map.copyOf(quality),
+        Map.copyOf(manifest),
+        archive.hashes(),
+        archive.uncompressedBytes(),
+        archive.entryCount());
+  }
+
+  private ArchiveContents readArchive(InputStream source, long maxUncompressedBytes) {
     Map<String, byte[]> files = new HashMap<>();
     Map<String, String> hashes = new LinkedHashMap<>();
     Set<String> names = new HashSet<>();
-    int entryCount = 0;
-    int frameEntryCount = 0;
-    long totalBytes = 0;
+    int entries = 0;
+    long total = 0;
     try (ZipInputStream zip = new ZipInputStream(source, StandardCharsets.UTF_8)) {
       ZipEntry entry;
       while ((entry = zip.getNextEntry()) != null) {
-        entryCount++;
-        if (entryCount > MAX_ENTRIES) fail("ZIP_ENTRY_LIMIT", "ZIP entry 개수 제한을 초과했습니다.");
+        if (++entries > MAX_ENTRIES) fail("ZIP_ENTRY_LIMIT", "ZIP entry 개수 제한을 초과했습니다.");
         String name = entry.getName();
         validateEntryName(name);
         if (!names.add(name)) fail("ZIP_DUPLICATE_ENTRY", "중복 ZIP entry가 있습니다: " + name);
         if (entry.isDirectory()) continue;
-        if (entry.getMethod() != ZipEntry.STORED)
+        if (!EpisodeArchiveContract.REQUIRED_FILES.contains(name)) {
+          fail("ZIP_ENTRY_NOT_ALLOWED", "허용되지 않은 ZIP entry입니다: " + name);
+        }
+        if (entry.getMethod() != ZipEntry.STORED) {
           fail("ZIP_COMPRESSION_NOT_ALLOWED", "모든 ZIP entry는 STORE 방식이어야 합니다.");
-        byte[] bytes = readBounded(zip, maxUncompressedBytes - totalBytes);
-        totalBytes += bytes.length;
+        }
+        byte[] bytes = readBounded(zip, maxUncompressedBytes - total);
+        total += bytes.length;
+        files.put(name, bytes);
         hashes.put(name, sha256(bytes));
-        if (REQUIRED.contains(name)) files.put(name, bytes);
-        if (name.startsWith("frames/") && name.endsWith(".jpg")) frameEntryCount++;
       }
     } catch (IOException exception) {
       throw new EpisodeArchiveValidationException("ZIP_READ_FAILED", "ZIP 파일을 읽을 수 없습니다.");
     }
-    if (!files.keySet().containsAll(REQUIRED)) {
-      fail("ZIP_REQUIRED_ENTRY_MISSING", "필수 ZIP entry가 누락되었습니다.");
+    if (!files.keySet().equals(EpisodeArchiveContract.REQUIRED_FILES)) {
+      Set<String> missing = new HashSet<>(EpisodeArchiveContract.REQUIRED_FILES);
+      missing.removeAll(files.keySet());
+      fail("ZIP_REQUIRED_ENTRY_MISSING", "필수 ZIP entry가 누락되었습니다: " + missing);
     }
-    if (frameEntryCount < 1) fail("FRAME_ENTRY_MISSING", "frames 디렉터리에 JPEG가 없습니다.");
-
-    Map<String, Object> meta = json(files.get("meta.json"), "meta.json");
-    Map<String, Object> summary = json(files.get("summary.json"), "summary.json");
-    validateIdentity(meta, summary, session);
-    validateLabelsAndQuality(meta, summary);
-
-    CsvResult frames = validateFramesCsv(files.get("frames.csv"), names);
-    CsvResult pose = validateTimedCsv(files.get("pose.csv"), "t_ns,px,py,pz,qw,qx,qy,qz,tracking_state");
-    CsvResult imu = validateTimedCsv(files.get("imu.csv"), "t_ns,ax,ay,az,gx,gy,gz");
-    GripperResult gripper = validateGripperCsv(files.get(GRIPPER), frames.count);
-    validateCountsAndTimes(summary, frames, pose, imu, gripper.total, frameEntryCount);
-    validateInternalChecksums(summary, hashes);
-
-    return new EpisodeValidationResult(
-        text(meta, "contract_version"), text(meta, "schema_version"), text(summary, "schema_version"),
-        text(meta, "skill_key"), nullableBoolean(meta, "success"), text(meta, "label_status"),
-        instant(meta, "started_at"), instant(meta, "ended_at"), number(meta, "start_monotonic_ns"),
-        number(summary, "first_timestamp_ns"), number(summary, "last_timestamp_ns"),
-        integer(summary, "frame_count"), integer(summary, "pose_sample_count"),
-        integer(summary, "imu_sample_count"), gripper.total,
-        gripper.detected, gripper.longestX,
-        integer(summary, "missing_frame_count"), integer(summary, "tracking_gap_count"),
-        number(summary, "tracking_lost_duration_ns"), text(summary, "quality_status"),
-        map(meta, "device"), map(meta, "camera"), optionalMap(meta, "coordinate_system"),
-        optionalMap(meta, "units"), Map.copyOf(hashes), totalBytes, entryCount);
+    return new ArchiveContents(Map.copyOf(files), Map.copyOf(hashes), total, entries);
   }
 
-  private void validateIdentity(
-      Map<String, Object> meta, Map<String, Object> summary, EpisodeUploadSession session) {
-    UUID metaSession = uuid(meta, "session_id");
-    UUID summarySession = uuid(summary, "session_id");
-    if (!session.getSessionId().equals(metaSession) || !metaSession.equals(summarySession))
-      fail("SESSION_ID_MISMATCH", "요청과 ZIP 내부 session_id가 일치하지 않습니다.");
-    Map<String, Object> requested = session.getMetadata();
-    if (!text(meta, "skill_key").equals(requested.get("skillKey"))
-        || !instant(meta, "started_at").toString().equals(requested.get("startedAt"))
-        || !instant(meta, "ended_at").toString().equals(requested.get("endedAt"))
-        || number(meta, "start_monotonic_ns")
-            != ((Number) requested.get("startMonotonicNs")).longValue())
-      fail("METADATA_MISMATCH", "요청 메타데이터와 meta.json이 일치하지 않습니다.");
-    Map<String, Object> requestedSummary = session.getSummary();
-    assertRequestedNumber(summary, requestedSummary, "first_timestamp_ns", "firstTimestampNs");
-    assertRequestedNumber(summary, requestedSummary, "last_timestamp_ns", "lastTimestampNs");
-    assertRequestedNumber(summary, requestedSummary, "frame_count", "frameCount");
-    assertRequestedNumber(summary, requestedSummary, "pose_sample_count", "poseSampleCount");
-    assertRequestedNumber(summary, requestedSummary, "imu_sample_count", "imuSampleCount");
-    assertRequestedNumber(summary, requestedSummary, "gripper_sample_count", "gripperSampleCount");
+  private void validateRequestConsistency(
+      EpisodeUploadSession session,
+      Map<String, Object> manifest,
+      ManifestValidationResult manifestResult,
+      CsvValidationResult csv) {
+    Map<String, Object> metadata = session.getMetadata();
+    Map<String, Object> summary = session.getSummary();
+    if (longValue(metadata, "startMonotonicNs") != manifestResult.startElapsedNs()) {
+      fail("METADATA_MISMATCH", "요청 startMonotonicNs와 manifest start_elapsed_ns가 다릅니다.");
+    }
+    if (manifest.containsKey("session_id")
+        && !session.getSessionId().toString().equals(String.valueOf(manifest.get("session_id")))) {
+      fail("SESSION_ID_MISMATCH", "요청과 manifest session_id가 다릅니다.");
+    }
+    // manifest.task is a capture label and is not assumed to be the backend skillKey.
+    // The authenticated upload reservation remains the source of truth for skill ownership.
+    compareOptional(summary, "frameCount", csv.frameCount());
+    compareOptional(summary, "firstTimestampNs", csv.firstFrameTimestampNs());
+    compareOptional(summary, "lastTimestampNs", csv.lastFrameTimestampNs());
   }
 
-  private void assertRequestedNumber(
-      Map<String, Object> actual, Map<String, Object> requested, String actualKey, String requestKey) {
-    Object requestedValue = requested.get(requestKey);
-    if (!(requestedValue instanceof Number)
-        || number(actual, actualKey) != ((Number) requestedValue).longValue())
-      fail("SUMMARY_MISMATCH", "요청 summary와 summary.json이 일치하지 않습니다.");
-  }
-
-  private void validateLabelsAndQuality(Map<String, Object> meta, Map<String, Object> summary) {
-    if (!"REAL".equals(text(meta, "source")))
-      fail("SOURCE_INVALID", "UMI 업로드 source는 REAL이어야 합니다.");
-    String labelStatus = text(meta, "label_status");
-    Boolean success = nullableBoolean(meta, "success");
-    if (("LABELED".equals(labelStatus) && success == null)
-        || ("UNLABELED".equals(labelStatus) && success != null)
-        || (!"LABELED".equals(labelStatus) && !"UNLABELED".equals(labelStatus)))
-      fail("LABEL_INVALID", "label_status와 success 조합이 올바르지 않습니다.");
-    String quality = text(summary, "quality_status");
-    if ("INVALID".equals(quality))
-      fail("QUALITY_INVALID", "수집 데이터 품질 상태가 INVALID입니다.");
-    if (!"VALID".equals(quality) && !"WARNING".equals(quality))
-      fail("QUALITY_STATUS_INVALID", "quality_status가 올바르지 않습니다.");
-  }
-
-  private void validateCountsAndTimes(
-      Map<String, Object> summary,
-      CsvResult frames,
-      CsvResult pose,
-      CsvResult imu,
-      int gripperCount,
-      int imageCount) {
-    if (frames.count != integer(summary, "frame_count") || frames.count != imageCount
-        || pose.count != integer(summary, "pose_sample_count")
-        || imu.count != integer(summary, "imu_sample_count")
-        || gripperCount != integer(summary, "gripper_sample_count"))
-      fail("SAMPLE_COUNT_MISMATCH", "summary와 실제 파일의 sample 개수가 다릅니다.");
-    long first = number(summary, "first_timestamp_ns");
-    long last = number(summary, "last_timestamp_ns");
-    for (CsvResult value : List.of(frames, pose, imu)) {
-      if (value.count == 0) continue;
-      if (value.first < first || value.last > last)
-        fail("TIMESTAMP_RANGE_MISMATCH", "CSV timestamp가 summary 범위를 벗어났습니다.");
+  private void compareOptional(Map<String, Object> source, String key, long actual) {
+    Object expected = source.get(key);
+    if (expected instanceof Number number && number.longValue() != actual) {
+      fail("SUMMARY_MISMATCH", "요청 " + key + "와 실제 파일 값이 다릅니다.");
     }
   }
 
-  private GripperResult validateGripperCsv(byte[] bytes, int frameCount) {
-    String[] lines = lines(bytes);
-    if (!lines[0].equals("frame_index,gap_m,status"))
-      invalidGripper("header는 frame_index,gap_m,status 순서여야 합니다.");
-    int total = lines.length - 1;
-    if (total == 0) invalidGripper("데이터 행은 1개 이상이어야 합니다.");
-    if (total != frameCount)
-      invalidGripper("행 수가 frames.csv 행 수와 일치하지 않습니다.");
-    int detected = 0;
-    int currentX = 0;
-    int longestX = 0;
-    for (int row = 1; row < lines.length; row++) {
-      String[] columns = lines[row].split(",", -1);
-      if (columns.length != 3) invalidGripper(row + "번 행의 column 개수가 3이 아닙니다.");
-      int frameIndex;
-      try { frameIndex = Integer.parseInt(columns[0]); }
-      catch (NumberFormatException exception) {
-        invalidGripper(row + "번 행 frame_index가 정수가 아닙니다."); return null;
-      }
-      if (frameIndex != row - 1)
-        invalidGripper(row + "번 행 frame_index가 0부터 연속 증가하지 않습니다.");
-      String status = columns[2];
-      if (!status.equals("D") && !status.equals("X"))
-        invalidGripper(row + "번 행 status는 D 또는 X여야 합니다.");
-      if (status.equals("D")) {
-        double gap;
-        try { gap = parseFinite(columns[1]); }
-        catch (EpisodeArchiveValidationException exception) {
-          invalidGripper(row + "번 행 D 상태의 gap_m이 유효한 숫자가 아닙니다."); return null;
-        }
-        if (gap < 0 || gap > 0.15)
-          invalidGripper(row + "번 행 gap_m은 0 이상 0.15 이하여야 합니다.");
-        detected++;
-        currentX = 0;
-      } else {
-        if (!columns[1].isBlank()) {
-          double gap;
-          try { gap = parseFinite(columns[1]); }
-          catch (EpisodeArchiveValidationException exception) {
-            invalidGripper(row + "번 행 gap_m이 유효한 숫자가 아닙니다."); return null;
-          }
-          if (gap < 0 || gap > 0.15)
-            invalidGripper(row + "번 행 gap_m은 0 이상 0.15 이하여야 합니다.");
-        }
-        longestX = Math.max(longestX, ++currentX);
-      }
+  private void validateVideo(byte[] video) {
+    if (video.length < 12
+        || video[4] != 'f'
+        || video[5] != 't'
+        || video[6] != 'y'
+        || video[7] != 'p') {
+      fail("VIDEO_CONTAINER_INVALID", "video.mp4가 유효한 ISO BMFF/MP4 파일이 아닙니다.");
     }
-    return new GripperResult(detected, total, longestX);
-  }
-
-  private void invalidGripper(String message) {
-    fail("INVALID_GRIPPER_CHANNEL", message);
-  }
-
-  private CsvResult validateFramesCsv(byte[] bytes, Set<String> entries) {
-    String[] lines = lines(bytes);
-    if (!lines[0].equals("frame_index,t_ns,file_name"))
-      fail("CSV_HEADER_INVALID", "frames.csv header가 올바르지 않습니다.");
-    long previous = -1;
-    long first = -1;
-    for (int index = 1; index < lines.length; index++) {
-      String[] columns = lines[index].split(",", -1);
-      if (columns.length != 3 || Integer.parseInt(columns[0]) != index - 1)
-        fail("FRAME_INDEX_INVALID", "frame_index가 0부터 연속적이지 않습니다.");
-      long timestamp = parseLong(columns[1], "frames.csv t_ns");
-      if (timestamp <= previous) fail("TIMESTAMP_NOT_MONOTONIC", "frames.csv t_ns가 단조 증가하지 않습니다.");
-      String filename = columns[2];
-      if (filename.contains("/") || !entries.contains("frames/" + filename))
-        fail("FRAME_FILE_MISSING", "frames.csv가 존재하지 않는 JPEG를 참조합니다.");
-      if (first < 0) first = timestamp;
-      previous = timestamp;
-    }
-    if (lines.length < 2) fail("CSV_EMPTY", "frames.csv에 데이터가 없습니다.");
-    return new CsvResult(lines.length - 1, first, previous);
-  }
-
-  private CsvResult validateTimedCsv(byte[] bytes, String header) {
-    return validateTimedCsv(bytes, header, true);
-  }
-
-  private CsvResult validateTimedCsv(byte[] bytes, String header, boolean requireData) {
-    String[] lines = lines(bytes);
-    if (!lines[0].equals(header)) fail("CSV_HEADER_INVALID", header + " 계약과 일치하지 않습니다.");
-    long previous = -1;
-    long first = -1;
-    int expectedColumns = header.split(",", -1).length;
-    for (int index = 1; index < lines.length; index++) {
-      String[] columns = lines[index].split(",", -1);
-      if (columns.length != expectedColumns)
-        fail("CSV_COLUMN_INVALID", "CSV column 개수가 계약과 다릅니다.");
-      long timestamp = parseLong(columns[0], "CSV t_ns");
-      if (timestamp <= previous) fail("TIMESTAMP_NOT_MONOTONIC", "CSV t_ns가 단조 증가하지 않습니다.");
-      int numericEnd = header.endsWith("tracking_state") ? columns.length - 1 : columns.length;
-      for (int column = 1; column < numericEnd; column++) parseFinite(columns[column]);
-      if (header.startsWith("t_ns,openness")) {
-        double openness = parseFinite(columns[1]);
-        if (openness < 0 || openness > 1)
-          fail("GRIPPER_RANGE_INVALID", "gripper openness는 0과 1 사이여야 합니다.");
-      }
-      if (header.startsWith("t_ns,px,py,pz")) {
-        double qw = parseFinite(columns[4]);
-        double qx = parseFinite(columns[5]);
-        double qy = parseFinite(columns[6]);
-        double qz = parseFinite(columns[7]);
-        double norm = Math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz);
-        if (norm < 0.99 || norm > 1.01)
-          fail("QUATERNION_INVALID", "pose quaternion은 정규화되어야 합니다.");
-      }
-      if (first < 0) first = timestamp;
-      previous = timestamp;
-    }
-    if (requireData && lines.length < 2) fail("CSV_EMPTY", "CSV에 데이터가 없습니다.");
-    return new CsvResult(lines.length - 1, first, previous);
-  }
-
-  private void validateInternalChecksums(Map<String, Object> summary, Map<String, String> actual) {
-    Map<String, Object> expected = map(summary, "checksums");
-    for (String name : List.of("meta.json", "frames.csv", "pose.csv", "imu.csv")) {
-      if (!actual.get(name).equals(expected.get(name)))
-        fail("INTERNAL_CHECKSUM_MISMATCH", name + " checksum이 일치하지 않습니다.");
-    }
-    if (!actual.get(GRIPPER).equals(expected.get(GRIPPER)))
-      fail("INTERNAL_CHECKSUM_MISMATCH", GRIPPER + " checksum이 일치하지 않습니다.");
   }
 
   private byte[] readBounded(InputStream input, long remaining) throws IOException {
@@ -302,83 +206,62 @@ public class EpisodeArchiveValidator {
   }
 
   private void validateEntryName(String name) {
-    if (name == null || name.isBlank() || name.startsWith("/") || name.startsWith("\\")
-        || name.contains("\\") || name.matches("^[A-Za-z]:.*")
-        || List.of(name.split("/")).contains(".."))
+    if (name == null
+        || name.isBlank()
+        || name.startsWith("/")
+        || name.startsWith("\\")
+        || name.contains("\\")
+        || name.matches("^[A-Za-z]:.*")
+        || List.of(name.split("/")).contains("..")) {
       fail("ZIP_PATH_INVALID", "안전하지 않은 ZIP entry 경로입니다.");
-    if (name.toLowerCase().endsWith(".zip")) fail("NESTED_ZIP_NOT_ALLOWED", "중첩 ZIP은 허용하지 않습니다.");
+    }
+    if (name.toLowerCase().endsWith(".zip")) {
+      fail("NESTED_ZIP_NOT_ALLOWED", "중첩 ZIP은 허용하지 않습니다.");
+    }
   }
 
-  private Map<String, Object> json(byte[] bytes, String name) {
+  private Map<String, Object> json(byte[] bytes) {
     try {
       return objectMapper.readValue(bytes, new TypeReference<>() {});
     } catch (RuntimeException exception) {
-      throw new EpisodeArchiveValidationException("JSON_INVALID", name + " 형식이 올바르지 않습니다.");
+      throw new EpisodeArchiveValidationException("JSON_INVALID", "manifest.json 형식이 올바르지 않습니다.");
     }
   }
 
-  private String[] lines(byte[] bytes) {
-    String value = new String(bytes, StandardCharsets.UTF_8).strip();
-    if (value.isEmpty()) fail("CSV_EMPTY", "CSV가 비어 있습니다.");
-    return value.split("\\R");
-  }
-
-  private String text(Map<String, Object> value, String key) {
-    Object found = value.get(key);
-    if (!(found instanceof String text) || text.isBlank()) fail("FIELD_INVALID", key + "가 필요합니다.");
-    return (String) found;
-  }
-  private long number(Map<String, Object> value, String key) {
-    Object found = value.get(key);
-    if (!(found instanceof Number number)) fail("FIELD_INVALID", key + "가 숫자여야 합니다.");
-    return ((Number) found).longValue();
-  }
-  private int integer(Map<String, Object> value, String key) { return Math.toIntExact(number(value, key)); }
-  private Instant instant(Map<String, Object> value, String key) {
-    try { return Instant.parse(text(value, key)); }
-    catch (RuntimeException exception) { fail("FIELD_INVALID", key + "가 UTC 시각이어야 합니다."); return null; }
-  }
-  private UUID uuid(Map<String, Object> value, String key) {
-    try { return UUID.fromString(text(value, key)); }
-    catch (RuntimeException exception) { fail("FIELD_INVALID", key + "가 UUID여야 합니다."); return null; }
-  }
-  private Boolean nullableBoolean(Map<String, Object> value, String key) {
-    Object found = value.get(key);
-    if (found == null) return null;
-    if (!(found instanceof Boolean)) fail("FIELD_INVALID", key + "가 boolean이어야 합니다.");
-    return (Boolean) found;
-  }
   @SuppressWarnings("unchecked")
-  private Map<String, Object> map(Map<String, Object> value, String key) {
-    Object found = value.get(key);
-    if (!(found instanceof Map<?, ?>)) fail("FIELD_INVALID", key + "가 object여야 합니다.");
-    return (Map<String, Object>) found;
+  private Map<String, Object> object(Map<String, Object> source, String key) {
+    Object value = source.get(key);
+    if (!(value instanceof Map<?, ?>)) fail("FIELD_INVALID", key + "가 object여야 합니다.");
+    return (Map<String, Object>) value;
   }
-  private Map<String, Object> optionalMap(Map<String, Object> value, String key) {
-    return value.get(key) == null ? Map.of() : map(value, key);
+
+  private String string(Map<String, Object> source, String key) {
+    Object value = source.get(key);
+    if (!(value instanceof String text) || text.isBlank()) fail("FIELD_INVALID", key + "가 필요합니다.");
+    return value.toString();
   }
-  private long parseLong(String value, String field) {
-    try { return Long.parseLong(value); }
-    catch (NumberFormatException exception) { fail("FIELD_INVALID", field + "가 정수여야 합니다."); return -1; }
+
+  private long longValue(Map<String, Object> source, String key) {
+    Object value = source.get(key);
+    if (!(value instanceof Number number)) fail("FIELD_INVALID", key + "가 숫자여야 합니다.");
+    return ((Number) value).longValue();
   }
-  private double parseFinite(String value) {
+
+  private String sha256(byte[] bytes) {
     try {
-      double parsed = Double.parseDouble(value);
-      if (!Double.isFinite(parsed)) fail("NUMBER_NOT_FINITE", "NaN과 Infinity는 허용하지 않습니다.");
-      return parsed;
-    } catch (NumberFormatException exception) {
-      fail("FIELD_INVALID", "CSV 수치 필드가 올바르지 않습니다.");
-      return Double.NaN;
+      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException(exception);
     }
   }
-  private String sha256(byte[] bytes) {
-    try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
-    catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
-  }
-  private void fail(String code, String message) { throw new EpisodeArchiveValidationException(code, message); }
-  private record GripperResult(int detected, int total, int longestX) {}
 
-  private record CsvResult(int count, long first, long last) {
-    private static CsvResult empty() { return new CsvResult(0, -1, -1); }
+  private void fail(String code, String message) {
+    throw new EpisodeArchiveValidationException(code, message);
   }
+
+  private record ArchiveContents(
+      Map<String, byte[]> files,
+      Map<String, String> hashes,
+      long uncompressedBytes,
+      int entryCount) {}
 }
