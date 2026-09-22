@@ -48,10 +48,14 @@ public class CheckpointUploadSessionService {
     assertReservation(job, version, request);
     var signed=uploads.issue(version.getCheckpointBucket(), version.getCheckpointKey(),
         request.contentType(), request.sizeBytes(), request.sha256(), ttl);
+    String checksum=Base64.getEncoder().encodeToString(HexFormat.of().parseHex(request.sha256()));
     if (claim.existingResourceId()==null)
       idempotency.complete("GPU",actor,"POST",path,claim,201,"SKILL_VERSION",version.getId());
     return new UploadSessionResponse(version.getId(), version.getVersion(), "PUT", signed.url(),
-        signed.expiresAt(), Map.of("Content-Type", request.contentType()));
+        signed.expiresAt(), Map.of(
+            "Content-Type", request.contentType(),
+            "x-amz-checksum-sha256", checksum,
+            "If-None-Match", "*"));
   }
   private SkillVersion create(TrainingJob job, UploadSessionRequest request) {
     var skill=skills.findByIdForUpdate(job.getSkillId()).orElseThrow();
