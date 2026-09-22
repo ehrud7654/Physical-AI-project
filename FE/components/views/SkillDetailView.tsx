@@ -110,7 +110,7 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
         <span className="skill-data-toggle" aria-hidden="true">▾</span>
       </summary>
       <div className="skill-data-list">
-        {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>수집 시각</span><span>UMI</span><span>길이</span><span>상태</span><span>보관</span></div>}
+        {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>수집 시각</span><span>수집 핸들</span><span>길이</span><span>상태</span><span>보관</span></div>}
         {dataPage.pageItems.map((item) => { const meta = datasetStatusMeta[item.status]; const needsAttention = item.status === 'INVALID' || item.status === 'DELETE_FAILED'; return <div className="skill-data-row" key={item.id}>
           <span>{item.date}</span>
           <span>{item.umiId}</span>
