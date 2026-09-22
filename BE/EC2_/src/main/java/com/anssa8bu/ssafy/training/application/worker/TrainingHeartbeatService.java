@@ -77,6 +77,7 @@ public class TrainingHeartbeatService {
     } catch (RuntimeException ignored) {
     }
     return new HeartbeatResponse(
-        expires, job.getStatus() == TrainingJobStatus.CANCEL_REQUESTED, now);
+        expires, job.getStatus() == TrainingJobStatus.CANCEL_REQUESTED
+            || job.getStatus() == TrainingJobStatus.CANCELED, now);
   }
 }

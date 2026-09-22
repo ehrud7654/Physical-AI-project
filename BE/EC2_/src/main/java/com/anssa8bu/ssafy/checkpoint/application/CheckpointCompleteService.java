@@ -7,6 +7,7 @@ import com.anssa8bu.ssafy.model.entity.*;
 import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.training.application.worker.TrainingLeaseValidator;
 import com.anssa8bu.ssafy.training.entity.TrainingJob;
+import com.anssa8bu.ssafy.training.entity.TrainingJobStatus;
 import com.anssa8bu.ssafy.training.repository.TrainingJobRepository;
 import java.time.Clock;
 import java.util.UUID;
@@ -42,6 +43,9 @@ public class CheckpointCompleteService {
           .orElseThrow(() -> new ResourceNotFoundException("SkillVersion"));
       return new CompleteResponse(existing.getId(), existing.getStatus().name());
     }
+    if (job.getStatus() == TrainingJobStatus.CANCEL_REQUESTED
+        || job.getStatus() == TrainingJobStatus.CANCELED)
+      throw new BusinessConflictException("TRAINING_CANCELED", "취소된 학습의 모델을 등록할 수 없습니다.");
     SkillVersion version=versions.findById(request.skillVersionId())
         .filter(v -> v.getTrainingJobId().equals(jobId))
         .orElseThrow(() -> new ResourceNotFoundException("SkillVersion"));

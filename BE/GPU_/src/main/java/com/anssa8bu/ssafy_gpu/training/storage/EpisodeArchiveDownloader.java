@@ -39,6 +39,8 @@ public class EpisodeArchiveDownloader {
       Files.createDirectories(directory);
       List<LocalEpisode> downloaded = new ArrayList<>();
       for (int index = 0; index < claim.job().episodes().size(); index++) {
+        if (Thread.currentThread().isInterrupted())
+          throw new java.util.concurrent.CancellationException("Episode 다운로드가 취소되었습니다.");
         downloaded.add(download(claim.job().episodes().get(index), index, directory));
       }
       return List.copyOf(downloaded);

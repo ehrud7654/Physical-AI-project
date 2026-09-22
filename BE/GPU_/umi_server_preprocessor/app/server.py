@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 from threading import Lock
+import psutil
 
 from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel
@@ -69,6 +70,8 @@ def start_job(request: JobRequest) -> dict:
         raise HTTPException(status_code=400, detail=f"RAW input is missing: {root / 'raw'}")
 
     with lock:
+        if (root / ".cancel-requested").exists():
+            raise HTTPException(status_code=409, detail="job was cancelled")
         for job_id, process in list(processes.items()):
             if process.poll() is not None:
                 processes.pop(job_id)
@@ -113,10 +116,31 @@ def cancel_job(job_id: str) -> Response:
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     with lock:
+        # Persist the intent even if cancellation beats start_job to the server.
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".cancel-requested").touch()
         process = processes.get(job_id)
-        if process is None or process.poll() is not None:
-            raise HTTPException(status_code=409, detail="job is not running")
-        os.killpg(process.pid, signal.SIGTERM)
+        if process is not None and process.poll() is None:
+            try:
+                # Freeze the parent before enumerating children. SLAM creates its own
+                # session, so killing only the pipeline's process group leaves it alive.
+                parent = psutil.Process(process.pid)
+                parent.suspend()
+                descendants = parent.children(recursive=True)
+                groups = {process.pid}
+                for child in descendants:
+                    try:
+                        groups.add(os.getpgid(child.pid))
+                    except ProcessLookupError:
+                        pass
+                for group in groups:
+                    try:
+                        os.killpg(group, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=10)
+            except psutil.NoSuchProcess:
+                process.wait(timeout=10)
         processes.pop(job_id, None)
         state = read_status(root)
         state.update(status="cancelled")

@@ -53,6 +53,8 @@ public class SafeEpisodeArchiveExtractor {
           try (OutputStream out = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW)) {
             int read;
             while ((read = input.read(buffer)) != -1) {
+              if (Thread.currentThread().isInterrupted())
+                throw new java.util.concurrent.CancellationException("Episode ZIP 해제가 취소되었습니다.");
               total += read;
               if (total > properties.maxExtractedBytes())
                 throw new IllegalStateException("ZIP 해제 크기가 제한을 초과했습니다.");

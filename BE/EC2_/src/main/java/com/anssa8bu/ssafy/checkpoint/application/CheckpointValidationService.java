@@ -6,6 +6,7 @@ import com.anssa8bu.ssafy.event.repository.OutboxEventRepository;
 import com.anssa8bu.ssafy.model.entity.SkillVersion;
 import com.anssa8bu.ssafy.model.repository.SkillVersionRepository;
 import com.anssa8bu.ssafy.training.entity.TrainingJob;
+import com.anssa8bu.ssafy.training.entity.TrainingJobStatus;
 import com.anssa8bu.ssafy.training.repository.TrainingJobRepository;
 import com.anssa8bu.ssafy.training.repository.TrainingJobEpisodeRepository;
 import com.anssa8bu.ssafy.episode.repository.EpisodeRepository;
@@ -37,6 +38,17 @@ public class CheckpointValidationService {
     SkillVersion version=versions.findById(id).orElseThrow();
     TrainingJob job=jobs.findByIdForUpdate(version.getTrainingJobId()).orElseThrow();
     Instant now=clock.instant();
+    if (job.getStatus() == TrainingJobStatus.CANCEL_REQUESTED
+        || job.getStatus() == TrainingJobStatus.CANCELED) {
+      version.markFailed(now);
+      job.cancel(now);
+      job.releaseAssignment();
+      try { leaseCache.delete(job.getId()); } catch (RuntimeException ignored) { }
+      outbox.save(factory.create(new DomainEventPayload(1, UUID.randomUUID().toString(),
+          "TRAINING_CANCELED", "TRAINING_JOB", job.getId().toString(), job.getOwnerId(), now,
+          Map.of()), null));
+      return;
+    }
     try {
       objects.verify(version.getCheckpointBucket(), version.getCheckpointKey(),
           version.getCheckpointBytes(), version.getCheckpointSha256());

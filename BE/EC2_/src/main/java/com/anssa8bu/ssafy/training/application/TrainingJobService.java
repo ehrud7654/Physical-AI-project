@@ -137,7 +137,10 @@ public class TrainingJobService {
 
   @Transactional
   public JobResponse cancel(UUID owner, UUID id) {
-    TrainingJob job = owned(owner, id);
+    // Serialize cancellation with worker claim, heartbeat and event updates.
+    TrainingJob job = jobs.findByIdForUpdate(id)
+        .filter(value -> value.getOwnerId().equals(owner) && value.getDeletedAt() == null)
+        .orElseThrow(() -> new ResourceNotFoundException("TrainingJob"));
     try {
       job.requestCancel();
     } catch (IllegalStateException e) {

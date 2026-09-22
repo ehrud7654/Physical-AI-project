@@ -46,10 +46,7 @@ public class UmiPreprocessorClient {
   }
 
   public void cancel(String jobId) {
-    try {
-      client.post().uri("/internal/v1/jobs/{id}/cancel", jobId).retrieve().toBodilessEntity();
-    } catch (RestClientException ignored) {
-      // Best effort: the preprocessor may already be terminal.
-    }
+    // The endpoint is idempotent. Transport/server failures must be retried by the worker.
+    client.post().uri("/internal/v1/jobs/{id}/cancel", jobId).retrieve().toBodilessEntity();
   }
 }

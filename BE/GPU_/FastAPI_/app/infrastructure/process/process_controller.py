@@ -12,19 +12,26 @@ class ProcessController:
         try:
             if os.name == "nt":
                 parent = psutil.Process(pid)
-                for child in parent.children(recursive=True):
+                children = parent.children(recursive=True)
+                for child in children:
                     child.terminate()
                 parent.terminate()
-                _, alive = psutil.wait_procs([parent, *parent.children(recursive=True)], timeout=grace_seconds)
+                _, alive = psutil.wait_procs([parent, *children], timeout=grace_seconds)
                 for process in alive:
                     process.kill()
+                _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
+                if alive:
+                    raise RuntimeError("Training processes did not exit after cancellation")
             else:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
+                # The launcher creates a session with pgid == pid. Keep using that
+                # group even if the leader exits before its training children.
+                group = pid
+                os.killpg(group, signal.SIGTERM)
                 deadline = time.monotonic() + grace_seconds
-                while time.monotonic() < deadline and psutil.pid_exists(pid):
+                while time.monotonic() < deadline:
+                    os.killpg(group, 0)
                     time.sleep(0.1)
-                if psutil.pid_exists(pid):
-                    os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except (psutil.Error, ProcessLookupError, PermissionError):
+                os.killpg(group, signal.SIGKILL)
+        except (psutil.NoSuchProcess, ProcessLookupError):
             return
 

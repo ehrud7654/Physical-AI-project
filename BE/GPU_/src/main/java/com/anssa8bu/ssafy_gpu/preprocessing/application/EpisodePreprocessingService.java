@@ -60,12 +60,14 @@ public class EpisodePreprocessingService {
     if (mappings.size() > 1)
       throw new IllegalStateException("전처리에는 공간 매핑 Episode를 하나만 사용할 수 있습니다.");
     for (LocalEpisode episode : mappings) {
+      checkInterrupted();
       extractor.extract(
           episode,
           root.resolve("raw_mapping")
               .resolve(String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId())));
     }
     for (LocalEpisode episode : demonstrations) {
+      checkInterrupted();
       extractor.extract(
           episode,
           root.resolve("raw")
@@ -106,11 +108,19 @@ public class EpisodePreprocessingService {
       client.cancel(jobId);
       throw new IllegalStateException("Episode 전처리 제한 시간을 초과했습니다.");
     } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      client.cancel(jobId);
-      throw new IllegalStateException("Episode 전처리가 중단되었습니다.", e);
+      // Do not call HTTP with the interrupt flag set; the caller performs cancellation cleanup.
+      throw new java.util.concurrent.CancellationException("Episode 전처리가 중단되었습니다.");
     } finally {
       if (acquired) singleWorker.release();
     }
+  }
+
+  public void cancel(java.util.UUID trainingJobId, int attempt) {
+    client.cancel(trainingJobId + "_" + attempt);
+  }
+
+  private static void checkInterrupted() {
+    if (Thread.currentThread().isInterrupted())
+      throw new java.util.concurrent.CancellationException("Episode 전처리가 중단되었습니다.");
   }
 }

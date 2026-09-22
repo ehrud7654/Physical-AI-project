@@ -165,6 +165,21 @@ public class WorkerRuntimeState {
     }
   }
 
+  public void release(int gpuIndex, UUID jobId, int attempt) {
+    var removed = new java.util.concurrent.atomic.AtomicBoolean();
+    trainingsByGpu.computeIfPresent(gpuIndex, (ignored, current) -> {
+      if (current.trainingJobId().equals(jobId) && current.attempt() == attempt) {
+        removed.set(true);
+        return null;
+      }
+      return current;
+    });
+    if (removed.get()) {
+      trainingFinished();
+      persist();
+    }
+  }
+
   public List<ActiveTraining> activeTrainingAssignments() {
     return List.copyOf(trainingsByGpu.values());
   }

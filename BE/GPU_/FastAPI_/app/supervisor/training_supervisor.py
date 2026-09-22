@@ -33,10 +33,10 @@ class TrainingSupervisor:
         while not self._stopping.is_set():
             try:
                 for run in self.repository.list_active():
-                    self.process_monitor.refresh(run)
+                    await asyncio.to_thread(self.process_monitor.refresh, run)
                     current = self.repository.get(run.run_id)
                     if current:
-                        self.lease_monitor.enforce(current)
+                        await asyncio.to_thread(self.lease_monitor.enforce, current)
                 await self.completion_worker.run_once()
             except Exception:
                 log.exception("Training supervisor cycle failed")

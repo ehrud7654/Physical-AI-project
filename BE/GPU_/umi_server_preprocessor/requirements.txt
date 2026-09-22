@@ -5,3 +5,4 @@ zarr==2.18.3
 numcodecs==0.12.1
 fastapi==0.115.6
 uvicorn==0.34.0
+psutil==7.0.0

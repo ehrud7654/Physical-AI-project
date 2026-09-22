@@ -127,6 +127,8 @@ public class TrainingEventService {
 
   public EventResponse canceled(
       UUID jobId, int attempt, String token, String eventId, long sequence, Instant occurredAt) {
+    var previous = journal.find(eventId);
+    if (previous != null) occurredAt = previous.request().occurredAt();
     return send(
         jobId, attempt, token, eventId, sequence, TrainingEventType.CANCELED, occurredAt, Map.of());
   }
