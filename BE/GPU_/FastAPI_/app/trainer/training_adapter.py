@@ -49,14 +49,18 @@ class TrainingAdapter:
         runs_dir.mkdir(parents=True, exist_ok=True)
 
         environment = os.environ.copy()
+        umi_root = Path(os.getenv("UMI_ROOT", str(bundle / "third_party" / "umi"))).resolve()
         environment.update(
             {
                 "CUDA_VISIBLE_DEVICES": gpu,
-                "UMI_ROOT": str(bundle / "third_party" / "umi"),
+                "UMI_ROOT": str(umi_root),
                 "WANDB_MODE": os.getenv("WANDB_MODE", "disabled"),
                 "HYDRA_FULL_ERROR": os.getenv("HYDRA_FULL_ERROR", "1"),
             }
         )
+        # An empty seed means "use the official trainer default", not integer zero.
+        if not environment.get("TRAINING_SEED", "").strip():
+            environment.pop("TRAINING_SEED", None)
 
         print(f"run-id {run_id} · GPU {gpu}", flush=True)
         reporter.report("RUNNING", "DATASET_CHECK", 5, epoch=0, totalEpochs=epochs)
@@ -103,7 +107,7 @@ class TrainingAdapter:
             "checkpointStorageKey": str(output).replace("\\", "/"),
             "sizeBytes": output.stat().st_size,
             "sha256": sha256_file(output),
-            "metadata": build_metadata(request),
+            "metadata": build_metadata(request, trained_checkpoint, runs_dir / run_id),
         }
 
     @staticmethod
