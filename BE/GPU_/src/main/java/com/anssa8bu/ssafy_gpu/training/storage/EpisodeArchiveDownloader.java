@@ -91,10 +91,22 @@ public class EpisodeArchiveDownloader {
   }
 
   private LocalEpisode localEpisode(EpisodeData episode, int inputOrder, Path target) {
-    String storageKey = properties.storageRoot().toAbsolutePath().normalize().relativize(target)
-        .toString().replace('\\', '/');
-    return new LocalEpisode(inputOrder, episode.episodeId(), episode.inputRole(), storageKey,
-        episode.archive().sha256(), episode.contractVersion(), target);
+    String storageKey =
+        properties
+            .storageRoot()
+            .toAbsolutePath()
+            .normalize()
+            .relativize(target)
+            .toString()
+            .replace('\\', '/');
+    return new LocalEpisode(
+        inputOrder,
+        episode.episodeId(),
+        episode.inputRole(),
+        storageKey,
+        episode.archive().sha256(),
+        episode.contractVersion(),
+        target);
   }
 
   private void verify(Path file, long expectedSize, String expectedSha256) throws Exception {

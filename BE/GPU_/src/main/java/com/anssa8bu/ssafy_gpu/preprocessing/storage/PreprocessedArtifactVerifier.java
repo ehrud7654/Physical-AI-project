@@ -73,8 +73,7 @@ public class PreprocessedArtifactVerifier {
     return actual;
   }
 
-  private int validateReport(
-      Map<String, Object> report, Map<String, Object> pipelineReport) {
+  private int validateReport(Map<String, Object> report, Map<String, Object> pipelineReport) {
     if (!"pass".equals(report.get("status")))
       throw new IllegalStateException("Zarr 보고서 status가 pass가 아닙니다.");
     if (!"ready".equals(report.get("training_input_status")))

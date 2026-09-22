@@ -113,19 +113,24 @@ public class TrainingArtifactCleanupService {
     if (!Files.isDirectory(artifactRoot)) return;
     Instant threshold = Instant.now().minus(properties.orphanGracePeriod());
     try (var paths = Files.list(artifactRoot)) {
-      paths.filter(Files::isDirectory).forEach(path -> {
-        String name = path.getFileName().toString();
-        int separator = name.lastIndexOf('_');
-        if (separator < 0) return;
-        try {
-          UUID jobId = UUID.fromString(name.substring(0, separator));
-          int attempt = Integer.parseInt(name.substring(separator + 1));
-          if (!isActive(jobId, attempt) && !checkpoints.isFinalizationPending(jobId, attempt)
-              && Files.getLastModifiedTime(path).toInstant().isBefore(threshold)) deleteTree(path);
-        } catch (IllegalArgumentException | IOException ignored) {
-          // 규칙과 다른 디렉터리는 자동 삭제하지 않는다.
-        }
-      });
+      paths
+          .filter(Files::isDirectory)
+          .forEach(
+              path -> {
+                String name = path.getFileName().toString();
+                int separator = name.lastIndexOf('_');
+                if (separator < 0) return;
+                try {
+                  UUID jobId = UUID.fromString(name.substring(0, separator));
+                  int attempt = Integer.parseInt(name.substring(separator + 1));
+                  if (!isActive(jobId, attempt)
+                      && !checkpoints.isFinalizationPending(jobId, attempt)
+                      && Files.getLastModifiedTime(path).toInstant().isBefore(threshold))
+                    deleteTree(path);
+                } catch (IllegalArgumentException | IOException ignored) {
+                  // 규칙과 다른 디렉터리는 자동 삭제하지 않는다.
+                }
+              });
     } catch (IOException exception) {
       log.warn("전처리 artifact orphan 탐색 실패: root={}", artifactRoot, exception);
     }

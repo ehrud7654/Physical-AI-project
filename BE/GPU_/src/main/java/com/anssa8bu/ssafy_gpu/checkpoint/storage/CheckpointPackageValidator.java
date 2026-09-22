@@ -41,9 +41,7 @@ public class CheckpointPackageValidator {
     }
     Set<String> nonManifest = new HashSet<>(names);
     nonManifest.removeIf(name -> name.endsWith(".manifest.json"));
-    if (names.size() != REQUIRED.size() + 1
-        || manifestCount != 1
-        || !nonManifest.equals(REQUIRED))
+    if (names.size() != REQUIRED.size() + 1 || manifestCount != 1 || !nonManifest.equals(REQUIRED))
       invalid("모델 패키지는 필수 파일 7개와 *.manifest.json 1개만 포함해야 합니다.");
   }
 

@@ -101,7 +101,7 @@ public class TrainingClaimPollingScheduler {
         if (assignment.runId() != null) fastApi.cancel(assignment.runId());
       }
       state.renew(assignment.gpuIndex(), response.leaseExpiresAt());
-      if (assignment.runId() != null)
+      if (assignment.runId() != null && !fastApi.isTerminal(assignment.runId()))
         fastApi.renewLease(assignment.runId(), response.leaseExpiresAt());
     } catch (RuntimeException e) {
       if (assignment.leaseExpiresAt() != null

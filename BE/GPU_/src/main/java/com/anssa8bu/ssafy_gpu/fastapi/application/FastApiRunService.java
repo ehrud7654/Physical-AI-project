@@ -26,8 +26,11 @@ public class FastApiRunService {
   }
 
   public CreateRunResponse start(
-      ClaimResponse claim, int gpuIndex, List<LocalEpisode> episodes,
-      PreprocessedTrainingInput trainingInput, LocalBaseModel baseModel) {
+      ClaimResponse claim,
+      int gpuIndex,
+      List<LocalEpisode> episodes,
+      PreprocessedTrainingInput trainingInput,
+      LocalBaseModel baseModel) {
     BaseModelInput base =
         baseModel == null
             ? null
@@ -81,6 +84,13 @@ public class FastApiRunService {
 
   public RunResponse get(String runId) {
     return client.get(runId);
+  }
+
+  public boolean isTerminal(String runId) {
+    return switch (get(runId).status()) {
+      case "COMPLETED", "FAILED", "CANCELED", "LOST" -> true;
+      default -> false;
+    };
   }
 
   public void cancel(String runId) {
