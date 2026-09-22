@@ -46,7 +46,8 @@ public class CheckpointUploadService {
       String leaseToken,
       String uploadIdempotencyKey,
       String completeIdempotencyKey,
-      LocalCheckpoint checkpoint) {
+      LocalCheckpoint checkpoint,
+      Runnable afterUpload) {
     Path file = validatePath(checkpoint.path());
     try {
       long size = Files.size(file);
@@ -83,6 +84,7 @@ public class CheckpointUploadService {
         uploader.upload(session, file, sha256);
         journal.uploaded(jobId, attempt);
       }
+      afterUpload.run();
       CompleteResponse complete =
           client.complete(
               jobId,

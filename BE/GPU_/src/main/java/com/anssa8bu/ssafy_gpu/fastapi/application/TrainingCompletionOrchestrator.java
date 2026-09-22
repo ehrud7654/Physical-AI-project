@@ -52,15 +52,6 @@ public class TrainingCompletionOrchestrator {
     long eventSequence =
         completionSequences.computeIfAbsent(
             request.eventId(), ignored -> assignment.lastForwardedSequence() + 2);
-    events.trainingFinished(
-        request.trainingJobId(),
-        request.attempt(),
-        assignment.leaseToken(),
-        request.eventId() + "-finished",
-        eventSequence,
-        request.result().sizeBytes(),
-        request.result().sha256(),
-        request.modelCompletedAt());
     Path checkpoint =
         worker.storageRoot().resolve(request.result().checkpointStorageKey()).normalize();
     var uploaded =
@@ -71,7 +62,17 @@ public class TrainingCompletionOrchestrator {
             request.eventId() + "-upload",
             request.eventId() + "-complete",
             new LocalCheckpoint(
-                checkpoint, request.modelCompletedAt(), request.result().metadata()));
+                checkpoint, request.modelCompletedAt(), request.result().metadata()),
+            () ->
+                events.trainingFinished(
+                    request.trainingJobId(),
+                    request.attempt(),
+                    assignment.leaseToken(),
+                    request.eventId() + "-finished",
+                    eventSequence,
+                    request.result().sizeBytes(),
+                    request.result().sha256(),
+                    request.modelCompletedAt()));
     CompletionResponse response =
         new CompletionResponse(
             uploaded.skillVersionId(), uploaded.version(), uploaded.completion().status());

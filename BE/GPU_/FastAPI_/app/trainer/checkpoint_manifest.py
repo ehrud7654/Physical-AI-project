@@ -23,8 +23,8 @@ def build_metadata(request: dict[str, Any]) -> dict[str, Any]:
         )),
         "nParams": int(os.getenv("MODEL_PARAMETER_COUNT", "1")),
         "controlRateHz": int(os.getenv("MODEL_CONTROL_RATE_HZ", "10")),
-        "cameraNames": json.loads(os.getenv("MODEL_CAMERA_NAMES_JSON", '["front"]')),
-        "inputSchema": json.loads(os.getenv("MODEL_INPUT_SCHEMA_JSON", '{"stateShape":[6]}')),
-        "outputSchema": json.loads(os.getenv("MODEL_OUTPUT_SCHEMA_JSON", '{"actionShape":[6]}')),
+        "cameraNames": json.loads(os.getenv("MODEL_CAMERA_NAMES_JSON", '["camera0_rgb"]')),
+        "inputSchema": json.loads(os.getenv("MODEL_INPUT_SCHEMA_JSON", '{"stateShape":[10]}')),
+        "outputSchema": json.loads(os.getenv("MODEL_OUTPUT_SCHEMA_JSON", '{"actionShape":[8,10]}')),
     }
 
