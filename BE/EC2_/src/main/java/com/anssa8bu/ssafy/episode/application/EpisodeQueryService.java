@@ -55,22 +55,28 @@ public class EpisodeQueryService {
   }
 
   /** EPISODE-01. 소유자의 Episode를 createdAt DESC, id DESC로 반환한다. */
-  public List<EpisodeResponse> list(UUID ownerId, ListQuery q) {
+  public List<EpisodeListResponse> list(UUID ownerId, ListQuery q) {
     // ponytail: 필터를 메모리에서 적용한다. 사용자당 Episode가 수천 건을 넘으면 Specification/QueryDSL로 전환.
     List<Episode> owned = episodes.findAllByOwnerIdOrderByCreatedAtDescIdDesc(ownerId);
     Map<UUID, EpisodeArchive> archiveByEpisode = archivesOf(owned);
     Map<UUID, Skill> skillById = skillsOf(owned);
     Map<UUID, Device> deviceById = devicesOf(owned);
 
-    List<EpisodeResponse> result = new ArrayList<>();
+    List<EpisodeListResponse> result = new ArrayList<>();
     for (Episode e : owned) {
       if (!matches(e, q, skillById.get(e.getSkillId()))) continue;
-      EpisodeResponse response =
-          toResponse(
-              e,
-              archiveByEpisode.get(e.getId()),
-              skillById.get(e.getSkillId()),
-              deviceById.get(e.getUmiDeviceId()));
+      EpisodeArchive archive = archiveByEpisode.get(e.getId());
+      Skill skill = skillById.get(e.getSkillId());
+      Device device = deviceById.get(e.getUmiDeviceId());
+      List<BlockingReason> reasons = blockingReasons(e, archive);
+      EpisodeListResponse response = new EpisodeListResponse(
+          e.getId(), skill == null ? null : skill.getSkillKey(),
+          archive == null ? null : archive.getOriginalFilename(),
+          archive == null ? null : archive.getStoredAt(),
+          java.time.Duration.between(e.getStartedAt(), e.getEndedAt()).toMillis(),
+          e.getUmiDeviceId(), device == null ? null : device.getHandleNumber(),
+          e.getStatus(), e.getRetentionExpiresAt(), reasons.isEmpty(), reasons,
+          reasons.isEmpty() ? RecoveryAction.NONE : reasons.get(0).recoveryAction());
       if (q.availableForTraining() != null && q.availableForTraining() != response.trainable())
         continue;
       result.add(response);

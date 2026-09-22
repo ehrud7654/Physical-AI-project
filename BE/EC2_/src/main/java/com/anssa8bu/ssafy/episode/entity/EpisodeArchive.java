@@ -143,6 +143,10 @@ public class EpisodeArchive extends AuditableEntity {
     return storageKey;
   }
 
+  public String getOriginalFilename() {
+    return originalFilename;
+  }
+
   public String getContentType() {
     return contentType;
   }

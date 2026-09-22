@@ -96,24 +96,17 @@ export type DatasetStatus = 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' 
 /** EPISODE-01/02 응답을 데이터 탭 표시용으로 정리한 모델. id는 서버 Episode UUID다. */
 export interface Dataset {
   id: string;
+  fileName: string;
   /** 화면 표시용 순번(등록 오래된 순 1부터). 새로고침마다 다시 계산되므로 저장 키로 쓰지 않는다. */
   seq: number;
   /** 화면 표시 문자열 `YYYY. MM. DD  HH:mm` — 0을 채워 문자열 정렬이 시간순과 같다. */
   date: string;
-  startedAt: string;
   duration: string;
-  size: string;
-  tone: string;
   skillKey: string;
-  skillName: string;
   /** 서버 devices.id(UUID). 매핑·시연 Episode가 같은 UMI인지 판별할 때 사용한다. */
   umiDeviceId: string;
   umiId: string;
-  /** 품질 메타데이터의 calibrationId를 화면 표시용 문자열로 정규화한 값. */
-  calibrationId: string;
-  ready: boolean;
   status: DatasetStatus;
-  validationErrors?: string[];
   retentionDays: number;
   retentionExpiresAt: string;
   trainable: boolean;
