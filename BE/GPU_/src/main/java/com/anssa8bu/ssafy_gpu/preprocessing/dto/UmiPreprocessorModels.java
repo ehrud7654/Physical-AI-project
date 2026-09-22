@@ -20,5 +20,10 @@ public final class UmiPreprocessorModels {
       String report,
       @JsonProperty("report_sha256") String reportSha256) {}
 
-  public record JobStatus(String status, Artifact artifact, Map<String, Object> input, Object error) {}
+  public record JobStatus(
+      String status,
+      String report,
+      Artifact artifact,
+      Map<String, Object> input,
+      Object error) {}
 }

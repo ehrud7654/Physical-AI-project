@@ -41,6 +41,7 @@ MAPPING_DIR = "raw_mapping"
 MAP_FILE = "map_atlas.osa"
 MAPPING_MIN_TRACKED_RATIO = 0.9
 MAPPING_ATTEMPTS = 3
+MINIMUM_TRAINING_EPISODES = 1
 DEMO_ATTEMPTS = 2
 LATE_RELOCALIZATION_S = 0.5
 
@@ -371,8 +372,9 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
               f"{'  WARN: ' + '; '.join(row['warnings']) if row['warnings'] else ''}", flush=True)
     report["included"] = len(included)
     write()
-    if len(included) < 2:
-        report["stopped"] = f"only {len(included)} session(s) passed the gate; need at least 2"
+    if len(included) < MINIMUM_TRAINING_EPISODES:
+        report["stopped"] = (f"only {len(included)} session(s) passed the gate; "
+                             f"need at least {MINIMUM_TRAINING_EPISODES}")
         report["status"] = "stopped"
         write()
         return report
@@ -399,8 +401,9 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
             included.remove(name)
             print(f"{name}  excluded at assembly: {error}", flush=True)
     report["included"] = len(included)
-    if len(included) < 2:
-        report["stopped"] = f"only {len(included)} session(s) survived episode assembly; need at least 2"
+    if len(included) < MINIMUM_TRAINING_EPISODES:
+        report["stopped"] = (f"only {len(included)} session(s) survived episode assembly; "
+                             f"need at least {MINIMUM_TRAINING_EPISODES}")
         report["status"] = "stopped"
         write()
         return report

@@ -239,9 +239,9 @@ public class TrainingJobService {
     if (mappingCount > 1)
       throw new BusinessConflictException(
           "MULTIPLE_MAPPING_EPISODES", "공간 매핑 Episode는 하나만 사용할 수 있습니다.");
-    if (demonstrationCount < 2)
+    if (demonstrationCount < 1)
       throw new BusinessConflictException(
-          "INSUFFICIENT_DEMONSTRATION_EPISODES", "학습에는 시연 Episode가 두 개 이상 필요합니다.");
+          "INSUFFICIENT_DEMONSTRATION_EPISODES", "학습에는 시연 Episode가 한 개 이상 필요합니다.");
     return inputs;
   }
 

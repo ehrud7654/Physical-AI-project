@@ -22,21 +22,26 @@ public class PreprocessedArtifactVerifier {
     this.objectMapper = objectMapper;
   }
 
-  public PreprocessedTrainingInput verify(Artifact artifact, int episodeCount) {
+  public PreprocessedTrainingInput verify(Artifact artifact, String pipelineReportValue) {
     if (artifact == null
         || artifact.dataset() == null
         || artifact.datasetSha256() == null
         || artifact.report() == null
-        || artifact.reportSha256() == null)
+        || artifact.reportSha256() == null
+        || pipelineReportValue == null
+        || pipelineReportValue.isBlank())
       throw new IllegalStateException("전처리 완료 응답에 산출물 정보가 없습니다.");
     try {
       Path root = worker.storageRoot().toAbsolutePath().normalize();
       Path dataset = resolveArtifact(root, artifact.dataset());
       Path report = resolveArtifact(root, artifact.report());
+      Path pipelineReport = resolveArtifact(root, pipelineReportValue);
       String datasetHash = verifyHash(dataset, artifact.datasetSha256(), "Zarr");
       String reportHash = verifyHash(report, artifact.reportSha256(), "전처리 보고서");
       Map<String, Object> reportValue = objectMapper.readValue(report.toFile(), Map.class);
-      validateReport(reportValue, episodeCount);
+      Map<String, Object> pipelineReportContent =
+          objectMapper.readValue(pipelineReport.toFile(), Map.class);
+      int episodeCount = validateReport(reportValue, pipelineReportContent);
       return new PreprocessedTrainingInput(
           storageKey(root, dataset),
           Files.size(dataset),
@@ -68,13 +73,15 @@ public class PreprocessedArtifactVerifier {
     return actual;
   }
 
-  private void validateReport(Map<String, Object> report, int episodeCount) {
+  private int validateReport(
+      Map<String, Object> report, Map<String, Object> pipelineReport) {
     if (!"pass".equals(report.get("status")))
       throw new IllegalStateException("Zarr 보고서 status가 pass가 아닙니다.");
     if (!"ready".equals(report.get("training_input_status")))
       throw new IllegalStateException("Zarr training_input_status가 ready가 아닙니다.");
-    if (!(report.get("episodes") instanceof Number count) || count.intValue() != episodeCount)
-      throw new IllegalStateException("Zarr Episode 수가 학습 입력과 일치하지 않습니다.");
+    if (!(report.get("episodes") instanceof Number count) || count.intValue() < 1)
+      throw new IllegalStateException("Zarr Episode 수는 한 개 이상이어야 합니다.");
+    int episodeCount = count.intValue();
     if (!(report.get("episode_ends") instanceof List<?> ends) || ends.size() != episodeCount)
       throw new IllegalStateException("Zarr episode_ends가 올바르지 않습니다.");
     long previous = 0;
@@ -83,8 +90,16 @@ public class PreprocessedArtifactVerifier {
         throw new IllegalStateException("Zarr episode_ends는 양의 단조 증가 값이어야 합니다.");
       previous = end.longValue();
     }
+    if (!(report.get("frames") instanceof Number frames)
+        || frames.longValue() < 1
+        || previous != frames.longValue())
+      throw new IllegalStateException("Zarr 마지막 episode_end와 전체 프레임 수가 일치하지 않습니다.");
+    if (!(pipelineReport.get("included") instanceof Number included)
+        || included.intValue() != episodeCount)
+      throw new IllegalStateException("pipeline_report included와 Zarr Episode 수가 일치하지 않습니다.");
     if (report.get("world_frame") == null)
       throw new IllegalStateException("Zarr 보고서에 world_frame이 없습니다.");
+    return episodeCount;
   }
 
   private String storageKey(Path root, Path file) {

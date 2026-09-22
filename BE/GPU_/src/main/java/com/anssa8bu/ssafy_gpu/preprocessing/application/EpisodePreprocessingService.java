@@ -75,7 +75,7 @@ public class EpisodePreprocessingService {
         JobStatus status = client.get(jobId).orElse(null);
         if (status != null && "ready".equalsIgnoreCase(status.status())) {
           log.info("Episode 전처리 완료: trainingJobId={}, jobId={}", claim.job().id(), jobId);
-          return verifier.verify(status.artifact(), demonstrations.size());
+          return verifier.verify(status.artifact(), status.report());
         }
         if (status != null && ("failed".equalsIgnoreCase(status.status()) || "cancelled".equalsIgnoreCase(status.status())))
           throw new IllegalStateException("Episode 전처리 실패: status=" + status.status() + ", error=" + status.error());
