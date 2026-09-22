@@ -6,7 +6,7 @@ import type { TrainingSkill, View } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 import { createTrainingJob, fetchTrainingSkills } from '@/services';
 /** presetSkillKey가 있으면(동작 상세에서 진입) 동작 선택 단계를 건너뛰고 데이터 선택부터 시작한다. */
-export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }: { onNavigate: (view: View) => void; onToast: (message: string) => void; presetSkillKey?: string | null; onDone?: () => void }) {
+export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }: { onNavigate: (view: View) => void; onToast: (message: string) => void; presetSkillKey?: string | null; onDone?: (trainingId?: string) => void }) {
   const { umis, datasets, learningDraft, updateLearningDraft, resetLearningDraft, refreshDatasets, refreshTrainings } = useAppStore();
   const { step, skillKey, selected } = learningDraft;
   const [catalog, setCatalog] = useState<TrainingSkill[]>([]);
@@ -78,7 +78,7 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
     }
     setSubmitting(true);
     try {
-      await createTrainingJob({
+      const created = await createTrainingJob({
         skillKey: skill.skillKey,
         umiDeviceId: umi.deviceId,
         episodeIds: selectedData.map((item) => item.id),
@@ -86,7 +86,7 @@ export function LearnView({ onNavigate, onToast, presetSkillKey = null, onDone }
       resetLearningDraft();
       await refreshTrainings();
       onToast('학습 작업을 생성했어요.');
-      if (onDone) onDone();
+      if (onDone) onDone(created?.id);
       else onNavigate('training');
     } catch {
       onToast('학습 작업을 생성하지 못했어요. 선택한 데이터와 수집 핸들 정보를 확인해 주세요.');
