@@ -28,7 +28,6 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--model")
     p.add_argument("--out")
-    p.add_argument("--shanks-dir")
     p.add_argument("--camera-tcp")
     p.add_argument("--cycles", type=int, default=1)
     p.add_argument("--move", action="store_true")

@@ -1,8 +1,16 @@
-"""SO-101 state reads, hold behavior, and checked waypoint execution."""
+"""SO-101 state reads, hold behavior, and checked waypoint execution.
+
+LOCAL PATCH (S15P21A103-46): execute_chunk 에 실행 중 안전 게이트 추가
+(robot_hardware.check_diagnostics 호출). upstream(stanford_umi_demo)에는 없음 —
+은찬 반영 요청 중. 반영되면 이 주석과 게이트 호출을 제거하고 upstream 을 그대로 받는다.
+그 외에는 stanford_umi_demo 원본과 동일하게 유지한다."""
 from __future__ import annotations
 
 import sys
 import time
+
+# 안전 게이트는 주입된 common(테스트 fake 포함)이 아니라 항상 실제 구현을 쓴다.
+from .robot_hardware import check_diagnostics
 
 
 def read_ticks_with_retry(common, bus, attempts=5):
@@ -65,23 +73,19 @@ def execute_chunk(candidates, common, args, report):
     deadline = started
     trace = []
     with common.ST3215Bus(args.motor_port) as bus:
+        consecutive_hot = report.get("consecutive_hot", 0)
         for candidate in candidates:
             common.refuse_if_estopped()
             diagnostics = {
                 servo_id: common.retry_eintr(lambda servo_id=servo_id: bus.read_diagnostics(servo_id))
                 for servo_id in ids
             }
-            off = [servo_id for servo_id, value in diagnostics.items() if not value["torque_enabled"]]
-            if off:
-                raise RuntimeError(f"torque is OFF for servo(s) {off}; refusing checkpoint motion")
-            # Overheat gate (S15P21A103-46). The diagnostics above already carry the temperature,
-            # so this costs no extra bus traffic. Trips well below the servo's own ~70 C cutoff:
-            # when the servo protects itself it drops torque and the arm falls uncontrolled.
-            hot = {servo_id: value["temperature_c"] for servo_id, value in diagnostics.items()
-                   if value["temperature_c"] >= args.max_servo_temp_c}
-            if hot:
-                raise RuntimeError(
-                    f"servo overheating {hot} (limit {args.max_servo_temp_c} C); refusing motion")
+            # 실행 중 안전 게이트 (S15P21A103-46): 과열·과부하·저전압·서보플래그·토크꺼짐.
+            # 진단은 위에서 이미 읽었으므로 버스 read 0. 온도만 3연속 확인.
+            stop_reasons, consecutive_hot = check_diagnostics(diagnostics, consecutive_hot)
+            report["consecutive_hot"] = consecutive_hot
+            if stop_reasons:
+                raise RuntimeError(f"servo safety gate tripped {stop_reasons}; refusing checkpoint motion")
             live_ticks = {servo_id: int(value["tick"]) for servo_id, value in diagnostics.items()}
             planned_targets = {
                 servo_id: candidate["arm_ticks"][servo_id - 1]

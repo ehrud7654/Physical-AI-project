@@ -35,10 +35,13 @@ class _Node:
 
 
 def _executor(tmp_path, *stub_args):
+    # preflight 는 <root>/runtime/umi_checkpoint_executor/__init__.py 존재를 본다 → 만들어 둔다.
+    pkg = tmp_path / "runtime" / "umi_checkpoint_executor"
+    pkg.mkdir(parents=True, exist_ok=True)
+    (pkg / "__init__.py").write_text("")
     ex = RuntimeExecutor(_Node(), runtime_root=str(tmp_path))
     ex.python = Path(sys.executable)          # 실물 venv 대신 현재 인터프리터
     ex.launch = [str(STUB)]                   # 진짜 런타임 대신 스텁
-    ex.shanks = tmp_path                      # preflight 통과용(존재하면 됨)
     ex.extra_args = list(stub_args)
     ex.stop_grace_s = 1.0
     return ex

@@ -1,11 +1,11 @@
 """Convert a policy action to SO-101 IK candidates without motor I/O."""
 import argparse
-import importlib
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
+
+from . import kinematics, robot_calibration
 
 
 def joint_margin_ticks(q, limits, rad_per_tick):
@@ -75,7 +75,7 @@ def plan_action(action, state, common, grasp, kinematics, args):
         predicted_gripper_tick = grasp.width_to_tick(float(row[9]))
         gripper_tick = predicted_gripper_tick
         gripper_delta = gripper_tick - previous_gripper
-        path_min_z_mm = float(grasp.path_min_z(previous_q, q))
+        path_min_z_mm = float(kinematics.path_min_z(previous_q, q))
         margin_ticks = joint_margin_ticks(q, kinematics.RAD_LIMITS, grasp.RAD_PER_TICK)
         approach_error_deg = float(np.degrees(np.arccos(np.clip(
             np.dot(kinematics.fk(q)[:3, 2], target[:3, 2]), -1, 1
@@ -122,9 +122,7 @@ def full_chunk_safe(candidates):
 
 
 def main(args):
-    sys.path.insert(0, str(args.shanks_dir.resolve()))
-    kinematics = importlib.import_module("kinematics")
-    grasp = importlib.import_module("grasp")
+    grasp = robot_calibration
 
     action = np.load(args.action, allow_pickle=False)
     if action.ndim != 2 or action.shape[0] < 5 or action.shape[1] != 10 or not np.isfinite(action).all():
@@ -145,7 +143,7 @@ def main(args):
         )
         ticks = grasp.rad_to_tick(q)
         delta = [b - a for a, b in zip(previous_ticks, ticks)]
-        min_z_mm = grasp.path_min_z(previous_q, q)
+        min_z_mm = kinematics.path_min_z(previous_q, q)
         margin_ticks = joint_margin_ticks(q, limits, grasp.RAD_PER_TICK)
         approach_error_deg = float(np.degrees(np.arccos(np.clip(
             np.dot(kinematics.fk(q)[:3, 2], target[:3, 2]), -1, 1
@@ -188,7 +186,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--action", type=Path, required=True)
-    parser.add_argument("--shanks-dir", type=Path, required=True)
     parser.add_argument("--ticks", type=int, nargs=5, required=True)
     parser.add_argument("--max-delta", type=int, default=300)
     parser.add_argument("--min-joint-margin-ticks", type=int, default=0)

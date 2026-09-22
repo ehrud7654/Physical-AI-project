@@ -45,6 +45,7 @@ class RuntimeExecutor:
         # 이미 구성된 기존 venv(예: stanford_umi_demo/.venv)를 그대로 가리킨다.
         self.python = (Path(os.path.expanduser(python)) if python
                        else self.root / ".venv" / "bin" / "python")
+        # shanks 는 런타임 실행 경로가 아니다(런타임 자기완결). torque/move/pose 등 수동 운용도구용.
         self.shanks = self.root / "shanks"
         self.camera_tcp = self.root / "configs" / "s22_camera_tcp.json"
         self.extra_args = list(extra_args or [])
@@ -71,11 +72,13 @@ class RuntimeExecutor:
         return env
 
     # ── 서보 진단 (런타임이 안 돌 때만 — 포트는 하나다) ──────────────────
+    # 자기완결 런타임 모듈(servo_bus/robot_hardware/robot_calibration)만 쓴다. shanks 불필요.
     _DIAG_SNIPPET = (
         "import json,sys;"
-        "sys.path.insert(0, sys.argv[1]);"
-        "from common import ST3215Bus, ALL_IDS, retry_eintr;"
-        "bus=ST3215Bus(sys.argv[2]);"
+        "from runtime.umi_checkpoint_executor.servo_bus import ST3215Bus;"
+        "from runtime.umi_checkpoint_executor.robot_hardware import retry_eintr;"
+        "from runtime.umi_checkpoint_executor.robot_calibration import ALL_IDS;"
+        "bus=ST3215Bus(sys.argv[1]);"
         "d={i: retry_eintr(lambda i=i: bus.read_diagnostics(i)) for i in ALL_IDS};"
         "print(json.dumps({str(i): {'temperature_c': v['temperature_c'],"
         " 'present_load_raw': v['present_load_raw'], 'torque_enabled': v['torque_enabled']}"
@@ -93,7 +96,7 @@ class RuntimeExecutor:
             return None
         try:
             out = subprocess.run(
-                [str(self.python), "-c", self._DIAG_SNIPPET, str(self.shanks), motor_port],
+                [str(self.python), "-c", self._DIAG_SNIPPET, motor_port],
                 cwd=str(self.root), env=self._env(), capture_output=True,
                 text=True, timeout=timeout_s)
         except Exception as e:  # noqa: BLE001
@@ -113,8 +116,9 @@ class RuntimeExecutor:
         if not self.python.exists():
             return (f"인터프리터 없음: {self.python} "
                     f"(ROS/setup_runtime.sh 실행, 또는 -p runtime_python:=<기존 venv>/bin/python)")
-        if not self.shanks.exists():
-            return f"shanks 없음: {self.shanks}"
+        pkg = self.root / "runtime" / "umi_checkpoint_executor" / "__init__.py"
+        if not pkg.exists():
+            return f"런타임 패키지 없음: {pkg.parent}"
         return None
 
     # ── 실행 ────────────────────────────────────────────────────────────
@@ -131,7 +135,6 @@ class RuntimeExecutor:
             str(self.python), *self.launch,
             "--model", str(model_dir),
             "--out", str(out_dir),
-            "--shanks-dir", str(self.shanks),
             "--cycles", str(cycles),
         ]
         if self.camera_tcp.exists():

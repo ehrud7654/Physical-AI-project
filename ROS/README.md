@@ -73,13 +73,15 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 
 실물 추론은 **팀원이 하드웨어 검증을 끝낸 독립 런타임**을 그대로 쓴다. 우리는 **켜고·끄고·상태를 BE에 올리는** 어댑터만 담당한다(코드 복사·재구현 없음).
 
+> **2026-09-22 자기완결 리팩터:** 런타임이 shanks·so101_speed_measure 외부 의존을 없애고 `runtime/umi_checkpoint_executor/` 한 패키지로 통합됨(`servo_bus`·`robot_calibration`·`kinematics`·`robot_hardware` 내장). `--shanks-dir` 옵션 제거. 우리 편입은 이 버전 기준이며, 실행 중 안전 게이트(과열·과부하)만 `robot_controller`에 로컬 패치로 추가(upstream 반영 요청 중, 반영되면 제거).
+
 ```
 오케스트레이터(rclpy, 시스템 python)
    │ APPLY_DEPLOYMENT → tgz 다운로드·sha256 → ROS/models/<skillVersionId>/ 압축해제
    │ SKILL step       → subprocess 기동 (별도 venv 인터프리터)
    ▼
-ROS/.venv/bin/python -m umi_checkpoint_executor
-   --model ROS/models/<svid> --shanks-dir ROS/shanks --camera-tcp ROS/configs/...
+ROS/.venv/bin/python -m runtime.umi_checkpoint_executor
+   --model ROS/models/<svid> --camera-tcp ROS/configs/...
    → 카메라(S22 TCP) → TorchScript 추론 → IK → 안전게이트 → ST3215 직접 제어
    → stdout(JSON report)·exit code
    ▲
@@ -98,7 +100,7 @@ ros2_control 이 안 떠 있으므로 `/joint_states` 기반 워치독·리밋�
 |---|---|---|
 | 리밋·워치독 | **런타임 자체 게이트** | workspace·joint margin·tick delta·live lag·IK residual·path_min_z·torque_enabled·settle timeout. 우리 safety_node 보다 촘촘하므로 **위임**한다 |
 | **estop** | `/estop` → `estop_bridge` → **`/tmp/umi_ESTOP` 파일** | 런타임이 매 청크마다 `refuse_if_estopped()` 로 확인. 포트 점유·프로세스와 무관하게 먹는 유일한 정지 수단. 해제는 팔 확인 후 **수동 삭제** |
-| **과열** | ① 오케스트레이터 **프리플라이트/사후 온도 체크**(포트 빈 시점) ② 런타임 **실행 중 게이트**(`--max-servo-temp-c`, 기본 55°C) | 진단에 온도가 이미 실려와 추가 버스 read 0. 서보 자체 보호(~70°C)는 토크를 끊어 **팔이 낙하**하므로 그 전에 막는다 |
+| **과열·과부하·저전압** | ① 오케스트레이터 **프리플라이트/사후 온도 체크**(포트 빈 시점) ② 런타임 **실행 중 게이트**(`robot_hardware.check_diagnostics`: 60°C/부하750/전압115, 온도만 3연속 확인) | 진단이 waypoint마다 이미 실려와 추가 버스 read 0. 값 출처 `ser0070_pid_tuning`(팀 공통). 서보 자체 보호(~70°C)는 토크를 끊어 **팔이 낙하**하므로 그 전에 막는다 |
 | 고아 프로세스 | **`PR_SET_PDEATHSIG`** | 오케스트레이터가 SIGKILL 돼도 런타임에 SIGINT → hold 후 종료 (젯슨에서 실증) |
 | 응답 없음 | SIGINT 후 10초 유예 → **SIGKILL** | |
 | 최종 | 하드웨어 전원 차단 | 소프트웨어로 못 덮는 층 |
@@ -108,7 +110,7 @@ ros2_control 이 안 떠 있으므로 `/joint_states` 기반 워치독·리밋�
 | 경로 | 내용 | git |
 |---|---|---|
 | `runtime/` | UMI 체크포인트 실행기 (cli·policy_runtime·motion_planner·robot_controller·camera_stream·calibration) | ✅ |
-| `shanks/` | SO-101 저수준 lib — 런타임이 `--shanks-dir` 로 동적 import. `common`/`grasp`/`kinematics` + **버스 드라이버 `servo_control.py`·캘리브 `robot_control_5dof.py`**(원래 `~/Workspace/so101_speed_measure` 에 있던 것, 자기완결 위해 편입) | ✅ |
+| `shanks/` | **수동 운용도구** (런타임 실행 경로 아님). `torque.py`(비상 토크 off)·`move.py`·`pose.py` 등. 런타임은 2026-09-22 리팩터로 자기완결화되어 shanks 를 더 이상 참조하지 않는다 | ✅ |
 | `configs/s22_camera_tcp.json` | camera-TCP 캘리브 (provenance sha256 대조용) | ✅ |
 | `requirements-jetson.txt` · `setup_runtime.sh` | venv 재현 | ✅ |
 | `.venv/` | 런타임 전용 venv | ❌ |

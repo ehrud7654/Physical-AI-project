@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
-import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +11,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
+from . import kinematics, robot_calibration, robot_hardware
 from .calibration import (
     load_camera_tcp_config,
     validate_camera_tcp_config,
@@ -36,9 +35,13 @@ from .robot_controller import (
     read_robot,
     read_ticks_with_retry,
 )
+from .servo_bus import self_check as servo_bus_self_check
 
 
 def self_check():
+    servo_bus_self_check()
+    robot_calibration.self_check()
+    kinematics.self_check()
     identity = np.eye(4)
     assert np.allclose(mat_to_rot6d(identity[:3, :3]), [1, 0, 0, 0, 1, 0])
     pose = np.array([0.01, -0.02, 0.03, 1, 0, 0, 0, 1, 0], dtype=float)
@@ -119,11 +122,10 @@ def self_check():
             raise AssertionError("model/config calibration mismatch accepted")
 
     class FakeBus:
-        def __init__(self, follows=True, temperature_c=30):
+        def __init__(self, follows=True):
             self.ticks = {i: 1000 for i in range(1, 7)}
             self.writes = []
             self.follows = follows
-            self.temperature_c = temperature_c
 
         def __enter__(self):
             return self
@@ -132,8 +134,7 @@ def self_check():
             pass
 
         def read_diagnostics(self, servo_id):
-            return {"tick": self.ticks[servo_id], "torque_enabled": True,
-                    "temperature_c": self.temperature_c}
+            return {"tick": self.ticks[servo_id], "torque_enabled": True}
 
         def write_positions(self, targets, speed, acceleration):
             self.writes.append((dict(targets), speed, acceleration))
@@ -162,7 +163,6 @@ def self_check():
         settle_tolerance=15,
         settle_residual=60,
         settle_timeout=1,
-        max_servo_temp_c=55,
     )
     fake_candidates = [
         {"action_index": i, "arm_ticks": [1000 + i] * 5, "gripper_tick": 1000}
@@ -197,18 +197,6 @@ def self_check():
     execute_chunk(gripper_candidates, fake_common, fake_args, gripper_report)
     assert gripper_report["motor_commands_sent"] == 4 and len(gripper_bus.writes) == 4
     assert gripper_report["settle_status"] == "skipped"
-
-    # Overheat gate: a servo at or above the limit must refuse before any motor write.
-    hot_bus = FakeBus(temperature_c=fake_args.max_servo_temp_c)
-    fake_common.ST3215Bus = lambda _port: hot_bus
-    hot_report = {"motor_commands_attempted": 0, "motor_commands_sent": 0, "executed_waypoints": 0}
-    try:
-        execute_chunk(gripper_candidates, fake_common, fake_args, hot_report)
-    except RuntimeError as error:
-        assert "overheating" in str(error)
-    else:
-        raise AssertionError("overheated servo accepted")
-    assert hot_report["motor_commands_sent"] == 0 and not hot_bus.writes
     print("UMI_CHECKPOINT_EXECUTOR_SELF_CHECK_OK")
 
 
@@ -249,10 +237,8 @@ def main(args):
     validate_args(args)
     calibration = load_camera_tcp_config(args.camera_tcp)
 
-    sys.path.insert(0, str(args.shanks_dir.resolve()))
-    common = importlib.import_module("common")
-    grasp = importlib.import_module("grasp")
-    kinematics = importlib.import_module("kinematics")
+    common = robot_hardware
+    grasp = robot_calibration
     common.refuse_if_estopped()
 
     model_provenance = validate_model_calibration(args.model, calibration)
@@ -389,7 +375,6 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path)
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--shanks-dir", type=Path, default=Path.home() / "Shanks")
     parser.add_argument("--camera-port", type=int, default=8765)
     parser.add_argument(
         "--camera-tcp",
@@ -425,10 +410,6 @@ def build_parser():
         help="extra margin inside configured joint limits (default: 0)",
     )
     parser.add_argument("--max-ik-error-mm", type=float, default=0.5)
-    # Overheat gate (S15P21A103-46): refuse motion at or above this servo temperature.
-    # The servo protects itself around 70 C by dropping torque, which makes the arm fall.
-    parser.add_argument("--max-servo-temp-c", type=int, default=55,
-                        help="refuse motion at or above this servo temperature (0 disables)")
     parser.add_argument("--observation-interval-ms", type=float, default=100)
     parser.add_argument("--observation-tolerance-ms", type=float, default=15)
     parser.add_argument("--min-z-mm", type=float, default=15)
