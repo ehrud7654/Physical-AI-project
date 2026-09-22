@@ -69,7 +69,10 @@ public class TrainingClaimService {
     SkillVersion version=versions.findById(job.getBaseSkillVersionId()).orElseThrow();
     var signed=downloads.issue(version.getCheckpointBucket(),version.getCheckpointKey(),checkpointDownloadTtl);
     return new BaseModelData(version.getId(),version.getVersion(),signed.url(),signed.expiresAt(),
-        "application/octet-stream",version.getCheckpointBytes(),version.getCheckpointSha256(),
+        version.getCheckpointKey().toLowerCase(java.util.Locale.ROOT).endsWith(".tgz")
+            ? "application/x-tar"
+            : "application/octet-stream",
+        version.getCheckpointBytes(),version.getCheckpointSha256(),
         version.getArchitecture(),version.getFramework(),version.getFrameworkVersion(),
         version.getContractVersion());
   }

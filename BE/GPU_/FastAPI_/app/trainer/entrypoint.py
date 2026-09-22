@@ -17,7 +17,7 @@ def main() -> None:
 
     request = json.loads((args.run_directory / "request.json").read_text(encoding="utf-8"))
     reporter = ProgressReporter(args.run_directory / "progress.json")
-    checkpoint_relative = Path("checkpoints") / request["trainingJobId"] / str(request["attempt"]) / "model.ckpt"
+    checkpoint_relative = Path("checkpoints") / request["trainingJobId"] / str(request["attempt"]) / "model.tgz"
     shared_root = args.run_directory.parents[2]
     checkpoint = shared_root / checkpoint_relative
     try:

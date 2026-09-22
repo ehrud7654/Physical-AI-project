@@ -14,7 +14,7 @@ class CheckpointMetadata(ApiModel):
     action_space: str
     action_spec: dict[str, Any]
     runtime_spec: dict[str, Any]
-    n_params: int = Field(ge=0)
+    n_params: int = Field(ge=2)
     control_rate_hz: int = Field(gt=0)
     camera_names: list[str]
     input_schema: dict[str, Any]

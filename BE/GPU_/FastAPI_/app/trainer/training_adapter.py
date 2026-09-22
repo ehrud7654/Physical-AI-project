@@ -8,6 +8,7 @@ from typing import Any
 
 from app.infrastructure.storage.checksum import sha256_file
 from app.trainer.checkpoint_manifest import build_metadata
+from app.trainer.model_package import find_and_validate_package
 from app.trainer.progress_reporter import ProgressReporter
 
 
@@ -99,15 +100,15 @@ class TrainingAdapter:
         reporter.report(
             "RUNNING", "CHECKPOINT_CREATING", 95, epoch=epochs, totalEpochs=epochs
         )
-        trained_checkpoint = self._find_checkpoint(runs_dir / run_id)
+        trained_package = find_and_validate_package(runs_dir / run_id)
         output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(trained_checkpoint, output)
+        shutil.copy2(trained_package, output)
 
         return {
             "checkpointStorageKey": str(output).replace("\\", "/"),
             "sizeBytes": output.stat().st_size,
             "sha256": sha256_file(output),
-            "metadata": build_metadata(request, trained_checkpoint, runs_dir / run_id),
+            "metadata": build_metadata(request, output),
         }
 
     @staticmethod
@@ -153,17 +154,4 @@ class TrainingAdapter:
         if not safe:
             raise ValueError("학습 run 이름이 올바르지 않습니다.")
         return safe
-
-    @staticmethod
-    def _find_checkpoint(run_directory: Path) -> Path:
-        if not run_directory.is_dir():
-            raise FileNotFoundError(f"학습 결과 디렉터리가 없습니다: {run_directory}")
-        checkpoints = [
-            path
-            for path in run_directory.rglob("*.ckpt")
-            if path.is_file() and not path.is_symlink()
-        ]
-        if not checkpoints:
-            raise FileNotFoundError(f"학습 결과 CKPT를 찾을 수 없습니다: {run_directory}")
-        return max(checkpoints, key=lambda path: path.stat().st_mtime_ns)
 

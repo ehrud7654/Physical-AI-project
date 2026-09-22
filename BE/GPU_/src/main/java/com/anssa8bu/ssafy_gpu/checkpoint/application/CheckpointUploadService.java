@@ -5,6 +5,7 @@ import static com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.*;
 import com.anssa8bu.ssafy_gpu.checkpoint.client.CheckpointClient;
 import com.anssa8bu.ssafy_gpu.checkpoint.persistence.CheckpointTransferJournal;
 import com.anssa8bu.ssafy_gpu.checkpoint.storage.PresignedCheckpointUploader;
+import com.anssa8bu.ssafy_gpu.checkpoint.storage.CheckpointPackageValidator;
 import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
 import com.anssa8bu.ssafy_gpu.common.file.FileHashCalculator;
@@ -22,6 +23,7 @@ public class CheckpointUploadService {
   private final WorkerRuntimeState state;
   private final CheckpointUploadProperties properties;
   private final CheckpointTransferJournal journal;
+  private final CheckpointPackageValidator packageValidator;
 
   public CheckpointUploadService(
       CheckpointClient client,
@@ -30,7 +32,8 @@ public class CheckpointUploadService {
       WorkerProperties worker,
       WorkerRuntimeState state,
       CheckpointUploadProperties properties,
-      CheckpointTransferJournal journal) {
+      CheckpointTransferJournal journal,
+      CheckpointPackageValidator packageValidator) {
     this.client = client;
     this.uploader = uploader;
     this.hashes = hashes;
@@ -38,6 +41,7 @@ public class CheckpointUploadService {
     this.state = state;
     this.properties = properties;
     this.journal = journal;
+    this.packageValidator = packageValidator;
   }
 
   public UploadResult uploadAndComplete(
@@ -49,6 +53,7 @@ public class CheckpointUploadService {
       LocalCheckpoint checkpoint,
       Runnable afterUpload) {
     Path file = validatePath(checkpoint.path());
+    packageValidator.validate(file);
     validateMetadata(checkpoint.metadata());
     try {
       long size = Files.size(file);

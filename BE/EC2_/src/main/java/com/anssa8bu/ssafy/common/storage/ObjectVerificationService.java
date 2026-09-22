@@ -19,12 +19,4 @@ public class ObjectVerificationService {
       throw new BusinessConflictException("OBJECT_CHECKSUM_MISMATCH", "업로드된 객체 체크섬이 예약값과 다릅니다.");
   }
 
-  public void verifyCheckpoint(String bucket, String key, long expectedBytes, String expectedSha256) {
-    verify(bucket,key,expectedBytes,expectedSha256);
-    byte[] prefix=storage.readPrefix(bucket,key,4);
-    boolean zip=prefix.length>=2 && prefix[0]=='P' && prefix[1]=='K';
-    boolean pickle=prefix.length>=2 && (prefix[0]&0xff)==0x80;
-    if (!zip && !pickle)
-      throw new BusinessConflictException("INVALID_CHECKPOINT_STRUCTURE", "지원하는 PyTorch CKPT 구조가 아닙니다.");
-  }
 }
