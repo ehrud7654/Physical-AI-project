@@ -37,7 +37,7 @@ public final class EpisodeApiModels {
 
   /** 목록 표시 및 학습 선택에 필요한 필드만 반환한다. 업로드 시각은 완료 접수 시각이다. */
   public record EpisodeListResponse(
-      UUID id, String skillKey, String fileName, Instant uploadedAt, long durationMs,
+      UUID id, String skillKey, String fileName, String dataType, Instant uploadedAt, long durationMs,
       UUID umiDeviceId, String umiDeviceHandleNumber, EpisodeStatus status,
       Instant retentionExpiresAt, boolean trainable,
       List<BlockingReason> blockingReasons, RecoveryAction recoveryAction) {}

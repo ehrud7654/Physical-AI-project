@@ -1,5 +1,13 @@
 import type { Dataset, SkillOverview } from '@/types';
 
+export function datasetTypeLabel(dataType: string | null): string {
+  switch (dataType?.trim().toUpperCase()) {
+    case 'MAPPING': return '환경 인식 데이터';
+    case 'DEMONSTRATION': return '실제 동작 데이터';
+    default: return '유효하지 않은 데이터';
+  }
+}
+
 /** 데이터(수집 에피소드) 상태 표시 메타 — 데이터 목록·상세, 학습 생성 위저드가 공유한다. */
 export const datasetStatusMeta: Record<Dataset['status'], { label: string; description: string; className: string }> = {
   REGISTERED: { label: '등록 완료', description: '파일 업로드를 기다리고 있어요.', className: 'registered' },
