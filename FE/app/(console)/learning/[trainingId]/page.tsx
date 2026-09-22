@@ -13,6 +13,7 @@ export default function TrainingDetailPage() {
     trainingId={trainingId}
     onBack={() => router.back()}
     onUseResult={(skillName) => router.push(`/work/new?skill=${encodeURIComponent(skillName)}`)}
+    onCancelled={() => router.replace('/learning')}
     onToast={showToast}
   />;
 }

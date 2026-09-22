@@ -8,7 +8,7 @@ import { fetchTrainingDetail } from '@/services';
 const TERMINAL: TrainingStatus[] = ['완료', '실패', '취소됨'];
 
 /** 학습 하나의 상세(라우트). 진행 중이면 3초마다 갱신하고, 상태에 따라 취소·재시도·작업 생성으로 이어간다. */
-export function TrainingDetailView({ trainingId, onBack, onUseResult, onToast }: { trainingId: string; onBack: () => void; onUseResult: (skillName: string) => void; onToast: (message: string) => void }) {
+export function TrainingDetailView({ trainingId, onBack, onUseResult, onCancelled, onToast }: { trainingId: string; onBack: () => void; onUseResult: (skillName: string) => void; onCancelled: () => void; onToast: (message: string) => void }) {
   const { skills, trainings, refreshTrainings, cancelTrainingById, retryTraining } = useAppStore();
   const listed = trainings.find((item) => item.id === trainingId) ?? null;
   const [fetched, setFetched] = useState<Training | null>(null);
@@ -50,6 +50,7 @@ export function TrainingDetailView({ trainingId, onBack, onUseResult, onToast }:
       await refreshTrainings();
       onToast(`‘${detail.name}’ 학습을 취소했어요.`);
       setConfirmCancel(false);
+      onCancelled();
     } catch {
       onToast('학습을 취소하지 못했어요.');
     } finally {
