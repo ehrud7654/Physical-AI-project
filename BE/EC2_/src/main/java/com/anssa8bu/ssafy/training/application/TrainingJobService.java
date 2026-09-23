@@ -153,8 +153,7 @@ public class TrainingJobService {
   public List<EpisodeInputResponse> inputEpisodes(UUID owner, UUID id) {
     owned(owner, id);
     return inputs.findAllByIdTrainingJobIdOrderByInputOrder(id).stream()
-        .map(input -> new EpisodeInputResponse(
-            input.getId().episodeId(), input.getInputOrder(), input.getInputRole()))
+        .map(input -> new EpisodeInputResponse(input.getId().episodeId(), input.getInputOrder()))
         .toList();
   }
 

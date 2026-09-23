@@ -97,7 +97,6 @@ export type DatasetStatus = 'REGISTERED' | 'UPLOADING' | 'VALIDATING' | 'READY' 
 export interface Dataset {
   id: string;
   fileName: string;
-  dataType: string | null;
   /** 화면 표시용 순번(등록 오래된 순 1부터). 새로고침마다 다시 계산되므로 저장 키로 쓰지 않는다. */
   seq: number;
   /** 화면 표시 문자열 `YYYY. MM. DD  HH:mm` — 0을 채워 문자열 정렬이 시간순과 같다. */

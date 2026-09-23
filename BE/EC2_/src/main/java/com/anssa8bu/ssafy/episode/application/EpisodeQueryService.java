@@ -72,7 +72,6 @@ public class EpisodeQueryService {
       EpisodeListResponse response = new EpisodeListResponse(
           e.getId(), skill == null ? null : skill.getSkillKey(),
           archive == null ? null : archive.getOriginalFilename(),
-          dataType(e, archive),
           archive == null ? null : archive.getStoredAt(),
           java.time.Duration.between(e.getStartedAt(), e.getEndedAt()).toMillis(),
           e.getUmiDeviceId(), device == null ? null : device.getHandleNumber(),
@@ -83,15 +82,6 @@ public class EpisodeQueryService {
       result.add(response);
     }
     return result;
-  }
-
-  private static String dataType(Episode episode, EpisodeArchive archive) {
-    Object role = episode.getQualitySummary().values().get("datasetRole");
-    if ((role == null || role.toString().isBlank()) && archive != null) {
-      role = archive.getManifestSummary().details().get("datasetRole");
-    }
-    return role == null || role.toString().isBlank()
-        ? null : role.toString().trim().toUpperCase(java.util.Locale.ROOT);
   }
 
   /** EPISODE-02. 다른 사용자 소유는 존재 여부가 드러나지 않도록 404. */

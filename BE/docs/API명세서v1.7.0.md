@@ -1094,6 +1094,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
   - `startedTo?: string`
   - 공통 페이지네이션
 - `availableForTraining=true`는 `status=READY`, `qualityStatus IN (VALID, WARNING)`, `labelStatus=LABELED`, `success=true`, archive가 `AVAILABLE`이고 삭제 작업이 시작되지 않은 Episode만 반환한다.
+- 앱이 수집 단계에서 Episode 역할을 식별하지 않으므로 목록 응답은 `dataType`, `datasetRole`을 반환하지 않는다. 프론트엔드는 역할 문자열이 아니라 `trainable`, `status`, `blockingReasons`, `recoveryAction`으로 표시와 학습 선택 가능 여부를 판단한다.
 - 성공 `200`: `Episode[]`.
 
 ### EPISODE-02 Episode 상세
@@ -1412,6 +1413,7 @@ Episode는 UMI 시연 한 번에서 생성한 ZIP archive 한 건이다. 사용�
 - `GET /training-jobs/{trainingJobId}/episodes` · 사용자
 - 쿼리: 공통 페이지네이션.
 - 성공 `200`: 입력 순서가 포함된 Episode 요약 목록.
+- 각 항목은 `episodeId`, `inputOrder`만 반환하며 내부 전처리 역할은 사용자 API에 노출하지 않는다.
 - 학습 입력이 고정되기 전에는 현재 등록된 목록을, 고정된 후에는 불변 snapshot 목록을 반환한다.
 - 로컬 경로, storage key, StorageNode 접속 정보는 반환하지 않는다.
 

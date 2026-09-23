@@ -4,7 +4,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import type { SkillOverview, TrainingSkill } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 import { fetchSkillOverviews, fetchTrainingSkills, updateSkillDescription } from '@/services';
-import { datasetTypeLabel, datasetStatusMeta, deploymentStatusMeta, recoveryActionLabel } from '@/lib/datasets';
+import { datasetStatusMeta, deploymentStatusMeta, recoveryActionLabel } from '@/lib/datasets';
 import { Pagination } from '@/components/Pagination';
 import { usePagination } from '@/hooks/usePagination';
 
@@ -112,7 +112,7 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
       <div className="skill-data-list">
         {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>업로드 시각</span><span>수집 핸들</span><span>길이</span><span>상태</span><span>보관</span></div>}
         {dataPage.pageItems.map((item) => { const meta = datasetStatusMeta[item.status]; const needsAttention = item.status === 'INVALID' || item.status === 'DELETE_FAILED'; return <div className="skill-data-row" key={item.id}>
-          <span>{item.date}<br /><small>{datasetTypeLabel(item.dataType)}</small></span>
+          <span>{item.date}</span>
           <span>{item.umiId}</span>
           <span>{item.duration}</span>
           <span><span className={`dataset-status ${meta.className}`}><i />{meta.label}</span></span>

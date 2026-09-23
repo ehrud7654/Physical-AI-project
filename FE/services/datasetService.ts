@@ -5,7 +5,6 @@ import { apiRequest } from './client';
 interface ApiEpisode {
   id: string;
   fileName: string | null;
-  dataType: string | null;
   uploadedAt: string | null;
   durationMs: number;
   umiDeviceId: string;
@@ -31,7 +30,6 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     id: episode.id,
     seq,
     fileName: episode.fileName ?? '파일 정보 없음',
-    dataType: episode.dataType ?? null,
     date: episode.uploadedAt ? formatDate(episode.uploadedAt) : '업로드 시각 없음',
     duration: formatDuration(episode.durationMs),
     skillKey: episode.skillKey ?? '',

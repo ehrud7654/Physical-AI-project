@@ -36,7 +36,6 @@ interface ApiDevice {
 interface ApiEpisodeInput {
   episodeId: string;
   inputOrder: number;
-  inputRole: 'MAPPING' | 'DEMONSTRATION';
 }
 
 interface ApiSkill {
@@ -131,9 +130,6 @@ export async function retryTraining(training: Training): Promise<Training[]> {
     throw new Error('다시 학습할 Episode가 없습니다.');
   }
   const trainingInputs = episodes.sort((a, b) => a.inputOrder - b.inputOrder);
-  if (!trainingInputs.some((item) => item.inputRole === 'DEMONSTRATION')) {
-    throw new Error('다시 학습할 Episode가 없습니다.');
-  }
   await apiRequest<ApiTrainingJob>('/training-jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
