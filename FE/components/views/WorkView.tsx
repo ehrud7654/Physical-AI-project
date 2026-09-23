@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import type { BlockKind, LearnedSkill, SavedWork, View, WorkflowBlock } from '@/types';
 import { blockCatalog, motorRanges } from '@/lib/blocks';
 import { useTaskDeployment } from '@/hooks/useTaskDeployment';
@@ -21,6 +21,9 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
   const [nameError, setNameError] = useState('');
   const [saving, setSaving] = useState(false);
   const [workStep, setWorkStep] = useState<1 | 2 | 3>(1);
+  /* 단계 전환은 화면 교체라 새 단계를 그리기 직전(페인트 전)에 즉시 맨 위로 올린다.
+     클릭 시점에 smooth로 올리면 긴 1단계에서 애니메이션이 시작된 뒤 짧은 2단계로 바뀌며 스크롤이 잘려 위로 튕겨 보였다. */
+  useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [workStep]);
 
   const selectedRobot = robots.find((robot) => robot.id === robotId);
   const running = runningIndex >= 0;
@@ -51,24 +54,20 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
     const sameNameWork = savedWorks.find(
       (work) => work.name.trim().toLocaleLowerCase('ko-KR') === normalizedName,
     );
-    if (sameNameWork && !workflowContentEquals(sameNameWork.blocks, blocks)) {
-      setNameError('');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      onToast('작업이 이미 존재합니다. 이름을 변경하세요', 'error');
-      return false;
-    }
     if (sameNameWork && sameNameWork.id !== selectedWorkId) {
-      setNameError('');
+      setNameError('같은 이름의 작업이 이미 있어요. 이름을 바꿔 주세요.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       onToast('작업이 이미 존재합니다. 이름을 변경하세요', 'error');
       return false;
     }
-    if (sameNameWork?.id === selectedWorkId) return true;
+    /* 이름이 지금 작업 자신의 이름이면 충돌이 아니라 수정이다 — 내용이 같으면 그대로, 다르면 같은 작업의 새 버전으로 저장한다. */
+    const updatingOwn = !!sameNameWork && sameNameWork.id === selectedWorkId;
+    if (updatingOwn && workflowContentEquals(sameNameWork.blocks, blocks)) return true;
     if (workflowIssues.length) { setNameError(workflowIssues[0]); return false; }
     setNameError('');
     setSaving(true);
     try {
-      const saved = await saveWorkflow({ id: `draft-${crypto.randomUUID()}`, name: workName.trim(), robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: new Date().toISOString() });
+      const saved = await saveWorkflow({ id: updatingOwn ? selectedWorkId : `draft-${crypto.randomUUID()}`, name: workName.trim(), robotId, blocks, estimatedSeconds: estimateWorkflowSeconds(blocks), updatedAt: new Date().toISOString() });
       setSelectedWorkId(saved.id);
       onToast(`‘${workName.trim()}’ 작업을 저장했어요.`);
       return true;
@@ -189,7 +188,7 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
           </div>
         </section>
         </div>
-        <div className="work-stage-actions"><button className="text-button" onClick={() => onNavigate('library')}>← 작업 목록</button><button className="primary-button" disabled={saving || !workName.trim() || !!workflowIssues.length} onClick={async () => { if (isSaved || await save()) { setWorkStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }); } }}>{saving ? '저장 중...' : '저장 후 실행 준비 →'}</button></div>
+        <div className="work-stage-actions"><button className="text-button" onClick={() => onNavigate('library')}>← 작업 목록</button><button className="primary-button" disabled={saving || !workName.trim() || !!workflowIssues.length} onClick={async () => { if (isSaved || await save()) setWorkStep(2); }}>{saving ? '저장 중...' : '저장 후 실행 준비 →'}</button></div>
       </>}
 
       {workStep === 2 && <section className="card work-stage-card">
@@ -198,7 +197,7 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
         <div className="preflight-grid stage-preflight"><div className={robotReady ? 'check-pass' : 'check-fail'}><span>{robotReady ? '✓' : '!'}</span><div><strong>로봇 상태</strong><small>{selectedRobot.name} · {selectedRobot.status}</small></div></div><div className={!workflowIssues.length ? 'check-pass' : 'check-fail'}><span>{!workflowIssues.length ? '✓' : '!'}</span><div><strong>작업 유효성</strong><small>{workflowIssues[0] ?? `${flattenWorkflowBlocks(blocks).length}개 블록을 실행할 수 있어요.`}</small></div></div><div className={isSaved ? 'check-pass' : 'check-fail'}><span>{isSaved ? '✓' : '!'}</span><div><strong>저장 상태</strong><small>{isSaved ? '최신 작업이 저장되어 있어요.' : '작업을 다시 저장해 주세요.'}</small></div></div></div>
         <div className={`deployment-status${deployment.error ? ' failed' : ''}`}><strong>{deployment.ready ? `작업 v${deployment.version} · 실행 가능` : deployment.pending ? '배포 중' : '배포 필요'}</strong><p>{deployment.ready ? `${selectedRobot.name}에 현재 작업 버전이 준비됐어요.` : '확인을 마치고 선택한 로봇에 작업 버전을 배포하세요.'}</p>{deployment.error && <p className="deployment-error" role="alert"><span aria-hidden="true">!</span>{deployment.error}</p>}{!deployment.ready && <button className="secondary-button" disabled={!isSaved || !robotReady || !!workflowIssues.length || deployment.pending} onClick={() => void deployment.deploy()}>{deployment.pending ? '배포 중...' : deployment.error ? '배포 다시 시도' : '작업 버전 배포'}</button>}</div>
         <div className="safety-note"><span>!</span><p><strong>실행 전 확인해 주세요</strong>로봇 주변에 사람이나 장애물이 없는지 확인하세요.</p></div>
-        <div className="work-stage-actions inside"><button className="secondary-button" onClick={() => setWorkStep(1)}>← 작업 구성</button><button className="primary-button" disabled={!deployment.ready} onClick={() => { setWorkStep(3); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>실행 단계로 →</button></div>
+        <div className="work-stage-actions inside"><button className="secondary-button" onClick={() => setWorkStep(1)}>← 작업 구성</button><button className="primary-button" disabled={!deployment.ready} onClick={() => setWorkStep(3)}>실행 단계로 →</button></div>
       </section>}
 
       {workStep === 3 && <section className="card work-stage-card execution-stage">

@@ -2507,3 +2507,42 @@ button.device-card-content{cursor:pointer}
   .workflow-library-toolbar>.list-delete-button{margin-right:auto}
   .workflow-library-toolbar .workflow-search{flex:0 1 430px}
 }
+
+/* 작업 생성 단계 폭 통일 (S15P21A103-176)
+   스텝바(.work-stage-steps)·하단 액션·1단계 작업 영역은 공용 1280 레일인데 2·3단계 카드(.work-stage-card)만 920이었다.
+   폭이 920을 넘는 순간부터 상단바가 카드보다 최대 360px 넓어져, 화면을 키우거나 줌을 낮출수록 어긋남이 커졌다.
+   카드를 같은 레일에 올려 모든 단계·모든 폭에서 상단바와 본문 폭이 같게 한다. */
+.app-shell .content .work-stage-card{width:100%;max-width:1280px;margin-right:auto;margin-left:auto}
+@media(max-width:900px){.app-shell .content .work-stage-card{max-width:none}}
+
+/* 페이지 헤더 고정 (S15P21A103-176)
+   스크롤을 내려도 지금 어느 탭인지와 'OO 추가' 버튼이 계속 보이게 .page-heading을 상단에 붙인다.
+   - .content가 overflow:hidden이면 그 안의 sticky는 스크롤되지 않는 자체 스크롤포트에 붙어 동작하지 않는다.
+     clip은 같은 영역을 자르면서 스크롤 컨테이너를 만들지 않는다. (≤680은 이미 visible)
+   - 콘솔 배경이 body의 대각선 그라데이션이면 띠가 어느 위치에서든 어긋난다. fixed로 둘 다 뷰포트 기준으로 칠하는 방법은
+     .app-shell의 zoom 구간(≥1200)에서 어긋났다. 원래 그라데이션이 #eef1f5↔#f7f8fa로 거의 보이지 않아, 콘솔만 단색으로 바꿔 둘을 같은 색으로 칠한다.
+   - 목록 페이지는 헤딩이 .content 첫 자식이라 원래 자리(= .content 위 여백)에 바로 붙여 스크롤 시 위로 밀리지 않게 하고,
+     그 위 여백도 띠로 덮는다. 상세 페이지는 위의 '← 목록' 링크가 먼저 스크롤돼 나가야 해서 0에 붙인다. */
+@media(min-width:681px){.app-shell>.content{overflow:clip}}
+@media(max-width:680px){.app-shell>.content{overflow-x:clip}}
+body:has(.app-shell){background:var(--product-canvas)!important}
+.app-shell .content .page-heading{position:sticky;z-index:30;top:0;padding-bottom:14px;margin-bottom:4px}
+.app-shell .content .page-heading::after{
+  content:'';position:absolute;z-index:-1;top:0;right:-120px;bottom:0;left:-120px;
+  background:var(--product-canvas);
+}
+.app-shell .content>.page-heading:first-child{top:28px}
+.app-shell .content>.page-heading:first-child::after{top:-28px}
+@media(max-width:900px){
+  /* 상단 66px 바가 고정이라 그 아래에 붙인다. */
+  .app-shell .content .page-heading{top:66px}
+  .app-shell .content>.page-heading:first-child{top:86px}
+  .app-shell .content>.page-heading:first-child::after{top:-20px}
+}
+
+/* 불필요한 세로 스크롤 제거 (S15P21A103-176)
+   .app-shell·.content의 min-height:100vh는 배경을 화면 끝까지 채우려던 것인데, 배경은 이제 body가 칠하고 사이드바는 fixed라 필요 없다.
+   게다가 ≥1200의 .app-shell zoom 안에서 100vh가 배율만큼 부풀어(1.1배면 110vh) 내용이 짧아도 스크롤이 생겼다.
+   html의 overflow-y:scroll은 필요 없어도 스크롤바 트랙을 항상 그려서 auto로 바꾸고, 폭 흔들림은 scrollbar-gutter:stable이 계속 막는다. */
+html{overflow-y:auto!important}
+.app-shell,.app-shell>.content{min-height:0!important}
