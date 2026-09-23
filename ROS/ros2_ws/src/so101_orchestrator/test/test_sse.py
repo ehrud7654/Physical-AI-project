@@ -183,6 +183,17 @@ def test_cancel_finished_reechoes_final_status():
     assert sent == [("exec-1", "SUCCEEDED")]     # 원래 상태 그대로 재응답(취소로 안 덮음)
 
 
+def test_single_instance_lock(tmp_path):
+    """orchestrator 두 번째 인스턴스는 거부되고, 첫 인스턴스가 놓으면 다시 잡힌다."""
+    from so101_orchestrator.orchestrator_node import acquire_single_instance
+    lock = str(tmp_path / "orch.lock")
+    first = acquire_single_instance(lock)
+    with pytest.raises(SystemExit):
+        acquire_single_instance(lock)          # 중복 실행 → 거부
+    first.close()                              # 첫 인스턴스 종료(락 해제)
+    acquire_single_instance(lock).close()      # 이제 다시 잡힘
+
+
 def test_cancel_reports_unknown_execution():
     """실행 중도 아니고 종료 기록도 없는 exec 의 CANCEL 은 한 번 CANCELED 로 보고한다."""
     fake, sent = _cancel_fake(active=None, done={})

@@ -592,7 +592,33 @@ class OrchestratorNode(Node):
         return super().destroy_node()
 
 
+LOCK_PATH = "/tmp/so101_orchestrator.lock"
+
+
+def acquire_single_instance(path: str = LOCK_PATH):
+    """한 기기에 orchestrator 는 하나만. 둘이 같은 device_id 로 SSE 에 붙으면 BE 가
+    서로의 연결을 끊어 명령 누락·CANCEL 폭주가 난다(2026-09-23 고아 프로세스 사고).
+    flock 은 프로세스가 죽으면(kill -9 포함) 커널이 자동 해제 → stale lock 없음.
+    반환한 파일 객체를 프로세스 수명 동안 쥐고 있어야 락이 유지된다."""
+    import fcntl
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.seek(0)
+        other = f.read().strip() or "?"
+        f.close()
+        raise SystemExit(
+            f"orchestrator 가 이미 실행 중 (pid {other}, lock {path}) — 중복 실행 거부. "
+            f"확인: ps -ef | grep lib/so101_orchestrator/orchestrator")
+    f.truncate(0)
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
+
+
 def main(args=None):
+    _lock = acquire_single_instance()   # noqa: F841 — 쥐고 있어야 락 유지
     rclpy.init(args=args)
     node = OrchestratorNode()
     try:
