@@ -358,7 +358,8 @@ class OrchestratorNode(Node):
         rep(bc.EXEC_STARTING, progress=0.0)
         # BE 가 실제로 보낸 steps 원문 — timeoutSeconds 등 필드 확인용(디버깅)
         import json as _json
-        self.get_logger().info(f"EXECUTE_TASK steps 원문: {_json.dumps(cmd.get('steps'), ensure_ascii=False)}")
+        raw_steps = _json.dumps(cmd.get("steps"), ensure_ascii=False)
+        self.get_logger().info(f"EXECUTE_TASK steps 원문: {raw_steps}")
         plan = st.expand_steps(cmd.get("steps") or [])
         total = len(plan)
         if total == 0:

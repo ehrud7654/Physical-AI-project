@@ -163,8 +163,9 @@ class RuntimeExecutor:
                 self._log.warn(f"MOVE 입력 실패: {e}")
 
         last_error = None
-        last_line = None        # 마지막 비-JSON 출력 줄 — report 없이 죽을 때 사유로 쓴다
-                                # (예: Traceback 끝 "ModuleNotFoundError: No module named 'serial'")
+        # 마지막 비-JSON 출력 줄 — report 없이 죽을 때 사유로 쓴다
+        # (예: Traceback 끝 "ModuleNotFoundError: No module named 'serial'")
+        last_line = None
         buf: list[str] = []
         canceled = False
         try:
