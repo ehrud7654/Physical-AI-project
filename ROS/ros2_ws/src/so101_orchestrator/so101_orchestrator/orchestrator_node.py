@@ -484,7 +484,8 @@ class OrchestratorNode(Node):
             model_dir, run_dir,
             move=bool(self.get_parameter("runtime_move").value),
             cycles=int(self.get_parameter("runtime_cycles").value),
-            on_report=on_report, should_cancel=should_cancel)
+            on_report=on_report, should_cancel=should_cancel,
+            motor_port=self.get_parameter("motor_port").value)
 
         # 포트가 풀렸으니 실행 후 온도 기록(과열이면 다음 SKILL 이 거부됨)
         try:

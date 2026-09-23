@@ -123,7 +123,8 @@ class RuntimeExecutor:
 
     # ── 실행 ────────────────────────────────────────────────────────────
     def run(self, model_dir: Path, out_dir: Path, *, move: bool, cycles: int,
-            on_report, should_cancel) -> tuple[int, str | None]:
+            on_report, should_cancel,
+            motor_port: str | None = None) -> tuple[int, str | None]:
         """런타임 1회 실행. (exit_code, 마지막 오류문자열) 반환.
         on_report(dict): 런타임이 뱉은 report JSON 마다 호출.
         should_cancel(): True 가 되면 SIGINT 로 정지(런타임이 hold 후 종료)."""
@@ -137,6 +138,8 @@ class RuntimeExecutor:
             "--out", str(out_dir),
             "--cycles", str(cycles),
         ]
+        if motor_port:          # 진단(read_diagnostics)과 같은 포트를 쓰게 — 가짜 버스 테스트 포함
+            cmd += ["--motor-port", motor_port]
         if self.camera_tcp.exists():
             cmd += ["--camera-tcp", str(self.camera_tcp)]
         if move:
