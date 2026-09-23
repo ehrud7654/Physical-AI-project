@@ -126,6 +126,7 @@ class OrchestratorNode(Node):
         self._cancel = threading.Event()        # 실행 중단 플래그 — SSE 콜백에서 즉시 세팅
         self._active_exec: str | None = None    # 실행 중 executionId
         self._done_execs: set[str] = set()      # 이미 종료 보고한 실행 — 늦은 CANCEL 무시
+        self._step_index, self._step_total = 1, 1   # 실행 중 step 위치 — 진행 보고용
 
         self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
         self._seen_cmds: set[str] = set()       # commandId 중복 실행 차단(세션 한정, 재시작시 리셋)
@@ -372,6 +373,7 @@ class OrchestratorNode(Node):
                 if self._cancel.is_set():
                     break
                 rep(bc.EXEC_RUNNING, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
+                self._step_index, self._step_total = i, total
                 self._run_step(step)
             else:                       # 모든 step 을 돌았다(break 없음)
                 # 마지막 step 이 취소로 끝났을 수 있다 — SKILL 런타임은 취소 시 조용히
@@ -474,26 +476,49 @@ class OrchestratorNode(Node):
         run_dir = Path(self._models_dir).parent / "runs" / f"{self._active_exec}_{svid[:8]}"
         limit = float(timeout) if timeout else 0.0
         started = time.monotonic()
+        # timeout 시계는 첫 사이클 보고부터 — 런타임 로딩(torch·모델·카메라, 약 12s)은 빼야
+        # BE 가 준 timeoutSeconds 가 온전히 동작 시간이 된다.
+        first_cycle = [None]
+        timed_out = [False]
+        step_i, step_n = self._step_index, self._step_total
         self._check_servo_temp("실행 전")      # 뜨거우면 여기서 중단(런타임 기동 안 함)
         self.get_logger().info(
             f"SKILL 실행(umi_runtime): {svid} timeoutSeconds={timeout}"
-            f"({'시간제한 없음-정지까지' if limit == 0 else f'{limit:.0f}s 후 완료'}) model={model_dir}")
+            f"({'시간제한 없음-정지까지' if limit == 0 else f'첫 사이클부터 {limit:.0f}s'})"
+            f" model={model_dir}")
 
         def on_report(rep: dict):
-            # 런타임 사이클 리포트 → BE RUNNING 진행률(사이클 수 기반, 상한 95%)
+            # 런타임 사이클 리포트 → BE RUNNING.
+            # currentStep 은 step 번호(사이클 아님 — BE 는 ≤ totalSteps 만 받는다, 넘으면 409).
+            # 진행률 = 전체 step 중 위치 + 이 step 안의 진척(시간 기준, 없으면 사이클 기준).
+            now = time.monotonic()
+            if first_cycle[0] is None:
+                first_cycle[0] = now
             cycle = int(rep.get("cycle", 0)) + 1
-            phase = rep.get("phase", "")
-            pct = min(95.0, 5.0 + cycle * 5.0)
+            if limit:
+                frac = min(0.95, (now - first_cycle[0]) / limit)
+            else:
+                frac = min(0.95, 0.05 + cycle * 0.05)
+            pct = round(((step_i - 1) + frac) * 100.0 / step_n, 1)
             self._be.report_execution(self._active_exec, self._report_id(),
                                       self._next_seq(key), bc.EXEC_RUNNING,
-                                      current_step=cycle, progress=pct)
-            self.get_logger().info(f"[런타임] cycle={cycle} phase={phase} "
-                                   f"status={rep.get('status')}")
+                                      current_step=step_i, progress=pct)
+            self.get_logger().info(f"[런타임] cycle={cycle} phase={rep.get('phase', '')} "
+                                   f"status={rep.get('status')} progress={pct}%")
 
         def should_cancel() -> bool:
             if self._cancel.is_set():
                 return True
-            return bool(limit and (time.monotonic() - started) >= limit)
+            if not limit:
+                return False
+            now = time.monotonic()
+            if first_cycle[0] is None:
+                # 사이클이 영영 안 오면(로딩 멈춤) 여유 120s 더 주고 끊는다 — 이건 실패(FAILED)
+                return now - started >= limit + 120.0
+            if now - first_cycle[0] >= limit:
+                timed_out[0] = True             # 정상 완주 → SUCCEEDED
+                return True
+            return False
 
         code, err = self._runtime_exec.run(
             model_dir, run_dir,
@@ -510,7 +535,7 @@ class OrchestratorNode(Node):
 
         if self._cancel.is_set():
             return                      # 취소는 실행 루프가 CANCELED 로 보고
-        if code != 0 and not (limit and (time.monotonic() - started) >= limit):
+        if code != 0 and not timed_out[0]:
             # 시간 만료로 우리가 SIGINT 를 보낸 경우는 정상 종료로 본다
             raise RuntimeError(f"런타임 종료 코드 {code}: {err or '로그 확인'}")
         self.get_logger().info(f"SKILL {svid} 런타임 종료(code={code})")
