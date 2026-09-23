@@ -72,12 +72,18 @@ export function getWorkflowIssues(work: SavedWork): string[] {
   return issues;
 }
 
+/**
+ * 저장본과 편집 중 블록이 실행 내용상 같은지. 제목은 비교하지 않는다 — 표시용이라 서버 왕복 시 달라진다
+ * (모터: 팔레트 '모터 움직이기' ↔ 서버 '모터 제어', 반복: '반복하기' ↔ '반복 수행'). 학습 동작 블록도 서버는 종류를
+ * 'umi' 하나로 돌려주므로 umi/vlm을 같은 것으로 본다. 제목까지 비교하면 모터·반복이 든 작업은 저장 직후에도
+ * '저장 안 됨'으로 판정돼, 다시 누르면 자기 자신과 이름이 겹친다며 막혔다.
+ */
 export function workflowContentEquals(left: WorkflowBlock[], right: WorkflowBlock[]): boolean {
   if (left.length !== right.length) return false;
+  const kindOf = (block: WorkflowBlock) => (isSkillBlock(block) ? 'skill' : block.kind);
   return left.every((block, index) => {
     const other = right[index];
-    return block.kind === other.kind
-      && block.title === other.title
+    return kindOf(block) === kindOf(other)
       && block.skillId === other.skillId
       && block.motor === other.motor
       && block.angle === other.angle
