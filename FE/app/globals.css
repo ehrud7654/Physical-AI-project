@@ -2507,3 +2507,11 @@ button.device-card-content{cursor:pointer}
   .workflow-library-toolbar>.list-delete-button{margin-right:auto}
   .workflow-library-toolbar .workflow-search{flex:0 1 430px}
 }
+
+/* 작업 생성 단계 폭 통일 (S15P21A103-176)
+   스텝바(.work-stage-steps)·하단 액션·1단계 작업 영역은 공용 1280 레일인데 2·3단계 카드(.work-stage-card)만 920이었다.
+   폭이 920을 넘는 순간부터 상단바가 카드보다 최대 360px 넓어져, 화면을 키우거나 줌을 낮출수록 어긋남이 커졌다.
+   카드를 같은 레일에 올려 모든 단계·모든 폭에서 상단바와 본문 폭이 같게 한다. */
+.app-shell .content .work-stage-card{width:100%;max-width:1280px;margin-right:auto;margin-left:auto}
+@media(max-width:900px){.app-shell .content .work-stage-card{max-width:none}}
+
