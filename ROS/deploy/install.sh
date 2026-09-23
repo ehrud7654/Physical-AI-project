@@ -29,9 +29,10 @@ if [ ! -x /usr/local/bin/sync-time-http.sh ]; then
     exit 1
 fi
 
-# 3) 유닛 설치 — @ROS_ROOT@ 치환.
+# 3) 유닛 설치 — @ROS_ROOT@·@USER_HOME@ 치환.
 for unit in so101-estop.service so101-orchestrator.service; do
-    sed "s#@ROS_ROOT@#$ROS_ROOT#g" "$DEPLOY/$unit" | sudo tee "$UNIT_DIR/$unit" >/dev/null
+    sed -e "s#@ROS_ROOT@#$ROS_ROOT#g" -e "s#@USER_HOME@#$HOME#g" \
+        "$DEPLOY/$unit" | sudo tee "$UNIT_DIR/$unit" >/dev/null
     echo "설치: $UNIT_DIR/$unit"
 done
 

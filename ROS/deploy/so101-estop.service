@@ -5,7 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# @ROS_ROOT@ 는 install.sh 가 실제 경로로 치환한다.
+# @ROS_ROOT@·@USER_HOME@ 는 install.sh 가 실제 경로로 치환한다.
+# HOME 이 없으면 rclpy 가 로그 디렉터리(~/.ros/log)를 못 잡아 기동 실패한다.
+Environment=HOME=@USER_HOME@
 ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source @ROS_ROOT@/ros2_ws/install/setup.bash && exec ros2 run so101_safety estop_bridge'
 Restart=on-failure
 RestartSec=5
