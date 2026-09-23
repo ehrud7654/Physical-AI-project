@@ -125,6 +125,7 @@ class OrchestratorNode(Node):
         self.create_subscription(JointState, "/joint_states", self._on_joint_state, 10)
         self._cancel = threading.Event()        # 실행 중단 플래그 — SSE 콜백에서 즉시 세팅
         self._active_exec: str | None = None    # 실행 중 executionId
+        self._done_execs: set[str] = set()      # 이미 종료 보고한 실행 — 늦은 CANCEL 중복 차단
 
         self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
         self._seen_cmds: set[str] = set()       # commandId 중복 실행 차단(세션 한정, 재시작시 리셋)
@@ -156,6 +157,7 @@ class OrchestratorNode(Node):
         """SSE 스레드 콜백. 실행 중인 것의 CANCEL_EXECUTION 은 큐를 우회해 즉시 플래그 —
         워커가 _execute_task 로 블로킹 중이라 큐에 넣으면 실행이 끝나야 취소가 먹는다."""
         if (cmd.get("type") == bc.CMD_CANCEL_EXECUTION
+                and self._active_exec is not None
                 and cmd.get("executionId") == self._active_exec):
             self._cancel.set()
             self._stop_engines()
@@ -381,6 +383,8 @@ class OrchestratorNode(Node):
                 error={"code": "STEP_ERROR", "message": str(e)})
             raise
         finally:
+            if exec_id:
+                self._done_execs.add(exec_id)   # 종료 보고 완료 — 이후 CANCEL 은 무시
             self._active_exec = None
 
     def _run_step(self, step: dict):
@@ -496,6 +500,11 @@ class OrchestratorNode(Node):
         if exec_id == self._active_exec:
             self._cancel.set()
             self._stop_engines()
+            return
+        if exec_id in self._done_execs:
+            # 실행이 이미 SUCCEEDED/FAILED/CANCELED 로 끝난 뒤 도착한 CANCEL — 재보고 금지
+            # (안 그러면 종료 상태 위에 CANCELED 가 덮여 BE 상태가 꼬인다)
+            self.get_logger().info(f"이미 종료된 실행 {exec_id} 취소 무시")
             return
         self._stop_engines()
         self._be.report_execution(exec_id, self._report_id(), self._next_seq(f"exec:{exec_id}"),

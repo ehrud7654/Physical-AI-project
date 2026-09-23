@@ -154,3 +154,35 @@ def test_verify_size(tmp_path):
     assert OrchestratorNode._verify_size(str(p), "5") is True      # 문자열 숫자도 허용
     assert OrchestratorNode._verify_size(str(p), 6) is False
     assert OrchestratorNode._verify_size(str(p), None) is True     # 서버가 안 주면 스킵
+
+
+def _cancel_fake(active, done):
+    """Node 생성 없이 _cancel_execution 을 부를 fake self. 보낸 report status 를 수집."""
+    from types import SimpleNamespace
+    sent = []
+    fake = SimpleNamespace(
+        _active_exec=active,
+        _done_execs=set(done),
+        _cancel=SimpleNamespace(set=lambda: None),
+        _stop_engines=lambda: None,
+        _report_id=lambda: "r",
+        _next_seq=lambda _k: 1,
+        _be=SimpleNamespace(report_execution=lambda *a, **k: sent.append(k.get("status", a))),
+        get_logger=lambda: SimpleNamespace(info=lambda *a: None),
+    )
+    return fake, sent
+
+
+def test_cancel_ignores_finished_execution():
+    """이미 종료된 실행에 늦게 온 CANCEL 은 재보고하지 않는다 —
+    안 그러면 종료 상태 위에 CANCELED 가 덮여 BE 가 '작업중' 에 멈춘다."""
+    fake, sent = _cancel_fake(active=None, done={"exec-1"})
+    OrchestratorNode._cancel_execution(fake, {"executionId": "exec-1"})
+    assert sent == []                       # 종료된 실행 → 아무것도 안 보냄
+
+
+def test_cancel_reports_unknown_execution():
+    """실행 중도 아니고 종료 기록도 없는 exec 의 CANCEL 은 한 번 CANCELED 로 보고한다."""
+    fake, sent = _cancel_fake(active=None, done=set())
+    OrchestratorNode._cancel_execution(fake, {"executionId": "exec-2"})
+    assert len(sent) == 1
