@@ -1,8 +1,8 @@
 import os
+import re
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,11 @@ from app.trainer.progress_reporter import ProgressReporter
 
 class TrainingAdapter:
     """검증된 Zarr 입력을 공식 UMI trainer에 전달하는 어댑터."""
+
+    _EPOCH_PATTERNS = (
+        re.compile(r"(?:epoch|Epoch)\s*[=: ]\s*(\d+)\s*(?:/|of)\s*(\d+)"),
+        re.compile(r"\[(\d+)\s*/\s*(\d+)\].*(?:epoch|Epoch)"),
+    )
 
     def train(
         self,
@@ -43,14 +48,18 @@ class TrainingAdapter:
         eval_batch = self._positive_int("TRAINING_EVAL_BATCH_SIZE", batch)
         gpu = os.getenv("CUDA_VISIBLE_DEVICES", str(request.get("gpuIndex", 0)))
         run_name = os.getenv("TRAINING_RUN_NAME", request["trainingJobId"])
-        run_id = f"{self._safe_run_name(run_name)}_{time.strftime('%H%M%S')}"
+        # trainingJobId + attempt is stable for a FastAPI run and unique across
+        # EC2 retries. Wall-clock based ids can collide and cannot be recovered.
+        run_id = f"{self._safe_run_name(run_name)}_attempt_{int(request['attempt'])}"
 
         self._require_file(trainer, "UMI trainer")
         self._require_file(profile, "UMI trainer profile")
+        self._require_directory(umi_root := Path(
+            os.getenv("UMI_ROOT", str(bundle / "third_party" / "umi"))
+        ).resolve(), "UMI_ROOT")
         runs_dir.mkdir(parents=True, exist_ok=True)
 
         environment = os.environ.copy()
-        umi_root = Path(os.getenv("UMI_ROOT", str(bundle / "third_party" / "umi"))).resolve()
         environment.update(
             {
                 "CUDA_VISIBLE_DEVICES": gpu,
@@ -70,6 +79,9 @@ class TrainingAdapter:
             cwd=bundle,
             env=environment,
             title="dataset check",
+            reporter=reporter,
+            stage="DATASET_CHECK",
+            epochs=epochs,
         )
 
         reporter.report("RUNNING", "TRAINING", 10, epoch=0, totalEpochs=epochs)
@@ -95,6 +107,9 @@ class TrainingAdapter:
             cwd=bundle,
             env=environment,
             title=f"학습 {epochs} epoch",
+            reporter=reporter,
+            stage="TRAINING",
+            epochs=epochs,
         )
 
         reporter.report(
@@ -111,12 +126,68 @@ class TrainingAdapter:
             "metadata": build_metadata(request, output),
         }
 
-    @staticmethod
-    def _run(command: list[str], cwd: Path, env: dict[str, str], title: str) -> None:
+    def _run(
+        self,
+        command: list[str],
+        cwd: Path,
+        env: dict[str, str],
+        title: str,
+        reporter: ProgressReporter,
+        stage: str,
+        epochs: int,
+    ) -> None:
         print(f"[{title}] {' '.join(command)}", flush=True)
-        completed = subprocess.run(command, cwd=cwd, env=env, check=False)
-        if completed.returncode != 0:
-            raise RuntimeError(f"{title} 실패: exitCode={completed.returncode}")
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                if stage == "TRAINING":
+                    progress = self._parse_epoch(line, epochs)
+                    if progress is not None:
+                        epoch, total = progress
+                        percent = min(94, 10 + int(84 * epoch / max(total, 1)))
+                        reporter.report(
+                            "RUNNING", "TRAINING", percent,
+                            epoch=epoch, totalEpochs=total,
+                        )
+            return_code = process.wait()
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
+        finally:
+            process.stdout.close()
+        if return_code != 0:
+            raise RuntimeError(f"{title} 실패: exitCode={return_code}")
+
+    @classmethod
+    def _parse_epoch(cls, line: str, configured_epochs: int) -> tuple[int, int] | None:
+        for pattern in cls._EPOCH_PATTERNS:
+            match = pattern.search(line)
+            if match:
+                epoch = int(match.group(1))
+                total = int(match.group(2))
+                if epoch >= 0 and total > 0:
+                    return min(epoch, total), total
+        # Some Hydra/PyTorch trainers log only the current epoch.
+        match = re.search(r"(?:epoch|Epoch)\s*[=: ]\s*(\d+)\b", line)
+        if match:
+            return min(int(match.group(1)), configured_epochs), configured_epochs
+        return None
 
     @staticmethod
     def _shared_file(root: Path, storage_key: str) -> Path:
@@ -137,6 +208,11 @@ class TrainingAdapter:
     def _require_file(path: Path, label: str) -> None:
         if not path.is_file():
             raise FileNotFoundError(f"{label} 파일을 찾을 수 없습니다: {path}")
+
+    @staticmethod
+    def _require_directory(path: Path, label: str) -> None:
+        if not path.is_dir():
+            raise FileNotFoundError(f"{label} 디렉터리를 찾을 수 없습니다: {path}")
 
     @staticmethod
     def _positive_int(name: str, default: int) -> int:

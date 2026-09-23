@@ -12,7 +12,17 @@ GPU Spring Boot와 실제 Python 학습 프로세스 사이의 내부 실행 API
 - `GET /health/ready`
 
 내부 API는 `Authorization: Bearer <FASTAPI_SERVICE_TOKEN>`을 요구한다. 실제 AI 학습 구현은
-`app/trainer/training_adapter.py`의 `TrainingAdapter`를 교체한다.
+`app/trainer/training_adapter.py`는 공식 UMI diffusion trainer를 다음 순서로 실행한다.
+
+1. `train_policy.py check <zarr>`로 입력 데이터 검사
+2. 검사를 통과한 경우에만 `train_policy.py train` 실행
+3. trainer 로그의 epoch를 FastAPI 진행률 journal에 기록
+4. run 디렉터리에서 무압축 `.tgz` 모델 패키지를 찾아 계약 검증
+5. 검증된 모델 패키지와 `metadata.json`을 GPU Spring 완료 callback으로 전달
+
+학습 번들은 `UMI_TRAINING_BUNDLE_ROOT`, Python은 `UMI_TRAINING_PYTHON`, 프로필은
+`UMI_TRAINING_PROFILE`로 주입한다. 컨테이너에는 번들을 `/opt/umi-training`으로
+읽기 전용 마운트하고 학습 결과는 공유 볼륨의 `UMI_TRAINING_RUNS_DIR`에 저장한다.
 
 FastAPI 실행 상태는 중앙 DB나 SQLite에 저장하지 않는다. 재시작 복구에 필요한 최소 상태만
 `RUN_JOURNAL_ROOT` 아래 JSON journal로 원자 저장하며 stdout/stderr는 실행별 파일 로그로 관리한다.

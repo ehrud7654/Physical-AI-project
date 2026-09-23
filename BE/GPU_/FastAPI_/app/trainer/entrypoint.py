@@ -21,13 +21,14 @@ def main() -> None:
     shared_root = args.run_directory.parents[2]
     checkpoint = shared_root / checkpoint_relative
     try:
-        result = TrainingAdapter().train(request, checkpoint, reporter, args.duration_seconds)
+        adapter = TrainingAdapter()
+        result = adapter.train(request, checkpoint, reporter, args.duration_seconds)
         result["checkpointStorageKey"] = checkpoint_relative.as_posix()
         completed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         reporter.report(
             "COMPLETED", "CHECKPOINT_READY", 100,
-            epoch=int(os.getenv("TRAINING_EPOCHS", "60")),
-            totalEpochs=int(os.getenv("TRAINING_EPOCHS", "60")),
+            epoch=int(os.getenv("TRAINING_EPOCHS", "120")),
+            totalEpochs=int(os.getenv("TRAINING_EPOCHS", "120")),
             modelCompletedAt=completed_at, result=result,
         )
     except BaseException as error:
