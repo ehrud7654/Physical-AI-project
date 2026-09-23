@@ -20,7 +20,7 @@ def build_episode(recording: dict, trajectory_path: Path, gripper_path: Path,
         dataset_config["maximum_pose_timestamp_error_ms"],
         dataset_config.get("maximum_lost_frames_after_initialization"),
     )
-    # Never discard the beginning implicitly. Some demonstrations start with the grasp itself.
+    # The first seconds are SLAM warm-up (small motion with the table marker in view), not the task.
     trim_s = float(dataset_config.get("episode_start_trim_s", 0.0))
     keep = recording["times_s"][selected] >= trim_s
     trimmed_frames = int((~keep).sum())
@@ -35,9 +35,8 @@ def build_episode(recording: dict, trajectory_path: Path, gripper_path: Path,
         raise ValueError("gripper frame indices are not contiguous")
     detected = [row["marker_detected"].lower() == "true" for row in rows]
     missing_run = longest_false_run(detected)
-    marker_missing_limit = dataset_config.get("maximum_marker_missing_run_frames")
-    if marker_missing_limit is not None and missing_run > int(marker_missing_limit):
-        raise ValueError(f"marker missing run {missing_run} exceeds limit {marker_missing_limit}")
+    if missing_run > dataset_config["maximum_marker_missing_run_frames"]:
+        raise ValueError(f"marker missing run {missing_run} exceeds limit")
     width_key = "gripper_width_mm" if "gripper_width_mm" in rows[0] else "width_mm"
     widths = np.asarray([float(rows[index][width_key]) / 1000 for index in selected], dtype=np.float32)
     if not np.isfinite(widths).all() or widths.min() < 0 or widths.max() > dataset_config["maximum_gripper_width_m"]:
@@ -60,7 +59,6 @@ def build_episode(recording: dict, trajectory_path: Path, gripper_path: Path,
         "native_sample_rate_hz": float(1 / np.median(np.diff(recording["times_s"][selected]))),
         "marker_detection_rate": sum(detected) / len(detected),
         "maximum_marker_missing_run_frames": missing_run,
-        "configured_maximum_marker_missing_run_frames": marker_missing_limit,
         "gripper_width_min_m": float(widths.min()),
         "gripper_width_max_m": float(widths.max()),
     }

@@ -10,14 +10,6 @@ RAW → IMU/그리퍼 전처리 → ORB-SLAM3 Atlas → 시연 재국지화
 학습, 체크포인트 export, Jetson 모터 제어는 포함하지 않는다. Spring은 업로드·권한·작업 DB를
 담당하고 이 컨테이너는 영상/SLAM/Zarr 처리만 담당한다.
 
-## 서버 담당자가 먼저 볼 것
-
-1. [RAW_INPUT_CONTRACT.md](docs/RAW_INPUT_CONTRACT.md): 업로드 폴더와 필수 파일
-2. [SPRING_INTEGRATION.md](docs/SPRING_INTEGRATION.md): Spring 호출 방법
-3. [PIPELINE_AND_OUTPUTS.md](docs/PIPELINE_AND_OUTPUTS.md): 각 단계와 결과물
-4. [OPERATIONS.md](docs/OPERATIONS.md): Docker 빌드, 로그, 재실행, 알려진 제한
-5. [PROVENANCE_AND_VERIFICATION.md](docs/PROVENANCE_AND_VERIFICATION.md): 버전·보정 해시·검사 범위
-
 ## 빠른 실행
 
 Linux 서버에서 작업 데이터를 다음과 같이 둔다.
@@ -29,10 +21,10 @@ jobs/demo-001/
 ```
 
 ```bash
-docker compose -f docker-compose.example.yml build
-docker compose -f docker-compose.example.yml up -d
+cd BE/EC2_
+docker compose --profile preprocessing up -d --build umi-preprocessor
 
-curl -X POST http://127.0.0.1:18080/internal/v1/jobs \
+curl -X POST http://127.0.0.1:18181/internal/v1/jobs \
   -H 'Content-Type: application/json' \
   -d '{
     "job_id": "demo-001",
@@ -41,7 +33,7 @@ curl -X POST http://127.0.0.1:18080/internal/v1/jobs \
     "require_mapping": true
   }'
 
-curl http://127.0.0.1:18080/internal/v1/jobs/demo-001
+curl http://127.0.0.1:18181/internal/v1/jobs/demo-001
 ```
 
 완료되면 다음 파일을 GPU 학습 서버로 전달한다.
@@ -55,11 +47,11 @@ jobs/demo-001/dataset/s22_pick_v1_gpu_input.tgz
 ```text
 app/                    Python CLI와 내부 HTTP API
 dataset_builder/        검증된 S22 → Stanford UMI Zarr 모듈
-spring-adapter/         Spring Boot RestClient 연결 예제
+track_a/                Atlas 선택·ArUco 정렬·Episode gate 도구
 docker/                 ORB-SLAM3 빌드 스크립트
 Dockerfile              Ubuntu 24.04 + ORB-SLAM3 + Python
 openapi.yaml             내부 API 계약
-docs/                    인계 문서
+backend_contract.json   ORB-SLAM Atlas 백엔드 계약
 tests/test_package.py    빠른 자체검사
 ```
 

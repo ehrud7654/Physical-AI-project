@@ -1,5 +1,5 @@
 #!/bin/sh
-# Native Linux equivalent of run_orbslam_jetson.sh: same arguments, no Docker.
+# Run the ORB-SLAM binary bundled in the Linux preprocessor image.
 # Requires ORB_SLAM_BIN (built gopro_slam) and optionally ORB_SLAM_VOCAB; see 04's env.sh.
 # Map reuse (Stanford UMI workflow): ORB_SLAM_SAVE_MAP=<atlas.osa> on the mapping session,
 # ORB_SLAM_LOAD_MAP=<atlas.osa> on every demonstration so tracking relocalises instead of initialising.

@@ -70,9 +70,9 @@ def main():
         plan.write_text(json.dumps({"schema_version": 1, "episodes": [{
             "session": str(session), "trajectory": str(trajectory), "gripper": str(gripper),
         }]}), encoding="utf-8")
+        # The 1 s fixture is shorter than the production warm-up trim; test the trim separately below.
         dataset_config = json.loads((ROOT / "configs/dataset.json").read_text(encoding="utf-8"))
-        assert dataset_config["episode_start_trim_s"] == 0.0
-        assert dataset_config["maximum_marker_missing_run_frames"] is None
+        assert dataset_config["episode_start_trim_s"] == 3.0
         untrimmed = base / "dataset_untrimmed.json"
         untrimmed.write_text(json.dumps({**dataset_config, "episode_start_trim_s": 0.0}), encoding="utf-8")
         output = base / "dataset.zarr.zip"
