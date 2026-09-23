@@ -80,8 +80,17 @@ public class TrainingJobService {
     if (selected.stream().anyMatch(episode -> !episode.getUmiDeviceId().equals(device.getId())))
       throw new BusinessConflictException(
           "EPISODE_DEVICE_MISMATCH", "선택한 Episode와 UMI 장치가 일치하지 않습니다.");
-    List<TrainingEpisodeInput> trainingInputs =
-        selected.stream().map(TrainingEpisodeInput::new).toList();
+    List<TrainingEpisodeInput> trainingInputs = selected.stream().map(this::trainingInput).toList();
+    long mappingCount = trainingInputs.stream()
+        .filter(input -> input.role() == TrainingEpisodeRole.MAPPING).count();
+    long demonstrationCount = trainingInputs.stream()
+        .filter(input -> input.role() == TrainingEpisodeRole.DEMONSTRATION).count();
+    if (mappingCount != 1)
+      throw new BusinessConflictException(
+          "MAPPING_EPISODE_REQUIRED", "학습에는 Mapping Episode가 정확히 하나 필요합니다.");
+    if (demonstrationCount < 1)
+      throw new BusinessConflictException(
+          "DEMONSTRATION_EPISODE_REQUIRED", "학습에는 Demonstration Episode가 하나 이상 필요합니다.");
     TrainingMode trainingMode =
         request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
     SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
@@ -106,7 +115,7 @@ public class TrainingJobService {
     job.planInput(expected, true);
     for (int i = 0; i < trainingInputs.size(); i++) {
       TrainingEpisodeInput input = trainingInputs.get(i);
-      attach(job, input.episode(), i + 1);
+      attach(job, input.episode(), input.role(), i + 1);
     }
     job.fixInputSnapshotSha256(inputSnapshotHash(trainingInputs));
     idempotency.complete(
@@ -207,12 +216,14 @@ public class TrainingJobService {
     return request.episodeIds().stream().map(byId::get).toList();
   }
 
-  private void attach(TrainingJob job, Episode episode, int order) {
+  private void attach(
+      TrainingJob job, Episode episode, TrainingEpisodeRole role, int order) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     inputs.save(
         new TrainingJobEpisode(
             new TrainingJobEpisodeId(job.getId(), episode.getId()),
             order,
+            role,
             archive.getSha256(),
             episode.getContractVersion(),
             episode.getSource(),
@@ -227,7 +238,7 @@ public class TrainingJobService {
       StringBuilder canonical = new StringBuilder();
       for (int index = 0; index < selected.size(); index++) {
         TrainingEpisodeInput input = selected.get(index);
-        appendSnapshot(canonical, index + 1, input.episode());
+        appendSnapshot(canonical, index + 1, input.episode(), input.role());
       }
       return HexFormat.of().formatHex(
           MessageDigest.getInstance("SHA-256")
@@ -237,9 +248,30 @@ public class TrainingJobService {
     }
   }
 
-  private record TrainingEpisodeInput(Episode episode) {}
+  private record TrainingEpisodeInput(Episode episode, TrainingEpisodeRole role) {}
 
-  private void appendSnapshot(StringBuilder canonical, int order, Episode episode) {
+  private TrainingEpisodeInput trainingInput(Episode episode) {
+    EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
+    Object qualityRole = episode.getQualitySummary().values().get("datasetRole");
+    Object archiveRole = archive.getManifestSummary().details().get("datasetRole");
+    String qualityValue = qualityRole == null ? null : qualityRole.toString();
+    String archiveValue = archiveRole == null ? null : archiveRole.toString();
+    if (qualityValue != null && archiveValue != null
+        && !qualityValue.equalsIgnoreCase(archiveValue))
+      throw new BusinessConflictException(
+          "EPISODE_ROLE_MISMATCH", "Episode 품질 정보와 Archive 역할 정보가 일치하지 않습니다.");
+    String value = qualityValue != null ? qualityValue : archiveValue;
+    try {
+      return new TrainingEpisodeInput(
+          episode, TrainingEpisodeRole.valueOf(Objects.requireNonNull(value).toUpperCase(Locale.ROOT)));
+    } catch (IllegalArgumentException | NullPointerException exception) {
+      throw new BusinessConflictException(
+          "EPISODE_ROLE_REQUIRED", "MAPPING 또는 DEMONSTRATION 역할이 없는 Episode가 있습니다.");
+    }
+  }
+
+  private void appendSnapshot(
+      StringBuilder canonical, int order, Episode episode, TrainingEpisodeRole role) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     canonical
         .append(order)
@@ -249,6 +281,8 @@ public class TrainingJobService {
         .append(archive.getSha256())
         .append('|')
         .append(episode.getContractVersion())
+        .append('|')
+        .append(role.name())
         .append('\n');
   }
 

@@ -36,6 +36,11 @@ public final class TrainingJobModels {
     CANCELED
   }
 
+  public enum TrainingEpisodeRole {
+    DEMONSTRATION,
+    MAPPING
+  }
+
   public record ClaimRequest(
       String workerId,
       Integer gpuIndex,
@@ -51,6 +56,7 @@ public final class TrainingJobModels {
   public record EpisodeData(
       UUID episodeId,
       String sessionId,
+      TrainingEpisodeRole inputRole,
       String qualityStatus,
       String contractVersion,
       ArchiveData archive) {}

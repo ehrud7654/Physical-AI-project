@@ -33,6 +33,7 @@ public class EpisodeDownloadManifestService {
           .orElseThrow(() -> new BusinessConflictException("EPISODE_NOT_AVAILABLE", "학습 입력 파일을 사용할 수 없습니다."));
       var signed=downloads.issue(properties.bucket(), archive.getStorageKey(), properties.presignTtl());
       return new EpisodeData(id, episode.getSessionId(),
+          input.getInputRole().name(),
           episode.getQualityStatus().name(),
           episode.getContractVersion(),
           new ArchiveData(signed.url(), signed.expiresAt(), archive.getContentType(),

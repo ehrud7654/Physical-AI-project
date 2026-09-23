@@ -13,6 +13,7 @@ import java.nio.file.*;
 import java.time.*;
 import java.util.List;
 import java.util.concurrent.Semaphore;
+import java.util.stream.Collectors;
 import org.slf4j.*;
 import org.springframework.stereotype.Service;
 
@@ -91,6 +92,24 @@ public class EpisodePreprocessingService {
     Path allowed = worker.storageRoot().resolve("preprocessing-jobs").toAbsolutePath().normalize();
     if (!root.startsWith(allowed)) throw new IllegalStateException("허용되지 않은 전처리 작업 경로입니다.");
     if (episodes.isEmpty()) throw new IllegalStateException("전처리에는 하나 이상의 Episode가 필요합니다.");
+    List<LocalEpisode> mappings =
+        episodes.stream()
+            .filter(
+                episode ->
+                    episode.inputRole()
+                        == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole.MAPPING)
+            .toList();
+    List<LocalEpisode> demonstrations =
+        episodes.stream()
+            .filter(
+                episode ->
+                    episode.inputRole()
+                        == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole.DEMONSTRATION)
+            .toList();
+    if (mappings.size() != 1)
+      throw new IllegalStateException("전처리에는 Mapping Episode가 정확히 하나 필요합니다.");
+    if (demonstrations.isEmpty())
+      throw new IllegalStateException("전처리에는 Demonstration Episode가 하나 이상 필요합니다.");
     log.info(
         "Episode 전처리 입력 확인 완료: trainingJobId={}, jobId={}, episodeCount={}, workRoot={}",
         claim.job().id(),
@@ -106,8 +125,12 @@ public class EpisodePreprocessingService {
           episode.inputOrder());
       extractor.extract(
           episode,
-          root.resolve("raw")
-              .resolve(String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId())));
+          root.resolve(
+                  episode.inputRole()
+                          == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole.MAPPING
+                      ? "raw_mapping"
+                      : "raw")
+              .resolve(sessionDirectory(episode)));
     }
     log.info(
         "Episode 압축 해제 완료: trainingJobId={}, episodeCount={}",
@@ -127,13 +150,20 @@ public class EpisodePreprocessingService {
             jobId,
             existing == null ? null : existing.status(),
             properties.calibrationProfile(),
-            properties.requireMapping());
+            true);
+        String mappingSessionId = sessionDirectory(mappings.getFirst());
+        List<String> demonstrationSessionIds =
+            demonstrations.stream()
+                .map(EpisodePreprocessingService::sessionDirectory)
+                .collect(Collectors.toList());
         client.start(
             new StartRequest(
                 jobId,
                 "dataset_" + claim.attempt(),
                 properties.calibrationProfile(),
-                properties.requireMapping()));
+                true,
+                mappingSessionId,
+                demonstrationSessionIds));
         log.info("UMI 전처리 작업 생성 완료: trainingJobId={}, jobId={}", claim.job().id(), jobId);
       } else {
         log.info("기존 UMI 전처리 완료 결과 재사용: trainingJobId={}, jobId={}", claim.job().id(), jobId);
@@ -223,5 +253,9 @@ public class EpisodePreprocessingService {
   private static void checkInterrupted() {
     if (Thread.currentThread().isInterrupted())
       throw new java.util.concurrent.CancellationException("Episode 전처리가 중단되었습니다.");
+  }
+
+  private static String sessionDirectory(LocalEpisode episode) {
+    return String.format("rec_%03d_%s", episode.inputOrder(), episode.episodeId());
   }
 }

@@ -104,6 +104,7 @@ public class EpisodeArchiveDownloader {
     return new LocalEpisode(
         inputOrder,
         episode.episodeId(),
+        episode.inputRole(),
         storageKey,
         episode.archive().sha256(),
         episode.contractVersion(),
@@ -123,6 +124,7 @@ public class EpisodeArchiveDownloader {
   public record LocalEpisode(
       int inputOrder,
       UUID episodeId,
+      com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole inputRole,
       String storageKey,
       String sha256,
       String contractVersion,

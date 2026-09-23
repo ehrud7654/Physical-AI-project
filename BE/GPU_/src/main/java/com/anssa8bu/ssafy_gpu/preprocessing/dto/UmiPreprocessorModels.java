@@ -10,7 +10,9 @@ public final class UmiPreprocessorModels {
       @JsonProperty("job_id") String jobId,
       @JsonProperty("dataset_name") String datasetName,
       @JsonProperty("calibration_profile") String calibrationProfile,
-      @JsonProperty("require_mapping") boolean requireMapping) {}
+      @JsonProperty("require_mapping") boolean requireMapping,
+      @JsonProperty("mapping_session_id") String mappingSessionId,
+      @JsonProperty("demonstration_session_ids") java.util.List<String> demonstrationSessionIds) {}
 
   public record StartResponse(String jobId, String status) {}
 
