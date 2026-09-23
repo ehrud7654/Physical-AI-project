@@ -67,6 +67,12 @@ export async function saveWork(work: SavedWork): Promise<SaveWorkResult> {
   }
   const steps = toApiSteps(work.blocks);
 
+  /* 저장된 작업(draft- 가 아닌 서버 id)은 같은 작업에 새 버전을 올린다 — PATCH에 steps를 주면 서버가 새 버전을 발행한다. */
+  if (!work.id.startsWith('draft-')) {
+    await apiRequest<ApiTask>(`/tasks/${work.id}`, { method: 'PATCH', body: JSON.stringify({ steps }) });
+    return { works: await fetchSavedWorks(), savedId: work.id };
+  }
+
   const created = await apiRequest<ApiTask>('/tasks', {
     method: 'POST',
     body: JSON.stringify({
