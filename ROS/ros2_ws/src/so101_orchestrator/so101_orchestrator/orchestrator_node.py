@@ -414,6 +414,8 @@ class OrchestratorNode(Node):
         elif stype == st.STEP_SKILL:
             svid = step.get("skillVersionId")
             path = self._deployed_ckpts.get(svid) if svid else None
+            if svid and not (path and os.path.exists(path)):
+                path = self._local_model(svid)      # 부팅 복구 실패 대비 — 디스크 배포본
             if not path or not os.path.exists(path):
                 raise RuntimeError(f"SKILL {svid} 모델 없음 — 배포 필요")
             if self._executor == "umi_runtime":
@@ -428,6 +430,19 @@ class OrchestratorNode(Node):
                 self._policy.stop_skill()
         else:
             raise ValueError(f"알 수 없는 step type: {stype}")
+
+    def _local_model(self, svid: str) -> str | None:
+        """메모리에 없는 스킬을 디스크의 models/<svid>/ 에서 찾는다.
+        부팅 시 BE 가 죽어 있으면 _recover_current_deployment 가 실패해 메모리가 비는데,
+        배포본은 디스크에 남아 있다. skillVersionId 는 불변 버전 id 라 같은 id = 같은 모델이고
+        sha256 은 배포 때 이미 검증했다."""
+        try:
+            path = str(bundle.locate_model_dir(Path(self._models_dir) / svid))
+        except (FileNotFoundError, OSError):
+            return None
+        self._deployed_ckpts[svid] = path
+        self.get_logger().info(f"{svid} 로컬 배포본 사용(메모리 복구): {path}")
+        return path
 
     def _check_servo_temp(self, when: str):
         """서보 온도 확인 — 임계 초과면 RuntimeError(실행 거부/중단).
