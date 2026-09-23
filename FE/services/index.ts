@@ -4,6 +4,6 @@ export { fetchTrainings, fetchTrainingDetail, fetchTrainingSkills, fetchSkillOve
 export { fetchLearnedSkills, fetchSavedWorks, saveWork, deleteWorks } from './workService';
 export { login, logout, signup, checkEmailAvailability, clearAuthentication, restoreAuthentication } from './authService';
 export { fetchDatasets } from './datasetService';
-export { fetchTaskReadiness, fetchDeployments, createDeployment, fetchDeployment, createRobotExecution, fetchRobotExecutions, cancelRobotExecution } from './executionService';
+export { fetchTaskReadiness, fetchDeployments, createDeployment, fetchDeployment, createRobotExecution, fetchRobotExecution, fetchRobotExecutions, cancelRobotExecution } from './executionService';
 export type { Deployment } from './executionService';
 export { fetchDashboard } from './dashboardService';

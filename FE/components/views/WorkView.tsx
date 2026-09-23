@@ -26,7 +26,6 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [workStep]);
 
   const selectedRobot = robots.find((robot) => robot.id === robotId);
-  const running = runningIndex >= 0;
   const savedSnapshot = savedWorks.find(work => work.id === selectedWorkId);
   const workForValidation = useMemo<SavedWork>(() => ({
     id: selectedWorkId || 'draft',
@@ -46,6 +45,12 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
     && savedSnapshot.name === workName.trim()
     && workflowContentEquals(savedSnapshot.blocks, blocks);
   const deployment = useTaskDeployment(workForValidation, robotId);
+  const executionStatus = deployment.execution?.status;
+  const executionFailed = executionStatus === 'FAILED';
+  const executionSucceeded = executionStatus === 'SUCCEEDED';
+  const executionCanceled = executionStatus === 'CANCELED';
+  const executionTerminal = executionFailed || executionSucceeded || executionCanceled;
+  const running = runningIndex >= 0 && !executionTerminal;
   const canStartRun = isSaved && robotReady && !workflowIssues.length && deployment.ready;
 
   const save = async () => {
@@ -203,7 +208,11 @@ export function WorkView({ editingWorkId, suggestedSkillName, onNavigate, onToas
       {workStep === 3 && <section className="card work-stage-card execution-stage">
         <div className="work-stage-heading"><div><p className="eyebrow">작업 실행</p><h2>{workName}</h2><p>{selectedRobot.name}에서 작업을 실행합니다.</p></div><span>{formatWorkDuration(estimateWorkflowSeconds(blocks))}</span></div>
         <div className="run-robot"><span className="robot-illustration">R</span><div><strong>{selectedRobot.name}</strong><small>{selectedRobot.location}</small></div><span className={`status-dot ${robotReady ? 'online' : 'busy'}`} /></div>
-        {running ? <div className="execution-focus"><strong>{deployment.execution?.currentStep ?? 0} / {blocks.length}</strong><p>로봇이 작업 실행 요청을 처리하고 있어요.</p><div className="mini-progress"><i style={{ width: `${deployment.execution?.progressPercent ?? 0}%` }} /></div><button className="danger-button" onClick={() => void deployment.cancel().then(() => { setRunningIndex(-1); onToast('작업 중지를 요청했어요.'); })}>■ 작업 중지</button></div> : <div className="execution-focus"><strong>실행 준비 완료</strong><p>작업 v{deployment.version}이 배포되었습니다. 주변 안전을 확인하고 시작하세요.</p><button className="primary-button run-button" disabled={!canStartRun} onClick={() => void startRun()}>▶ 작업 시작</button></div>}
+        {running ? <div className="execution-focus"><strong>{deployment.execution?.currentStep ?? 0} / {blocks.length}</strong><p>로봇이 작업 실행 요청을 처리하고 있어요.</p><div className="mini-progress"><i style={{ width: `${deployment.execution?.progressPercent ?? 0}%` }} /></div><button className="danger-button" onClick={() => void deployment.cancel().then(() => { setRunningIndex(-1); onToast('작업 중지를 요청했어요.'); })}>■ 작업 중지</button></div>
+          : executionFailed ? <div className="execution-focus failed" role="alert"><strong>작업 실행 실패</strong><p>{deployment.execution?.error?.message ?? '로봇에서 작업을 실행하지 못했어요.'}</p><button className="primary-button run-button" disabled={!canStartRun} onClick={() => void startRun()}>▶ 다시 실행</button></div>
+          : executionSucceeded ? <div className="execution-focus"><strong>작업 실행 완료</strong><p>로봇이 작업을 정상적으로 완료했어요.</p><button className="primary-button run-button" disabled={!canStartRun} onClick={() => void startRun()}>▶ 다시 실행</button></div>
+          : executionCanceled ? <div className="execution-focus"><strong>작업 실행 취소됨</strong><p>로봇의 작업 실행이 취소되었어요.</p><button className="primary-button run-button" disabled={!canStartRun} onClick={() => void startRun()}>▶ 다시 실행</button></div>
+          : <div className="execution-focus"><strong>실행 준비 완료</strong><p>작업 v{deployment.version}이 배포되었습니다. 주변 안전을 확인하고 시작하세요.</p><button className="primary-button run-button" disabled={!canStartRun} onClick={() => void startRun()}>▶ 작업 시작</button></div>}
         <div className="work-stage-actions inside"><button className="secondary-button" disabled={running} onClick={() => setWorkStep(2)}>← 실행 준비</button><button className="text-button" disabled={running} onClick={() => onNavigate('library')}>작업 목록으로</button></div>
       </section>}
     </>

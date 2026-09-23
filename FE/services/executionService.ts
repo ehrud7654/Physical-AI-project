@@ -48,6 +48,10 @@ export async function fetchRobotExecutions(robotId: string): Promise<{ data: Rob
   return { data, page: { nextCursor: null, hasNext: false, totalCount: data.length } };
 }
 
+export function fetchRobotExecution(robotId: string, executionId: string): Promise<RobotExecution> {
+  return apiRequest<RobotExecution>(`/robots/${robotId}/executions/${executionId}`);
+}
+
 export function cancelRobotExecution(robotId: string, executionId: string): Promise<RobotExecution> {
   return apiRequest<RobotExecution>(`/robots/${robotId}/executions/${executionId}/cancel`, {
     method: 'POST',

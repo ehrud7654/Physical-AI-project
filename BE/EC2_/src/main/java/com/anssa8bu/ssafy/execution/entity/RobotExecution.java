@@ -116,9 +116,11 @@ public class RobotExecution {
     }
     if (!canTransition(status, nextStatus))
       throw new IllegalArgumentException("invalid execution status transition");
-    if (progressPercent.compareTo(this.progressPercent) < 0)
+    if (nextStatus != RobotExecutionStatus.FAILED
+        && progressPercent.compareTo(this.progressPercent) < 0)
       throw new IllegalArgumentException("progressPercent must not decrease");
-    if (this.currentStep != null && currentStep != null && currentStep < this.currentStep)
+    if (nextStatus != RobotExecutionStatus.FAILED
+        && this.currentStep != null && currentStep != null && currentStep < this.currentStep)
       throw new IllegalArgumentException("currentStep must not decrease");
     if (nextStatus == RobotExecutionStatus.SUCCEEDED
         && progressPercent.compareTo(BigDecimal.valueOf(100)) != 0)
@@ -127,8 +129,17 @@ public class RobotExecution {
     lastReportSequence = sequence;
     lastReportHash = reportHash;
     status = nextStatus;
-    this.currentStep = currentStep;
-    this.progressPercent = progressPercent;
+    // 실패 보고의 진행률/단계는 실패한 지점이 아니라 Jetson 프로세스가 초기화한 값일 수 있다.
+    // terminal 상태는 반영하되 화면에 이미 노출된 진행 정보가 뒤로 가지 않도록 보존한다.
+    if (nextStatus != RobotExecutionStatus.FAILED || this.currentStep == null) {
+      this.currentStep = currentStep;
+    } else if (currentStep != null) {
+      this.currentStep = Math.max(this.currentStep, currentStep);
+    }
+    if (nextStatus != RobotExecutionStatus.FAILED
+        || progressPercent.compareTo(this.progressPercent) >= 0) {
+      this.progressPercent = progressPercent;
+    }
     if (nextStatus == RobotExecutionStatus.STARTING && startedAt == null) startedAt = occurredAt;
     if (nextStatus == RobotExecutionStatus.SUCCEEDED
         || nextStatus == RobotExecutionStatus.CANCELED

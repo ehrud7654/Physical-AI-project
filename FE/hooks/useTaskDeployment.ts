@@ -8,6 +8,7 @@ import {
   createRobotExecution,
   fetchDeployment,
   fetchDeployments,
+  fetchRobotExecution,
   fetchTaskReadiness,
   type Deployment,
 } from '@/services';
@@ -61,6 +62,16 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
     }, 2000);
     return () => window.clearInterval(timer);
   }, [record, robotId]);
+
+  useEffect(() => {
+    if (!execution || ['SUCCEEDED', 'FAILED', 'CANCELED'].includes(execution.status)) return;
+    const timer = window.setInterval(() => {
+      void fetchRobotExecution(robotId, execution.id)
+        .then(setExecution)
+        .catch(() => setError('작업 실행 상태를 확인하지 못했어요.'));
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [execution, robotId]);
 
   const deploy = async () => {
     if (!work || !taskVersionId || pending) return;
