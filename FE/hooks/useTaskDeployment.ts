@@ -12,6 +12,16 @@ import {
   type Deployment,
 } from '@/services';
 
+/**
+ * 배포 실패 사유는 로봇 에이전트가 던진 예외 원문(프리사인드 URL·AWS 키 ID 포함)이 그대로 내려올 때가 있다.
+ * 사용자에게는 원인만 남기고 원문은 숨긴다.
+ */
+function deploymentErrorMessage({ message }: { code: string; message: string }): string {
+  if (/40[34]|not found|forbidden/i.test(message)) return '로봇에 내려받을 모델 파일을 찾을 수 없어요. 관리자에게 문의해 주세요.';
+  if (message.includes('http') || message.length > 120) return '작업 버전을 로봇에 배포하지 못했어요. 잠시 후 다시 시도해 주세요.';
+  return message;
+}
+
 export function useTaskDeployment(work: SavedWork | undefined, robotId: string) {
   const [record, setRecord] = useState<Deployment | null>(null);
   const [readiness, setReadiness] = useState<TaskReadinessResult | null>(null);
@@ -86,7 +96,7 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
   return {
     ready,
     pending: pending || !!record && record.status !== 'SUCCEEDED' && record.status !== 'FAILED' && record.status !== 'CANCELED',
-    error: record?.error?.message ?? error,
+    error: record?.error ? deploymentErrorMessage(record.error) : error,
     version: work?.version,
     readiness,
     deploymentId: record?.id ?? null,
