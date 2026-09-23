@@ -266,10 +266,11 @@ class OrchestratorNode(Node):
             for model in models:
                 svid = model["skillVersionId"]
                 iid = model.get("deploymentItemId")
+                # actionSpace 는 검증하지 않는다 — tgz 번들이 그대로 런타임에 전달되고
+                # 런타임이 형식(EEF pose 등)을 처리한다. 오케스트레이터는 다운로드·무결성만 본다.
                 asp = model.get("actionSpace")
-                if asp is not None and asp not in st.ACTION_SPACES:
-                    fail_item(iid, "CONTRACT_MISMATCH", f"{svid} actionSpace {asp} 미지원")
-                    return
+                if asp:
+                    self.get_logger().info(f"{svid} actionSpace={asp}")
                 cv = model.get("contractVersion")   # 정책 계약(umi-policy-v1) — 명령 계약과 별개
                 if cv:
                     self.get_logger().info(f"{svid} 모델 contractVersion={cv}")
