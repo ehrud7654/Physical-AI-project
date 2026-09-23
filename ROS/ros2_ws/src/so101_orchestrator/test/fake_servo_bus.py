@@ -8,8 +8,22 @@ pty(가상 시리얼)를 만들고 LINK 경로에 심볼릭 링크를 건 뒤, s
 - 서보 ID 1~6. 진단은 정상값(온도 30C·전압 12.4V·토크 ON·status 0).
 - SYNC_WRITE/WRITE 로 목표 위치가 오면 즉시 도달한 것으로 반영(present = goal).
 - 실물 없는 테스트 전용. /dev/ttyTHS1 은 건드리지 않는다.
+
+젯슨에서 팔 없이 BE 실행 테스트 (고아 방지 위해 systemd 임시 유닛으로 띄운다):
+  sudo systemd-run --unit=so101-fake-servo --uid=a103 --gid=a103 /usr/bin/python3 \\
+      ~/S15P21A103/ROS/ros2_ws/src/so101_orchestrator/test/fake_servo_bus.py
+  sudo mkdir -p /etc/systemd/system/robot-orchestrator.service.d
+  # override.conf: ExecStart= 비우고 원래 ExecStart 에 아래 두 개 추가
+  #   -p runtime_move:=false -p motor_port:=/tmp/so101_fake_servo
+  sudo systemctl daemon-reload && sudo systemctl restart robot-orchestrator
+원복:
+  sudo systemctl stop so101-fake-servo
+  sudo rm -r /etc/systemd/system/robot-orchestrator.service.d
+  sudo systemctl daemon-reload && sudo systemctl restart robot-orchestrator
+카메라는 별도: bash ~/Workspace/stanford_umi_demo/setup/adb_local.sh forward tcp:8765 tcp:8765
 """
 import os
+import signal
 import sys
 import tty
 
@@ -76,6 +90,8 @@ def handle(sid, instr, params):
 
 
 def main():
+    # systemctl stop 은 SIGTERM — 기본 동작은 finally 없이 죽어 링크가 남는다 → 정상 종료로 변환
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     master, slave = os.openpty()
     tty.setraw(slave)                  # 에코·줄 단위 처리 끔 (클라이언트 열기 전에도 raw)
     if os.path.lexists(LINK):
