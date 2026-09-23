@@ -1,3 +1,6 @@
+# device secret 등 — 절대 커밋 금지. deploy/.env.example 을 복사해 만든다.
+.env
+
 # 런타임 venv — 젯슨 aarch64 전용 바이너리(수 GB). setup_runtime.sh 로 생성.
 .venv/
 

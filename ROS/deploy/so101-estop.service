@@ -1,0 +1,14 @@
+[Unit]
+Description=SO-101 E-stop bridge (/estop -> 파일 플래그 + 하드웨어 정지)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# @ROS_ROOT@ 는 install.sh 가 실제 경로로 치환한다.
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source @ROS_ROOT@/ros2_ws/install/setup.bash && exec ros2 run so101_safety estop_bridge'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
