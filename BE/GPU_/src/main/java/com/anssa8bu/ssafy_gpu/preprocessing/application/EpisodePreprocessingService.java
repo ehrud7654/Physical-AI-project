@@ -97,14 +97,16 @@ public class EpisodePreprocessingService {
             .filter(
                 episode ->
                     episode.inputRole()
-                        == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole.MAPPING)
+                        == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole
+                            .MAPPING)
             .toList();
     List<LocalEpisode> demonstrations =
         episodes.stream()
             .filter(
                 episode ->
                     episode.inputRole()
-                        == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole.DEMONSTRATION)
+                        == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole
+                            .DEMONSTRATION)
             .toList();
     if (mappings.size() != 1)
       throw new IllegalStateException("전처리에는 Mapping Episode가 정확히 하나 필요합니다.");
@@ -127,15 +129,14 @@ public class EpisodePreprocessingService {
           episode,
           root.resolve(
                   episode.inputRole()
-                          == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.TrainingEpisodeRole.MAPPING
+                          == com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels
+                              .TrainingEpisodeRole.MAPPING
                       ? "raw_mapping"
                       : "raw")
               .resolve(sessionDirectory(episode)));
     }
     log.info(
-        "Episode 압축 해제 완료: trainingJobId={}, episodeCount={}",
-        claim.job().id(),
-        episodes.size());
+        "Episode 압축 해제 완료: trainingJobId={}, episodeCount={}", claim.job().id(), episodes.size());
     boolean acquired = false;
     try {
       log.info("UMI 전처리 실행 슬롯 대기: trainingJobId={}, jobId={}", claim.job().id(), jobId);

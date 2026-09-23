@@ -21,7 +21,7 @@ public final class GpuTrainingApiModels {
   public record BaseModelData(UUID skillVersionId, int version, String downloadUrl,
       Instant expiresAt, String contentType, long sizeBytes, String sha256,
       String architecture, String framework, String frameworkVersion, String contractVersion) {}
-  public record JobData(UUID id, String skillKey, TrainingInputMode inputMode,
+  public record JobData(UUID id, UUID ownerId, String skillKey, TrainingInputMode inputMode,
       TrainingMode trainingMode, BaseModelData baseModel,
       Map<String,Object> datasetQuery, String inputSnapshotSha256, List<EpisodeData> episodes) {}
   public record ClaimResponse(JobData job, int attempt, String leaseToken, Instant leaseExpiresAt,

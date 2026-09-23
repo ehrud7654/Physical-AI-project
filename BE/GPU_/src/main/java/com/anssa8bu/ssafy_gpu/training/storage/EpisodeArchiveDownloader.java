@@ -31,8 +31,7 @@ public class EpisodeArchiveDownloader {
         properties
             .storageRoot()
             .resolve("training-inputs")
-            .resolve(claim.job().id().toString())
-            .resolve(Integer.toString(claim.attempt()))
+            .resolve(claim.job().ownerId().toString())
             .toAbsolutePath()
             .normalize();
     try {
@@ -59,37 +58,59 @@ public class EpisodeArchiveDownloader {
       throw new IllegalStateException("허용되지 않은 Episode 경로입니다.");
     Path temporary = directory.resolve(episode.episodeId() + ".part").normalize();
 
-    if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
-      verify(target, archive.sizeBytes(), archive.sha256());
-      return localEpisode(episode, inputOrder, target);
-    }
-    if (!archive.expiresAt().isAfter(Instant.now()))
-      throw new IllegalStateException("Episode Presigned URL이 만료되었습니다: " + episode.episodeId());
-
-    log.info("Episode 다운로드 시작: episodeId={}, inputOrder={}", episode.episodeId(), inputOrder);
-    try {
-      HttpRequest request = HttpRequest.newBuilder(URI.create(archive.downloadUrl())).GET().build();
-      HttpResponse<Path> response =
-          client.send(request, HttpResponse.BodyHandlers.ofFile(temporary));
-      if (response.statusCode() < 200 || response.statusCode() >= 300)
-        throw new IllegalStateException("Episode 다운로드 실패: HTTP " + response.statusCode());
-      verify(temporary, archive.sizeBytes(), archive.sha256());
-      try {
-        Files.move(
-            temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-      } catch (AtomicMoveNotSupportedException ignored) {
-        Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+    synchronized (lockFor(target)) {
+      if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+        try {
+          verify(target, archive.sizeBytes(), archive.sha256());
+          log.info(
+              "Episode 캐시 재사용: episodeId={}, inputOrder={}, storageKey={}",
+              episode.episodeId(),
+              inputOrder,
+              localEpisode(episode, inputOrder, target).storageKey());
+          return localEpisode(episode, inputOrder, target);
+        } catch (Exception invalidCache) {
+          log.warn("Episode 캐시 검증 실패로 다시 다운로드합니다: episodeId={}", episode.episodeId());
+          Files.deleteIfExists(target);
+        }
       }
-      String storageKey = localEpisode(episode, inputOrder, target).storageKey();
-      log.info(
-          "Episode 다운로드 및 검증 완료: episodeId={}, sizeBytes={}, storageKey={}",
-          episode.episodeId(),
-          archive.sizeBytes(),
-          storageKey);
-      return localEpisode(episode, inputOrder, target);
-    } finally {
-      Files.deleteIfExists(temporary);
+      if (!archive.expiresAt().isAfter(Instant.now()))
+        throw new IllegalStateException("Episode Presigned URL이 만료되었습니다: " + episode.episodeId());
+
+      log.info("Episode 다운로드 시작: episodeId={}, inputOrder={}", episode.episodeId(), inputOrder);
+      try {
+        HttpRequest request =
+            HttpRequest.newBuilder(URI.create(archive.downloadUrl())).GET().build();
+        HttpResponse<Path> response =
+            client.send(request, HttpResponse.BodyHandlers.ofFile(temporary));
+        if (response.statusCode() < 200 || response.statusCode() >= 300)
+          throw new IllegalStateException("Episode 다운로드 실패: HTTP " + response.statusCode());
+        verify(temporary, archive.sizeBytes(), archive.sha256());
+        try {
+          Files.move(
+              temporary,
+              target,
+              StandardCopyOption.ATOMIC_MOVE,
+              StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException ignored) {
+          Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+        String storageKey = localEpisode(episode, inputOrder, target).storageKey();
+        log.info(
+            "Episode 다운로드 및 검증 완료: episodeId={}, sizeBytes={}, storageKey={}",
+            episode.episodeId(),
+            archive.sizeBytes(),
+            storageKey);
+        return localEpisode(episode, inputOrder, target);
+      } finally {
+        Files.deleteIfExists(temporary);
+      }
     }
+  }
+
+  private final Map<Path, Object> downloadLocks = new java.util.concurrent.ConcurrentHashMap<>();
+
+  private Object lockFor(Path target) {
+    return downloadLocks.computeIfAbsent(target, ignored -> new Object());
   }
 
   private LocalEpisode localEpisode(EpisodeData episode, int inputOrder, Path target) {

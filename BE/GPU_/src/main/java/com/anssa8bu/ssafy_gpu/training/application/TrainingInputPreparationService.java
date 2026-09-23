@@ -6,12 +6,12 @@ import com.anssa8bu.ssafy_gpu.training.dto.TrainingJobModels.ClaimResponse;
 import com.anssa8bu.ssafy_gpu.training.storage.BaseModelDownloader;
 import com.anssa8bu.ssafy_gpu.training.storage.EpisodeArchiveDownloader;
 import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState;
+import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState.ActiveTraining;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CancellationException;
-import com.anssa8bu.ssafy_gpu.worker.WorkerRuntimeState.ActiveTraining;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import org.slf4j.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -28,7 +28,9 @@ public class TrainingInputPreparationService {
   private final ExecutorService executor;
   private final ConcurrentHashMap<String, Preparation> preparations = new ConcurrentHashMap<>();
 
-  private static String key(UUID jobId, int attempt) { return jobId + ":" + attempt; }
+  private static String key(UUID jobId, int attempt) {
+    return jobId + ":" + attempt;
+  }
 
   private static final class Preparation {
     private Thread thread;
@@ -36,16 +38,35 @@ public class TrainingInputPreparationService {
     private boolean finished;
     private volatile boolean canceled;
 
-    synchronized void attach() { thread = Thread.currentThread(); check(); }
+    synchronized void attach() {
+      thread = Thread.currentThread();
+      check();
+    }
+
     synchronized void cancel() {
       canceled = true;
       // Never interrupt an in-flight create request: it may already have launched a process.
       if (thread != null && !launching && !finished) thread.interrupt();
     }
-    synchronized void launching() { check(); launching = true; }
-    synchronized void finish() { finished = true; thread = null; }
-    synchronized boolean finished() { return finished; }
-    synchronized boolean mayHaveRun() { return launching; }
+
+    synchronized void launching() {
+      check();
+      launching = true;
+    }
+
+    synchronized void finish() {
+      finished = true;
+      thread = null;
+    }
+
+    synchronized boolean finished() {
+      return finished;
+    }
+
+    synchronized boolean mayHaveRun() {
+      return launching;
+    }
+
     void check() {
       if (canceled || Thread.currentThread().isInterrupted())
         throw new CancellationException("학습 취소 요청을 받았습니다.");
@@ -70,17 +91,24 @@ public class TrainingInputPreparationService {
   }
 
   public synchronized void prepare(ClaimResponse claim, int gpuIndex) {
-    if (state.activeTrainingAssignments().stream().noneMatch(value ->
-        value.trainingJobId().equals(claim.job().id()) && value.attempt() == claim.attempt())) return;
+    if (state.activeTrainingAssignments().stream()
+        .noneMatch(
+            value ->
+                value.trainingJobId().equals(claim.job().id())
+                    && value.attempt() == claim.attempt())) return;
     var preparation = new Preparation();
     preparations.put(key(claim.job().id(), claim.attempt()), preparation);
     executor.submit(() -> prepareNow(claim, gpuIndex, preparation));
   }
 
   public synchronized void cancel(ActiveTraining assignment) {
-    var current = state.activeTrainingAssignments().stream()
-        .filter(value -> value.trainingJobId().equals(assignment.trainingJobId())
-            && value.attempt() == assignment.attempt()).findFirst();
+    var current =
+        state.activeTrainingAssignments().stream()
+            .filter(
+                value ->
+                    value.trainingJobId().equals(assignment.trainingJobId())
+                        && value.attempt() == assignment.attempt())
+            .findFirst();
     if (current.isEmpty()) {
       preparations.remove(key(assignment.trainingJobId(), assignment.attempt()));
       return;
@@ -112,7 +140,8 @@ public class TrainingInputPreparationService {
         // No training process was launched.
       }
     }
-    reportCanceled(assignment, "preparation-canceled-" + runId, assignment.lastForwardedSequence() + 1);
+    reportCanceled(
+        assignment, "preparation-canceled-" + runId, assignment.lastForwardedSequence() + 1);
   }
 
   private void cancelRun(ActiveTraining assignment, String runId) {
@@ -125,7 +154,9 @@ public class TrainingInputPreparationService {
     }
     // A process can finish just before the cancellation arrives; EC2 still owns the intent.
     if (Set.of("COMPLETED", "FAILED", "LOST").contains(run.status())) {
-      reportCanceled(assignment, "run-canceled-" + runId,
+      reportCanceled(
+          assignment,
+          "run-canceled-" + runId,
           Math.max(run.sequence(), assignment.lastForwardedSequence()) + 2);
     }
     // CANCELED is forwarded by the run monitor using its normal event sequence.
@@ -133,8 +164,13 @@ public class TrainingInputPreparationService {
 
   private void reportCanceled(ActiveTraining assignment, String eventId, long sequence) {
     if (assignment.leaseExpiresAt().isAfter(Instant.now())) {
-      events.canceled(assignment.trainingJobId(), assignment.attempt(), assignment.leaseToken(),
-          eventId, sequence, Instant.now());
+      events.canceled(
+          assignment.trainingJobId(),
+          assignment.attempt(),
+          assignment.leaseToken(),
+          eventId,
+          sequence,
+          Instant.now());
     }
     // If the lease expired, EC2's lease recovery owns the terminal state.
     state.release(assignment.gpuIndex(), assignment.trainingJobId(), assignment.attempt());

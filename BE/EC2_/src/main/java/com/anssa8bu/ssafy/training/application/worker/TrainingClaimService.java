@@ -59,7 +59,7 @@ public class TrainingClaimService {
     else job.claim(request.workerId(), request.storageNodeId(), request.gpuIndex(), request.gitRev(),
         tokens.hash(token), expiry);
     var skill=skills.findById(job.getSkillId()).orElseThrow();
-    var data=new JobData(job.getId(), skill.getSkillKey(), job.getInputMode(), job.getTrainingMode(),
+    var data=new JobData(job.getId(), job.getOwnerId(), skill.getSkillKey(), job.getInputMode(), job.getTrainingMode(),
         baseModel(job), job.getDatasetQuery(), job.getInputSnapshotSha256(), manifests.create(job.getId()));
     cache(job,expiry);
     return Optional.of(new ClaimResponse(data,job.getAttempt(),token,expiry,heartbeatSeconds));

@@ -76,6 +76,7 @@ public final class TrainingJobModels {
 
   public record JobData(
       UUID id,
+      UUID ownerId,
       String skillKey,
       TrainingInputMode inputMode,
       TrainingMode trainingMode,
