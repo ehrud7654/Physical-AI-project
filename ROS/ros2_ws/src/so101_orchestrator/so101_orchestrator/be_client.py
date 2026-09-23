@@ -17,9 +17,14 @@ FastAPI 같은 서버 프레임워크 없음 — httpx 클라이언트만.
 """
 from __future__ import annotations
 
+import functools
 import json
 import time
 from typing import Callable
+
+# systemd 아래선 stdout 이 블록 버퍼링돼 로그가 늦게·한꺼번에 나온다(연결 원인 추적 불가).
+# 이 모듈의 print 는 전부 즉시 flush.
+print = functools.partial(print, flush=True)  # noqa: A001
 
 try:
     import httpx
