@@ -9,6 +9,7 @@ import {
   fetchDeployment,
   fetchDeployments,
   fetchRobotExecution,
+  fetchRobotExecutions,
   fetchTaskReadiness,
   type Deployment,
 } from '@/services';
@@ -38,13 +39,16 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
       return;
     }
     try {
-      const [validation, deployments] = await Promise.all([
+      const [validation, deployments, executions] = await Promise.all([
         fetchTaskReadiness(work.id, taskVersionId, robotId),
         fetchDeployments(robotId),
+        fetchRobotExecutions(robotId),
       ]);
       setReadiness(validation);
       setRecord(deployments.find((item) => item.taskVersionId === taskVersionId &&
         ['PENDING', 'DOWNLOADING', 'VERIFYING', 'APPLYING', 'SUCCEEDED'].includes(item.status)) ?? null);
+      setExecution(executions.data.find((item) => item.taskVersionId === taskVersionId &&
+        ['REQUESTED', 'STARTING', 'RUNNING', 'CANCEL_REQUESTED'].includes(item.status)) ?? null);
       setError('');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '실행 준비 상태를 확인하지 못했어요.');

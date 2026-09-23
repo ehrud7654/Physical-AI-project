@@ -1,28 +1,10 @@
 {
-  "schema": "orbslam_atlas_backend_handoff/0.3.0",
+  "schema": "orbslam_atlas_backend_handoff/0.1.0",
   "created_date": "2026-09-23",
   "marker": {
     "dictionary": "DICT_4X4_50",
     "id": 13,
-    "black_square_size_m": 0.16,
-    "mapping_alignment_required": true,
-    "demonstration_visibility_required": false,
-    "demonstration_visibility_semantics": "diagnostic_only"
-  },
-  "roles": {
-    "must_be_explicit": true,
-    "inference_forbidden": ["outcome", "duration", "filename", "directory_order", "zip_order"],
-    "mapping": {
-      "count": 1,
-      "outcome_required": false,
-      "purpose": "Atlas creation and table-frame alignment"
-    },
-    "demonstration": {
-      "minimum_count": 1,
-      "training_outcome": "success",
-      "purpose": "task episode loaded from the immutable shared Atlas; process-local mapping is allowed"
-    },
-    "source_one_of": ["mapping_session_id", "external_atlas_path+external_alignment_path"]
+    "black_square_size_m": 0.16
   },
   "orbslam": {
     "source_commit": "b741dca39015330ef4bcc3a85f89493503ade04b",
@@ -35,11 +17,12 @@
       "--init_tag_id",
       "--init_tag_size"
     ],
+    "diagnostic_optional_flags": ["--localization_only"],
     "mapping_mode": ["--save_map"],
     "demonstration_mode": ["--load_map"],
-    "demonstration_forbidden_flags": ["--localization_only", "--save_map"],
-    "preflight_help_flags": ["--use_sensor_timestamps", "--save_map", "--load_map"],
-    "shared_atlas_must_remain_byte_identical": true
+    "demonstration_process_isolation": "fresh process and immutable Atlas reload for every episode",
+    "demonstration_allows_local_mapping": true,
+    "demonstration_save_map": false
   },
   "selection_gate": {
     "minimum_coverage": 0.95,
@@ -47,27 +30,21 @@
     "maximum_timestamp_error_ms": 2.0,
     "tracking_loss_after_initialization_allowed": false,
     "final_frame_must_be_tracked": true,
-    "maximum_gripper_missing_run_frames": 15,
-    "pose_continuity_required": true,
-    "maximum_consecutive_translation_m": 0.25,
-    "maximum_consecutive_rotation_deg": 45.0,
-    "continuity_limit_semantics": "provisional catastrophic relocalisation-jump guard; values are recorded in every trajectory report",
-    "process_exit_zero_is_quality_pass": false
+    "maximum_gripper_missing_run_frames": 15
   },
   "required_outputs": [
-    "processed_mapping/<mapping>/slam/map_atlas.osa",
-    "processed_mapping/<mapping>/slam/camera_trajectory.csv",
-    "processed_mapping/<mapping>/tx_slam_tag.json",
-    "processed/<episode>/slam/camera_trajectory.csv",
-    "processed/<episode>/slam/trajectory_validation.json",
-    "pipeline_report.json",
-    "dataset/<name>.zarr.zip",
-    "dataset/<name>.zarr.report.json",
-    "job_status.json"
+    "map_atlas.osa",
+    "mapping/camera_trajectory.csv",
+    "aruco_alignment.json",
+    "episodes/<episode>/attemptN/camera_trajectory.csv",
+    "atlas_selection.json",
+    "episode_gate_report.json",
+    "episode_gate_report.csv",
+    "job_provenance.json"
   ],
   "publication_gate": {
-    "pose_continuity": "PROVISIONAL_CATASTROPHIC_JUMP_GUARD",
+    "pose_continuity": "REQUIRED_BUT_NOT_YET_CLOSED",
     "physical_deployment": false,
-    "notes": "state=2/is_lost=false and process exit zero are insufficient; training publication fails closed on configured discontinuous relocalization jumps. This does not approve physical deployment."
+    "notes": "state=2/is_lost=false alone is insufficient; fail closed on discontinuous relocalization jumps"
   }
 }

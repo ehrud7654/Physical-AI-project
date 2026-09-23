@@ -71,7 +71,29 @@ SLAM 실행 설정(2026-09-17 확정): `slam/s22_mono_inertial.yaml`의 ORB 특�
   `"slam_tag"`를 적으면 세션마다 자기 마커 좌표로 변환되어 모든 에피소드가 같은 테이블 기준 좌표를 갖는다
   (`world_frame: per_recording_table_tag`). 태그가 있는 에피소드와 없는 에피소드를 섞으면 `build`가 거부한다.
 
-## 3. episode plan과 Zarr 생성
+## 3. Jetson에서 ORB-SLAM3
+
+기존에 빌드한 `umi-orb-slam3:b741dca-s22` 이미지를 재사용한다.
+
+새 Jetson에서 한 번만 빌드할 때는 Stanford UMI 포크를 commit
+`b741dca39015330ef4bcc3a85f89493503ade04b`로 checkout하고 패치를 적용한다.
+
+```sh
+cd /home/a103/Workspace/stanford_umi_demo/third_party/umi-orb-slam3
+git apply /home/a103/Workspace/stanford_umi_demo/final/02_umi_dataset_builder/slam/0001-use-recorded-sensor-timestamps.patch
+sudo sh /home/a103/Workspace/stanford_umi_demo/final/02_umi_dataset_builder/slam/build_orbslam_jetson.sh "$PWD"
+```
+
+```sh
+sudo sh slam/run_orbslam_jetson.sh \
+  /data/raw/rec_123 \
+  /data/processed/rec_123 \
+  /data/processed/rec_123/orbslam
+```
+
+`camera_trajectory.csv`를 PC의 해당 processed 폴더로 가져온다. 첫 3초 보드 구간에서 초기화되지 않거나 작업 중 추적이 끊긴 세션은 학습 입력에서 제외한다.
+
+## 4. episode plan과 Zarr 생성
 
 `configs/episodes.example.json`을 복사해 실제 경로를 적는다. 상대 경로는 plan JSON이 있는 폴더 기준이다.
 

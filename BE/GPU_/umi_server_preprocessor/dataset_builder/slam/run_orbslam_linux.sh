@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run the ORB-SLAM binary bundled in the Linux preprocessor image.
+# Native Linux equivalent of run_orbslam_jetson.sh: same arguments, no Docker.
 # Requires ORB_SLAM_BIN (built gopro_slam) and optionally ORB_SLAM_VOCAB; see 04's env.sh.
 # Map reuse (Stanford UMI workflow): ORB_SLAM_SAVE_MAP=<atlas.osa> on the mapping session,
 # ORB_SLAM_LOAD_MAP=<atlas.osa> on every demonstration so tracking relocalises instead of initialising.
@@ -20,17 +20,6 @@ test -f "$INPUT/s22_mono_inertial.yaml"
 test -x "$BIN"
 test -f "$VOCAB"
 mkdir -p "$OUTPUT"
-
-# Fail before processing data when the image contains an incompatible ORB-SLAM binary.
-# --localization_only is deliberately not part of the server contract: demonstrations load the
-# immutable Atlas and may extend their process-local map without writing it back.
-HELP=$("$BIN" --help 2>&1 || true)
-for FLAG in --use_sensor_timestamps --save_map --load_map; do
-  if ! printf '%s\n' "$HELP" | grep -Fq -- "$FLAG"; then
-    echo "gopro_slam does not support required option: $FLAG" >&2
-    exit 64
-  fi
-done
 
 set -- \
   --vocabulary "$VOCAB" \

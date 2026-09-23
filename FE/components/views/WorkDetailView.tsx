@@ -7,11 +7,13 @@ import { blockCatalog } from '@/lib/blocks';
 import { isSkillBlock, flattenWorkflowBlocks, formatWorkDuration, formatUpdatedAt, getWorkflowIssues } from '@/lib/workflow';
 
 /** 작업 하나의 상세(라우트): 구성 블록, 실행 로봇 선택, 배포·실행·중지. */
-export function WorkDetailView({ workId, onBack, onEdit, onToast }: { workId: string; onBack: () => void; onEdit: (workId: string) => void; onToast: (message: string) => void }) {
+export function WorkDetailView({ workId, initialRobotId, onBack, onEdit, onToast }: { workId: string; initialRobotId?: string; onBack: () => void; onEdit: (workId: string) => void; onToast: (message: string) => void }) {
   const { robots, savedWorks } = useAppStore();
   const work = savedWorks.find((item) => item.id === workId);
-  const [robotId, setRobotId] = useState(() => work && robots.some((robot) => robot.id === work.robotId)
-    ? work.robotId
+  const [robotId, setRobotId] = useState(() => initialRobotId && robots.some((robot) => robot.id === initialRobotId)
+    ? initialRobotId
+    : work && robots.some((robot) => robot.id === work.robotId)
+      ? work.robotId
     : (robots.find((robot) => robot.status === '온라인')?.id ?? robots[0]?.id ?? ''));
   const [executing, setExecuting] = useState(false);
   const deployment = useTaskDeployment(work, robotId);
@@ -28,7 +30,8 @@ export function WorkDetailView({ workId, onBack, onEdit, onToast }: { workId: st
   const robotReady = selectedRobot?.status === '온라인';
   const executionStatus = deployment.execution?.status;
   const executionTerminal = executionStatus === 'SUCCEEDED' || executionStatus === 'FAILED' || executionStatus === 'CANCELED';
-  const isExecuting = executing && !executionTerminal;
+  const executionActive = executionStatus === 'REQUESTED' || executionStatus === 'STARTING' || executionStatus === 'RUNNING' || executionStatus === 'CANCEL_REQUESTED';
+  const isExecuting = executionActive || executing && !executionTerminal;
   const canExecute = deployment.ready && !!selectedRobot && robotReady && !workflowIssues.length && !isExecuting;
 
   const execute = async () => {
