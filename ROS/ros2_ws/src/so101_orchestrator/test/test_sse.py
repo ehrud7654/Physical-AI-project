@@ -157,32 +157,34 @@ def test_verify_size(tmp_path):
 
 
 def _cancel_fake(active, done):
-    """Node 생성 없이 _cancel_execution 을 부를 fake self. 보낸 report status 를 수집."""
+    """Node 생성 없이 _cancel_execution 을 부를 fake self. 보낸 (exec_id, status) 수집.
+    done 은 {exec_id: 마지막상태} dict."""
     from types import SimpleNamespace
     sent = []
     fake = SimpleNamespace(
         _active_exec=active,
-        _done_execs=set(done),
+        _done_execs=dict(done),
         _cancel=SimpleNamespace(set=lambda: None),
         _stop_engines=lambda: None,
         _report_id=lambda: "r",
         _next_seq=lambda _k: 1,
-        _be=SimpleNamespace(report_execution=lambda *a, **k: sent.append(k.get("status", a))),
+        _be=SimpleNamespace(
+            report_execution=lambda eid, rid, seq, status, **k: sent.append((eid, status))),
         get_logger=lambda: SimpleNamespace(info=lambda *a: None),
     )
     return fake, sent
 
 
-def test_cancel_ignores_finished_execution():
-    """이미 종료된 실행에 늦게 온 CANCEL 은 재보고하지 않는다 —
-    안 그러면 종료 상태 위에 CANCELED 가 덮여 BE 가 '작업중' 에 멈춘다."""
-    fake, sent = _cancel_fake(active=None, done={"exec-1"})
+def test_cancel_finished_reechoes_final_status():
+    """이미 종료된 실행에 온 CANCEL 은 마지막 종료 상태를 멱등 재전송한다 —
+    무시하면 BE 가 ACK 를 못 받아 CANCEL 을 무한 재전송(폭주)한다."""
+    fake, sent = _cancel_fake(active=None, done={"exec-1": "SUCCEEDED"})
     OrchestratorNode._cancel_execution(fake, {"executionId": "exec-1"})
-    assert sent == []                       # 종료된 실행 → 아무것도 안 보냄
+    assert sent == [("exec-1", "SUCCEEDED")]     # 원래 상태 그대로 재응답(취소로 안 덮음)
 
 
 def test_cancel_reports_unknown_execution():
     """실행 중도 아니고 종료 기록도 없는 exec 의 CANCEL 은 한 번 CANCELED 로 보고한다."""
-    fake, sent = _cancel_fake(active=None, done=set())
+    fake, sent = _cancel_fake(active=None, done={})
     OrchestratorNode._cancel_execution(fake, {"executionId": "exec-2"})
     assert len(sent) == 1

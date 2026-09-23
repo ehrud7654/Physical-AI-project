@@ -125,7 +125,9 @@ class OrchestratorNode(Node):
         self.create_subscription(JointState, "/joint_states", self._on_joint_state, 10)
         self._cancel = threading.Event()        # 실행 중단 플래그 — SSE 콜백에서 즉시 세팅
         self._active_exec: str | None = None    # 실행 중 executionId
-        self._done_execs: set[str] = set()      # 이미 종료 보고한 실행 — 늦은 CANCEL 중복 차단
+        # 종료 보고한 실행 → 마지막 종료 상태(SUCCEEDED/FAILED/CANCELED).
+        # 그 실행에 CANCEL 이 다시 오면 같은 상태를 멱등 재전송해 BE 재전송 폭주를 멈춘다.
+        self._done_execs: dict[str, str] = {}
 
         self._seq: dict[str, int] = {}          # 리포트 스트림별 sequence(단조증가)
         self._seen_cmds: set[str] = set()       # commandId 중복 실행 차단(세션 한정, 재시작시 리셋)
@@ -220,7 +222,9 @@ class OrchestratorNode(Node):
         ctype = cmd.get("type")
         cid = cmd.get("commandId")
         # commandId 중복 실행 차단 — BE가 ACK 전까지 같은 명령 재전송하므로 필수.
-        if cid is not None:
+        # 단 CANCEL 은 제외: BE 는 CANCELED 응답을 받을 때까지 재전송하므로, 무시하면
+        # 폭주한다. CANCEL 은 매번 처리하되 _cancel_execution 이 멱등(같은 상태 재응답)이다.
+        if cid is not None and ctype != bc.CMD_CANCEL_EXECUTION:
             if cid in self._seen_cmds:
                 self.get_logger().info(f"중복 명령 무시: {ctype} (commandId={cid})")
                 return
@@ -350,11 +354,17 @@ class OrchestratorNode(Node):
         exec_id = cmd.get("executionId")
         key = f"exec:{exec_id}"
 
+        last = {"status": None}    # 마지막으로 보고한 상태 — 종료 후 재응답에 쓴다
+
         def rep(status, **kw):
+            last["status"] = status
             return self._be.report_execution(exec_id, self._report_id(), self._next_seq(key),
                                              status, **kw)
 
         rep(bc.EXEC_STARTING, progress=0.0)
+        # BE 가 실제로 보낸 steps 원문 — timeoutSeconds 등 필드 확인용(디버깅)
+        import json as _json
+        self.get_logger().info(f"EXECUTE_TASK steps 원문: {_json.dumps(cmd.get('steps'), ensure_ascii=False)}")
         plan = st.expand_steps(cmd.get("steps") or [])
         total = len(plan)
         if total == 0:
@@ -391,8 +401,9 @@ class OrchestratorNode(Node):
                 error={"code": "STEP_ERROR", "message": str(e)})
             raise
         finally:
-            if exec_id:
-                self._done_execs.add(exec_id)   # 종료 보고 완료 — 이후 CANCEL 은 무시
+            if exec_id and last["status"]:
+                # 종료 상태 기록 — 이 실행에 CANCEL 이 또 오면 이 상태를 멱등 재응답한다
+                self._done_execs[exec_id] = last["status"]
             self._active_exec = None
 
     def _run_step(self, step: dict):
@@ -457,7 +468,9 @@ class OrchestratorNode(Node):
         limit = float(timeout) if timeout else 0.0
         started = time.monotonic()
         self._check_servo_temp("실행 전")      # 뜨거우면 여기서 중단(런타임 기동 안 함)
-        self.get_logger().info(f"SKILL 실행(umi_runtime): {svid} model={model_dir}")
+        self.get_logger().info(
+            f"SKILL 실행(umi_runtime): {svid} timeoutSeconds={timeout}"
+            f"({'시간제한 없음-정지까지' if limit == 0 else f'{limit:.0f}s 후 완료'}) model={model_dir}")
 
         def on_report(rep: dict):
             # 런타임 사이클 리포트 → BE RUNNING 진행률(사이클 수 기반, 상한 95%)
@@ -510,9 +523,13 @@ class OrchestratorNode(Node):
             self._stop_engines()
             return
         if exec_id in self._done_execs:
-            # 실행이 이미 SUCCEEDED/FAILED/CANCELED 로 끝난 뒤 도착한 CANCEL — 재보고 금지
-            # (안 그러면 종료 상태 위에 CANCELED 가 덮여 BE 상태가 꼬인다)
-            self.get_logger().info(f"이미 종료된 실행 {exec_id} 취소 무시")
+            # 이미 종료된 실행에 온 CANCEL — 마지막 종료 상태를 멱등 재전송한다.
+            # (CANCELED 로 덮으면 SUCCEEDED 가 취소로 바뀌어 꼬이고, 무시하면 BE 가
+            #  ACK 를 못 받아 무한 재전송한다. 같은 상태 재응답이 정답 — BE 가 멈춘다.)
+            final = self._done_execs[exec_id]
+            self._be.report_execution(exec_id, self._report_id(),
+                                      self._next_seq(f"exec:{exec_id}"), final, progress=100.0)
+            self.get_logger().info(f"종료된 실행 {exec_id} CANCEL → {final} 재응답")
             return
         self._stop_engines()
         self._be.report_execution(exec_id, self._report_id(), self._next_seq(f"exec:{exec_id}"),
