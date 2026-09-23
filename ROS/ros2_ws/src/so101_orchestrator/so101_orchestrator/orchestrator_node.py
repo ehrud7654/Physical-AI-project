@@ -116,7 +116,10 @@ class OrchestratorNode(Node):
         elif not token:
             self.get_logger().warn("token·device_secret 둘 다 없음 — BE 인증 없이 시작(요청 401 예상)")
         self._policy = PolicyControl(self)
-        self._estop_pub = self.create_publisher(Bool, "/estop", 10)
+        # estop_bridge 구독이 래치(TRANSIENT_LOCAL)라 발행도 맞춰야 전달된다(안 맞으면 QoS 비호환).
+        self._estop_pub = self.create_publisher(
+            Bool, "/estop",
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._cmd_pub = self.create_publisher(Float64MultiArray, st.COMMAND_TOPIC, 10)
         self._latest: dict[str, float] = {}     # /joint_states name→pos (MOTOR step 기준 자세)
         self.create_subscription(JointState, "/joint_states", self._on_joint_state, 10)

@@ -8,7 +8,12 @@ ROS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # deploy/ 의 부�
 UNIT_DIR=/etc/systemd/system
 DEPLOY="$ROS_ROOT/deploy"
 
+# 서비스는 root 가 아니라 워크스페이스를 빌드한 유저로 돌아야 한다(소유권·DDS 권한).
+# sudo 로 실행되면 $SUDO_USER 가 원래 유저다.
+RUN_USER="${SUDO_USER:-$USER}"
+USER_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
 echo "ROS_ROOT = $ROS_ROOT"
+echo "RUN_USER = $RUN_USER (HOME=$USER_HOME)"
 
 # 1) .env 확인 — 없으면 예시에서 만들고 멈춘다(secret 은 사람이 채워야 한다).
 if [ ! -f "$ROS_ROOT/.env" ]; then
@@ -31,7 +36,8 @@ fi
 
 # 3) 유닛 설치 — @ROS_ROOT@·@USER_HOME@ 치환.
 for unit in so101-estop.service so101-orchestrator.service; do
-    sed -e "s#@ROS_ROOT@#$ROS_ROOT#g" -e "s#@USER_HOME@#$HOME#g" \
+    sed -e "s#@ROS_ROOT@#$ROS_ROOT#g" -e "s#@USER_HOME@#$USER_HOME#g" \
+        -e "s#@USER@#$RUN_USER#g" \
         "$DEPLOY/$unit" | sudo tee "$UNIT_DIR/$unit" >/dev/null
     echo "설치: $UNIT_DIR/$unit"
 done
