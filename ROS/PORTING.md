@@ -28,7 +28,7 @@
 
 ---
 
-## 2. 환경 구성 / 빌드 / 실행
+## 2. 필수 · 선행 파일 및 환경 구성 방법
 
 ### 2.1 필수 · 선행 파일
 
@@ -38,7 +38,6 @@
 | 설치 스크립트 (`setup_runtime.sh`, `deploy/`) | O | 레포 |
 | 의존성 기록 (`requirements-jetson.txt`) | O | 레포 |
 | URDF (`so101_bringup/urdf/`) | O | 레포 |
-| 3D 메시 (STL) | O | 레포 `AI/third_party/so101_mujoco/SO101/assets/` |
 | **wheelhouse (torch 등 휠 ~1GB)** | **X** | **제출물 별첨 `wheelhouse-jetson.tar.gz`** |
 | **device secret (`.env`)** | **X** | BE 에서 발급받아 수동 작성 |
 | venv (`.venv`) | X | `setup_runtime.sh` 로 생성 |
@@ -138,18 +137,7 @@ ros2 run so101_orchestrator orchestrator --ros-args \
 ros2 run so101_safety estop_bridge
 ```
 
-### 2.6 3D 모델링 파일
-
-| 항목 | 경로 |
-|------|------|
-| STL 메시 (10개) | `AI/third_party/so101_mujoco/SO101/assets/*.stl` |
-| 메시 포함 URDF | `AI/third_party/so101_mujoco/SO101/so101_new_calib.urdf` |
-| 제어용 간이 URDF | `ROS/ros2_ws/src/so101_bringup/urdf/so101.urdf.xacro` |
-
-> 제어용 URDF 는 관절 한계·캘리브만 담은 간이본이다. RViz/MoveIt 시각화는
-> 위 메시 포함 URDF 를 사용한다.
-
-### 2.7 하드웨어 연결 (핀맵)
+### 2.6 하드웨어 연결 (핀맵)
 
 | 대상 | 인터페이스 | 값 |
 |------|-----------|-----|
@@ -180,49 +168,8 @@ UART TX/RX/GND → 서보 컨트롤 보드에 연결.
 
 멱등성: 보고는 `reportId` + 단조증가 `sequence`, 명령은 `commandId` 중복 차단.
 
----
-
-## 4. 외부 서비스 정보
-
-| 서비스 | 용도 | 접근 |
-|--------|------|------|
-| 백엔드 API | 명령·배포·상태 (위 3항) | `https://j15a103.p.ssafy.io` |
-| 모델 스토리지 | 모델 번들(tgz) 다운로드 | BE 가 발급한 S3 presigned URL |
-| 시각 동기 | 젯슨 RTC 부재 보정 | `https://www.google.com` 응답 `Date` 헤더 |
-
 식별자:
 - deviceId `51000000-0000-4000-8000-000000000002`
 - robotId `53000000-0000-4000-8000-000000000001`
-- deviceIdentifier `UMI-001`
 
-device secret 은 레포/문서에 포함하지 않으며 `ROS/.env`(권한 600, git 제외)로만 관리한다.
-
----
-
-## 5. DB 스키마 및 덤프
-
-ROS 파트는 **DB 를 사용하지 않는다.** 상태는 BE 가 관리하고, 젯슨은 무상태
-(재시작 시 `GET /robots/me/deployment/current` 로 복구). DB 스키마·덤프는 BE 파트 매뉴얼 참조.
-
----
-
-## 6. 시연 시나리오
-
-1. **부팅** — 젯슨 전원 인가 → `sync-time-http` 가 시각 동기 → `robot-estop`,
-   `robot-orchestrator` 자동 기동. 로그에 `device token 발급/갱신 OK`,
-   `orchestrator 시작 — BE=...` 확인.
-2. **연결 확인** — BE 대시보드에서 로봇 online 표시, heartbeat 수신 확인.
-3. **모델 배포** — BE 에서 학습 모델 배포 명령 → 젯슨이 SSE 로 수신 →
-   번들 다운로드·sha256 검증·적용 → 진행률이 SUCCEEDED 까지 보고됨.
-4. **작업 실행** — BE 에서 작업 실행 명령 → 오케스트레이터가 UMI 런타임을
-   subprocess 로 기동 → 카메라 관측 → 정책 추론 → IK → 서보 구동.
-   사이클별 진행 상태가 BE 로 보고됨.
-5. **안전 시연**
-   - 실행 중 서보 과열/과부하 시 런타임 게이트가 자동 정지(온도 60°C 3연속,
-     부하 750, 저전압 115).
-   - `/estop` 발행(또는 BE estop 명령) → `robot-estop` 이 파일 플래그 생성 →
-     런타임이 다음 동작 직전에 멈춤.
-6. **취소** — BE 취소 명령 → 오케스트레이터가 런타임에 정지 신호 → CANCELED 보고.
-
-시뮬 대체(팔 미연결): 4–6 을 `bus:=fake` + 스텁으로 검증 가능
-(`ros2_ws/src/so101_orchestrator/test/`).
+> device secret 은 레포/문서에 포함하지 않으며 `ROS/.env`(권한 600, git 제외)로만 관리한다.
