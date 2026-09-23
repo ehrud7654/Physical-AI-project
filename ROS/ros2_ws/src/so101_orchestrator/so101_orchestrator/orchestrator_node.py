@@ -370,9 +370,17 @@ class OrchestratorNode(Node):
                     break
                 rep(bc.EXEC_RUNNING, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
                 self._run_step(step)
-            else:                       # break 없이 완주
-                rep(bc.EXEC_SUCCEEDED, current_step=total, progress=100.0)
-                self.get_logger().info(f"실행 {exec_id} 완료 ({total} steps)")
+            else:                       # 모든 step 을 돌았다(break 없음)
+                # 마지막 step 이 취소로 끝났을 수 있다 — SKILL 런타임은 취소 시 조용히
+                # 리턴하므로 여기서 _cancel 을 확인해야 정지를 완료로 오보하지 않는다.
+                # (유한 사이클/타임아웃 완주 = _cancel 미설정 → SUCCEEDED,
+                #  BE/estop 취소 = _cancel 설정 → CANCELED)
+                if self._cancel.is_set():
+                    rep(bc.EXEC_CANCELED, current_step=total, progress=100.0)
+                    self.get_logger().info(f"실행 {exec_id} 취소 (마지막 step 에서)")
+                else:
+                    rep(bc.EXEC_SUCCEEDED, current_step=total, progress=100.0)
+                    self.get_logger().info(f"실행 {exec_id} 완료 ({total} steps)")
                 return
             rep(bc.EXEC_CANCELED, current_step=i, progress=round((i - 1) * 100.0 / total, 1))
             self.get_logger().info(f"실행 {exec_id} 취소 (step {i}/{total})")
