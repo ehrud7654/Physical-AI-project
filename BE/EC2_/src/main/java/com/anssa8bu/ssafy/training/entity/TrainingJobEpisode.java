@@ -13,10 +13,6 @@ public class TrainingJobEpisode {
   @Column(name = "input_order", nullable = false)
   private int inputOrder;
 
-  @Enumerated(EnumType.STRING)
-  @Column(name = "input_role", nullable = false, length = 20)
-  private TrainingEpisodeRole inputRole;
-
   @Column(name = "archive_sha256_snapshot", nullable = false, length = 64)
   private String archiveSha256Snapshot;
 
@@ -46,7 +42,6 @@ public class TrainingJobEpisode {
   public TrainingJobEpisode(
       TrainingJobEpisodeId id,
       int order,
-      TrainingEpisodeRole role,
       String hash,
       String contract,
       EpisodeSource source,
@@ -58,7 +53,6 @@ public class TrainingJobEpisode {
       throw new IllegalArgumentException();
     this.id = Objects.requireNonNull(id);
     inputOrder = order;
-    inputRole = Objects.requireNonNull(role);
     archiveSha256Snapshot = hash;
     contractVersionSnapshot = contract;
     sourceSnapshot = source;
@@ -76,7 +70,4 @@ public class TrainingJobEpisode {
     return inputOrder;
   }
 
-  public TrainingEpisodeRole getInputRole() {
-    return inputRole;
-  }
 }

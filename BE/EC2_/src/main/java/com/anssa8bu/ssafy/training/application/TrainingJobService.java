@@ -80,7 +80,8 @@ public class TrainingJobService {
     if (selected.stream().anyMatch(episode -> !episode.getUmiDeviceId().equals(device.getId())))
       throw new BusinessConflictException(
           "EPISODE_DEVICE_MISMATCH", "선택한 Episode와 UMI 장치가 일치하지 않습니다.");
-    List<TrainingEpisodeInput> trainingInputs = resolveTrainingInputs(selected);
+    List<TrainingEpisodeInput> trainingInputs =
+        selected.stream().map(TrainingEpisodeInput::new).toList();
     TrainingMode trainingMode =
         request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
     SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
@@ -105,7 +106,7 @@ public class TrainingJobService {
     job.planInput(expected, true);
     for (int i = 0; i < trainingInputs.size(); i++) {
       TrainingEpisodeInput input = trainingInputs.get(i);
-      attach(job, input.episode(), i + 1, input.role());
+      attach(job, input.episode(), i + 1);
     }
     job.fixInputSnapshotSha256(inputSnapshotHash(trainingInputs));
     idempotency.complete(
@@ -206,14 +207,12 @@ public class TrainingJobService {
     return request.episodeIds().stream().map(byId::get).toList();
   }
 
-  private void attach(
-      TrainingJob job, Episode episode, int order, TrainingEpisodeRole inputRole) {
+  private void attach(TrainingJob job, Episode episode, int order) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     inputs.save(
         new TrainingJobEpisode(
             new TrainingJobEpisodeId(job.getId(), episode.getId()),
             order,
-            inputRole,
             archive.getSha256(),
             episode.getContractVersion(),
             episode.getSource(),
@@ -223,50 +222,12 @@ public class TrainingJobService {
             clock.instant()));
   }
 
-  private List<TrainingEpisodeInput> resolveTrainingInputs(List<Episode> selected) {
-    List<TrainingEpisodeInput> inputs = new ArrayList<>();
-    for (Episode episode : selected) {
-      String datasetRole = datasetRole(episode);
-      if ("CALIBRATION".equals(datasetRole)) continue;
-      TrainingEpisodeRole role =
-          "MAPPING".equals(datasetRole)
-              ? TrainingEpisodeRole.MAPPING
-              : TrainingEpisodeRole.DEMONSTRATION;
-      inputs.add(new TrainingEpisodeInput(episode, role));
-    }
-    long mappingCount =
-        inputs.stream().filter(input -> input.role() == TrainingEpisodeRole.MAPPING).count();
-    long demonstrationCount =
-        inputs.stream().filter(input -> input.role() == TrainingEpisodeRole.DEMONSTRATION).count();
-    if (mappingCount > 1)
-      throw new BusinessConflictException(
-          "MULTIPLE_MAPPING_EPISODES", "공간 매핑 Episode는 하나만 사용할 수 있습니다.");
-    if (demonstrationCount < 1)
-      throw new BusinessConflictException(
-          "INSUFFICIENT_DEMONSTRATION_EPISODES", "학습에는 시연 Episode가 한 개 이상 필요합니다.");
-    return inputs;
-  }
-
-  private String datasetRole(Episode episode) {
-    Object qualityRole = episode.getQualitySummary().values().get("datasetRole");
-    if (qualityRole != null && !qualityRole.toString().isBlank())
-      return qualityRole.toString().trim().toUpperCase(Locale.ROOT);
-    return archives
-        .findByEpisodeId(episode.getId())
-        .map(EpisodeArchive::getManifestSummary)
-        .map(summary -> summary.details().get("datasetRole"))
-        .filter(Objects::nonNull)
-        .map(Object::toString)
-        .map(value -> value.trim().toUpperCase(Locale.ROOT))
-        .orElse("DEMONSTRATION");
-  }
-
   private String inputSnapshotHash(List<TrainingEpisodeInput> selected) {
     try {
       StringBuilder canonical = new StringBuilder();
       for (int index = 0; index < selected.size(); index++) {
         TrainingEpisodeInput input = selected.get(index);
-        appendSnapshot(canonical, index + 1, input.role(), input.episode());
+        appendSnapshot(canonical, index + 1, input.episode());
       }
       return HexFormat.of().formatHex(
           MessageDigest.getInstance("SHA-256")
@@ -276,15 +237,12 @@ public class TrainingJobService {
     }
   }
 
-  private record TrainingEpisodeInput(Episode episode, TrainingEpisodeRole role) {}
+  private record TrainingEpisodeInput(Episode episode) {}
 
-  private void appendSnapshot(
-      StringBuilder canonical, int order, TrainingEpisodeRole role, Episode episode) {
+  private void appendSnapshot(StringBuilder canonical, int order, Episode episode) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     canonical
         .append(order)
-        .append('|')
-        .append(role)
         .append('|')
         .append(episode.getId())
         .append('|')
