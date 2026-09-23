@@ -1,7 +1,7 @@
 [Unit]
 Description=SO-101 orchestrator (BE 연동·배포·실행·상태보고)
 # 시간동기(sync-time-http)가 끝나야 뜬다 — 시각이 틀리면 JWT/TLS 가 깨진다.
-After=sync-time-http.service so101-estop.service network-online.target
+After=sync-time-http.service robot-estop.service network-online.target
 Requires=sync-time-http.service
 Wants=network-online.target
 
