@@ -23,6 +23,7 @@ nvidia-cusparselt-cu12==0.6.2
 opencv-python-headless==4.11.0.86
 packaging==24.1
 pillow==12.2.0
+pyserial==3.5              # servo_bus.py — ST3215 UART (자기완결 런타임 필수)
 pyyaml==6.0.3
 regex==2026.9.10
 requests==2.34.2
