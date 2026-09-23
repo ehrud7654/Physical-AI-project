@@ -87,6 +87,16 @@ def test_failure_exit_code_and_error(tmp_path):
     assert err and "fake failure" in err
 
 
+def test_no_report_failure_uses_last_line(tmp_path):
+    """report 없이 즉사(import 에러 등)해도 마지막 출력 줄이 사유로 올라온다.
+    → BE error.message 에 '로그 확인' 대신 실제 원인이 담긴다."""
+    ex = _executor(tmp_path, "--crash")
+    code, err = ex.run(tmp_path / "m", tmp_path / "o", move=False, cycles=1,
+                       on_report=lambda _r: None, should_cancel=lambda: False)
+    assert code == 1
+    assert err and "ModuleNotFoundError" in err and "serial" in err
+
+
 def test_sigkill_escalation_when_sigint_ignored(tmp_path):
     """SIGINT 를 씹는 런타임은 유예 후 SIGKILL 로 정리된다(고아 방지의 마지막 수단)."""
     ex = _executor(tmp_path, "--ignore-sigint", "--cycle-sec", "0.1")

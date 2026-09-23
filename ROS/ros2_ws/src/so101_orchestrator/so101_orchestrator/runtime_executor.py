@@ -160,6 +160,8 @@ class RuntimeExecutor:
                 self._log.warn(f"MOVE 입력 실패: {e}")
 
         last_error = None
+        last_line = None        # 마지막 비-JSON 출력 줄 — report 없이 죽을 때 사유로 쓴다
+                                # (예: Traceback 끝 "ModuleNotFoundError: No module named 'serial'")
         buf: list[str] = []
         canceled = False
         try:
@@ -172,6 +174,7 @@ class RuntimeExecutor:
                 if report is None:
                     if line.strip():
                         self._log.info(f"[런타임] {line}")
+                        last_line = line.strip()
                     continue
                 status = str(report.get("status", ""))
                 if status in ("REFUSED", "EXECUTION_FAILED", "INTERRUPTED"):
@@ -183,6 +186,9 @@ class RuntimeExecutor:
         finally:
             code = self._proc.wait()
             self._proc = None
+        # report 로 못 받은 실패 사유는 마지막 출력 줄로 채운다(BE error.message 로 전달됨)
+        if last_error is None and code != 0 and last_line:
+            last_error = last_line[:300]
         return code, last_error
 
     @staticmethod

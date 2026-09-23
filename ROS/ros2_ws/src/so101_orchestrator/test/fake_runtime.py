@@ -35,9 +35,18 @@ def main() -> int:
     p.add_argument("--fail-at", type=int, default=-1, help="이 사이클에서 실패 종료")
     p.add_argument("--ignore-sigint", action="store_true", help="SIGINT 무시(SIGKILL 경로 확인용)")
     p.add_argument("--cycle-sec", type=float, default=0.2)
+    p.add_argument("--crash", action="store_true",
+                   help="JSON report 없이 즉사(import 에러 등 재현) — 마지막 줄이 사유")
     args = p.parse_args()
 
     signal.signal(signal.SIGINT, (lambda *_: None) if args.ignore_sigint else _on_sigint)
+
+    if args.crash:
+        # 진짜 런타임이 import 단계에서 죽는 모양: Traceback 몇 줄 뒤 에러 한 줄, exit 1.
+        print("Traceback (most recent call last):", flush=True)
+        print("  File \"cli.py\", line 14, in <module>", flush=True)
+        print("ModuleNotFoundError: No module named 'serial'", flush=True)
+        return 1
 
     if args.move:
         # 진짜 런타임과 동일: 모터 구동 전 "MOVE" 를 요구한다.
