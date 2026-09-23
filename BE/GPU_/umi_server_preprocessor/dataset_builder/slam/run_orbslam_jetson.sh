@@ -17,6 +17,14 @@ test -f "$INPUT/s22_mono_inertial.yaml"
 mkdir -p "$OUTPUT"
 SESSION=$(cd "$SESSION" && pwd); INPUT=$(cd "$INPUT" && pwd); OUTPUT=$(cd "$OUTPUT" && pwd)
 
+HELP=$(docker run --rm "$IMAGE" /ORB_SLAM3/Examples/Monocular-Inertial/gopro_slam --help 2>&1 || true)
+for FLAG in --use_sensor_timestamps --save_map --load_map; do
+  if ! printf '%s\n' "$HELP" | grep -Fq -- "$FLAG"; then
+    echo "gopro_slam does not support required option: $FLAG" >&2
+    exit 64
+  fi
+done
+
 MAP_MOUNT=""
 MAP_ARGS=""
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -30,7 +38,7 @@ if [ -n "${ORB_SLAM_LOAD_MAP:-}" ]; then
   test -f "$ORB_SLAM_LOAD_MAP"
   MAP_DIR=$(cd "$(dirname "$ORB_SLAM_LOAD_MAP")" && pwd)
   MAP_MOUNT="$MAP_MOUNT -v $MAP_DIR:/map:ro"
-  MAP_ARGS="$MAP_ARGS --load_map /map/$(basename "$ORB_SLAM_LOAD_MAP") --localization_only"
+  MAP_ARGS="$MAP_ARGS --load_map /map/$(basename "$ORB_SLAM_LOAD_MAP")"
 fi
 if [ -n "${ORB_SLAM_SAVE_MAP:-}" ]; then
   # The container can only write to /output, so the map is saved next to the trajectory.

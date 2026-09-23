@@ -21,6 +21,17 @@ test -x "$BIN"
 test -f "$VOCAB"
 mkdir -p "$OUTPUT"
 
+# Fail before processing data when the image contains an incompatible ORB-SLAM binary.
+# --localization_only is deliberately not part of the server contract: demonstrations load the
+# immutable Atlas and may extend their process-local map without writing it back.
+HELP=$("$BIN" --help 2>&1 || true)
+for FLAG in --use_sensor_timestamps --save_map --load_map; do
+  if ! printf '%s\n' "$HELP" | grep -Fq -- "$FLAG"; then
+    echo "gopro_slam does not support required option: $FLAG" >&2
+    exit 64
+  fi
+done
+
 set -- \
   --vocabulary "$VOCAB" \
   --setting "$INPUT/s22_mono_inertial.yaml" \
@@ -39,7 +50,7 @@ if [ -n "$MASK" ] && [ -f "$MASK" ]; then
 fi
 if [ -n "${ORB_SLAM_LOAD_MAP:-}" ]; then
   test -f "$ORB_SLAM_LOAD_MAP"
-  set -- "$@" --load_map "$ORB_SLAM_LOAD_MAP" --localization_only
+  set -- "$@" --load_map "$ORB_SLAM_LOAD_MAP"
 fi
 if [ -n "${ORB_SLAM_SAVE_MAP:-}" ]; then
   mkdir -p "$(dirname "$ORB_SLAM_SAVE_MAP")"

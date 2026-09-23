@@ -78,7 +78,8 @@ tests/test_package.py    빠른 자체검사
   `outcome=success`만 통과한다.
 - ArUco ID 13, 검은 정사각형 한 변 0.16 m는 **Mapping 정렬에 필수**다. 공유 Atlas로
   localization하는 각 Demonstration에서 ID 13이 계속 보이는 것은 필수가 아니며 진단값일 뿐이다.
-- Demonstration은 Mapping Atlas를 `--load_map --localization_only`로 재사용한다. Mapping도 외부 Atlas도
+- Demonstration은 Mapping Atlas를 `--load_map`으로만 재사용한다. 편 내부 local mapping은 허용하지만
+  `--localization_only`와 `--save_map`은 사용하지 않고 Atlas 파일의 처리 전후 SHA-256을 검사한다. Mapping도 외부 Atlas도
   없는 상태에서 에피소드별 독립 map을 만드는 경로는 진단용일 뿐 학습 입력 정본이 아니다.
 - 기존 Atlas를 외부 입력으로 쓸 때는 job 디렉터리 아래의 Atlas·`tx_slam_tag.json` 경로와 두 파일의
   SHA-256을 함께 요청에 보낸다. Mapping 세션과 외부 Atlas를 동시에 지정하면 거부한다.

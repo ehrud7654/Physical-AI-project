@@ -44,6 +44,8 @@ def main() -> None:
         report = validate_orbslam_trajectory.validate(normal)
         assert report["status"] == "pass"
         assert report["pose_continuity"]["status"] == "pass"
+        assert report["pose_coverage"] == 1.0
+        assert report["final_frame_tracked"] is True
         assert report["first_tracked_pose"]["position_m"] == [0.0, 0.0, 0.0]
 
         jumped = Path(directory) / "jumped.csv"
@@ -54,7 +56,9 @@ def main() -> None:
         assert any("pose translation jump" in error for error in report["errors"])
 
     linux_runner = (ROOT / "dataset_builder/slam/run_orbslam_linux.sh").read_text(encoding="utf-8")
-    assert '--load_map "$ORB_SLAM_LOAD_MAP" --localization_only' in linux_runner
+    assert '--load_map "$ORB_SLAM_LOAD_MAP"' in linux_runner
+    assert '--load_map "$ORB_SLAM_LOAD_MAP" --localization_only' not in linux_runner
+    assert "--use_sensor_timestamps --save_map --load_map" in linux_runner
     print("ORB_SLAM_CONTRACT_SELF_TEST_OK")
 
 

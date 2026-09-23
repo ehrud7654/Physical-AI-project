@@ -109,6 +109,8 @@ def validate(csv_path: Path) -> dict:
         "frames": len(parsed),
         "duration_s": parsed[-1]["time"] - parsed[0]["time"],
         "tracked_frames": len(tracked),
+        "pose_coverage": len(tracked) / len(parsed),
+        "final_frame_tracked": bool(parsed[-1]["tracked"]),
         "first_tracked_frame": first["frame"] if first else None,
         "first_tracked_time_s": first["time"] if first else None,
         "tracked_ratio_after_initialization": len(tracked) / len(after_init) if after_init else 0.0,

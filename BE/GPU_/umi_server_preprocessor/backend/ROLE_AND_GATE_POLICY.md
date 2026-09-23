@@ -23,8 +23,10 @@ Mapping `outcome` is ignored because it is not a training episode label. The fix
 
 1. Require `manifest.outcome == "success"` for training candidacy.
 2. Prepare telemetry and gap independently of the Mapping outcome.
-3. Load the aligned shared Atlas and pass `--localization_only` explicitly.
-4. Keep attempt count and the selected complete trajectory in the episode report. Never splice pose rows across runs.
+3. Load the aligned shared Atlas with `--load_map` only. Process-local mapping is allowed, but
+   `--localization_only` and `--save_map` are forbidden for demonstrations.
+4. Verify that the shared Atlas SHA-256 is unchanged after every demonstration.
+5. Keep attempt count and the selected complete trajectory in the episode report. Never splice pose rows across runs.
 
 Direct ID 13 visibility in a Demonstration is not required. If measured, it is a diagnostic field only. The shared aligned Atlas supplies the table frame.
 

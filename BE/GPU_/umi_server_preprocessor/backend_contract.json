@@ -1,5 +1,5 @@
 {
-  "schema": "orbslam_atlas_backend_handoff/0.2.0",
+  "schema": "orbslam_atlas_backend_handoff/0.3.0",
   "created_date": "2026-09-23",
   "marker": {
     "dictionary": "DICT_4X4_50",
@@ -20,7 +20,7 @@
     "demonstration": {
       "minimum_count": 1,
       "training_outcome": "success",
-      "purpose": "localization-only task episode"
+      "purpose": "task episode loaded from the immutable shared Atlas; process-local mapping is allowed"
     },
     "source_one_of": ["mapping_session_id", "external_atlas_path+external_alignment_path"]
   },
@@ -31,13 +31,15 @@
       "--use_sensor_timestamps",
       "--save_map",
       "--load_map",
-      "--localization_only",
       "--mask_img",
       "--init_tag_id",
       "--init_tag_size"
     ],
     "mapping_mode": ["--save_map"],
-    "demonstration_mode": ["--load_map", "--localization_only"]
+    "demonstration_mode": ["--load_map"],
+    "demonstration_forbidden_flags": ["--localization_only", "--save_map"],
+    "preflight_help_flags": ["--use_sensor_timestamps", "--save_map", "--load_map"],
+    "shared_atlas_must_remain_byte_identical": true
   },
   "selection_gate": {
     "minimum_coverage": 0.95,

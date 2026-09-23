@@ -43,7 +43,8 @@ jobs/demo-001/
 ## 중요한 동작
 
 1. Mapping: `--save_map`, ID 13/0.16 m로 Atlas→table 정렬.
-2. Demonstration: 동일 Atlas를 `--load_map --localization_only`로 사용.
+2. Demonstration: 동일 Atlas를 `--load_map`으로만 사용하고 편 내부 local mapping은 허용.
+   `--localization_only`와 `--save_map`은 사용하지 않으며 처리 전후 Atlas SHA-256이 같아야 함.
 3. ORB 종료코드가 0이어도 trajectory 품질 gate를 별도로 적용.
 4. 편별 `pipeline_report.json`에 outcome, 프레임 수, gap marker 검출률·최대 누락,
    시작 pose, tracking loss, pose jump, 포함/제외 사유를 기록.

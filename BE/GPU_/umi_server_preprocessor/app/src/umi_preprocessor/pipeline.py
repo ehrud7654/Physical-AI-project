@@ -94,12 +94,15 @@ def slam_timeout_s(duration_s: float) -> float:
 
 def slam(session: Path, prepared: Path, output: Path, load_map: Path | None = None,
          save_map: Path | None = None, timeout_s: float | None = None) -> dict:
+    if load_map is not None and save_map is not None:
+        raise ValueError("an ORB-SLAM run cannot load and save the shared Atlas at the same time")
     trajectory = output / "camera_trajectory.csv"
     receipt = output / "receipt.json"
     mask = CONFIG_DIR / "s22_slam_mask.png"
     tag_config = CONFIG_DIR / "s22_slam_tag.json"
     binary = Path(os.environ.get("ORB_SLAM_BIN", ""))
-    wanted = {"load_map_sha256": _sha256(load_map) if load_map else None,
+    atlas_sha256 = _sha256(load_map) if load_map else None
+    wanted = {"load_map_sha256": atlas_sha256,
               "mask_sha256": _sha256(mask) if mask.exists() else None,
               "tag_config_sha256": _sha256(tag_config),
               "settings_sha256": _sha256(SLAM_SETTINGS),
@@ -135,13 +138,23 @@ def slam(session: Path, prepared: Path, output: Path, load_map: Path | None = No
                     process.wait()
                     returncode = "timeout"
                     log.write(f"\n[pipeline] killed after {timeout_s:.0f}s (hung at shutdown?)\n")
+            if load_map and _sha256(load_map) != atlas_sha256:
+                raise RuntimeError("shared Atlas was modified while processing a demonstration")
             if returncode == 0 and trajectory.exists() and (save_map is None or save_map.exists()):
                 break
             trajectory.unlink(missing_ok=True)
         else:
             raise RuntimeError(f"ORB-SLAM3 failed three times (last: {returncode}); see {output / 'slam.log'}")
         receipt.write_text(json.dumps(wanted), encoding="utf-8")
+    if load_map and _sha256(load_map) != atlas_sha256:
+        raise RuntimeError("shared Atlas was modified while processing a demonstration")
     validation = validate_orbslam_trajectory.validate(trajectory)
+    validation["atlas_integrity"] = {
+        "status": "pass" if load_map else "not_applicable",
+        "sha256_before": atlas_sha256,
+        "sha256_after": _sha256(load_map) if load_map else None,
+        "save_map_used": save_map is not None,
+    }
     (output / "trajectory_validation.json").write_text(json.dumps(validation, indent=2), encoding="utf-8")
     return validation
 
@@ -396,6 +409,11 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
                         f"tracked coverage {validation['tracked_ratio_after_initialization']:.4f} "
                         f"< {DEMO_MIN_TRACKED_RATIO:.4f}"
                     )
+                if load_map and validation["pose_coverage"] < DEMO_MIN_TRACKED_RATIO:
+                    reasons.append(
+                        f"pose coverage {validation['pose_coverage']:.4f} "
+                        f"< {DEMO_MIN_TRACKED_RATIO:.4f}"
+                    )
                 if load_map and validation.get("first_tracked_time_s") is not None \
                         and validation["first_tracked_time_s"] > LATE_RELOCALIZATION_S:
                     reasons.append(
@@ -410,9 +428,11 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
                 shutil.rmtree(processed / "slam", ignore_errors=True)
             row["slam"] = {key: validation[key] for key in (
                 "status", "first_tracked_time_s", "tracked_frames",
+                "pose_coverage", "final_frame_tracked",
                 "loss_episodes_after_initialization", "path_length_m")}
             row["slam"]["first_tracked_pose"] = validation.get("first_tracked_pose")
             row["slam"]["pose_continuity"] = validation.get("pose_continuity")
+            row["slam"]["atlas_integrity"] = validation.get("atlas_integrity")
             row["slam"]["attempts"] = attempt
             first = validation["first_tracked_time_s"]
             if load_map and first is not None and first > LATE_RELOCALIZATION_S:
