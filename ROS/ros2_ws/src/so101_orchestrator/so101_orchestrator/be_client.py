@@ -136,6 +136,13 @@ class BEClient:
                         print("[BEClient] command-stream 연결됨")
                         # iter_lines 는 이벤트 경계(빈 줄)를 안 넘겨줄 때가 있어 직접 줄 분리.
                         self._parse_sse(self._iter_lines(resp), on_command, should_stop)
+                # 여기 도달 = BE 가 스트림을 에러 없이 닫음(EOF). 곧장 재연결하면
+                # 초당 수십 번 연결 폭주 → 대기 후 재연결(에러 경로와 같은 백오프).
+                if should_stop():
+                    break
+                print(f"[BEClient] command-stream 종료, {backoff:.0f}s 후 재연결")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, self.max_reconnect_backoff)
             except Exception as e:  # noqa: BLE001 — 어떤 오류든 재연결로 흡수
                 if should_stop():
                     break
