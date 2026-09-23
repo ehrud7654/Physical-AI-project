@@ -61,7 +61,7 @@ export function WorkDetailView({ workId, initialRobotId, onBack, onEdit, onToast
         <div className="execution-actions"><button className="secondary-button" type="button" onClick={() => onEdit(work.id)}>수정하기</button><button className="primary-button" type="button" disabled={!canExecute} onClick={() => void execute()}>{isExecuting ? '작업 실행 요청됨' : executionTerminal ? '▶ 다시 실행' : '▶ 작업 실행'}</button></div>
         {!robotReady && <p className="execution-disabled-reason">온라인 상태의 로봇에서만 작업을 실행할 수 있어요.</p>}
         {isExecuting && <div className="library-running"><i /><span>선택한 로봇에서 작업을 실행하고 있어요.</span><button className="danger-button" type="button" onClick={() => void deployment.cancel().then(() => { setExecuting(false); onToast('작업 중지를 요청했어요.'); })}>작업 중지</button></div>}
-        {executionStatus === 'FAILED' && <div className="deployment-status failed" role="alert"><strong>작업 실행 실패</strong><p className="deployment-error"><span aria-hidden="true">!</span>{deployment.execution?.error?.message ?? '로봇에서 작업을 실행하지 못했어요.'}</p></div>}
+        {executionStatus === 'FAILED' && <div className="deployment-status failed" role="alert"><strong>작업 실행 실패</strong><p className="deployment-error"><span aria-hidden="true">!</span>오류가 발견되어 작업을 중지합니다</p></div>}
         {executionStatus === 'SUCCEEDED' && <div className="deployment-status" role="status"><strong>작업 실행 완료</strong><p>로봇이 작업을 정상적으로 완료했어요.</p></div>}
         {executionStatus === 'CANCELED' && <div className="deployment-status" role="status"><strong>작업 실행 취소됨</strong><p>로봇의 작업 실행이 취소되었어요.</p></div>}
       </section>
