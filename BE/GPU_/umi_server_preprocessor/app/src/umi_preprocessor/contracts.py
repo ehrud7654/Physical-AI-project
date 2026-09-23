@@ -85,19 +85,66 @@ def extract_archive(archive: Path, destination: Path) -> None:
     raise ValueError(f"unsupported archive: {archive.name}")
 
 
-def validate_raw_layout(root: Path, require_mapping: bool = True) -> dict:
+def validate_raw_layout(
+    root: Path,
+    require_mapping: bool = True,
+    mapping_session_id: str | None = None,
+    demonstration_session_ids: list[str] | None = None,
+    external_atlas: Path | None = None,
+    external_alignment: Path | None = None,
+) -> dict:
     root = Path(root).resolve()
     sessions = _validate_sessions(root / "raw")
     mappings = _validate_sessions(root / "raw_mapping")
     if len(sessions) < 1:
         raise ValueError("at least 1 demonstration session is required")
-    if require_mapping and not mappings:
-        raise ValueError("raw_mapping must contain one mapping session")
+    session_names = {item["session"] for item in sessions}
+    mapping_names = {item["session"] for item in mappings}
+    selected_demos = demonstration_session_ids or sorted(session_names)
+    if len(selected_demos) != len(set(selected_demos)):
+        raise ValueError("demonstrationSessionIds contains duplicates")
+    unknown_demos = sorted(set(selected_demos) - session_names)
+    if unknown_demos:
+        raise ValueError(f"unknown demonstration sessions: {', '.join(unknown_demos)}")
+    if mapping_session_id is not None:
+        validate_name(mapping_session_id, "mappingSessionId")
+        if mapping_session_id not in mapping_names:
+            raise ValueError(f"mapping session is not under raw_mapping/: {mapping_session_id}")
+    if set(selected_demos) & mapping_names:
+        raise ValueError("a session cannot be both Mapping and Demonstration")
+
+    external_pair = external_atlas is not None or external_alignment is not None
+    if external_pair and not (external_atlas is not None and external_alignment is not None):
+        raise ValueError("external Atlas and alignment must be provided together")
+    if external_pair and mapping_session_id is not None:
+        raise ValueError("choose either mappingSessionId or external Atlas, not both")
+    if external_pair:
+        if not external_atlas.is_file() or not external_alignment.is_file():
+            raise ValueError("external Atlas or alignment file does not exist")
+    elif require_mapping:
+        if mapping_session_id is None and len(mappings) != 1:
+            raise ValueError(
+                "exactly one raw_mapping session is required when mappingSessionId is omitted"
+            )
+        if not mappings:
+            raise ValueError("raw_mapping must contain one Mapping session or external Atlas must be supplied")
+
+    role_source = (
+        "external_atlas" if external_pair else
+        "mapping_session_id" if mapping_session_id is not None else
+        "raw_mapping_layout"
+    )
     return {
         "root": str(root),
-        "demonstration_sessions": len(sessions),
+        "demonstration_sessions": len(selected_demos),
+        "demonstration_session_ids": selected_demos,
         "mapping_sessions": len(mappings),
-        "success_sessions": sum(item["outcome"] == "success" for item in sessions),
+        "mapping_session_id": mapping_session_id,
+        "role_source": role_source,
+        "success_sessions": sum(
+            item["outcome"] == "success" and item["session"] in selected_demos for item in sessions
+        ),
+        "mapping_outcome_is_training_label": False,
     }
 
 

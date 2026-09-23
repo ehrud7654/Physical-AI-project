@@ -39,7 +39,7 @@ if [ -n "$MASK" ] && [ -f "$MASK" ]; then
 fi
 if [ -n "${ORB_SLAM_LOAD_MAP:-}" ]; then
   test -f "$ORB_SLAM_LOAD_MAP"
-  set -- "$@" --load_map "$ORB_SLAM_LOAD_MAP"
+  set -- "$@" --load_map "$ORB_SLAM_LOAD_MAP" --localization_only
 fi
 if [ -n "${ORB_SLAM_SAVE_MAP:-}" ]; then
   mkdir -p "$(dirname "$ORB_SLAM_SAVE_MAP")"

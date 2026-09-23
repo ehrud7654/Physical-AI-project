@@ -5,7 +5,7 @@ ARG ORB_SLAM_COMMIT=b741dca39015330ef4bcc3a85f89493503ade04b
 ARG JOBS=4
 
 LABEL org.opencontainers.image.title="SSAFY UMI ORB-SLAM Atlas Preprocessor" \
-      org.opencontainers.image.version="2026.09.23-v1" \
+      org.opencontainers.image.version="2026.09.23-orbslam-v2" \
       org.opencontainers.image.revision="b741dca39015330ef4bcc3a85f89493503ade04b"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,6 +32,7 @@ RUN git clone https://github.com/cheng-chi/ORB_SLAM3.git /opt/ORB_SLAM3 && \
 COPY dataset_builder /opt/umi/dataset_builder
 COPY track_a /opt/umi/track_a
 COPY backend_contract.json SOURCE_PROVENANCE.txt /opt/umi/handoff/
+COPY backend /opt/umi/handoff/backend
 COPY app /opt/umi/app
 
 ENV PATH=/opt/venv/bin:$PATH \

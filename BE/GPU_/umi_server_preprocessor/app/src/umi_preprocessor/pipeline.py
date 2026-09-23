@@ -44,6 +44,7 @@ MAPPING_ATTEMPTS = 3
 MINIMUM_TRAINING_EPISODES = 1
 DEMO_ATTEMPTS = 2
 LATE_RELOCALIZATION_S = 0.5
+DEMO_MIN_TRACKED_RATIO = 0.95
 
 
 def _sha256(path: Path) -> str:
@@ -276,25 +277,71 @@ def build(root: Path, sessions: list[str], dataset_dir: Path, name: str, allow_u
 
 def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
         allow_tracking_loss: bool = False, require_mapping: bool = False,
-        allow_missing_tag: bool = False) -> dict:
+        allow_missing_tag: bool = False, mapping_session_id: str | None = None,
+        demonstration_session_ids: list[str] | None = None,
+        external_atlas: Path | None = None, external_alignment: Path | None = None) -> dict:
     root = Path(root).resolve()
-    sessions = _sessions(root / "raw")
+    available_sessions = {path.name: path for path in _sessions(root / "raw")}
+    requested_sessions = demonstration_session_ids or sorted(available_sessions)
+    unknown_sessions = sorted(set(requested_sessions) - set(available_sessions))
+    if unknown_sessions:
+        raise FileNotFoundError(f"unknown demonstration sessions: {', '.join(unknown_sessions)}")
+    sessions = [available_sessions[name] for name in requested_sessions]
     if not sessions:
         raise FileNotFoundError(f"no app sessions under {root / 'raw'}")
     if not os.environ.get("ORB_SLAM_BIN"):
         raise EnvironmentError("ORB_SLAM_BIN is not set; run `source env.sh` first")
     dataset_config = json.loads((CONFIG_DIR / "dataset.json").read_text(encoding="utf-8"))
     report = {"root": str(root), "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-              "status": "running", "dataset_name": dataset_name, "sessions": []}
+              "status": "running", "dataset_name": dataset_name, "sessions": [],
+              "roles": {
+                  "mapping_session_id": mapping_session_id,
+                  "demonstration_session_ids": requested_sessions,
+                  "role_inference_from_outcome_duration_filename_or_order": False,
+              }}
     report_path = root / "pipeline_report.json"
     write = lambda: report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")  # noqa: E731
 
     mappings = _sessions(root / MAPPING_DIR)
     mapping_info = None
-    if mappings:
-        if len(mappings) > 1:
-            print(f"{len(mappings)} mapping sessions found; using the newest {mappings[-1].name}", flush=True)
-        mapping_info = build_map(root, mappings[-1])
+    if external_atlas is not None or external_alignment is not None:
+        if external_atlas is None or external_alignment is None:
+            raise ValueError("external Atlas and alignment must be provided together")
+        alignment = json.loads(Path(external_alignment).read_text(encoding="utf-8"))
+        if alignment.get("status") not in (None, "pass", "PASS"):
+            raise ValueError("external Atlas alignment status is not pass")
+        load_slam_tag(external_alignment)  # rigid-transform validation
+        mapping_info = {
+            "source": "external_atlas",
+            "session": None,
+            "map": str(Path(external_atlas).resolve()),
+            "map_sha256": _sha256(Path(external_atlas)),
+            "slam_tag": str(Path(external_alignment).resolve()),
+            "slam_tag_sha256": _sha256(Path(external_alignment)),
+            "outcome_used_as_training_label": False,
+        }
+        report["roles"]["role_source"] = "external_atlas"
+        report["mapping"] = mapping_info
+        print(f"external Atlas {mapping_info['map_sha256'][:12]} with verified alignment", flush=True)
+    elif mappings:
+        by_name = {path.name: path for path in mappings}
+        if mapping_session_id is not None:
+            if mapping_session_id not in by_name:
+                raise FileNotFoundError(f"mapping session not found under {root / MAPPING_DIR}: {mapping_session_id}")
+            selected_mapping = by_name[mapping_session_id]
+            report["roles"]["role_source"] = "mapping_session_id"
+        elif len(mappings) == 1:
+            selected_mapping = mappings[0]
+            report["roles"]["role_source"] = "raw_mapping_layout"
+        else:
+            raise ValueError("multiple Mapping sessions exist; mappingSessionId is required")
+        mapping_info = build_map(root, selected_mapping)
+        mapping_manifest = json.loads((selected_mapping / "manifest.json").read_text(encoding="utf-8"))
+        mapping_info.update(
+            source="mapping_session",
+            recorded_outcome=mapping_manifest.get("outcome"),
+            outcome_used_as_training_label=False,
+        )
         report["mapping"] = mapping_info
         print(f"mapping {mapping_info['session']}  tracked {mapping_info['tracked_frames']} frames, "
               f"tag samples {mapping_info['tag_samples_used']}", flush=True)
@@ -302,6 +349,7 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
         raise FileNotFoundError(f"no mapping session under {root / MAPPING_DIR}")
     else:
         report["mapping"] = None
+        report["roles"]["role_source"] = "independent_per_episode_diagnostic"
         print(f"no {MAPPING_DIR}/ session: each recording initialises SLAM on its own and keeps its own "
               "world origin", flush=True)
     load_map = Path(mapping_info["map"]) if mapping_info else None
@@ -318,8 +366,18 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
             row.update(outcome=recording["manifest"].get("outcome"), frames=recording["frame_count"],
                        duration_s=round(recording["duration_s"], 2))
             prepared = prepare(session, processed)
-            row["aruco"] = {"detection_rate": round(prepared["gripper"]["detection_rate"], 4),
-                            "max_missing_run": prepared["gripper"]["maximum_missing_run_frames"]}
+            row["gripper_markers"] = {
+                "semantics": "jaw markers used to derive gap; not table ArUco ID 13",
+                "detection_rate": round(prepared["gripper"]["detection_rate"], 4),
+                "max_missing_run": prepared["gripper"]["maximum_missing_run_frames"],
+            }
+            row["table_marker_id13"] = {
+                "required_for_demonstration": not bool(load_map),
+                "semantics": (
+                    "diagnostic_only; shared aligned Atlas supplies the table frame"
+                    if load_map else "required to align this independently initialised episode"
+                ),
+            }
             attempts_file = processed / "slam_attempts.json"
             for attempt in range(1, DEMO_ATTEMPTS + 1):
                 validation = slam(session, processed, processed / "slam", load_map=load_map,
@@ -333,6 +391,17 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
                 reasons = gate(row["outcome"], validation, dataset_config["minimum_episode_frames"],
                                dataset_config.get("maximum_lost_frames_after_initialization"),
                                allow_unrated, allow_tracking_loss)
+                if load_map and validation["tracked_ratio_after_initialization"] < DEMO_MIN_TRACKED_RATIO:
+                    reasons.append(
+                        f"tracked coverage {validation['tracked_ratio_after_initialization']:.4f} "
+                        f"< {DEMO_MIN_TRACKED_RATIO:.4f}"
+                    )
+                if load_map and validation.get("first_tracked_time_s") is not None \
+                        and validation["first_tracked_time_s"] > LATE_RELOCALIZATION_S:
+                    reasons.append(
+                        f"first pose {validation['first_tracked_time_s']:.3f}s > "
+                        f"{LATE_RELOCALIZATION_S:.3f}s"
+                    )
                 tracking_only = reasons and all("lost" in r or "tracked" in r for r in reasons)
                 if not tracking_only or used >= DEMO_ATTEMPTS:
                     attempt = used
@@ -342,6 +411,8 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
             row["slam"] = {key: validation[key] for key in (
                 "status", "first_tracked_time_s", "tracked_frames",
                 "loss_episodes_after_initialization", "path_length_m")}
+            row["slam"]["first_tracked_pose"] = validation.get("first_tracked_pose")
+            row["slam"]["pose_continuity"] = validation.get("pose_continuity")
             row["slam"]["attempts"] = attempt
             first = validation["first_tracked_time_s"]
             if load_map and first is not None and first > LATE_RELOCALIZATION_S:
@@ -371,6 +442,8 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
         print(f"{session.name}  {'INCLUDED' if not reasons else 'excluded: ' + '; '.join(reasons)}"
               f"{'  WARN: ' + '; '.join(row['warnings']) if row['warnings'] else ''}", flush=True)
     report["included"] = len(included)
+    report["submitted"] = len(sessions)
+    report["excluded"] = len(sessions) - len(included)
     write()
     if len(included) < MINIMUM_TRAINING_EPISODES:
         report["stopped"] = (f"only {len(included)} session(s) passed the gate; "
@@ -390,17 +463,24 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
         tag_path = shared_tag or per_session_tags.get(name)
         try:
             recording = load_recording(root / "raw" / name, require_success=not allow_unrated)
-            _, selected, episode_report = build_episode(
+            episode_data, selected, episode_report = build_episode(
                 recording, root / "processed" / name / "slam/camera_trajectory.csv",
                 root / "processed" / name / "gripper_width.csv", camera_tcp, episode_config,
                 np.linalg.inv(load_slam_tag(tag_path)) if tag_path else None)
             row["episode_frames"] = int(len(selected))
+            row["episode_gate_metrics"] = episode_report
+            row["start_tcp_6dof"] = {
+                "position_m": episode_data["robot0_eef_pos"][0].astype(float).tolist(),
+                "rotation_axis_angle_rad": episode_data["robot0_eef_rot_axis_angle"][0].astype(float).tolist(),
+                "frame": "table_tag" if tag_path else "slam_origin_of_this_recording",
+            }
         except ValueError as error:
             row["included"] = False
             row["excluded_because"].append(f"episode assembly: {error}")
             included.remove(name)
             print(f"{name}  excluded at assembly: {error}", flush=True)
     report["included"] = len(included)
+    report["excluded"] = len(sessions) - len(included)
     if len(included) < MINIMUM_TRAINING_EPISODES:
         report["stopped"] = (f"only {len(included)} session(s) survived episode assembly; "
                              f"need at least {MINIMUM_TRAINING_EPISODES}")
@@ -416,6 +496,7 @@ def run(root: Path, dataset_name: str = "dataset", allow_unrated: bool = False,
                 row["excluded_because"].append("no table marker while other sessions have one (mixed world frames)")
         included = [s for s in included if s in per_session_tags]
         report["included"] = len(included)
+        report["excluded"] = len(sessions) - len(included)
     dataset_report = build(root, included, root / "dataset", dataset_name, allow_unrated,
                            Path(mapping_info["slam_tag"]) if mapping_info else None, per_session_tags,
                            trim_override_s=0.0 if mapping_info else None)
