@@ -6,12 +6,13 @@
 #
 #   ./setup_runtime.sh [WHEELHOUSE_경로]
 #
-# 기본 wheelhouse: ~/Workspace/stanford_umi_demo/wheelhouse-jetson
-# 결과: ROS/.venv  (git 추적 안 함 — .gitignore)
+# 기본 wheelhouse: ROS/wheelhouse-jetson  (제출물 별첨 tar.gz 를 여기 풀면 인자 없이 실행)
+#   tar xzf wheelhouse-jetson.tar.gz -C <ROS>/
+# 결과: ROS/.venv  (git 추적 안 함 — .gitignore, 약 1GB)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WHEELHOUSE="${1:-$HOME/Workspace/stanford_umi_demo/wheelhouse-jetson}"
+WHEELHOUSE="${1:-$HERE/wheelhouse-jetson}"
 VENV="$HERE/.venv"
 
 if [ ! -d "$WHEELHOUSE" ]; then

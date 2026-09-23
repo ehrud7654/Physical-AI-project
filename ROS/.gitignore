@@ -4,8 +4,9 @@
 # 런타임 venv — 젯슨 aarch64 전용 바이너리(수 GB). setup_runtime.sh 로 생성.
 .venv/
 
-# 오프라인 휠 모음 — 크고 젯슨 전용. 젯슨 로컬에 둔다.
+# 오프라인 휠 모음(약 1GB, 젯슨 전용) — 제출물 별첨 tar.gz 로 전달, 깃 제외.
 wheelhouse-jetson/
+wheelhouse-jetson.tar.gz
 
 # 배포로 받은 모델 번들(tgz)과 압축 해제본 — 산출물
 models/
