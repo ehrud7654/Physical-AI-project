@@ -47,8 +47,9 @@ export function WorkDetailView({ workId, initialRobotId, onBack, onEdit, onToast
 
   return <>
     <button className="back-link" type="button" onClick={onBack}>← 작업 목록</button>
+    {/* 학습 상세·동작 상세와 같은 페이지 헤딩(h1) — 카드 안 11px 라벨+22px 이름은 목록 옆 좁은 패널용 스타일이었다. */}
+    <div className="page-heading list-page-heading title-divider"><div><h1>{work.name}</h1><p>{formatUpdatedAt(work.updatedAt)} 수정</p></div><button className="secondary-button page-create-button" type="button" onClick={() => onEdit(work.id)}>수정하기</button></div>
     <section className="card saved-work-detail work-detail-page" aria-label="작업 상세">
-      <div className="saved-work-detail-head"><div><p className="eyebrow">작업 상세</p><h2>{work.name}</h2><span>{work.id} · {formatUpdatedAt(work.updatedAt)} 수정</span></div><button className="secondary-button" type="button" onClick={() => onEdit(work.id)}>수정하기</button></div>
       <div className="work-summary-metrics"><div><small>학습된 동작</small><strong>{skillCount}<em>개</em></strong></div><div><small>제어 블록</small><strong>{controlCount}<em>개</em></strong></div><div><small>예상 실행 시간</small><strong>{formatWorkDuration(work.estimatedSeconds).replace('약 ', '')}</strong></div></div>
 
       <section className="detail-section"><div className="detail-section-title"><div><h3>작업 흐름</h3></div><span>{blocks.length}개 블록</span></div><div className="library-workflow-flow">

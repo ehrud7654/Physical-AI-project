@@ -2575,3 +2575,25 @@ html{overflow-y:auto!important}
   .episode-select-list label em{grid-column:3;grid-row:2;font-size:13px}
 }
 
+/* 작업 상세 글자 크기 (S15P21A103-176)
+   원래 작업 목록 옆 좁은 패널용(8~13px)을 전체 화면에 쓰고 있어 '작업 상세' 11px · 섹션 제목 16px · 본문 10~12px으로 제각각이었다.
+   제목은 다른 상세처럼 page-heading(h1 32 · 부제 15)으로 올리고, 본문은 동작 상세 기준으로 맞춘다:
+   섹션 제목 19(= 동작 상세 '학습 현황') > 항목 이름 15 > 본문 14 > 보조 13. 카드 폭도 헤딩과 같은 1280 레일로. */
+.work-detail-page{max-width:1280px}
+.app-shell .work-detail-page .work-summary-metrics small{font-size:13px}
+.app-shell .work-detail-page .work-summary-metrics strong{font-size:24px}
+.app-shell .work-detail-page .work-summary-metrics strong em{font-size:14px}
+.app-shell .work-detail-page .detail-section-title h3{font-size:19px}
+.app-shell .work-detail-page .detail-section-title p{font-size:14px}
+.app-shell .work-detail-page .detail-section-title>span{font-size:13px}
+.app-shell .work-detail-page .flow-order{font-size:13px}
+.app-shell .work-detail-page .library-flow-block strong{font-size:15px}
+.app-shell .work-detail-page .library-flow-block small,.app-shell .work-detail-page .library-flow-block p{font-size:13px}
+.app-shell .work-detail-page .library-flow-block>em{font-size:13px}
+.app-shell .work-detail-page .execution-setup>label,.app-shell .work-detail-page .execution-setup select{font-size:14px}
+.app-shell .work-detail-page .preflight-grid strong{font-size:14px}
+.app-shell .work-detail-page .preflight-grid small{font-size:13px}
+.app-shell .work-detail-page .deployment-status strong{font-size:15px}
+.app-shell .work-detail-page .deployment-status p{font-size:14px}
+.app-shell .work-detail-page .execution-disabled-reason,.app-shell .work-detail-page .library-running{font-size:13px}
+
