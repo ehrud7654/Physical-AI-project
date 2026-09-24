@@ -2636,3 +2636,26 @@ html{overflow-y:auto!important}
 .app-shell .content .safety-note strong{font-size:14px}
 .app-shell .content .work-stage-card .preflight-grid>div>span,.app-shell .content .safety-note>span{font-size:13px}
 
+/* 전체 화면 점검 반영 (S15P21A103-176) — 12개 화면 × 7개 해상도(375~3840) 실측 결과 */
+/* 대시보드 최근 학습: 1200~1440에서 진행률이 카드 밖으로 넘쳤다(1280: 96px, 화면 끝에서 % 잘림).
+   칸 최소 폭 합(이름 180 + 상태 76 + 막대 88 + % 58 + 간격)이 2단 배치 카드 안쪽 폭보다 커서다.
+   이름 칸이 줄 수 있게 하고 막대 폭을 56~96으로 — 막대가 최대폭까지 먼저 늘어 이름 몫을 가져가지 않게. ≤680은 별도 2줄 배치라 그대로. */
+@media(min-width:681px){
+  .compact-training-list>button{grid-template-columns:minmax(0,1fr) auto minmax(56px,96px) auto}
+  .compact-training-progress{grid-template-columns:minmax(40px,1fr) auto;column-gap:10px}
+  .compact-training-progress>em{min-width:0}
+}
+/* 짧은 화면의 불필요한 스크롤: 내용은 화면 안에서 끝나는데 아래 여백 64px(zoom 곱)이 밀려 빈 여백만큼 스크롤이 생겼다.
+   위 여백과 같은 28px로 — 긴 화면도 끝에 28px은 남는다. */
+.app-shell>.content{padding-bottom:28px}
+/* 13px 미만으로 남아 있던 글자(대시보드 카드 보조문·진행률, 학습 상세 항목 라벨, 학습 생성 단계 바, 로봇 상세 요약, 작업 상세 체크 아이콘) */
+.app-shell .overview-cards p,.app-shell .compact-training-progress>em,.app-shell .detail-metrics small,.app-shell .detail-metrics p{font-size:13px}
+.app-shell .data-detail-grid dt,.app-shell .data-detail-grid dd small,.app-shell .training-modal-progress strong{font-size:13px}
+.app-shell .content .redesigned-steps strong{font-size:14px}
+.app-shell .content .redesigned-steps span{font-size:13px}
+.app-shell .content .work-detail-page .preflight-grid>div>span{font-size:13px}
+.app-shell .history-list small{font-size:13px}
+/* 모달·선택 모드 글자(점검에서 추가로 확인): 모달 윗줄 라벨·안내문·확인 문구 10px, 입력 라벨 11px, 도움말 8.8px, 선택 개수 12px → 하한 13px */
+.app-shell .modal-heading p,.app-shell .modal-note,.app-shell .confirm-modal p,.app-shell .register-modal small,.app-shell .skill-create-modal small{font-size:13px}
+.app-shell .register-modal label{font-size:13px}
+.app-shell .selected-count,.app-shell .selection-summary span{font-size:13px}
