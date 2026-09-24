@@ -2546,3 +2546,32 @@ body:has(.app-shell){background:var(--product-canvas)!important}
    html의 overflow-y:scroll은 필요 없어도 스크롤바 트랙을 항상 그려서 auto로 바꾸고, 폭 흔들림은 scrollbar-gutter:stable이 계속 막는다. */
 html{overflow-y:auto!important}
 .app-shell,.app-shell>.content{min-height:0!important}
+
+/* 수집 데이터 행 표기 통일 (S15P21A103-176)
+   동작 상세 수집 데이터 표와 학습 생성 데이터 선택이 같은 행 표기를 쓴다.
+   위 시:분:초(굵게·고정폭 숫자) / 아래 오늘·어제·날짜 — 한 번에 몰아 올리면 분까지 같아 초가 구분의 핵심이다.
+   수집 핸들은 보통 전부 같아 흐리게, 길이는 따로 열로 뺀다(다른 열처럼 왼쪽 정렬 — 오른쪽 정렬은 옆 상태 열에 달라붙어 보였다). */
+.dataset-when{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.25}
+.dataset-when strong{color:var(--product-ink);font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.dataset-when small{display:block;margin:0!important;color:var(--product-muted);font-size:13px!important}
+.dataset-handle{color:var(--product-muted);font-size:14px}
+.dataset-length{font-size:14px;font-variant-numeric:tabular-nums}
+/* 학습 생성: 카드처럼 크던 행을 표 행 높이로 줄인다 — [☐][시각][핸들][길이][상태] */
+.episode-select-list{gap:6px}
+.episode-select-list label{grid-template-columns:22px 104px minmax(0,140px) 64px 1fr;gap:16px;padding:10px 18px;cursor:pointer}
+.episode-select-list label em{justify-self:end;font-size:13px;text-align:right}
+/* 글자 위계: 시각 16 > 핸들·길이 14 > 상태·날짜 13. 이 화면에만 남아 있던 12px(툴바·상태·요약 설명)을 폰트 하한 13px 위로 올린다. */
+.episode-selection-toolbar span{font-size:14px}
+.episode-selection-summary strong{font-size:14px}
+.episode-selection-summary span{font-size:13px}
+.episode-select-list label.disabled{cursor:not-allowed}
+@media(max-width:680px){
+  /* 폰: 윗줄 시각(+날짜)·길이, 아랫줄 핸들·상태. 체크박스는 두 줄에 걸친다. 표는 2열로 접혀 길이도 왼쪽 정렬. */
+  .episode-select-list label{grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;padding:10px 14px}
+  .episode-select-list label>input{grid-row:1 / span 2}
+  .episode-select-list .dataset-when{grid-column:2;grid-row:1}
+  .episode-select-list .dataset-length{grid-column:3;grid-row:1}
+  .episode-select-list .dataset-handle{grid-column:2;grid-row:2}
+  .episode-select-list label em{grid-column:3;grid-row:2;font-size:13px}
+}
+
