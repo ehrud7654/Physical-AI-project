@@ -20,7 +20,7 @@ import {
  */
 function deploymentErrorMessage({ message }: { code: string; message: string }): string {
   if (/40[34]|not found|forbidden/i.test(message)) return '로봇에 내려받을 모델 파일을 찾을 수 없어요. 관리자에게 문의해 주세요.';
-  if (message.includes('http') || message.length > 120) return '작업 버전을 로봇에 배포하지 못했어요. 잠시 후 다시 시도해 주세요.';
+  if (message.includes('http') || message.length > 120) return '로봇에 작업을 적용하지 못했어요. 잠시 후 다시 시도해 주세요.';
   return message;
 }
 
@@ -62,7 +62,7 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
   useEffect(() => {
     if (!record || record.status === 'SUCCEEDED' || record.status === 'FAILED' || record.status === 'CANCELED') return;
     const timer = window.setInterval(() => {
-      void fetchDeployment(robotId, record.id).then(setRecord).catch(() => setError('배포 상태를 확인하지 못했어요.'));
+      void fetchDeployment(robotId, record.id).then(setRecord).catch(() => setError('적용 상태를 확인하지 못했어요.'));
     }, 2000);
     return () => window.clearInterval(timer);
   }, [record, robotId]);
@@ -84,17 +84,17 @@ export function useTaskDeployment(work: SavedWork | undefined, robotId: string) 
     try {
       const validation = await fetchTaskReadiness(work.id, taskVersionId, robotId);
       setReadiness(validation);
-      if (!validation.valid) throw new Error(validation.blockingReasons[0]?.message ?? '배포할 수 없는 작업입니다.');
+      if (!validation.valid) throw new Error(validation.blockingReasons[0]?.message ?? '로봇에 적용할 수 없는 작업이에요.');
       setRecord(await createDeployment(robotId, taskVersionId));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '배포하지 못했어요.');
+      setError(cause instanceof Error ? cause.message : '로봇에 적용하지 못했어요.');
     } finally {
       setPending(false);
     }
   };
 
   const execute = async () => {
-    if (!record || record.status !== 'SUCCEEDED' || !taskVersionId) throw new Error('완료된 배포가 필요합니다.');
+    if (!record || record.status !== 'SUCCEEDED' || !taskVersionId) throw new Error('로봇에 최신 작업을 먼저 적용해 주세요.');
     const created = await createRobotExecution({ robotId, taskVersionId, deploymentId: record.id });
     setExecution(created);
     return created;

@@ -39,6 +39,6 @@ export const deploymentStatusMeta: Record<SkillOverview['deploymentStatus'], { l
 
 export const recoveryActionLabel: Record<Dataset['recoveryAction'], string> = {
   WAIT: '처리가 끝날 때까지 기다려 주세요.', RETRY_UPLOAD: '데이터를 다시 전송해 주세요.', RECORD_AGAIN: '동작을 다시 보여주세요.',
-  SET_LABEL: '데이터의 동작 정보를 확인해 주세요.', EXTEND_RETENTION: '보관 기간을 연장해 주세요.', CREATE_DEPLOYMENT: '로봇에 작업을 먼저 배포해 주세요.',
+  SET_LABEL: '데이터의 동작 정보를 확인해 주세요.', EXTEND_RETENTION: '보관 기간을 연장해 주세요.', CREATE_DEPLOYMENT: '로봇에 작업을 먼저 적용해 주세요.',
   RETRY: '잠시 후 다시 시도해 주세요.', CONTACT_SUPPORT: '관리자에게 문의해 주세요.', NONE: '',
 };
