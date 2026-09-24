@@ -30,6 +30,7 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
     id: episode.id,
     seq,
     fileName: episode.fileName ?? '파일 정보 없음',
+    uploadedAt: episode.uploadedAt,
     date: episode.uploadedAt ? formatDate(episode.uploadedAt) : '업로드 시각 없음',
     duration: formatDuration(episode.durationMs),
     skillKey: episode.skillKey ?? '',
@@ -47,11 +48,14 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}. ${pad(d.getMonth() + 1)}. ${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}. ${pad(d.getMonth() + 1)}. ${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/** 영상 길이. `00:01`은 1분 1초로도 읽혀 `1초` / `1분 5초` / `2분`으로 쓴다. */
 function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (!minutes) return `${seconds}초`;
+  return seconds ? `${minutes}분 ${seconds}초` : `${minutes}분`;
 }

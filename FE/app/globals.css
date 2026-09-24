@@ -292,12 +292,12 @@ html.figma-desktop-capture .landing-hero{height:770px!important;min-height:770px
 
 /* Saved workflow library */
 .library-page-heading{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px}.library-page-heading .primary-button{min-width:132px}.workflow-library-toolbar{display:flex;align-items:center;gap:14px;max-width:1320px;margin:0 auto 16px;padding:14px 16px}.workflow-search{position:relative;flex:1;max-width:430px}.workflow-search>span{position:absolute;top:50%;left:13px;color:#667085;font-size:18px;transform:translateY(-54%)}.workflow-search input{width:100%;height:40px;padding-left:39px}
-.workflow-library-layout{display:grid;grid-template-columns:minmax(570px,1.18fr) minmax(400px,.82fr);gap:18px;max-width:1320px;margin:auto;align-items:start}.saved-work-list,.saved-work-detail{overflow:hidden}.saved-work-detail-head h2{margin:0 0 5px;font-size:17px}.saved-work-columns,.saved-work-row{display:grid;grid-template-columns:minmax(260px,1fr) 94px 92px 12px;align-items:center;gap:13px}.saved-work-columns{padding:9px 22px;color:#98a2b3;background:#fafafa;border-top:1px solid #eaecf0;border-bottom:1px solid #eaecf0;font-size:8px;font-weight:800;letter-spacing:.04em}.saved-work-row{width:100%;min-height:98px;padding:15px 22px;border:0;border-bottom:1px solid #eaecf0;color:#101828;background:#fff;text-align:left}.saved-work-row:last-child{border-bottom:0}.saved-work-row:hover{background:#fafafa}.saved-work-row.selected{background:#f7f7f5;box-shadow:inset 3px 0 #101828}.saved-work-main{display:flex;align-items:flex-start;gap:11px;min-width:0}.saved-work-main>i{display:grid;flex:0 0 auto;place-items:center;width:36px;height:36px;border-radius:9px;color:#101828;background:#f2f4f7;font-size:11px;font-style:normal;font-weight:850}.saved-work-main>span{display:flex;min-width:0;flex-direction:column;gap:4px}.saved-work-main strong{font-size:11px}.saved-work-main small{color:#475467;font-size:9px;font-weight:700}.saved-work-main em{overflow:hidden;color:#98a2b3;font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.saved-work-duration,.saved-work-updated{color:#475467;font-size:9px}.saved-work-duration{font-weight:750}.saved-work-chevron{color:#98a2b3;font-size:18px}.library-empty{padding:70px 20px;text-align:center}.library-empty strong{font-size:12px}.library-empty p{margin:6px 0 0;color:#667085;font-size:9px}
-.saved-work-detail{position:sticky;top:102px}.saved-work-detail-head{display:flex;align-items:flex-start;justify-content:space-between;padding:21px 22px;border-bottom:1px solid #eaecf0}.saved-work-detail-head .eyebrow{margin-bottom:6px}.saved-work-detail-head>div>span{color:#98a2b3;font-size:8px}.saved-work-detail-head .secondary-button{height:34px;padding:0 12px}.work-summary-metrics{display:grid;grid-template-columns:repeat(3,1fr);padding:16px 22px;border-bottom:1px solid #eaecf0;background:#fafafa}.work-summary-metrics>div{padding:0 13px;border-left:1px solid #e4e7ec}.work-summary-metrics>div:first-child{padding-left:0;border-left:0}.work-summary-metrics small{display:block;margin-bottom:7px;color:#667085;font-size:8px}.work-summary-metrics strong{font-size:15px}.work-summary-metrics strong em{margin-left:2px;font-size:8px;font-style:normal}.detail-section{padding:19px 22px;border-bottom:1px solid #eaecf0}.detail-section:last-child{border-bottom:0}.detail-section-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px}.detail-section-title h3{margin:0 0 4px;font-size:12px}.detail-section-title p{margin:0;color:#667085;font-size:8px}.detail-section-title>span{padding:4px 7px;border-radius:10px;color:#475467;background:#f2f4f7;font-size:8px;font-weight:750}.library-workflow-flow{display:flex;flex-direction:column;gap:7px}.library-flow-block{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid #e4e7ec;border-radius:8px}.flow-order{display:grid;flex:0 0 auto;place-items:center;width:20px;height:20px;border-radius:50%;color:#667085;background:#f2f4f7;font-size:8px;font-weight:800}.library-flow-block>.block-mark{width:28px;height:28px}.library-flow-block>div{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.library-flow-block strong{font-size:9px}.library-flow-block small{color:#667085;font-size:8px}.library-flow-block p{margin:2px 0 0;color:#475467;font-size:8px}.library-flow-block>em{padding:4px 7px;border-radius:10px;font-size:7px;font-style:normal;font-weight:800}.skill-label{color:#344054;background:#f2f4f7}.control-label{color:#475467;background:#fff;border:1px solid #d0d5dd}
+.workflow-library-layout{display:grid;grid-template-columns:minmax(570px,1.18fr) minmax(400px,.82fr);gap:18px;max-width:1320px;margin:auto;align-items:start}.saved-work-list,.saved-work-detail{overflow:hidden}.saved-work-columns,.saved-work-row{display:grid;grid-template-columns:minmax(260px,1fr) 94px 92px 12px;align-items:center;gap:13px}.saved-work-columns{padding:9px 22px;color:#98a2b3;background:#fafafa;border-top:1px solid #eaecf0;border-bottom:1px solid #eaecf0;font-size:8px;font-weight:800;letter-spacing:.04em}.saved-work-row{width:100%;min-height:98px;padding:15px 22px;border:0;border-bottom:1px solid #eaecf0;color:#101828;background:#fff;text-align:left}.saved-work-row:last-child{border-bottom:0}.saved-work-row:hover{background:#fafafa}.saved-work-row.selected{background:#f7f7f5;box-shadow:inset 3px 0 #101828}.saved-work-main{display:flex;align-items:flex-start;gap:11px;min-width:0}.saved-work-main>i{display:grid;flex:0 0 auto;place-items:center;width:36px;height:36px;border-radius:9px;color:#101828;background:#f2f4f7;font-size:11px;font-style:normal;font-weight:850}.saved-work-main>span{display:flex;min-width:0;flex-direction:column;gap:4px}.saved-work-main strong{font-size:11px}.saved-work-main small{color:#475467;font-size:9px;font-weight:700}.saved-work-main em{overflow:hidden;color:#98a2b3;font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}.saved-work-duration,.saved-work-updated{color:#475467;font-size:9px}.saved-work-duration{font-weight:750}.saved-work-chevron{color:#98a2b3;font-size:18px}.library-empty{padding:70px 20px;text-align:center}.library-empty strong{font-size:12px}.library-empty p{margin:6px 0 0;color:#667085;font-size:9px}
+.saved-work-detail{position:sticky;top:102px}.work-summary-metrics{display:grid;grid-template-columns:repeat(3,1fr);padding:16px 22px;border-bottom:1px solid #eaecf0;background:#fafafa}.work-summary-metrics>div{padding:0 13px;border-left:1px solid #e4e7ec}.work-summary-metrics>div:first-child{padding-left:0;border-left:0}.work-summary-metrics small{display:block;margin-bottom:7px;color:#667085;font-size:8px}.work-summary-metrics strong{font-size:15px}.work-summary-metrics strong em{margin-left:2px;font-size:8px;font-style:normal}.detail-section{padding:19px 22px;border-bottom:1px solid #eaecf0}.detail-section:last-child{border-bottom:0}.detail-section-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px}.detail-section-title h3{margin:0 0 4px;font-size:12px}.detail-section-title p{margin:0;color:#667085;font-size:8px}.detail-section-title>span{padding:4px 7px;border-radius:10px;color:#475467;background:#f2f4f7;font-size:8px;font-weight:750}.library-workflow-flow{display:flex;flex-direction:column;gap:7px}.library-flow-block{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid #e4e7ec;border-radius:8px}.flow-order{display:grid;flex:0 0 auto;place-items:center;width:20px;height:20px;border-radius:50%;color:#667085;background:#f2f4f7;font-size:8px;font-weight:800}.library-flow-block>.block-mark{width:28px;height:28px}.library-flow-block>div{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.library-flow-block strong{font-size:9px}.library-flow-block small{color:#667085;font-size:8px}.library-flow-block p{margin:2px 0 0;color:#475467;font-size:8px}.library-flow-block>em{padding:4px 7px;border-radius:10px;font-size:7px;font-style:normal;font-weight:800}.skill-label{color:#344054;background:#f2f4f7}.control-label{color:#475467;background:#fff;border:1px solid #d0d5dd}
 .execution-setup>label{display:flex;flex-direction:column;gap:6px;color:#344054;font-size:9px;font-weight:750}.execution-setup select{height:39px}.preflight-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:11px}.preflight-grid>div{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid;border-radius:8px}.preflight-grid>div>span{display:grid;flex:0 0 auto;place-items:center;width:22px;height:22px;border-radius:50%;color:#fff;font-size:9px;font-weight:850}.preflight-grid>div>div{display:flex;min-width:0;flex-direction:column;gap:3px}.preflight-grid strong{font-size:8px}.preflight-grid small{overflow:hidden;font-size:7px;text-overflow:ellipsis;white-space:nowrap}.check-pass{color:#067647;background:#ecfdf3;border-color:#abefc6!important}.check-pass>span{background:#12b76a}.check-fail{color:#b42318;background:#fef3f2;border-color:#fecdca!important}.check-fail>span{background:#f04438}.execution-actions{display:grid;grid-template-columns:112px 1fr;gap:8px;margin-top:13px}.execution-actions button{height:40px}.execution-disabled-reason{margin:8px 0 0;color:#b42318;font-size:8px;text-align:right}.library-running{display:flex;align-items:center;gap:8px;margin-top:11px;padding:10px;border-radius:8px;color:#344054;background:#f2f4f7;font-size:8px;font-weight:700}.library-running i{width:7px;height:7px;border-radius:50%;background:#101828;animation:pulse 1s infinite}
 
 @media(max-width:1180px){.workflow-library-layout{grid-template-columns:1fr}.saved-work-detail{position:static}.workflow-library-toolbar{flex-wrap:wrap}.workflow-search{max-width:none}}
-@media(max-width:900px){.global-nav button{width:20%}.library-page-heading{align-items:flex-start;flex-direction:column;gap:14px}.workflow-library-toolbar{align-items:stretch;flex-direction:column}.saved-work-columns{display:none}.saved-work-row{grid-template-columns:1fr auto;gap:9px}.saved-work-duration,.saved-work-updated{grid-column:1;margin-left:47px}.saved-work-updated{grid-column:2;grid-row:2;margin-left:0}.saved-work-chevron{grid-column:2;grid-row:1}.work-summary-metrics{padding-inline:15px}.detail-section,.saved-work-detail-head{padding-inline:16px}}
+@media(max-width:900px){.global-nav button{width:20%}.library-page-heading{align-items:flex-start;flex-direction:column;gap:14px}.workflow-library-toolbar{align-items:stretch;flex-direction:column}.saved-work-columns{display:none}.saved-work-row{grid-template-columns:1fr auto;gap:9px}.saved-work-duration,.saved-work-updated{grid-column:1;margin-left:47px}.saved-work-updated{grid-column:2;grid-row:2;margin-left:0}.saved-work-chevron{grid-column:2;grid-row:1}.work-summary-metrics{padding-inline:15px}.detail-section{padding-inline:16px}}
 @media(max-width:560px){.preflight-grid{grid-template-columns:1fr}.execution-actions{grid-template-columns:1fr}.saved-work-duration{display:none}.saved-work-updated{grid-column:1;grid-row:2}.workflow-library-layout{min-width:0}.saved-work-row{padding-inline:15px}.work-summary-metrics{grid-template-columns:1fr;gap:10px}.work-summary-metrics>div{padding:10px 0;border-top:1px solid #e4e7ec;border-left:0}.work-summary-metrics>div:first-child{border-top:0}}
 
 /* Five-item global navigation */
@@ -548,11 +548,6 @@ select:focus,input:focus{border-color:#697be0;box-shadow:0 0 0 3px rgba(82,103,2
 
 /* Readable typography for the full-width work detail view. */
 .saved-work-detail .mobile-detail-back{font-size:12px}
-.saved-work-detail-head{padding:24px 28px}
-.saved-work-detail-head .eyebrow{font-size:11px}
-.saved-work-detail-head h2{font-size:22px}
-.saved-work-detail-head>div>span{font-size:11px}
-.saved-work-detail-head .secondary-button{height:38px;padding:0 15px;font-size:11px}
 .saved-work-detail .work-summary-metrics{padding:20px 28px}
 .saved-work-detail .work-summary-metrics small{font-size:11px}
 .saved-work-detail .work-summary-metrics strong{font-size:20px}
@@ -1065,7 +1060,6 @@ select:focus,input:focus{border-color:rgba(89,105,216,.7);box-shadow:0 0 0 4px r
 .redesigned-steps{margin-bottom:22px}
 .learning-wizard-card{max-width:1120px;padding:34px 36px}.wizard-title{margin-bottom:28px}
 .workflow-library-toolbar{margin-bottom:18px;padding:16px 18px}.workflow-library-layout{gap:22px}
-.saved-work-detail-head{padding:24px 26px 20px}
 .saved-work-columns,.saved-work-row{padding-right:26px;padding-left:26px}
 .saved-work-row{min-height:104px}.detail-section{padding:22px 26px}.work-summary-metrics{padding:18px 26px}
 .work-namebar{margin-bottom:18px;padding:16px 18px}.block-workspace{gap:20px}.block-library{padding:20px}.canvas-head{padding:20px 22px}
@@ -1155,8 +1149,7 @@ button,input,select,textarea{font-family:inherit}
   letter-spacing:-.025em;
 }
 .app-shell h2,.app-shell h3{font-weight:600;letter-spacing:-.018em}
-.dashboard-title h2,.device-card h2,.wizard-title h2,
-.saved-work-detail-head h2,.work-stage-heading h2{font-weight:600}
+.dashboard-title h2,.device-card h2,.wizard-title h2,.work-stage-heading h2{font-weight:600}
 .compact-robot-list strong,.compact-training-list strong,
 .training-title-button,.saved-work-main strong,.library-block strong,
 .block-top strong,.nested-block-head strong{font-weight:600}
@@ -2546,3 +2539,128 @@ body:has(.app-shell){background:var(--product-canvas)!important}
    html의 overflow-y:scroll은 필요 없어도 스크롤바 트랙을 항상 그려서 auto로 바꾸고, 폭 흔들림은 scrollbar-gutter:stable이 계속 막는다. */
 html{overflow-y:auto!important}
 .app-shell,.app-shell>.content{min-height:0!important}
+
+/* 수집 데이터 행 표기 통일 (S15P21A103-176)
+   동작 상세 수집 데이터 표와 학습 생성 데이터 선택이 같은 행 표기를 쓴다.
+   위 시:분:초(굵게·고정폭 숫자) / 아래 오늘·어제·날짜 — 한 번에 몰아 올리면 분까지 같아 초가 구분의 핵심이다.
+   수집 핸들은 보통 전부 같아 흐리게, 길이는 따로 열로 뺀다(다른 열처럼 왼쪽 정렬 — 오른쪽 정렬은 옆 상태 열에 달라붙어 보였다). */
+.dataset-when{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.25}
+.dataset-when strong{color:var(--product-ink);font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.dataset-when small{display:block;margin:0!important;color:var(--product-muted);font-size:13px!important}
+.dataset-handle{color:var(--product-muted);font-size:14px}
+.dataset-length{font-size:14px;font-variant-numeric:tabular-nums}
+/* 학습 생성: 카드처럼 크던 행을 표 행 높이로 줄인다 — [☐][시각][핸들][길이][상태] */
+.episode-select-list{gap:6px}
+.episode-select-list label{grid-template-columns:22px 104px minmax(0,140px) 64px 1fr;gap:16px;padding:10px 18px;cursor:pointer}
+.episode-select-list label em{justify-self:end;font-size:13px;text-align:right}
+/* 글자 위계: 시각 16 > 핸들·길이 14 > 상태·날짜 13. 이 화면에만 남아 있던 12px(툴바·상태·요약 설명)을 폰트 하한 13px 위로 올린다. */
+.episode-selection-toolbar span{font-size:14px}
+.episode-selection-summary strong{font-size:14px}
+.episode-selection-summary span{font-size:13px}
+.episode-select-list label.disabled{cursor:not-allowed}
+@media(max-width:680px){
+  /* 폰: 윗줄 시각(+날짜)·길이, 아랫줄 핸들·상태. 체크박스는 두 줄에 걸친다. 표는 2열로 접혀 길이도 왼쪽 정렬. */
+  .episode-select-list label{grid-template-columns:22px minmax(0,1fr) auto;gap:4px 10px;padding:10px 14px}
+  .episode-select-list label>input{grid-row:1 / span 2}
+  .episode-select-list .dataset-when{grid-column:2;grid-row:1}
+  .episode-select-list .dataset-length{grid-column:3;grid-row:1}
+  .episode-select-list .dataset-handle{grid-column:2;grid-row:2}
+  .episode-select-list label em{grid-column:3;grid-row:2;font-size:13px}
+}
+
+/* 작업 상세 글자 크기 (S15P21A103-176)
+   원래 작업 목록 옆 좁은 패널용(8~13px)을 전체 화면에 쓰고 있어 '작업 상세' 11px · 섹션 제목 16px · 본문 10~12px으로 제각각이었다.
+   제목은 다른 상세처럼 page-heading(h1 32 · 부제 15)으로 올리고, 본문은 동작 상세 기준으로 맞춘다:
+   섹션 제목 19(= 동작 상세 '학습 현황') > 항목 이름 15 > 본문 14 > 보조 13. 카드 폭도 헤딩과 같은 1280 레일로. */
+.work-detail-page{max-width:1280px}
+.app-shell .work-detail-page .work-summary-metrics small{font-size:13px}
+.app-shell .work-detail-page .work-summary-metrics strong{font-size:24px}
+.app-shell .work-detail-page .work-summary-metrics strong em{font-size:14px}
+.app-shell .work-detail-page .detail-section-title h3{font-size:19px}
+.app-shell .work-detail-page .detail-section-title p{font-size:14px}
+.app-shell .work-detail-page .detail-section-title>span{font-size:13px}
+.app-shell .work-detail-page .flow-order{font-size:13px}
+.app-shell .work-detail-page .library-flow-block strong{font-size:15px}
+.app-shell .work-detail-page .library-flow-block small,.app-shell .work-detail-page .library-flow-block p{font-size:13px}
+.app-shell .work-detail-page .library-flow-block>em{font-size:13px}
+.app-shell .work-detail-page .execution-setup>label,.app-shell .work-detail-page .execution-setup select{font-size:14px}
+.app-shell .work-detail-page .preflight-grid strong{font-size:14px}
+.app-shell .work-detail-page .preflight-grid small{font-size:13px}
+.app-shell .work-detail-page .deployment-status strong{font-size:15px}
+.app-shell .work-detail-page .deployment-status p{font-size:14px}
+.app-shell .work-detail-page .execution-disabled-reason,.app-shell .work-detail-page .library-running{font-size:13px}
+
+/* 동작 목록 이름·설명 줄바꿈 (S15P21A103-176)
+   한글은 기본값에서 글자 단위로 끊겨 '구운감자 옮기 / 기'가 됐고, 좁은 이름 열(.9fr)·140% 글씨·가운데 정렬이 겹쳐 더 어색했다.
+   - keep-all: 띄어쓰기 단위로만 줄바꿈('구운감자 / 옮기기'). 띄어쓰기 없이 긴 이름은 anywhere로 열 밖으로 안 넘친다.
+   - 열 비율: 이름 .9→1.3, 설명 1.55→1.45 — 보통 이름은 한 줄에 든다.
+   - 머리글·값 전부 왼쪽 정렬 — 글만 왼쪽·짧은 값은 가운데로 섞으면 넓은 열에서 한 행이 들쭉날쭉해 보였다.
+     왼쪽에 붙어 오른쪽이 비는 버전 열은 .75→.5로 좁히고 그만큼 설명에 준다.
+   - 설명은 2줄까지만, 넘치면 … + title 툴팁 — 설명 길이로 행 높이가 들쭉날쭉해지지 않게.
+   ≤768은 카드형이라 제외. */
+@media(min-width:769px){
+  .data-table-panel .skill-list-row{grid-template-columns:1.3fr 1.45fr .5fr 1.05fr .9fr 1.35fr;justify-items:start}
+  .data-table-panel .skill-list-row>span{text-align:left}
+  .data-table-panel .skill-list-name,.data-table-panel .skill-name-button{word-break:keep-all;overflow-wrap:anywhere;text-align:left}
+  .data-table-panel .skill-list-desc{display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:keep-all;overflow-wrap:anywhere}
+}
+
+/* 작업 생성 글자 크기 (S15P21A103-176)
+   기준값이 8~11px(초기 와이어프레임 값)이라 zoom으로 박스만 커지고 글자는 작게 남았다 — 2560(zoom 1.7)에서도 블록 이름이 17px.
+   다른 화면과 같은 위계로 올린다: 패널 제목 17 > 블록·항목 이름 15 > 본문 14 > 보조 13(하한). 박스 크기는 그대로 두어 글자와 균형만 맞춘다.
+   2·3단계 카드는 작업 상세(같은 내용)와 같은 값. */
+.app-shell .content .work-stage-steps strong{font-size:14px}
+.app-shell .content .work-stage-steps span{font-size:13px}
+.app-shell .content .work-namebar label{font-size:13px}
+.app-shell .content .library-heading h2,.app-shell .content .canvas-head h2{font-size:17px}
+.app-shell .content .block-category{font-size:13px}
+.app-shell .content .block-category span{min-width:22px;height:22px;font-size:13px}
+.app-shell .content .library-block strong,.app-shell .content .start-block strong,.app-shell .content .workflow-block .block-top strong{font-size:15px}
+.app-shell .content .nested-block-head strong,.app-shell .content .repeat-toolbar strong{font-size:14px}
+.app-shell .content .library-block>span,.app-shell .content .block-mark{font-size:13px}
+.app-shell .content .advanced-blocks summary{font-size:14px}
+.app-shell .content .canvas-head>span{font-size:13px}
+.app-shell .content .motor-config label,.app-shell .content .repeat-toolbar label,.app-shell .content .repeat-toolbar>span{font-size:13px}
+.app-shell .content .angle-field span{font-size:14px}
+.app-shell .content .angle-field small,.app-shell .content .repeat-drop p,.app-shell .content .nested-drop-hint{font-size:13px}
+.app-shell .content .drop-zone{font-size:14px}
+.app-shell .content .work-stage-card .eyebrow,.app-shell .content .work-stage-heading>span{font-size:13px}
+.app-shell .content .work-stage-heading>div>p:last-child{font-size:14px}
+.app-shell .content .stage-robot-select label{font-size:14px}
+.app-shell .content .work-stage-card .robot-status{font-size:13px}
+.app-shell .content .work-stage-card .preflight-grid strong{font-size:14px}
+.app-shell .content .work-stage-card .preflight-grid small{font-size:13px}
+.app-shell .content .work-stage-card .deployment-status strong{font-size:15px}
+.app-shell .content .work-stage-card .deployment-status p,.app-shell .content .execution-focus p{font-size:14px}
+.app-shell .content .safety-note p{font-size:13px}
+.app-shell .content .safety-note strong{font-size:14px}
+.app-shell .content .work-stage-card .preflight-grid>div>span,.app-shell .content .safety-note>span{font-size:13px}
+
+/* 전체 화면 점검 반영 (S15P21A103-176) — 12개 화면 × 7개 해상도(375~3840) 실측 결과 */
+/* 대시보드 최근 학습: 1200~1440에서 진행률이 카드 밖으로 넘쳤다(1280: 96px, 화면 끝에서 % 잘림).
+   칸 최소 폭 합(이름 180 + 상태 76 + 막대 88 + % 58 + 간격)이 2단 배치 카드 안쪽 폭보다 커서다.
+   이름 칸이 줄 수 있게 하고 막대 폭을 56~96으로 — 막대가 최대폭까지 먼저 늘어 이름 몫을 가져가지 않게. ≤680은 별도 2줄 배치라 그대로. */
+@media(min-width:681px){
+  .compact-training-list>button{grid-template-columns:minmax(0,1fr) auto minmax(56px,96px) auto}
+  .compact-training-progress{grid-template-columns:minmax(40px,1fr) auto;column-gap:10px}
+  .compact-training-progress>em{min-width:0}
+}
+/* 짧은 화면의 불필요한 스크롤: 내용은 화면 안에서 끝나는데 아래 여백 64px(zoom 곱)이 밀려 빈 여백만큼 스크롤이 생겼다.
+   위 여백과 같은 28px로 — 긴 화면도 끝에 28px은 남는다. */
+.app-shell>.content{padding-bottom:28px}
+/* 13px 미만으로 남아 있던 글자(대시보드 카드 보조문·진행률, 학습 상세 항목 라벨, 학습 생성 단계 바, 로봇 상세 요약, 작업 상세 체크 아이콘) */
+.app-shell .overview-cards p,.app-shell .compact-training-progress>em,.app-shell .detail-metrics small,.app-shell .detail-metrics p{font-size:13px}
+.app-shell .data-detail-grid dt,.app-shell .data-detail-grid dd small,.app-shell .training-modal-progress strong{font-size:13px}
+.app-shell .content .redesigned-steps strong{font-size:14px}
+.app-shell .content .redesigned-steps span{font-size:13px}
+.app-shell .content .work-detail-page .preflight-grid>div>span{font-size:13px}
+.app-shell .history-list small{font-size:13px}
+/* 모달·선택 모드 글자(점검에서 추가로 확인): 모달 윗줄 라벨·안내문·확인 문구 10px, 입력 라벨 11px, 도움말 8.8px, 선택 개수 12px → 하한 13px */
+.app-shell .modal-heading p,.app-shell .modal-note,.app-shell .confirm-modal p,.app-shell .register-modal small,.app-shell .skill-create-modal small{font-size:13px}
+.app-shell .register-modal label{font-size:13px}
+.app-shell .selected-count,.app-shell .selection-summary span{font-size:13px}
+/* 작업 상세 실행 버튼: 원래 grid(112px 1fr)라 '작업 실행'이 남는 폭을 다 차지했다(1440에서 842px). 중복이던 '수정하기'를 빼고
+   실행 버튼만 내용 크기로 오른쪽에 둔다(작업 생성 '실행 단계로' 버튼과 같은 최소 178px). 폰(≤560)은 기존처럼 전체 폭. */
+.app-shell .content .execution-actions{display:flex;justify-content:flex-end}
+.app-shell .content .execution-actions .primary-button{min-width:178px}
+@media(max-width:560px){.app-shell .content .execution-actions .primary-button{width:100%}}

@@ -99,7 +99,9 @@ export interface Dataset {
   fileName: string;
   /** 화면 표시용 순번(등록 오래된 순 1부터). 새로고침마다 다시 계산되므로 저장 키로 쓰지 않는다. */
   seq: number;
-  /** 화면 표시 문자열 `YYYY. MM. DD  HH:mm` — 0을 채워 문자열 정렬이 시간순과 같다. */
+  /** 업로드 완료 시각(ISO). 목록 행의 시각·날짜 칸은 이걸로 렌더 시점에 계산한다(오늘/어제가 자정을 넘겨도 맞게). */
+  uploadedAt: string | null;
+  /** 전체 시각 `YYYY. MM. DD  HH:mm:ss` — 행의 툴팁용. */
   date: string;
   duration: string;
   skillKey: string;
