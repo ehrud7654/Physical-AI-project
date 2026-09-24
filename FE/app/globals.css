@@ -2597,3 +2597,18 @@ html{overflow-y:auto!important}
 .app-shell .work-detail-page .deployment-status p{font-size:14px}
 .app-shell .work-detail-page .execution-disabled-reason,.app-shell .work-detail-page .library-running{font-size:13px}
 
+/* 동작 목록 이름·설명 줄바꿈 (S15P21A103-176)
+   한글은 기본값에서 글자 단위로 끊겨 '구운감자 옮기 / 기'가 됐고, 좁은 이름 열(.9fr)·140% 글씨·가운데 정렬이 겹쳐 더 어색했다.
+   - keep-all: 띄어쓰기 단위로만 줄바꿈('구운감자 / 옮기기'). 띄어쓰기 없이 긴 이름은 anywhere로 열 밖으로 안 넘친다.
+   - 열 비율: 이름 .9→1.3, 설명 1.55→1.45 — 보통 이름은 한 줄에 든다.
+   - 머리글·값 전부 왼쪽 정렬 — 글만 왼쪽·짧은 값은 가운데로 섞으면 넓은 열에서 한 행이 들쭉날쭉해 보였다.
+     왼쪽에 붙어 오른쪽이 비는 버전 열은 .75→.5로 좁히고 그만큼 설명에 준다.
+   - 설명은 2줄까지만, 넘치면 … + title 툴팁 — 설명 길이로 행 높이가 들쭉날쭉해지지 않게.
+   ≤768은 카드형이라 제외. */
+@media(min-width:769px){
+  .data-table-panel .skill-list-row{grid-template-columns:1.3fr 1.45fr .5fr 1.05fr .9fr 1.35fr;justify-items:start}
+  .data-table-panel .skill-list-row>span{text-align:left}
+  .data-table-panel .skill-list-name,.data-table-panel .skill-name-button{word-break:keep-all;overflow-wrap:anywhere;text-align:left}
+  .data-table-panel .skill-list-desc{display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:keep-all;overflow-wrap:anywhere}
+}
+
