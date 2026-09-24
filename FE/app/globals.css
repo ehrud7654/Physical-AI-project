@@ -2612,3 +2612,33 @@ html{overflow-y:auto!important}
   .data-table-panel .skill-list-desc{display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:keep-all;overflow-wrap:anywhere}
 }
 
+/* 작업 생성 글자 크기 (S15P21A103-176)
+   기준값이 8~11px(초기 와이어프레임 값)이라 zoom으로 박스만 커지고 글자는 작게 남았다 — 2560(zoom 1.7)에서도 블록 이름이 17px.
+   다른 화면과 같은 위계로 올린다: 패널 제목 17 > 블록·항목 이름 15 > 본문 14 > 보조 13(하한). 박스 크기는 그대로 두어 글자와 균형만 맞춘다.
+   2·3단계 카드는 작업 상세(같은 내용)와 같은 값. */
+.app-shell .content .work-stage-steps strong{font-size:14px}
+.app-shell .content .work-stage-steps span{font-size:13px}
+.app-shell .content .work-namebar label{font-size:13px}
+.app-shell .content .library-heading h2,.app-shell .content .canvas-head h2{font-size:17px}
+.app-shell .content .block-category{font-size:13px}
+.app-shell .content .block-category span{min-width:22px;height:22px;font-size:13px}
+.app-shell .content .library-block strong,.app-shell .content .start-block strong,.app-shell .content .workflow-block .block-top strong{font-size:15px}
+.app-shell .content .nested-block-head strong,.app-shell .content .repeat-toolbar strong{font-size:14px}
+.app-shell .content .library-block>span,.app-shell .content .block-mark{font-size:13px}
+.app-shell .content .advanced-blocks summary{font-size:14px}
+.app-shell .content .canvas-head>span{font-size:13px}
+.app-shell .content .motor-config label,.app-shell .content .repeat-toolbar label,.app-shell .content .repeat-toolbar>span{font-size:13px}
+.app-shell .content .angle-field span{font-size:14px}
+.app-shell .content .angle-field small,.app-shell .content .repeat-drop p,.app-shell .content .nested-drop-hint{font-size:13px}
+.app-shell .content .drop-zone{font-size:14px}
+.app-shell .content .work-stage-card .eyebrow,.app-shell .content .work-stage-heading>span{font-size:13px}
+.app-shell .content .work-stage-heading>div>p:last-child{font-size:14px}
+.app-shell .content .stage-robot-select label{font-size:14px}
+.app-shell .content .work-stage-card .robot-status{font-size:13px}
+.app-shell .content .work-stage-card .preflight-grid strong{font-size:14px}
+.app-shell .content .work-stage-card .preflight-grid small{font-size:13px}
+.app-shell .content .work-stage-card .deployment-status strong{font-size:15px}
+.app-shell .content .work-stage-card .deployment-status p,.app-shell .content .execution-focus p{font-size:14px}
+.app-shell .content .safety-note p{font-size:13px}
+.app-shell .content .safety-note strong{font-size:14px}
+.app-shell .content .work-stage-card .preflight-grid>div>span,.app-shell .content .safety-note>span{font-size:13px}
