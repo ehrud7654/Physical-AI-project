@@ -2659,3 +2659,8 @@ html{overflow-y:auto!important}
 .app-shell .modal-heading p,.app-shell .modal-note,.app-shell .confirm-modal p,.app-shell .register-modal small,.app-shell .skill-create-modal small{font-size:13px}
 .app-shell .register-modal label{font-size:13px}
 .app-shell .selected-count,.app-shell .selection-summary span{font-size:13px}
+/* 작업 상세 실행 버튼: 원래 grid(112px 1fr)라 '작업 실행'이 남는 폭을 다 차지했다(1440에서 842px). 중복이던 '수정하기'를 빼고
+   실행 버튼만 내용 크기로 오른쪽에 둔다(작업 생성 '실행 단계로' 버튼과 같은 최소 178px). 폰(≤560)은 기존처럼 전체 폭. */
+.app-shell .content .execution-actions{display:flex;justify-content:flex-end}
+.app-shell .content .execution-actions .primary-button{min-width:178px}
+@media(max-width:560px){.app-shell .content .execution-actions .primary-button{width:100%}}
