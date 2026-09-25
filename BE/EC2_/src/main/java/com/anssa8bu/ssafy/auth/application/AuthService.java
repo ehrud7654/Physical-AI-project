@@ -45,7 +45,7 @@ public class AuthService {
   }
 
   @Transactional(readOnly = true)
-  public LoginResponse login(LoginRequest request) {
+  public LoginResult login(LoginRequest request) {
     String email = request.email().trim().toLowerCase(Locale.ROOT);
     User user =
         userRepository.findByEmailIgnoreCase(email).orElseThrow(InvalidCredentialsException::new);
@@ -55,17 +55,36 @@ public class AuthService {
       throw new InvalidCredentialsException();
     }
 
-    var sessionId = UUID.randomUUID();
+    return issue(user, sessions.create(user.getId()));
+  }
+
+  @Transactional(readOnly = true)
+  public LoginResult refresh(String token) {
+    SessionCache session = sessions.getForRefresh(token);
+    User user = userRepository.findById(session.userId()).filter(u -> u.getStatus() == UserStatus.ACTIVE)
+        .orElseGet(() -> {
+          sessions.delete(session.sessionId());
+          throw new com.anssa8bu.ssafy.auth.security.LoginSessionException(
+              "AUTH_SESSION_EXPIRED", "로그인할 수 없는 계정입니다.");
+        });
+    return issue(user, sessions.refresh(token));
+  }
+
+  private LoginResult issue(User user, SessionCache session) {
     var issuedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS);
     var expiresAt = issuedAt.plusSeconds(accessTokenProvider.expiresInSeconds());
-    String token = accessTokenProvider.issue(user.getId(), sessionId, issuedAt, expiresAt);
-    sessions.save(new SessionCache(1, sessionId, user.getId(), expiresAt, false));
-    return new LoginResponse(
-        token,
-        "Bearer",
-        accessTokenProvider.expiresInSeconds(),
-        AuthenticatedUserResponse.from(user));
+    if (expiresAt.isAfter(session.expiresAt())) expiresAt = session.expiresAt();
+    String token = accessTokenProvider.issue(user.getId(), session.sessionId(), issuedAt, expiresAt);
+    return new LoginResult(new LoginResponse(token, "Bearer",
+        java.time.Duration.between(issuedAt, expiresAt).toSeconds(), AuthenticatedUserResponse.from(user),
+        session.expiresAt(), session.absoluteExpiresAt()), sessions.refreshToken(session));
   }
+
+  public record LoginResult(LoginResponse response, String refreshToken) {}
+
+  public void logout(String token) { sessions.logout(token); }
+
+  public SessionCache activity(UUID sessionId, UUID userId) { return sessions.activity(sessionId, userId); }
 
   public void logout(UUID sessionId) {
     sessions.delete(sessionId);

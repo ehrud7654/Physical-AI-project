@@ -20,6 +20,8 @@ export interface LoginResponse {
   tokenType: 'Bearer';
   expiresIn: number;
   user: AuthenticatedUser;
+  sessionExpiresAt: string;
+  absoluteExpiresAt: string;
 }
 
 export type DashboardRobotStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'UNKNOWN';

@@ -25,21 +25,56 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
   private final AuthService authService;
+  private final com.anssa8bu.ssafy.auth.security.SessionCookieService cookies;
 
-  public AuthController(AuthService authService) {
+  public AuthController(AuthService authService, com.anssa8bu.ssafy.auth.security.SessionCookieService cookies) {
     this.authService = authService;
+    this.cookies = cookies;
   }
 
   @PostMapping("/login")
   public ResponseEntity<ApiResponse<LoginResponse>> login(
-      @Valid @RequestBody LoginRequest request) {
-    return ResponseEntity.ok(ApiResponse.of(authService.login(request)));
+      @Valid @RequestBody LoginRequest request, jakarta.servlet.http.HttpServletRequest http) {
+    cookies.checkOrigin(http, false);
+    // Replacing a browser login also revokes its previous session.
+    var result = authService.login(request);
+    authService.logout(cookies.read(http));
+    return loginResponse(result);
+  }
+
+  @PostMapping("/refresh")
+  public ResponseEntity<ApiResponse<LoginResponse>> refresh(jakarta.servlet.http.HttpServletRequest http) {
+    cookies.checkOrigin(http, true);
+    return loginResponse(authService.refresh(cookies.read(http)));
+  }
+
+  @PostMapping("/session/activity")
+  public ResponseEntity<ApiResponse<ActivityResponse>> activity(@AuthenticationPrincipal Jwt jwt) {
+    var session = authService.activity(UUID.fromString(jwt.getClaimAsString("sid")), UUID.fromString(jwt.getSubject()));
+    return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+        .body(ApiResponse.of(new ActivityResponse(session.expiresAt(), session.absoluteExpiresAt())));
+  }
+
+  public record ActivityResponse(java.time.Instant sessionExpiresAt, java.time.Instant absoluteExpiresAt) {}
+
+  private ResponseEntity<ApiResponse<LoginResponse>> loginResponse(AuthService.LoginResult result) {
+    return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+        .header(org.springframework.http.HttpHeaders.SET_COOKIE,
+            cookies.issue(result.refreshToken(), result.response().absoluteExpiresAt()))
+        .body(ApiResponse.of(result.response()));
   }
 
   @PostMapping("/logout")
-  public ResponseEntity<Void> logout(@AuthenticationPrincipal Jwt jwt) {
-    authService.logout(UUID.fromString(jwt.getClaimAsString("sid")));
-    return ResponseEntity.noContent().build();
+  public ResponseEntity<Void> logout(@AuthenticationPrincipal Jwt jwt, jakarta.servlet.http.HttpServletRequest http) {
+    cookies.checkOrigin(http, true);
+    authService.logout(cookies.read(http));
+    if (jwt != null) {
+      if (!"USER".equals(jwt.getClaimAsString("actorType")))
+        throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+      authService.logout(UUID.fromString(jwt.getClaimAsString("sid")));
+    }
+    return ResponseEntity.noContent().header(org.springframework.http.HttpHeaders.SET_COOKIE, cookies.clear())
+        .cacheControl(org.springframework.http.CacheControl.noStore()).build();
   }
 
   @PostMapping("/signup")

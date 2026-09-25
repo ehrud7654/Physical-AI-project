@@ -18,6 +18,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  private final com.anssa8bu.ssafy.auth.security.SessionCookieService sessionCookies;
+
+  public GlobalExceptionHandler(com.anssa8bu.ssafy.auth.security.SessionCookieService sessionCookies) {
+    this.sessionCookies = sessionCookies;
+  }
+
+  @ExceptionHandler(com.anssa8bu.ssafy.auth.security.LoginSessionException.class)
+  public ResponseEntity<ErrorResponse> handleLoginSession(com.anssa8bu.ssafy.auth.security.LoginSessionException error) {
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        .header(org.springframework.http.HttpHeaders.SET_COOKIE, sessionCookies.clear())
+        .cacheControl(org.springframework.http.CacheControl.noStore())
+        .body(new ErrorResponse(error.getCode(), error.getMessage()));
+  }
+
   @ExceptionHandler(RuntimeStateUnavailableException.class)
   public ResponseEntity<ErrorResponse> handleRuntimeUnavailable(
       RuntimeStateUnavailableException exception) {

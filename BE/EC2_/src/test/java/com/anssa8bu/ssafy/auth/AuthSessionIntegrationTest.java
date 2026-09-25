@@ -38,6 +38,7 @@ class AuthSessionIntegrationTest extends IntegrationTestBase {
   @Autowired JwtEncoder encoder;
   @Autowired JwtDecoder decoder;
   @Autowired JwtProperties properties;
+  @Autowired SessionProperties sessionProperties;
   @Autowired StringRedisTemplate redis;
   @Autowired RedisKeyGenerator keys;
   @MockitoSpyBean SessionCacheRepository sessions;
@@ -78,19 +79,19 @@ class AuthSessionIntegrationTest extends IntegrationTestBase {
   }
 
   @Test
-  void logoutRevokesOnlyCurrentSessionAndRedisTtlMatchesJwt() throws Exception {
+  void logoutRevokesOnlyCurrentSessionAndRedisUsesIdleTimeout() throws Exception {
     String first = login();
     String second = login();
     Jwt jwt = decoder.decode(first);
     UUID sid = UUID.fromString(jwt.getClaimAsString("sid"));
     SessionCache session = sessions.find(sid).orElseThrow();
     assertThat(session.userId()).isEqualTo(userId);
-    assertThat(session.expiresAt()).isEqualTo(jwt.getExpiresAt());
+    assertThat(session.expiresAt()).isAfter(jwt.getExpiresAt());
     assertThat(redis.getExpire(keys.session(sid)))
-        .isBetween(1L, properties.accessTokenTtl().toSeconds());
+        .isBetween(1L, sessionProperties.idleTimeout().toSeconds());
     mvc.perform(get("/api/v1/devices").header("Authorization", "Bearer " + first))
         .andExpect(status().isOk());
-    mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + first))
+    mvc.perform(post("/api/v1/auth/logout").header("X-Session-Request", "1").header("Authorization", "Bearer " + first))
         .andExpect(status().isNoContent());
     assertThat(sessions.find(sid)).isEmpty();
     mvc.perform(get("/api/v1/devices").header("Authorization", "Bearer " + first))
@@ -114,7 +115,7 @@ class AuthSessionIntegrationTest extends IntegrationTestBase {
     }
     mvc.perform(get("/api/v1/devices").header("Authorization", "Bearer " + signed("USER", "user")))
         .andExpect(status().isUnauthorized());
-    mvc.perform(post("/api/v1/auth/logout")).andExpect(status().isUnauthorized());
+    mvc.perform(post("/api/v1/auth/logout")).andExpect(status().isForbidden());
     doThrow(new RedisConnectionFailureException("offline")).when(sessions).find(any());
     String device = signed("DEVICE", "device");
     assertThat(decoder.decode(device).getClaimAsString("actorType")).isEqualTo("DEVICE");
@@ -126,7 +127,7 @@ class AuthSessionIntegrationTest extends IntegrationTestBase {
   void redisFailureIs503ForLoginRequestsAndLogout() throws Exception {
     String token = login();
     doThrow(new RedisConnectionFailureException("offline")).when(sessions).delete(any());
-    mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + token))
+    mvc.perform(post("/api/v1/auth/logout").header("X-Session-Request", "1").header("Authorization", "Bearer " + token))
         .andExpect(status().isServiceUnavailable())
         .andExpect(jsonPath("$.code").value("AUTH_SESSION_UNAVAILABLE"));
     doThrow(new RedisConnectionFailureException("offline")).when(sessions).find(any());

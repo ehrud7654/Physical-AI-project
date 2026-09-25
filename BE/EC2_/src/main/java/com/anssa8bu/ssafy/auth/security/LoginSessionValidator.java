@@ -40,6 +40,8 @@ public class LoginSessionValidator implements OAuth2TokenValidator<Jwt> {
             .filter(session -> sessionId.equals(session.sessionId()))
             .filter(session -> userId.equals(session.userId()))
             .filter(session -> !session.revoked())
+            .filter(session -> session.schemaVersion() == 1 ||
+                session.absoluteExpiresAt() != null && session.absoluteExpiresAt().isAfter(clock.instant()))
             .filter(
                 session ->
                     session.expiresAt() != null && session.expiresAt().isAfter(clock.instant()))

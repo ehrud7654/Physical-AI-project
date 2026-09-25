@@ -1,7 +1,4 @@
-/**
- * Mock 전송 계층 헬퍼.
- * 실제 백엔드 연동 시 이 파일의 delay 기반 구현을 fetch 호출로 교체한다.
- */
+import type { LoginResponse } from '@/types';
 
 /** 네트워크 지연을 흉내 낸다. URL에 ?mockError 가 있으면 통신 실패를 흉내 낸다. */
 export async function delay(ms = 350): Promise<void> {
@@ -14,6 +11,18 @@ export async function delay(ms = 350): Promise<void> {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080/api/v1';
 let accessToken: string | null = null;
 let sessionExpirationNotified = false;
+let accessExpiresAt = 0;
+let sessionExpiresAt = 0;
+let absoluteExpiresAt = 0;
+let sessionExpected = false;
+let sessionEpoch = 0;
+let latestSession: LoginResponse | null = null;
+let refreshPromise: Promise<LoginResponse> | null = null;
+let channel: BroadcastChannel | null = null;
+let clearedAt = 0;
+const SESSION_SIGNAL_KEY = 'ssafy:session-signal';
+export const SESSION_UPDATED_EVENT = 'ssafy:session-updated';
+export const SESSION_LOGGED_OUT_EVENT = 'ssafy:session-logged-out';
 
 export const SESSION_EXPIRED_EVENT = 'ssafy:session-expired';
 
@@ -67,16 +76,163 @@ export function setAccessToken(token: string): void {
 
 export function clearAccessToken(): void {
   accessToken = null;
+  accessExpiresAt = 0;
+  sessionExpiresAt = 0;
+  absoluteExpiresAt = 0;
+  latestSession = null;
+  sessionExpected = false;
+  sessionEpoch++;
+  clearedAt = Date.now();
+}
+
+function sessionChannel(): BroadcastChannel | null {
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
+  if (!channel) {
+    channel = new BroadcastChannel('ssafy:auth');
+    channel.onmessage = ({ data }) => {
+      if (data?.type === 'session' && data.sentAt > clearedAt) acceptSession(data.session as LoginResponse, false);
+      if (data?.type === 'deadlines' && latestSession && data.userId === latestSession.user.id
+          && data.sentAt > clearedAt) updateSessionDeadlines(data.session, false);
+      if (data?.type === 'logout') {
+        clearAccessToken();
+        window.dispatchEvent(new Event(SESSION_LOGGED_OUT_EVENT));
+      }
+    };
+  }
+  return channel;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === SESSION_SIGNAL_KEY && event.newValue) {
+      clearAccessToken();
+      window.dispatchEvent(new Event(SESSION_LOGGED_OUT_EVENT));
+    }
+  });
+}
+
+export async function withSessionLock<T>(work: () => Promise<T>): Promise<T> {
+  sessionChannel();
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('ssafy:auth-cookie', work);
+  }
+  return work();
+}
+
+export function acceptSession(session: LoginResponse, broadcast = true): void {
+  if (latestSession && (latestSession.user.id !== session.user.id
+      || latestSession.absoluteExpiresAt !== session.absoluteExpiresAt)) {
+    sessionEpoch++;
+    clearedAt = Date.now();
+  }
+  setAccessToken(session.accessToken);
+  sessionExpected = true;
+  accessExpiresAt = Date.now() + session.expiresIn * 1000;
+  latestSession = session;
+  updateSessionDeadlines(session, false);
+  if (typeof window !== 'undefined') {
+    // Remove legacy persisted credentials; retain only non-secret display information.
+    localStorage.removeItem('ssafy:auth-session');
+    localStorage.setItem('ssafy:auth-user', JSON.stringify(session.user));
+    window.dispatchEvent(new CustomEvent(SESSION_UPDATED_EVENT, { detail: session.user }));
+  }
+  if (broadcast) sessionChannel()?.postMessage({ type: 'session', session, sentAt: Date.now() });
+}
+
+export function updateSessionDeadlines(session: { sessionExpiresAt: string; absoluteExpiresAt: string }, broadcast = true): void {
+  if (latestSession && session.absoluteExpiresAt !== latestSession.absoluteExpiresAt) return;
+  sessionExpiresAt = Date.parse(session.sessionExpiresAt);
+  absoluteExpiresAt = Date.parse(session.absoluteExpiresAt);
+  if (broadcast) sessionChannel()?.postMessage({ type: 'deadlines', session, userId: latestSession?.user.id, sentAt: Date.now() });
+}
+
+export function getSessionDeadline(): number {
+  return Math.min(sessionExpiresAt, absoluteExpiresAt);
+}
+
+export function broadcastLogout(): void {
+  sessionChannel()?.postMessage({ type: 'logout' });
+  if (typeof window !== 'undefined') localStorage.setItem(SESSION_SIGNAL_KEY, crypto.randomUUID());
+}
+
+function sessionExpired(): void {
+  if (sessionExpirationNotified) return;
+  sessionExpirationNotified = true;
+  clearAccessToken();
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  broadcastLogout();
+}
+
+/** Cookie-only calls must not attach a possibly expired Authorization header. */
+export async function sessionRequest<T>(path: string, body?: unknown): Promise<T> {
+  return send<T>(path, {
+    method: 'POST', credentials: 'include', cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', 'X-Session-Request': '1' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+export function refreshAuthentication(failedToken?: string, force = false): Promise<LoginResponse> {
+  if (refreshPromise) return refreshPromise;
+  const epoch = sessionEpoch;
+  const hadSession = !!latestSession || (typeof window !== 'undefined' && !!localStorage.getItem('ssafy:auth-user'));
+  sessionExpected = true;
+  refreshPromise = withSessionLock(async () => {
+    if (epoch !== sessionEpoch) throw new ApiError(401, 'AUTH_SESSION_EXPIRED', '로그인이 종료되었습니다.');
+    if (!force && latestSession && accessExpiresAt > Date.now() + 30_000
+        && (failedToken === undefined || failedToken !== accessToken)) return latestSession;
+    try {
+      const result = await sessionRequest<LoginResponse>('/auth/refresh');
+      if (epoch !== sessionEpoch) throw new ApiError(401, 'AUTH_SESSION_EXPIRED', '로그인이 종료되었습니다.');
+      acceptSession(result);
+      return result;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        if (hadSession) sessionExpired();
+        else clearAccessToken();
+      }
+      throw error;
+    }
+  }).finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const requestEpoch = sessionEpoch;
+  const publicAuth = path.startsWith('/auth/login') || path.startsWith('/auth/signup') || path.startsWith('/auth/email-availability');
+  if (!publicAuth && sessionExpected && (!accessToken || accessExpiresAt <= Date.now() + 30_000)) {
+    await refreshAuthentication();
+  }
+  if (!publicAuth && requestEpoch !== sessionEpoch) throw new ApiError(401, 'AUTH_SESSION_CHANGED', '로그인 정보가 변경되었습니다. 다시 시도해 주세요.');
+  const sentToken = accessToken;
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  if (sentToken && !publicAuth) headers.set('Authorization', `Bearer ${sentToken}`);
+
+  try {
+    return await send<T>(path, { ...init, headers });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401 || publicAuth || !sessionExpected) throw error;
+    if (requestEpoch !== sessionEpoch) throw error;
+    await refreshAuthentication(sentToken ?? undefined);
+    if (requestEpoch !== sessionEpoch) throw error;
+    const retryHeaders = new Headers(headers);
+    if (accessToken) retryHeaders.set('Authorization', `Bearer ${accessToken}`);
+    try {
+      // Preserve method, body and Idempotency-Key; retry authentication failures only once.
+      return await send<T>(path, { ...init, headers: retryHeaders });
+    } catch (retryError) {
+      if (retryError instanceof ApiError && retryError.status === 401) sessionExpired();
+      throw retryError;
+    }
+  }
+}
+
+async function send<T>(path: string, init: RequestInit): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    response = await fetch(`${API_BASE_URL}${path}`, init);
   } catch (cause) {
     /* 호출부가 취소한 요청(이메일 중복 확인 등)은 그대로 넘긴다. 그 밖의 fetch 실패는 브라우저 원문('Failed to fetch') 대신 안내 문구로. */
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
@@ -85,11 +241,6 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   const body = await response.json().catch(() => null) as { data?: T; code?: string; message?: string } | null;
 
   if (!response.ok) {
-    if (response.status === 401 && accessToken && !sessionExpirationNotified) {
-      sessionExpirationNotified = true;
-      clearAccessToken();
-      if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-    }
     throw new ApiError(
       response.status,
       body?.code ?? 'API_ERROR',

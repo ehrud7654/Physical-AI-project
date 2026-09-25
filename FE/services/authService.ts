@@ -1,6 +1,6 @@
 import type { LoginResponse } from '@/types';
 import { emailValidationError, normalizeEmail } from '../lib/authValidation';
-import { apiRequest, clearAccessToken, setAccessToken } from './client';
+import { apiRequest, clearAccessToken, acceptSession, refreshAuthentication, sessionRequest, withSessionLock, broadcastLogout, ApiError } from './client';
 
 const AUTH_SESSION_KEY = 'ssafy:auth-session';
 
@@ -19,64 +19,38 @@ export async function signup(name: string, email: string, password: string): Pro
   });
 }
 
-interface StoredAuthSession {
-  accessToken: string;
-  expiresAt: number;
-  user: LoginResponse['user'];
-}
-
-function removeStoredSession(): void {
-  if (typeof window !== 'undefined') localStorage.removeItem(AUTH_SESSION_KEY);
-}
-
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const result = await apiRequest<LoginResponse>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
+  return withSessionLock(async () => {
+    const result = await sessionRequest<LoginResponse>('/auth/login', { email, password });
+    acceptSession(result);
+    return result;
   });
-  setAccessToken(result.accessToken);
-  const session: StoredAuthSession = {
-    accessToken: result.accessToken,
-    expiresAt: Date.now() + result.expiresIn * 1000,
-    user: result.user,
-  };
-  localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
-  return result;
 }
 
-export function restoreAuthentication(): LoginResponse['user'] | null {
+export async function restoreAuthentication(): Promise<LoginResponse['user'] | null> {
   if (typeof window === 'undefined') return null;
-
+  // Legacy localStorage access tokens are deliberately no longer restored.
+  localStorage.removeItem(AUTH_SESSION_KEY);
   try {
-    const rawSession = localStorage.getItem(AUTH_SESSION_KEY);
-    if (!rawSession) return null;
-
-    const session = JSON.parse(rawSession) as Partial<StoredAuthSession>;
-    if (
-      typeof session.accessToken !== 'string'
-      || typeof session.expiresAt !== 'number'
-      || !session.user
-      || session.expiresAt <= Date.now()
-    ) {
-      removeStoredSession();
-      return null;
-    }
-
-    setAccessToken(session.accessToken);
-    return session.user;
-  } catch {
-    removeStoredSession();
-    return null;
+    return (await refreshAuthentication()).user;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) return null;
+    throw error;
   }
 }
 
 export function clearAuthentication(): void {
   clearAccessToken();
-  removeStoredSession();
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem('ssafy:auth-user');
+  }
 }
 
 export async function logout(): Promise<void> {
-  await apiRequest<void>('/auth/logout', { method: 'POST' });
-  clearAuthentication();
+  await withSessionLock(async () => {
+    await sessionRequest<void>('/auth/logout');
+    clearAuthentication();
+    broadcastLogout();
+  });
 }
-
