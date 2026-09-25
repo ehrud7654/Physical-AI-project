@@ -1,5 +1,6 @@
 package com.anssa8bu.ssafy.auth.security;
 
+import com.anssa8bu.ssafy.common.logging.ApiRequestLoggingFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -19,6 +20,8 @@ public class SessionAuthenticationEntryPoint implements AuthenticationEntryPoint
       throws IOException {
     for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
       if (cause instanceof SessionStoreUnavailableException) {
+        ApiRequestLoggingFilter.error(
+            request, "AUTH_SESSION_UNAVAILABLE", "로그인 세션 저장소에 연결할 수 없습니다.");
         response.setStatus(503);
         response.setContentType("application/json;charset=UTF-8");
         response
@@ -28,6 +31,7 @@ public class SessionAuthenticationEntryPoint implements AuthenticationEntryPoint
         return;
       }
     }
+    ApiRequestLoggingFilter.error(request, "UNAUTHORIZED", "인증 정보가 없거나 토큰이 유효하지 않습니다.");
     bearer.commence(request, response, exception);
   }
 }
