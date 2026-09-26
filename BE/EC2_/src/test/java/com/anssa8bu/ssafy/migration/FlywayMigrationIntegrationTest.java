@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
  * 적용하므로 "빈 DB" 시나리오를 검증할 수 없다.
  */
 class FlywayMigrationIntegrationTest {
-  static final int MIGRATION_COUNT = 10;
+  static final int MIGRATION_COUNT = 1;
   static final int TABLE_COUNT = 29;
   static final List<String> PARTIAL_UNIQUE_INDEXES =
       List.of(
@@ -70,7 +70,7 @@ class FlywayMigrationIntegrationTest {
           .isOne();
     }
     // seed: 중복 없이 정확히 1회만 적용
-    assertThat(count(url, "select count(*) from skills")).isEqualTo(2);
+    assertThat(count(url, "select count(*) from skills")).isEqualTo(3);
     assertThat(
             count(
                 url,
@@ -116,7 +116,7 @@ class FlywayMigrationIntegrationTest {
                     + " join skill_versions sv on sv.id = tj.result_skill_version_id"
                     + " where tj.owner_id = '50000000-0000-4000-8000-000000000001'::uuid"
                     + " and tj.status = 'SUCCEEDED' and sv.status = 'READY' and sv.gate_passed"))
-        .isEqualTo(2);
+        .isEqualTo(3);
     assertThat(
             count(
                 url,

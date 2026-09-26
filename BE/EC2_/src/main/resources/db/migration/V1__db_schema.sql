@@ -1,13 +1,14 @@
--- Consolidated baseline generated from legacy Flyway V1-V32.
--- PostgreSQL 17 / Flyway baseline. Do not edit after deployment.
+-- Consolidated baseline from migration_legacy_v2/V1 through V22.
+-- PostgreSQL 17; includes final schema and seed data; excludes Flyway history.
+-- For a NEW empty database only. Do not apply on an existing V1-V22 installation.
 
 --
 -- PostgreSQL database dump
 --
 
 
--- Dumped from database version 17.11 (Debian 17.11-1.pgdg13+2)
--- Dumped by pg_dump version 17.11 (Debian 17.11-1.pgdg13+2)
+-- Dumped from database version 17.11
+-- Dumped by pg_dump version 17.11
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -20,6 +21,19 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+
+
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS 'standard public schema';
+
 
 --
 -- Name: enforce_deployable_skill_version(); Type: FUNCTION; Schema: public; Owner: -
@@ -70,7 +84,7 @@ CREATE TABLE public.data_purge_jobs (
     row_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT data_purge_jobs_attempt_check CHECK ((attempt >= 0)),
     CONSTRAINT data_purge_jobs_lease_token_hash_check CHECK (((lease_token_hash)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT data_purge_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'RUNNING'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying])::text[])))
+    CONSTRAINT data_purge_jobs_status_check CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('RUNNING'::character varying)::text, ('SUCCEEDED'::character varying)::text, ('FAILED'::character varying)::text])))
 );
 
 
@@ -283,7 +297,7 @@ CREATE TABLE public.deployment_items (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT deployment_items_gate_passed_check CHECK ((gate_passed = true)),
-    CONSTRAINT deployment_items_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'DOWNLOADING'::character varying, 'VERIFIED'::character varying, 'FAILED'::character varying])::text[])))
+    CONSTRAINT deployment_items_status_check CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DOWNLOADING'::character varying)::text, ('VERIFIED'::character varying)::text, ('FAILED'::character varying)::text])))
 );
 
 
@@ -462,7 +476,7 @@ CREATE TABLE public.deployments (
     applied_at timestamp with time zone,
     row_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT deployments_progress_percent_check CHECK (((progress_percent >= (0)::numeric) AND (progress_percent <= (100)::numeric))),
-    CONSTRAINT deployments_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'DOWNLOADING'::character varying, 'VERIFYING'::character varying, 'APPLYING'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying, 'CANCELED'::character varying])::text[])))
+    CONSTRAINT deployments_status_check CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DOWNLOADING'::character varying)::text, ('VERIFYING'::character varying)::text, ('APPLYING'::character varying)::text, ('SUCCEEDED'::character varying)::text, ('FAILED'::character varying)::text, ('CANCELED'::character varying)::text])))
 );
 
 
@@ -563,7 +577,7 @@ CREATE TABLE public.device_credentials (
     status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL,
     enrolled_at timestamp with time zone,
     last_authenticated_at timestamp with time zone,
-    CONSTRAINT ck_device_credentials_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_device_credentials_status CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 
@@ -644,7 +658,7 @@ CREATE TABLE public.device_enrollments (
     CONSTRAINT ck_device_enrollments_attempts CHECK (((attempt_count >= 0) AND (max_attempts >= 1) AND (attempt_count <= max_attempts))),
     CONSTRAINT ck_device_enrollments_expiration CHECK ((expires_at > created_at)),
     CONSTRAINT ck_device_enrollments_state CHECK (((((status)::text = 'ACTIVE'::text) AND (used_at IS NULL) AND (revoked_at IS NULL)) OR (((status)::text = 'USED'::text) AND (used_at IS NOT NULL) AND (revoked_at IS NULL)) OR (((status)::text = 'EXPIRED'::text) AND (used_at IS NULL) AND (revoked_at IS NULL)) OR (((status)::text = 'REVOKED'::text) AND (used_at IS NULL) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT ck_device_enrollments_status CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'USED'::character varying, 'EXPIRED'::character varying, 'REVOKED'::character varying])::text[]))),
+    CONSTRAINT ck_device_enrollments_status CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('USED'::character varying)::text, ('EXPIRED'::character varying)::text, ('REVOKED'::character varying)::text]))),
     CONSTRAINT ck_device_enrollments_token_hash CHECK (((registration_token_hash)::text ~ '^[0-9a-f]{64}$'::text))
 );
 
@@ -709,9 +723,9 @@ CREATE TABLE public.devices (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     location character varying(200),
     registration_status character varying(20) DEFAULT 'REGISTERED'::character varying NOT NULL,
-    CONSTRAINT ck_devices_device_type CHECK (((device_type)::text = ANY ((ARRAY['UMI_CAMERA'::character varying, 'JETSON'::character varying])::text[]))),
-    CONSTRAINT ck_devices_registration_status CHECK (((registration_status)::text = ANY ((ARRAY['PENDING'::character varying, 'REGISTERED'::character varying])::text[]))),
-    CONSTRAINT devices_connection_status_check CHECK (((connection_status)::text = ANY ((ARRAY['ONLINE'::character varying, 'OFFLINE'::character varying])::text[])))
+    CONSTRAINT ck_devices_device_type CHECK (((device_type)::text = ANY (ARRAY[('UMI_CAMERA'::character varying)::text, ('JETSON'::character varying)::text]))),
+    CONSTRAINT ck_devices_registration_status CHECK (((registration_status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('REGISTERED'::character varying)::text]))),
+    CONSTRAINT devices_connection_status_check CHECK (((connection_status)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text])))
 );
 
 
@@ -837,7 +851,7 @@ CREATE TABLE public.episode_archives (
     CONSTRAINT episode_archives_content_type_check CHECK (((content_type)::text = 'application/zip'::text)),
     CONSTRAINT episode_archives_sha256_check CHECK (((sha256)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT episode_archives_size_bytes_check CHECK ((size_bytes > 0)),
-    CONSTRAINT episode_archives_status_check CHECK (((status)::text = ANY ((ARRAY['UPLOADING'::character varying, 'AVAILABLE'::character varying, 'DELETING'::character varying, 'DELETED'::character varying, 'DELETE_FAILED'::character varying])::text[]))),
+    CONSTRAINT episode_archives_status_check CHECK (((status)::text = ANY (ARRAY[('UPLOADING'::character varying)::text, ('AVAILABLE'::character varying)::text, ('DELETING'::character varying)::text, ('DELETED'::character varying)::text, ('DELETE_FAILED'::character varying)::text]))),
     CONSTRAINT episode_archives_storage_key_check CHECK (((storage_key)::text !~ '^/'::text)),
     CONSTRAINT episode_archives_storage_key_check1 CHECK (((storage_key)::text !~ '(^|/)\.\.?(/|$)'::text)),
     CONSTRAINT episode_archives_storage_key_check2 CHECK (((storage_key)::text !~ '[\\]'::text)),
@@ -1021,11 +1035,11 @@ CREATE TABLE public.episode_upload_sessions (
     validation_error_code character varying(100),
     validation_error_message text,
     validated_at timestamp with time zone,
-    CONSTRAINT ck_episode_upload_completion CHECK (((((status)::text = 'UPLOAD_PENDING'::text) AND (completed_at IS NULL) AND (canceled_at IS NULL) AND (validated_at IS NULL)) OR (((status)::text = 'VALIDATING'::text) AND (completed_at IS NOT NULL) AND (canceled_at IS NULL) AND (validated_at IS NULL)) OR (((status)::text = 'READY'::text) AND (completed_at IS NOT NULL) AND (canceled_at IS NULL) AND (validated_at IS NOT NULL) AND ((quality_status)::text = ANY ((ARRAY['VALID'::character varying, 'WARNING'::character varying])::text[])) AND (validation_error_code IS NULL) AND (validation_error_message IS NULL)) OR (((status)::text = ANY ((ARRAY['INVALID'::character varying, 'FAILED'::character varying])::text[])) AND (completed_at IS NOT NULL) AND (canceled_at IS NULL) AND (validated_at IS NOT NULL) AND (validation_error_code IS NOT NULL) AND (validation_error_message IS NOT NULL)) OR (((status)::text = 'EXPIRED'::text) AND (completed_at IS NULL) AND (canceled_at IS NULL) AND (validated_at IS NULL)) OR (((status)::text = 'CANCELLED'::text) AND (completed_at IS NULL) AND (canceled_at IS NOT NULL) AND (validated_at IS NULL)))),
+    CONSTRAINT ck_episode_upload_completion CHECK (((((status)::text = 'UPLOAD_PENDING'::text) AND (completed_at IS NULL) AND (canceled_at IS NULL) AND (validated_at IS NULL)) OR (((status)::text = 'VALIDATING'::text) AND (completed_at IS NOT NULL) AND (canceled_at IS NULL) AND (validated_at IS NULL)) OR (((status)::text = 'READY'::text) AND (completed_at IS NOT NULL) AND (canceled_at IS NULL) AND (validated_at IS NOT NULL) AND ((quality_status)::text = ANY (ARRAY[('VALID'::character varying)::text, ('WARNING'::character varying)::text])) AND (validation_error_code IS NULL) AND (validation_error_message IS NULL)) OR (((status)::text = ANY (ARRAY[('INVALID'::character varying)::text, ('FAILED'::character varying)::text])) AND (completed_at IS NOT NULL) AND (canceled_at IS NULL) AND (validated_at IS NOT NULL) AND (validation_error_code IS NOT NULL) AND (validation_error_message IS NOT NULL)) OR (((status)::text = 'EXPIRED'::text) AND (completed_at IS NULL) AND (canceled_at IS NULL) AND (validated_at IS NULL)) OR (((status)::text = 'CANCELLED'::text) AND (completed_at IS NULL) AND (canceled_at IS NOT NULL) AND (validated_at IS NULL)))),
     CONSTRAINT ck_episode_upload_content_type CHECK (((content_type)::text = 'application/zip'::text)),
     CONSTRAINT ck_episode_upload_sha256 CHECK (((sha256)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT ck_episode_upload_size CHECK ((size_bytes > 0)),
-    CONSTRAINT ck_episode_upload_status CHECK (((status)::text = ANY ((ARRAY['UPLOAD_PENDING'::character varying, 'VALIDATING'::character varying, 'READY'::character varying, 'INVALID'::character varying, 'FAILED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying])::text[])))
+    CONSTRAINT ck_episode_upload_status CHECK (((status)::text = ANY (ARRAY[('UPLOAD_PENDING'::character varying)::text, ('VALIDATING'::character varying)::text, ('READY'::character varying)::text, ('INVALID'::character varying)::text, ('FAILED'::character varying)::text, ('EXPIRED'::character varying)::text, ('CANCELLED'::character varying)::text])))
 );
 
 
@@ -1126,14 +1140,14 @@ CREATE TABLE public.episodes (
     CONSTRAINT episodes_check4 CHECK ((duration_ns = (last_timestamp_ns - first_timestamp_ns))),
     CONSTRAINT episodes_frame_count_check CHECK ((frame_count >= 1)),
     CONSTRAINT episodes_imu_sample_count_check CHECK ((imu_sample_count >= 1)),
-    CONSTRAINT episodes_label_source_check CHECK (((label_source)::text = ANY ((ARRAY['UMI'::character varying, 'USER'::character varying, 'SERVER'::character varying])::text[]))),
-    CONSTRAINT episodes_label_status_check CHECK (((label_status)::text = ANY ((ARRAY['UNLABELED'::character varying, 'LABELED'::character varying])::text[]))),
+    CONSTRAINT episodes_label_source_check CHECK (((label_source)::text = ANY (ARRAY[('UMI'::character varying)::text, ('USER'::character varying)::text, ('SERVER'::character varying)::text]))),
+    CONSTRAINT episodes_label_status_check CHECK (((label_status)::text = ANY (ARRAY[('UNLABELED'::character varying)::text, ('LABELED'::character varying)::text]))),
     CONSTRAINT episodes_missing_frame_count_check CHECK ((missing_frame_count >= 0)),
-    CONSTRAINT episodes_pose_sample_count_check CHECK ((pose_sample_count >= 1)),
-    CONSTRAINT episodes_quality_status_check CHECK (((quality_status)::text = ANY ((ARRAY['PENDING'::character varying, 'VALID'::character varying, 'WARNING'::character varying, 'INVALID'::character varying])::text[]))),
-    CONSTRAINT episodes_source_check CHECK (((source)::text = ANY ((ARRAY['SIM'::character varying, 'REAL'::character varying])::text[]))),
+    CONSTRAINT episodes_pose_sample_count_check CHECK ((pose_sample_count >= 0)),
+    CONSTRAINT episodes_quality_status_check CHECK (((quality_status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('VALID'::character varying)::text, ('WARNING'::character varying)::text, ('INVALID'::character varying)::text]))),
+    CONSTRAINT episodes_source_check CHECK (((source)::text = ANY (ARRAY[('SIM'::character varying)::text, ('REAL'::character varying)::text]))),
     CONSTRAINT episodes_start_monotonic_ns_check CHECK ((start_monotonic_ns >= 0)),
-    CONSTRAINT episodes_status_check CHECK (((status)::text = ANY ((ARRAY['UPLOADING'::character varying, 'VALIDATING'::character varying, 'READY'::character varying, 'INVALID'::character varying, 'DELETING'::character varying, 'DELETED'::character varying, 'DELETE_FAILED'::character varying])::text[]))),
+    CONSTRAINT episodes_status_check CHECK (((status)::text = ANY (ARRAY[('UPLOADING'::character varying)::text, ('VALIDATING'::character varying)::text, ('READY'::character varying)::text, ('INVALID'::character varying)::text, ('DELETING'::character varying)::text, ('DELETED'::character varying)::text, ('DELETE_FAILED'::character varying)::text]))),
     CONSTRAINT episodes_timestamp_timebase_check CHECK (((timestamp_timebase)::text = 'MONOTONIC_NS'::text)),
     CONSTRAINT episodes_tracking_gap_count_check CHECK ((tracking_gap_count >= 0)),
     CONSTRAINT episodes_tracking_lost_duration_ns_check CHECK ((tracking_lost_duration_ns >= 0))
@@ -1312,21 +1326,21 @@ COMMENT ON COLUMN public.episodes.frame_count IS '검증된 이미지 프레임 
 -- Name: COLUMN episodes.pose_sample_count; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.episodes.pose_sample_count IS '`pose.csv` 데이터 행 수';
+COMMENT ON COLUMN public.episodes.pose_sample_count IS 'Raw UMI archive has no pose.csv; zero until SLAM preprocessing produces poses';
 
 
 --
 -- Name: COLUMN episodes.imu_sample_count; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.episodes.imu_sample_count IS '`imu.csv` 데이터 행 수';
+COMMENT ON COLUMN public.episodes.imu_sample_count IS 'accelerometer.csv and gyroscope.csv data row count sum';
 
 
 --
 -- Name: COLUMN episodes.gripper_sample_count; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.episodes.gripper_sample_count IS 'gripper.csv data row count; zero when gripper data is deferred to PC post-processing';
+COMMENT ON COLUMN public.episodes.gripper_sample_count IS 'Raw UMI archive has no gripper.csv; zero until marker preprocessing produces the channel';
 
 
 --
@@ -1452,7 +1466,7 @@ CREATE TABLE public.idempotency_keys (
     resource_id character varying(150),
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT idempotency_keys_actor_type_check CHECK (((actor_type)::text = ANY ((ARRAY['USER'::character varying, 'DEVICE'::character varying, 'UMI'::character varying, 'GPU'::character varying, 'JETSON'::character varying, 'INTERNAL'::character varying])::text[]))),
+    CONSTRAINT idempotency_keys_actor_type_check CHECK (((actor_type)::text = ANY (ARRAY[('USER'::character varying)::text, ('DEVICE'::character varying)::text, ('UMI'::character varying)::text, ('GPU'::character varying)::text, ('JETSON'::character varying)::text, ('INTERNAL'::character varying)::text]))),
     CONSTRAINT idempotency_keys_request_hash_check CHECK (((request_hash)::text ~ '^[0-9a-f]{64}$'::text))
 );
 
@@ -1573,7 +1587,7 @@ CREATE TABLE public.outbox_events (
     CONSTRAINT ck_outbox_attempt CHECK ((attempt >= 0)),
     CONSTRAINT ck_outbox_claim_consistency CHECK (((((status)::text = 'PROCESSING'::text) AND (locked_by IS NOT NULL) AND (locked_at IS NOT NULL) AND (lease_expires_at IS NOT NULL)) OR (((status)::text <> 'PROCESSING'::text) AND (locked_by IS NULL) AND (locked_at IS NULL) AND (lease_expires_at IS NULL)))),
     CONSTRAINT ck_outbox_sequence CHECK (((aggregate_sequence IS NULL) OR (aggregate_sequence >= 1))),
-    CONSTRAINT ck_outbox_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'PROCESSING'::character varying, 'PUBLISHED'::character varying, 'FAILED'::character varying, 'DEAD'::character varying])::text[])))
+    CONSTRAINT ck_outbox_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('PROCESSING'::character varying)::text, ('PUBLISHED'::character varying)::text, ('FAILED'::character varying)::text, ('DEAD'::character varying)::text])))
 );
 
 
@@ -1869,12 +1883,12 @@ CREATE TABLE public.robot_executions (
     row_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT ck_robot_executions_current_step CHECK (((current_step IS NULL) OR (current_step >= 1))),
     CONSTRAINT ck_robot_executions_error CHECK (((((status)::text = 'FAILED'::text) AND (error_code IS NOT NULL) AND (error_message IS NOT NULL)) OR ((status)::text <> 'FAILED'::text))),
-    CONSTRAINT ck_robot_executions_finished_at CHECK (((((status)::text = ANY ((ARRAY['CANCELED'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying])::text[])) AND (finished_at IS NOT NULL)) OR (((status)::text <> ALL ((ARRAY['CANCELED'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying])::text[])) AND (finished_at IS NULL)))),
+    CONSTRAINT ck_robot_executions_finished_at CHECK (((((status)::text = ANY (ARRAY[('CANCELED'::character varying)::text, ('SUCCEEDED'::character varying)::text, ('FAILED'::character varying)::text])) AND (finished_at IS NOT NULL)) OR (((status)::text <> ALL (ARRAY[('CANCELED'::character varying)::text, ('SUCCEEDED'::character varying)::text, ('FAILED'::character varying)::text])) AND (finished_at IS NULL)))),
     CONSTRAINT ck_robot_executions_progress CHECK (((progress_percent >= (0)::numeric) AND (progress_percent <= (100)::numeric))),
     CONSTRAINT ck_robot_executions_report_consistency CHECK ((((last_report_sequence = 0) AND (last_report_id IS NULL) AND (last_report_hash IS NULL)) OR ((last_report_sequence > 0) AND (last_report_id IS NOT NULL) AND ((last_report_hash)::text ~ '^[0-9a-f]{64}$'::text)))),
     CONSTRAINT ck_robot_executions_report_sequence CHECK ((last_report_sequence >= 0)),
-    CONSTRAINT ck_robot_executions_started_at CHECK ((((status)::text = ANY ((ARRAY['REQUESTED'::character varying, 'CANCELED'::character varying])::text[])) OR (started_at IS NOT NULL))),
-    CONSTRAINT ck_robot_executions_status CHECK (((status)::text = ANY ((ARRAY['REQUESTED'::character varying, 'STARTING'::character varying, 'RUNNING'::character varying, 'CANCEL_REQUESTED'::character varying, 'CANCELED'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying, 'STATUS_UNKNOWN'::character varying])::text[]))),
+    CONSTRAINT ck_robot_executions_started_at CHECK ((((status)::text = ANY (ARRAY[('REQUESTED'::character varying)::text, ('CANCELED'::character varying)::text])) OR (started_at IS NOT NULL))),
+    CONSTRAINT ck_robot_executions_status CHECK (((status)::text = ANY (ARRAY[('REQUESTED'::character varying)::text, ('STARTING'::character varying)::text, ('RUNNING'::character varying)::text, ('CANCEL_REQUESTED'::character varying)::text, ('CANCELED'::character varying)::text, ('SUCCEEDED'::character varying)::text, ('FAILED'::character varying)::text, ('STATUS_UNKNOWN'::character varying)::text]))),
     CONSTRAINT ck_robot_executions_step_range CHECK (((current_step IS NULL) OR (current_step <= total_steps))),
     CONSTRAINT ck_robot_executions_time_order CHECK ((((started_at IS NULL) OR (started_at >= requested_at)) AND ((finished_at IS NULL) OR (finished_at >= COALESCE(started_at, requested_at))) AND (updated_at >= requested_at))),
     CONSTRAINT ck_robot_executions_total_steps CHECK ((total_steps >= 1))
@@ -1974,14 +1988,14 @@ COMMENT ON COLUMN public.robot_profiles.camera_contract IS '카메라 이름·�
 -- Name: COLUMN robot_profiles.state_contract; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.robot_profiles.state_contract IS '관절·상태 규격';
+COMMENT ON COLUMN public.robot_profiles.state_contract IS 'Trainer-defined observation schema validated against CKPT inputSchema.';
 
 
 --
 -- Name: COLUMN robot_profiles.action_contract; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.robot_profiles.action_contract IS '출력 행동 규격';
+COMMENT ON COLUMN public.robot_profiles.action_contract IS 'Trainer-defined actionSpec, runtimeSpec, and outputSchema validated against CKPT metadata.';
 
 
 --
@@ -2013,7 +2027,7 @@ CREATE TABLE public.robot_skill_deployments (
     retired_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT robot_skill_deployments_check CHECK (((((status)::text = 'ACTIVE'::text) AND (retired_at IS NULL)) OR (((status)::text = 'RETIRED'::text) AND (retired_at IS NOT NULL)))),
-    CONSTRAINT robot_skill_deployments_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'RETIRED'::character varying])::text[])))
+    CONSTRAINT robot_skill_deployments_status_check CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('RETIRED'::character varying)::text])))
 );
 
 
@@ -2096,7 +2110,7 @@ CREATE TABLE public.robots (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     row_version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT robots_connection_status_check CHECK (((connection_status)::text = ANY ((ARRAY['ONLINE'::character varying, 'OFFLINE'::character varying])::text[])))
+    CONSTRAINT robots_connection_status_check CHECK (((connection_status)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text])))
 );
 
 
@@ -2185,8 +2199,6 @@ CREATE TABLE public.skill_versions (
     id uuid NOT NULL,
     skill_id uuid NOT NULL,
     training_job_id uuid NOT NULL,
-    training_profile_id uuid NOT NULL,
-    training_config_sha256 character varying(64) NOT NULL,
     robot_profile_id uuid NOT NULL,
     version integer NOT NULL,
     status character varying(30) NOT NULL,
@@ -2216,8 +2228,10 @@ CREATE TABLE public.skill_versions (
     validated_at timestamp with time zone,
     archived_at timestamp with time zone,
     parent_skill_version_id uuid,
+    action_spec jsonb DEFAULT '{}'::jsonb NOT NULL,
+    runtime_spec jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT ck_skill_versions_gate_complete CHECK ((((gate_metric IS NULL) AND (gate_n IS NULL) AND (gate_runs IS NULL) AND (gate_value IS NULL) AND (gate_ci_low IS NULL) AND (gate_ci_high IS NULL) AND (gate_measured_at IS NULL)) OR ((gate_metric IS NOT NULL) AND (gate_n IS NOT NULL) AND (gate_runs IS NOT NULL) AND (gate_value IS NOT NULL) AND (gate_ci_low IS NOT NULL) AND (gate_ci_high IS NOT NULL) AND (gate_measured_at IS NOT NULL)))),
-    CONSTRAINT skill_versions_action_space_check CHECK (((action_space)::text = ANY ((ARRAY['JOINT_ABSOLUTE'::character varying, 'JOINT_DELTA'::character varying])::text[]))),
+    CONSTRAINT skill_versions_action_space_check CHECK (((action_space)::text = ANY ((ARRAY['JOINT_ABSOLUTE'::character varying, 'JOINT_DELTA'::character varying, 'EEF_RELATIVE_ROT6D'::character varying])::text[]))),
     CONSTRAINT skill_versions_check CHECK (((gate_ci_low IS NULL) OR (gate_ci_high IS NULL) OR (gate_ci_low <= gate_ci_high))),
     CONSTRAINT skill_versions_checkpoint_bytes_check CHECK ((checkpoint_bytes >= 0)),
     CONSTRAINT skill_versions_checkpoint_key_check CHECK (((checkpoint_key)::text !~ '^/'::text)),
@@ -2229,8 +2243,7 @@ CREATE TABLE public.skill_versions (
     CONSTRAINT skill_versions_gate_runs_check CHECK (((gate_runs IS NULL) OR (gate_runs > 0))),
     CONSTRAINT skill_versions_gate_value_check CHECK (((gate_value IS NULL) OR ((gate_value >= (0)::double precision) AND (gate_value <= (1)::double precision)))),
     CONSTRAINT skill_versions_n_params_check CHECK ((n_params > 0)),
-    CONSTRAINT skill_versions_status_check CHECK (((status)::text = ANY ((ARRAY['UPLOADING'::character varying, 'VALIDATING'::character varying, 'READY'::character varying, 'FAILED'::character varying, 'ARCHIVED'::character varying])::text[]))),
-    CONSTRAINT skill_versions_training_config_sha256_check CHECK (((training_config_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT skill_versions_status_check CHECK (((status)::text = ANY (ARRAY[('UPLOADING'::character varying)::text, ('VALIDATING'::character varying)::text, ('READY'::character varying)::text, ('FAILED'::character varying)::text, ('ARCHIVED'::character varying)::text]))),
     CONSTRAINT skill_versions_version_check CHECK ((version >= 1))
 );
 
@@ -2254,20 +2267,6 @@ COMMENT ON COLUMN public.skill_versions.skill_id IS 'FK → `skills.id`';
 --
 
 COMMENT ON COLUMN public.skill_versions.training_job_id IS 'FK → `training_jobs.id`';
-
-
---
--- Name: COLUMN skill_versions.training_profile_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.skill_versions.training_profile_id IS 'FK → `training_profiles.id`, CKPT 생성 프로필';
-
-
---
--- Name: COLUMN skill_versions.training_config_sha256; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.skill_versions.training_config_sha256 IS 'TrainingJob 및 CKPT manifest 설정 hash';
 
 
 --
@@ -2467,6 +2466,20 @@ COMMENT ON COLUMN public.skill_versions.archived_at IS '보관 처리 시각';
 
 
 --
+-- Name: COLUMN skill_versions.action_spec; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.skill_versions.action_spec IS 'Trainer-defined action tensor contract. EC2 stores and forwards this JSON without numeric validation.';
+
+
+--
+-- Name: COLUMN skill_versions.runtime_spec; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.skill_versions.runtime_spec IS 'Runtime conversion and execution contract. EC2 stores and forwards this JSON without interpreting its fields.';
+
+
+--
 -- Name: skills; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2481,11 +2494,11 @@ CREATE TABLE public.skills (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     owner_id uuid,
-    CONSTRAINT ck_skills_owner_scope CHECK ((((owner_id IS NULL) AND ((tier)::text = ANY ((ARRAY['TUTORIAL'::character varying, 'DEMO'::character varying])::text[]))) OR ((owner_id IS NOT NULL) AND ((tier)::text = 'CUSTOM'::text)))),
-    CONSTRAINT ck_skills_tier CHECK (((tier)::text = ANY ((ARRAY['TUTORIAL'::character varying, 'DEMO'::character varying, 'CUSTOM'::character varying])::text[]))),
+    CONSTRAINT ck_skills_owner_scope CHECK ((((owner_id IS NULL) AND ((tier)::text = ANY (ARRAY[('TUTORIAL'::character varying)::text, ('DEMO'::character varying)::text]))) OR ((owner_id IS NOT NULL) AND ((tier)::text = 'CUSTOM'::text)))),
+    CONSTRAINT ck_skills_tier CHECK (((tier)::text = ANY (ARRAY[('TUTORIAL'::character varying)::text, ('DEMO'::character varying)::text, ('CUSTOM'::character varying)::text]))),
     CONSTRAINT skills_check CHECK ((((tier)::text <> 'DEMO'::text) OR (persona IS NOT NULL))),
     CONSTRAINT skills_skill_key_check CHECK (((skill_key)::text ~ '^[a-z0-9][a-z0-9_-]{0,99}$'::text)),
-    CONSTRAINT skills_status_check CHECK (((status)::text = ANY ((ARRAY['PLANNED'::character varying, 'COLLECTING'::character varying, 'TRAINING'::character varying, 'GATE_FAILED'::character varying, 'DEPLOYED'::character varying])::text[])))
+    CONSTRAINT skills_status_check CHECK (((status)::text = ANY (ARRAY[('PLANNED'::character varying)::text, ('COLLECTING'::character varying)::text, ('TRAINING'::character varying)::text, ('GATE_FAILED'::character varying)::text, ('DEPLOYED'::character varying)::text])))
 );
 
 
@@ -2578,8 +2591,8 @@ CREATE TABLE public.storage_nodes (
     row_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT storage_nodes_capacity_bytes_check CHECK ((capacity_bytes >= 0)),
     CONSTRAINT storage_nodes_check CHECK (((available_bytes >= 0) AND (available_bytes <= capacity_bytes))),
-    CONSTRAINT storage_nodes_status_check CHECK (((status)::text = ANY ((ARRAY['ONLINE'::character varying, 'OFFLINE'::character varying, 'DRAINING'::character varying])::text[]))),
-    CONSTRAINT storage_nodes_storage_type_check CHECK (((storage_type)::text = ANY ((ARRAY['LOCAL'::character varying, 'S3'::character varying])::text[])))
+    CONSTRAINT storage_nodes_status_check CHECK (((status)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text, ('DRAINING'::character varying)::text]))),
+    CONSTRAINT storage_nodes_storage_type_check CHECK (((storage_type)::text = ANY (ARRAY[('LOCAL'::character varying)::text, ('S3'::character varying)::text])))
 );
 
 
@@ -2683,7 +2696,7 @@ CREATE TABLE public.task_steps (
     repeat_count integer,
     CONSTRAINT ck_task_steps_not_self_parent CHECK (((parent_step_id IS NULL) OR (parent_step_id <> id))),
     CONSTRAINT ck_task_steps_payload CHECK (((((step_type)::text = 'SKILL'::text) AND (skill_version_id IS NOT NULL) AND (repeat_count IS NULL)) OR (((step_type)::text = 'MOTOR'::text) AND (skill_version_id IS NULL) AND (repeat_count IS NULL)) OR (((step_type)::text = 'REPEAT'::text) AND (skill_version_id IS NULL) AND (repeat_count >= 1)))),
-    CONSTRAINT ck_task_steps_type CHECK (((step_type)::text = ANY ((ARRAY['SKILL'::character varying, 'MOTOR'::character varying, 'REPEAT'::character varying])::text[]))),
+    CONSTRAINT ck_task_steps_type CHECK (((step_type)::text = ANY (ARRAY[('SKILL'::character varying)::text, ('MOTOR'::character varying)::text, ('REPEAT'::character varying)::text]))),
     CONSTRAINT task_steps_step_order_check CHECK ((step_order >= 1)),
     CONSTRAINT task_steps_timeout_seconds_check CHECK (((timeout_seconds IS NULL) OR (timeout_seconds >= 1)))
 );
@@ -2888,11 +2901,13 @@ CREATE TABLE public.training_job_episodes (
     success_snapshot boolean,
     quality_status_snapshot character varying(20) NOT NULL,
     attached_at timestamp with time zone NOT NULL,
+    input_role character varying(20) NOT NULL,
+    CONSTRAINT ck_training_job_episode_input_role CHECK (((input_role)::text = ANY ((ARRAY['DEMONSTRATION'::character varying, 'MAPPING'::character varying])::text[]))),
     CONSTRAINT training_job_episodes_archive_sha256_snapshot_check CHECK (((archive_sha256_snapshot)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT training_job_episodes_input_order_check CHECK ((input_order >= 1)),
-    CONSTRAINT training_job_episodes_label_status_snapshot_check CHECK (((label_status_snapshot)::text = ANY ((ARRAY['UNLABELED'::character varying, 'LABELED'::character varying])::text[]))),
-    CONSTRAINT training_job_episodes_quality_status_snapshot_check CHECK (((quality_status_snapshot)::text = ANY ((ARRAY['VALID'::character varying, 'WARNING'::character varying])::text[]))),
-    CONSTRAINT training_job_episodes_source_snapshot_check CHECK (((source_snapshot)::text = ANY ((ARRAY['SIM'::character varying, 'REAL'::character varying])::text[])))
+    CONSTRAINT training_job_episodes_label_status_snapshot_check CHECK (((label_status_snapshot)::text = ANY (ARRAY[('UNLABELED'::character varying)::text, ('LABELED'::character varying)::text]))),
+    CONSTRAINT training_job_episodes_quality_status_snapshot_check CHECK (((quality_status_snapshot)::text = ANY (ARRAY[('VALID'::character varying)::text, ('WARNING'::character varying)::text]))),
+    CONSTRAINT training_job_episodes_source_snapshot_check CHECK (((source_snapshot)::text = ANY (ARRAY[('SIM'::character varying)::text, ('REAL'::character varying)::text])))
 );
 
 
@@ -3055,7 +3070,6 @@ CREATE TABLE public.training_jobs (
     owner_id uuid NOT NULL,
     skill_id uuid NOT NULL,
     umi_device_id uuid NOT NULL,
-    training_profile_id uuid NOT NULL,
     assigned_storage_node_id uuid,
     assigned_worker_id character varying(100),
     input_mode character varying(30) NOT NULL,
@@ -3063,8 +3077,6 @@ CREATE TABLE public.training_jobs (
     attempt integer DEFAULT 1 NOT NULL,
     lease_token_hash character varying(64),
     lease_expires_at timestamp with time zone,
-    training_config_snapshot jsonb NOT NULL,
-    training_config_sha256 character varying(64) NOT NULL,
     dataset_query jsonb NOT NULL,
     gpu_index integer,
     git_rev character varying(100),
@@ -3091,7 +3103,7 @@ CREATE TABLE public.training_jobs (
     base_skill_version_id uuid,
     CONSTRAINT ck_training_jobs_base_model CHECK (((((training_mode)::text = 'FROM_SCRATCH'::text) AND (base_skill_version_id IS NULL)) OR (((training_mode)::text = 'FINE_TUNE'::text) AND (base_skill_version_id IS NOT NULL)))),
     CONSTRAINT ck_training_jobs_gpu_index_parallel_limit CHECK (((gpu_index IS NULL) OR ((gpu_index >= 0) AND (gpu_index <= 29)))),
-    CONSTRAINT ck_training_jobs_training_mode CHECK (((training_mode)::text = ANY ((ARRAY['FROM_SCRATCH'::character varying, 'FINE_TUNE'::character varying])::text[]))),
+    CONSTRAINT ck_training_jobs_training_mode CHECK (((training_mode)::text = ANY (ARRAY[('FROM_SCRATCH'::character varying)::text, ('FINE_TUNE'::character varying)::text]))),
     CONSTRAINT training_jobs_attempt_check CHECK ((attempt >= 1)),
     CONSTRAINT training_jobs_check CHECK (((model_completed_at IS NULL) OR (started_at IS NULL) OR (model_completed_at >= started_at))),
     CONSTRAINT training_jobs_check1 CHECK (((finished_at IS NULL) OR (model_completed_at IS NULL) OR (finished_at >= model_completed_at))),
@@ -3104,8 +3116,7 @@ CREATE TABLE public.training_jobs (
     CONSTRAINT training_jobs_progress_percent_check CHECK (((progress_percent >= (0)::numeric) AND (progress_percent <= (100)::numeric))),
     CONSTRAINT training_jobs_received_bytes_check CHECK ((received_bytes >= 0)),
     CONSTRAINT training_jobs_received_episode_count_check CHECK ((received_episode_count >= 0)),
-    CONSTRAINT training_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['CREATED'::character varying, 'COLLECTING'::character varying, 'INPUT_VALIDATING'::character varying, 'INPUT_READY'::character varying, 'QUEUED'::character varying, 'PREPARING'::character varying, 'RUNNING'::character varying, 'MODEL_UPLOADING'::character varying, 'MODEL_VALIDATING'::character varying, 'CANCEL_REQUESTED'::character varying, 'CANCELED'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying])::text[]))),
-    CONSTRAINT training_jobs_training_config_sha256_check CHECK (((training_config_sha256)::text ~ '^[0-9a-f]{64}$'::text))
+    CONSTRAINT training_jobs_status_check CHECK (((status)::text = ANY (ARRAY[('CREATED'::character varying)::text, ('COLLECTING'::character varying)::text, ('INPUT_VALIDATING'::character varying)::text, ('INPUT_READY'::character varying)::text, ('QUEUED'::character varying)::text, ('PREPARING'::character varying)::text, ('RUNNING'::character varying)::text, ('MODEL_UPLOADING'::character varying)::text, ('MODEL_VALIDATING'::character varying)::text, ('CANCEL_REQUESTED'::character varying)::text, ('CANCELED'::character varying)::text, ('SUCCEEDED'::character varying)::text, ('FAILED'::character varying)::text])))
 );
 
 
@@ -3135,13 +3146,6 @@ COMMENT ON COLUMN public.training_jobs.skill_id IS 'FK → `skills.id`';
 --
 
 COMMENT ON COLUMN public.training_jobs.umi_device_id IS 'FK → `devices.id`';
-
-
---
--- Name: COLUMN training_jobs.training_profile_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_jobs.training_profile_id IS 'FK → `training_profiles.id`, 생성 시 백엔드가 결정';
 
 
 --
@@ -3191,20 +3195,6 @@ COMMENT ON COLUMN public.training_jobs.lease_token_hash IS '현재 lease token h
 --
 
 COMMENT ON COLUMN public.training_jobs.lease_expires_at IS 'lease 만료 시각';
-
-
---
--- Name: COLUMN training_jobs.training_config_snapshot; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_jobs.training_config_snapshot IS '선택된 프로필의 `algorithm`·`hyperparameters` 불변 snapshot';
-
-
---
--- Name: COLUMN training_jobs.training_config_sha256; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_jobs.training_config_sha256 IS 'snapshot canonical JSON SHA-256';
 
 
 --
@@ -3369,105 +3359,6 @@ COMMENT ON CONSTRAINT ck_training_jobs_gpu_index_parallel_limit ON public.traini
 
 
 --
--- Name: training_profiles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.training_profiles (
-    id uuid NOT NULL,
-    profile_key character varying(100) NOT NULL,
-    version integer NOT NULL,
-    status character varying(20) NOT NULL,
-    algorithm character varying(100) NOT NULL,
-    hyperparameters jsonb NOT NULL,
-    config_sha256 character varying(64) NOT NULL,
-    description text,
-    activated_at timestamp with time zone,
-    retired_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT training_profiles_config_sha256_check CHECK (((config_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT training_profiles_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'RETIRED'::character varying])::text[]))),
-    CONSTRAINT training_profiles_version_check CHECK ((version >= 1))
-);
-
-
---
--- Name: COLUMN training_profiles.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.id IS 'PK';
-
-
---
--- Name: COLUMN training_profiles.profile_key; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.profile_key IS '불변 논리 key, 예: `umi-act-default`';
-
-
---
--- Name: COLUMN training_profiles.version; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.version IS 'key 범위 증가 버전';
-
-
---
--- Name: COLUMN training_profiles.status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.status IS '`ACTIVE`, `RETIRED`';
-
-
---
--- Name: COLUMN training_profiles.algorithm; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.algorithm IS '예: `ACT`';
-
-
---
--- Name: COLUMN training_profiles.hyperparameters; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.hyperparameters IS 'epoch·batch·seed·optimizer·learning rate 등 전체 고정값';
-
-
---
--- Name: COLUMN training_profiles.config_sha256; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.config_sha256 IS '`algorithm`과 `hyperparameters` canonical JSON의 SHA-256';
-
-
---
--- Name: COLUMN training_profiles.description; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.description IS '변경 목적·운영 메모';
-
-
---
--- Name: COLUMN training_profiles.activated_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.activated_at IS 'ACTIVE 전환 시각';
-
-
---
--- Name: COLUMN training_profiles.retired_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.retired_at IS 'RETIRED 전환 시각';
-
-
---
--- Name: COLUMN training_profiles.created_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.training_profiles.created_at IS '생성 시각';
-
-
---
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3479,7 +3370,7 @@ CREATE TABLE public.users (
     status character varying(20) NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT users_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'LOCKED'::character varying, 'WITHDRAWN'::character varying])::text[])))
+    CONSTRAINT users_status_check CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('LOCKED'::character varying)::text, ('WITHDRAWN'::character varying)::text])))
 );
 
 
@@ -3566,8 +3457,8 @@ COMMENT ON COLUMN public.users.updated_at IS '수정 시각';
 -- Data for Name: device_credentials; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.device_credentials (device_id, device_secret_hash, secret_rotated_at, created_at, updated_at, status, enrolled_at, last_authenticated_at) VALUES ('51000000-0000-4000-8000-000000000001', '$2b$10$hk7nZpCKkvK4L9ottyvN/OYf1hCEa8tB91XorGdvjoUBnapCazdWa', '2026-09-18 02:02:43.478697+00', '2026-09-18 02:02:43.478697+00', '2026-09-18 02:02:43.478697+00', 'ACTIVE', '2026-09-18 02:02:43.478697+00', NULL);
-INSERT INTO public.device_credentials (device_id, device_secret_hash, secret_rotated_at, created_at, updated_at, status, enrolled_at, last_authenticated_at) VALUES ('51000000-0000-4000-8000-000000000002', '$2a$10$.y2GoOBYYemXP84Lpx713OnxK6yy.5BF4ajYzaTIz7xLnVNzHrs86', '2026-09-18 02:02:43.493058+00', '2026-09-18 02:02:43.493058+00', '2026-09-18 02:02:43.493058+00', 'ACTIVE', '2026-09-18 02:02:43.493058+00', NULL);
+INSERT INTO public.device_credentials VALUES ('51000000-0000-4000-8000-000000000001', '$2b$10$hk7nZpCKkvK4L9ottyvN/OYf1hCEa8tB91XorGdvjoUBnapCazdWa', '2026-09-18 02:02:43.478697+00', '2026-09-18 02:02:43.478697+00', '2026-09-18 02:02:43.478697+00', 'ACTIVE', '2026-09-18 02:02:43.478697+00', NULL);
+INSERT INTO public.device_credentials VALUES ('51000000-0000-4000-8000-000000000002', '$2a$10$.y2GoOBYYemXP84Lpx713OnxK6yy.5BF4ajYzaTIz7xLnVNzHrs86', '2026-09-18 02:02:43.493058+00', '2026-09-18 02:02:43.493058+00', '2026-09-18 02:02:43.493058+00', 'ACTIVE', '2026-09-18 02:02:43.493058+00', NULL);
 
 
 --
@@ -3580,18 +3471,25 @@ INSERT INTO public.device_credentials (device_id, device_secret_hash, secret_rot
 -- Data for Name: devices; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.devices (id, owner_id, device_type, handle_number, name, connection_status, firmware_version, runtime_version, last_seen_at, created_at, updated_at, location, registration_status) VALUES ('51000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', 'UMI_CAMERA', 'UMI-001', 'shanks umi', 'ONLINE', '1.0.0', '1.0.0', '2026-09-09 00:30:00+00', '2026-09-09 00:00:00+00', '2026-09-09 00:30:00+00', '801호', 'REGISTERED');
-INSERT INTO public.devices (id, owner_id, device_type, handle_number, name, connection_status, firmware_version, runtime_version, last_seen_at, created_at, updated_at, location, registration_status) VALUES ('51000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', 'JETSON', 'JETSON-001', 'Shanks', 'ONLINE', '1.0.0', 'ros2-humble', '2026-09-09 00:30:00+00', '2026-09-09 00:00:00+00', '2026-09-09 00:30:00+00', '801호', 'REGISTERED');
+INSERT INTO public.devices VALUES ('51000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', 'UMI_CAMERA', 'UMI-001', 'shanks umi', 'ONLINE', '1.0.0', '1.0.0', '2026-09-09 00:30:00+00', '2026-09-09 00:00:00+00', '2026-09-09 00:30:00+00', '801호', 'REGISTERED');
+INSERT INTO public.devices VALUES ('51000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', 'JETSON', 'JETSON-001', 'Shanks', 'ONLINE', '1.0.0', 'ros2-humble', '2026-09-09 00:30:00+00', '2026-09-09 00:00:00+00', '2026-09-09 00:30:00+00', '801호', 'REGISTERED');
 
 
 --
 -- Data for Name: episode_archives; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.episode_archives (id, episode_id, storage_node_id, storage_key, original_filename, content_type, archive_format_version, compression_method, size_bytes, uncompressed_size_bytes, entry_count, sha256, manifest_summary, status, stored_at, validated_at, deleted_at, error_code, error_message, created_at, updated_at) VALUES ('62000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260915T031755Z/b4a1d35f-9b90-4c49-8f49-bd4ca35059b1.zip', 'b4a1d35f-9b90-4c49-8f49-bd4ca35059b1.zip', 'application/zip', 'umi-episode-zip-v1', 'STORE', 25688942, 10480000, 66, '6dca74ab39952848a1ab89f356a9fae42635f7154f4ce7ef118cfc7c276f3839', '{"details": {"seedFixture": true, "actualObjectMetadataRequired": true}, "fileSha256": {}, "frameEntryCount": 60}', 'AVAILABLE', '2026-09-15 03:17:55+00', '2026-09-15 03:17:55+00', NULL, NULL, NULL, '2026-09-15 03:17:55+00', '2026-09-18 02:02:43.520135+00');
-INSERT INTO public.episode_archives (id, episode_id, storage_node_id, storage_key, original_filename, content_type, archive_format_version, compression_method, size_bytes, uncompressed_size_bytes, entry_count, sha256, manifest_summary, status, stored_at, validated_at, deleted_at, error_code, error_message, created_at, updated_at) VALUES ('62000000-0000-4000-8000-000000000002', '61000000-0000-4000-8000-000000000002', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260915T031800Z/dff0f188-a016-46e3-a39b-8050711ce130.zip', 'dff0f188-a016-46e3-a39b-8050711ce130.zip', 'application/zip', 'umi-episode-zip-v1', 'STORE', 24923663, 10480000, 66, 'a7cecbac803ed8e00a1904adbeb5e53c7dd70b0a4902b1a6119353df494a29b7', '{"details": {"seedFixture": true, "actualObjectMetadataRequired": true}, "fileSha256": {}, "frameEntryCount": 60}', 'AVAILABLE', '2026-09-15 03:18:00+00', '2026-09-15 03:18:00+00', NULL, NULL, NULL, '2026-09-15 03:18:00+00', '2026-09-18 02:02:43.521309+00');
-INSERT INTO public.episode_archives (id, episode_id, storage_node_id, storage_key, original_filename, content_type, archive_format_version, compression_method, size_bytes, uncompressed_size_bytes, entry_count, sha256, manifest_summary, status, stored_at, validated_at, deleted_at, error_code, error_message, created_at, updated_at) VALUES ('62000000-0000-4000-8000-000000000003', '61000000-0000-4000-8000-000000000003', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260915T031805Z/13845047-dc3f-4ce5-985f-e9d9baece5bb.zip', '13845047-dc3f-4ce5-985f-e9d9baece5bb.zip', 'application/zip', 'umi-episode-zip-v1', 'STORE', 21030598, 10480000, 66, 'ccf8a676edc1f2ae3a2a9899a84c5a055bd4114cf5c9b2012cbaf34318446812', '{"details": {"seedFixture": true, "actualObjectMetadataRequired": true}, "fileSha256": {}, "frameEntryCount": 60}', 'AVAILABLE', '2026-09-15 03:18:05+00', '2026-09-15 03:18:05+00', NULL, NULL, NULL, '2026-09-15 03:18:05+00', '2026-09-18 02:02:43.522471+00');
-INSERT INTO public.episode_archives (id, episode_id, storage_node_id, storage_key, original_filename, content_type, archive_format_version, compression_method, size_bytes, uncompressed_size_bytes, entry_count, sha256, manifest_summary, status, stored_at, validated_at, deleted_at, error_code, error_message, created_at, updated_at) VALUES ('62000000-0000-4000-8000-000000000004', '61000000-0000-4000-8000-000000000004', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260915T031809Z/0b4a7981-552e-40e5-8db3-fdcbdd0b5ca3.zip', '0b4a7981-552e-40e5-8db3-fdcbdd0b5ca3.zip', 'application/zip', 'umi-episode-zip-v1', 'STORE', 28009097, 10480000, 66, 'fbce64fe99c1140078bf8a231c77ef0646ae81e16d4445fce3a8a04f6cf6af72', '{"details": {"seedFixture": true, "actualObjectMetadataRequired": true}, "fileSha256": {}, "frameEntryCount": 60}', 'AVAILABLE', '2026-09-15 03:18:09+00', '2026-09-15 03:18:09+00', NULL, NULL, NULL, '2026-09-15 03:18:09+00', '2026-09-18 02:02:43.523577+00');
+INSERT INTO public.episode_archives VALUES ('663e79f0-260b-44ea-ad51-8a095eac4d40', 'a14071bf-3677-46bf-aa2b-e32bea650982', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260921T090000Z/5cb1d732-404a-42c1-840c-53d449fd9ab5.zip', 'rec_full.zip', 'application/zip', 'umi-raw-v2', 'STORE', 9628714, 9627874, 6, 'cf763cd242c964b92f95681e9deac8d8e7cdadf1ab7795850cf7daba3907ed42', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "checksumType": "FULL_OBJECT", "schemaVersion": 2, "sourceObjectKey": "rec_full.zip", "compressionMethod": "STORE", "s3ChecksumSha256Base64": "z3Y80kLJZLkvlWgenerI2OfNrfGrd5WFDPfaujkH7UI="}, "fileSha256": {"video.mp4": "91c13159b29046efb0efcc0b09fbb6b8a1544fb8c66d10aad75f6879c2f76a22", "frames.csv": "6b0b54ee5877b2eebd34fa2a2f0e303d034e5ed2ffa555793173c7872309853e", "encoded.csv": "38e821ba9a8c22d39aefffd715f45c6306ea7a7678b33d3dfefac6cc964de0ce", "gyroscope.csv": "6a1fa448b5f30338336bd8937286c79ace5be61cc875ca413193e4cec0778ed8", "manifest.json": "cb5ec7d5f24d00bd7240f8d87b4b6d497fc6aa331d1f5f82e7cd5bb95cf81b61", "accelerometer.csv": "de4818327baf4d1cddac3e8c9a5ee2741bc39773bf518a87840af9219e6f280c"}, "frameEntryCount": 145}', 'AVAILABLE', '2026-09-21 09:05:15+00', '2026-09-21 09:05:15+00', NULL, NULL, NULL, '2026-09-21 09:05:15+00', '2026-09-21 09:05:15+00');
+INSERT INTO public.episode_archives VALUES ('bf0bd4cf-909b-5f1e-a08c-6eaf8f7744c9', '851988a6-3e73-559c-bcf2-68546fbc60ec', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010103Z/6968e1b0-c9e9-525a-8b2b-5ac359a264d6.zip', '6968e1b0-c9e9-525a-8b2b-5ac359a264d6.zip', 'application/zip', 'umi-episode-v2', 'STORE', 126204666, 126204042, 6, '5a27e6afc3f9ba0d65d25b9a08340ba099b463f69f46cd34c88d70756efeff93', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "MAPPING", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "78bc7ca8fabddb6e2c077219a88b56585d4531e6b54b7189b7fa17d42b65fdf1", "frames.csv": "be7d9a160319ad4f7b59c94b6f4dccfdc109653fb0f590c3f4b281f4b200d50b", "encoded.csv": "92e5f8319eaf3b6b5eb01291100ea92b922cc041707b8bd9d07f2cd9e3cb20b9", "gyroscope.csv": "f6a1270d1747ecd3362ecca02fe3b2f5b9ba7d6a1050dbb0e7a87f45d872fb72", "manifest.json": "b1ffe0490edcbe04311320cfcd1d8231ef0d843fee7a646e4a623726c1206174", "accelerometer.csv": "781844bf46fc87ac3215e57c012df372b889b51277db7c9bc969fa3c6761dd46"}, "frameEntryCount": 1867}', 'AVAILABLE', '2026-09-22 01:01:03.122+00', '2026-09-22 01:01:03.122+00', NULL, NULL, NULL, '2026-09-22 01:01:03.122+00', '2026-09-22 01:01:03.122+00');
+INSERT INTO public.episode_archives VALUES ('3d68baec-d61b-5b8a-b65d-2edc3f51244a', 'ec7f4cf0-41cf-589d-9763-b5c3af853281', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010113Z/1a4ae096-f735-5343-98ab-483f82ea6e12.zip', '1a4ae096-f735-5343-98ab-483f82ea6e12.zip', 'application/zip', 'umi-episode-v2', 'STORE', 17646348, 17645724, 6, '63e0a349945a9747bb1d5dafa5f105ab345e8a2d8e5f63f4ba7f2d68efa4887f', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "CALIBRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "ad0b198f808659ce1af4c257e84e44456c8515592393dd7ae773a9c80ef5aae8", "frames.csv": "c4fc2234c10bea3cbcd0721d77c33ecd92633cd4a67ffd461358e15066ab2421", "encoded.csv": "ab6f4ac3d99aa04fc2f99fbdbbec9fc0edd84ef3b9b75f0ef700331ae13370cb", "gyroscope.csv": "d03dc35039a14517a0c71e194a30c3ece02bb834f833abd121cff090cf8156c9", "manifest.json": "1d10788338fc9cd267b929071cd192abb1970b4d6494818e4f1f433a908cf524", "accelerometer.csv": "3d1633853678de5972028b8ef1839d75e5607a08c557a040fe99075aca872dfa"}, "frameEntryCount": 260}', 'AVAILABLE', '2026-09-22 01:01:13.376+00', '2026-09-22 01:01:13.376+00', NULL, NULL, NULL, '2026-09-22 01:01:13.376+00', '2026-09-22 01:01:13.376+00');
+INSERT INTO public.episode_archives VALUES ('89f3afcf-ce89-5308-b936-b74c5190c9cb', '027140cd-9fed-54c4-aca4-bc41679416df', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010125Z/0cf912e1-381f-5044-a948-4e0aa24bbf0f.zip', '0cf912e1-381f-5044-a948-4e0aa24bbf0f.zip', 'application/zip', 'umi-episode-v2', 'STORE', 21644796, 21644172, 6, 'e3501633409d7bb5033e4550a1c5e14ec08b34040fd77ebeffdb69464cedd7b4', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "f76943a252fcd3133e4752c10d687c5cb1a0553f1ac87cf8607959d4b1f9e0c7", "frames.csv": "ccb9afd89d8fcf851ca761d8180b161ca445045362d5dc0983841399a8a951da", "encoded.csv": "82a0694b4318ae5fd99f4046de51c0088eebf40c74fcdacdb80b1e65c2867bd7", "gyroscope.csv": "d27b99a909fb6d3e5b35fa2717ebd0a0ff0f1dd795bcdc4dc96eb44238ff3961", "manifest.json": "0f76b8d33bbeff2ac9f6bf8cc65d7471220b076faceb79046afd3da9c4651f44", "accelerometer.csv": "cc8b34cbbc9806ea549388643a922a703c9f6f650d1e291a70bd2c4e5c9a3bf1"}, "frameEntryCount": 317}', 'AVAILABLE', '2026-09-22 01:01:25.573+00', '2026-09-22 01:01:25.573+00', NULL, NULL, NULL, '2026-09-22 01:01:25.573+00', '2026-09-22 01:01:25.573+00');
+INSERT INTO public.episode_archives VALUES ('5c9cd476-c621-5c8a-b602-30008e6f6f1d', 'b13ab2ab-50ed-5f4a-9ec4-5fc0402b6eac', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010137Z/c59d3bb6-0134-5cdf-a614-25d9738cbb51.zip', 'c59d3bb6-0134-5cdf-a614-25d9738cbb51.zip', 'application/zip', 'umi-episode-v2', 'STORE', 20271309, 20270685, 6, 'd8ff83a14798c7af53f7eaaed229ba56b7b9f87604517a35180b0bbefc9b97ab', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "d427cef81219f6304859596a52f04ca76cedb227dbb2c27e9f20d0ab1dcedf0b", "frames.csv": "f2b3c7950afe52694b69e4ea4a3decc4a9fbe9c5c5439f0e74c3ff7ba27b6df5", "encoded.csv": "274426f134d42aed78e191867343bfdd23a40ab954733e85b4978cc03eb6962a", "gyroscope.csv": "6e092c9241a7fde90cc215b21f3fecfd421f301213f62e8f46de7ad9b286f748", "manifest.json": "70eafdf94d4be55453423adf611e14192ffdd25d28ca5aab22474f23d14e13ac", "accelerometer.csv": "12020caaeba4612a999c021914be9dd6ff4cb29c482e97cc2e9894c11923b3a1"}, "frameEntryCount": 298}', 'AVAILABLE', '2026-09-22 01:01:37.132+00', '2026-09-22 01:01:37.132+00', NULL, NULL, NULL, '2026-09-22 01:01:37.132+00', '2026-09-22 01:01:37.132+00');
+INSERT INTO public.episode_archives VALUES ('11580696-6108-54a2-9798-a3ccc6e40f53', 'f3174fcd-977f-5caa-806f-2c965ec3b709', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010149Z/134e9e04-0cf1-58ce-aa94-64d1d8c12b58.zip', '134e9e04-0cf1-58ce-aa94-64d1d8c12b58.zip', 'application/zip', 'umi-episode-v2', 'STORE', 21158038, 21157414, 6, '4c498b0275abd11728b6470c37abe87bb5ca6b912b9ba9dc52e558d13e98fbe4', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "ea389eb7da0816af75d2438ff0e509e7f63e17a589260b2d0a66a5aeee0031b8", "frames.csv": "597892087c955e42c18498e2d3487c1c7ef0d468068f0718d2cef2d8c5399c72", "encoded.csv": "653814a62c3ecea2fcfda880713ce68e8d4799505c8da19d5ab1637e6046f026", "gyroscope.csv": "646eea288e564981e2837b34dc8e8ec3505cd3af8458170c7393bfce0c78d698", "manifest.json": "a106aced3da305df6b6d21d24a2750457ec69204a1663281f1870fb54d50bd8c", "accelerometer.csv": "953ec5ff2a38674bd6645427eef0f4215665ba52eeae55a8cd91dabf725ac232"}, "frameEntryCount": 309}', 'AVAILABLE', '2026-09-22 01:01:49.049+00', '2026-09-22 01:01:49.049+00', NULL, NULL, NULL, '2026-09-22 01:01:49.049+00', '2026-09-22 01:01:49.049+00');
+INSERT INTO public.episode_archives VALUES ('0aa38a50-ed2c-5a04-80ea-d9dd860aae88', 'ab71d02a-cdeb-5250-86fb-1f7699b92d90', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010159Z/00b26c4f-4b74-5a7c-b968-46769cafd5db.zip', '00b26c4f-4b74-5a7c-b968-46769cafd5db.zip', 'application/zip', 'umi-episode-v2', 'STORE', 18285167, 18284543, 6, 'f7c6e860dfac0d72a87171b75032725a8c761e0a3f10539dc274845ef1044063', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "d5e10622befc1c6b67736d6fcf05f06ec76ee5861376208e9f46038aa7bde8d5", "frames.csv": "8f25e94b3484147c2fabf5e097baba985237c94f0bcf227225164295df39148d", "encoded.csv": "6dac550b7ca1928356850346d567673ceb3263965b438c30bb805e1f30195db5", "gyroscope.csv": "d255d8d3a13e35e0d707bbbac27db3790f18352a2c14a045bd9ebc67fe0e495a", "manifest.json": "67a41df7f816062ce7dc61a05b69b05b78978f5f05114117d426d085a00d61c1", "accelerometer.csv": "e22e69043b268b4486d3795cdde8a394ab09a3c33eb999f7ebcab6d4cd6cdda2"}, "frameEntryCount": 269}', 'AVAILABLE', '2026-09-22 01:01:59.639+00', '2026-09-22 01:01:59.639+00', NULL, NULL, NULL, '2026-09-22 01:01:59.639+00', '2026-09-22 01:01:59.639+00');
+INSERT INTO public.episode_archives VALUES ('dc44e389-f714-54e2-8d29-e11839ad4f33', 'aa955a2a-a519-509f-a50d-135cb8ddf9cb', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010210Z/eb4d6141-b153-51e7-950b-b7288dad6a20.zip', 'eb4d6141-b153-51e7-950b-b7288dad6a20.zip', 'application/zip', 'umi-episode-v2', 'STORE', 19097847, 19097223, 6, '4f9ddb090cfb5f86764a605eaa44b13c434f67e702589672a44fff75892fe9ae', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "5c8fc6adaa91cd3048400a5e55f18e65a87ddd404cdc1888c3b5c560d83c433a", "frames.csv": "644128b6bae13d31b4da7ba018aa0b9bcd38deae6fd211a7ec90c394af0575bc", "encoded.csv": "deec73377a18c20ea0c707558ccf7de00d7c8728f774a58d4b91b5c3e7e3b93e", "gyroscope.csv": "4664e8a718c1c2a7fdc979b59c9e0fd9c804516bfa655e5341d637e8ff7fad77", "manifest.json": "6b7e7b68c98583593fffd76917534d2f34fc0ec945c12f2c55e38e388a7579f3", "accelerometer.csv": "75885d4c4937bc5074ef17c181a2565f1ac12ba56814d6788f79ef9df96ca301"}, "frameEntryCount": 279}', 'AVAILABLE', '2026-09-22 01:02:10.569+00', '2026-09-22 01:02:10.569+00', NULL, NULL, NULL, '2026-09-22 01:02:10.569+00', '2026-09-22 01:02:10.569+00');
+INSERT INTO public.episode_archives VALUES ('3babd1b6-55c5-5ede-a8b3-2f6d1dc28f02', 'c7e97607-df48-5a44-a6c4-9150553e9752', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010219Z/fed8aef2-cfe8-5f51-92b1-6ad123f726f1.zip', 'fed8aef2-cfe8-5f51-92b1-6ad123f726f1.zip', 'application/zip', 'umi-episode-v2', 'STORE', 15454515, 15453891, 6, 'aab5fda92909c4c99b7af012b5e19c5fb0c99ee06a484f1b8a59dd8d053b85eb', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "bcdd3f30bfc3a373b6d33dd3795b0c78b56be2b48d3cc4453e857562afac7370", "frames.csv": "a42ace97ef8b94aa170a11ea5d1f0b5da583751dfcf7ac65ffdc89c9f144614c", "encoded.csv": "06ed9a194cd7264cf77f11e99159a49ede6f0cedfd2e8954c295029ab66dc574", "gyroscope.csv": "bddbe0488878131d581d0e4c359980d6d785c87034ae2f88f86cbca6ce5e62ad", "manifest.json": "7d859d1eb85e7555e03ee62c20ea2822d41e9736e370919a8f1bb6d08368e60b", "accelerometer.csv": "caeb95d40f3e2dc9d7e89638a098a6cb8a09d35a473c3e7dc5c3f19d82282319"}, "frameEntryCount": 228}', 'AVAILABLE', '2026-09-22 01:02:19.767+00', '2026-09-22 01:02:19.767+00', NULL, NULL, NULL, '2026-09-22 01:02:19.767+00', '2026-09-22 01:02:19.767+00');
+INSERT INTO public.episode_archives VALUES ('16a55ffa-fae4-508b-9d00-7f3f2237f1fd', '59cad5e1-c1a7-545f-9d62-66303f1289da', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010227Z/11dac813-8cb3-5392-8560-dbeaa52d19bc.zip', '11dac813-8cb3-5392-8560-dbeaa52d19bc.zip', 'application/zip', 'umi-episode-v2', 'STORE', 13414338, 13413714, 6, '9438f2e189cb4f3054a4e42326997bf58ab6a919942509a7a5203222e660b7d3', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "be2818fdb9b51274e21f0935985af82f1aa7c33d1da4d2a7066daadd7977d117", "frames.csv": "177001ac554d332ce5c3b0ad57de5349da55dd8ae82d130c1e70eec669b9f64d", "encoded.csv": "6d494bf545e9da64c370edffc373d813b9988694855151dd089622c3488d792a", "gyroscope.csv": "6ea71fc470e1fe247be62d9c11dbc50e8ea3457ea61e2383863c21aa040f5d67", "manifest.json": "65222db18b71de10b6a2e2fa1d9b6b6dbaf28bd161a2c614faf5be55df72f2fa", "accelerometer.csv": "991e1d552226c879961ed873a286dfad21e79ab76bcb58643249ba8c2a1e2c53"}, "frameEntryCount": 196}', 'AVAILABLE', '2026-09-22 01:02:27.946+00', '2026-09-22 01:02:27.946+00', NULL, NULL, NULL, '2026-09-22 01:02:27.946+00', '2026-09-22 01:02:27.946+00');
+INSERT INTO public.episode_archives VALUES ('f0388a86-3bb8-5237-9c89-98c21f1c3069', 'b89a2578-2db6-5321-ae39-ad16c29749ed', '18000000-0000-4000-8000-000000000001', 'episodes/50000000-0000-4000-8000-000000000001/20260922T010237Z/16f06c3e-9fc2-508c-80cc-16fa9bf03234.zip', '16f06c3e-9fc2-508c-80cc-16fa9bf03234.zip', 'application/zip', 'umi-episode-v2', 'STORE', 15968062, 15967438, 6, 'bf6879e2e63764a582833acbd178c863ec5cb5ae4b8eaac1f5c3bf529a15a2f7', '{"details": {"bucket": "pjt2-shanks-ssafy-720223570179-ap-northeast-2-an", "datasetRole": "DEMONSTRATION", "schemaVersion": 2, "compressionMethod": "STORE"}, "fileSha256": {"video.mp4": "17a959e3429949fcca23b05b530f16bd652b039091a99c82da30cbf0da8b5bed", "frames.csv": "3475f75ae863577794cfbb620e0eba4ec21cadb07dc4b0f311e5f98c22302769", "encoded.csv": "03f114d8e9fcebb37889b37cbe7870a23118f204e1cb08d2b9a2469f99261ed9", "gyroscope.csv": "465c31148c58e2eb3f760364db4b0a886df8fa7da237bff574babf23f425f6f0", "manifest.json": "537e5b2ca3bfd2aeefbd83782d32f7fd4dd7695e6a3d635357ec67779ac058f7", "accelerometer.csv": "16af0d8e4a0fc19d4cedaf520ea13244f9923331580bd9ef00a7f5e8b49436c4"}, "frameEntryCount": 235}', 'AVAILABLE', '2026-09-22 01:02:37.417+00', '2026-09-22 01:02:37.417+00', NULL, NULL, NULL, '2026-09-22 01:02:37.417+00', '2026-09-22 01:02:37.417+00');
 
 
 --
@@ -3604,10 +3502,17 @@ INSERT INTO public.episode_archives (id, episode_id, storage_node_id, storage_ke
 -- Data for Name: episodes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.episodes (id, owner_id, umi_device_id, storage_node_id, retention_policy_id, skill_id, session_id, source, success, label_status, label_source, labeled_at, contract_version, meta_schema_version, summary_schema_version, status, started_at, ended_at, start_monotonic_ns, timestamp_timebase, first_timestamp_ns, last_timestamp_ns, duration_ns, frame_count, pose_sample_count, imu_sample_count, gripper_sample_count, missing_frame_count, tracking_gap_count, tracking_lost_duration_ns, quality_status, capture_metadata, quality_summary, validated_at, last_used_at, retention_expires_at, deleted_at, error_code, error_message, created_at, updated_at, row_version) VALUES ('61000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', 'b4a1d35f-9b90-4c49-8f49-bd4ca35059b1', 'REAL', true, 'LABELED', 'UMI', '2026-09-15 03:17:55+00', 'episode-archive-v1', 'meta-v1', 'summary-v1', 'READY', '2026-09-15 03:17:53+00', '2026-09-15 03:17:55+00', 1000000000, 'MONOTONIC_NS', 1000000000, 3000000000, 2000000000, 60, 60, 400, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "position": "m", "rotation": "quaternion"}, "camera": {"source": "S3_SEED"}, "device": {"deviceId": "51000000-0000-4000-8000-000000000001", "handleNumber": "UMI-001"}, "coordinateSystem": {"pose": "ARCORE_WORLD"}}', '{"values": {"seedFixture": true, "trackingGapCount": 0, "missingFrameCount": 0}}', '2026-09-15 03:17:55+00', NULL, '2026-09-22 03:17:55+00', NULL, NULL, NULL, '2026-09-15 03:17:55+00', '2026-09-15 03:17:55+00', 0);
-INSERT INTO public.episodes (id, owner_id, umi_device_id, storage_node_id, retention_policy_id, skill_id, session_id, source, success, label_status, label_source, labeled_at, contract_version, meta_schema_version, summary_schema_version, status, started_at, ended_at, start_monotonic_ns, timestamp_timebase, first_timestamp_ns, last_timestamp_ns, duration_ns, frame_count, pose_sample_count, imu_sample_count, gripper_sample_count, missing_frame_count, tracking_gap_count, tracking_lost_duration_ns, quality_status, capture_metadata, quality_summary, validated_at, last_used_at, retention_expires_at, deleted_at, error_code, error_message, created_at, updated_at, row_version) VALUES ('61000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', 'dff0f188-a016-46e3-a39b-8050711ce130', 'REAL', true, 'LABELED', 'UMI', '2026-09-15 03:18:00+00', 'episode-archive-v1', 'meta-v1', 'summary-v1', 'READY', '2026-09-15 03:17:58+00', '2026-09-15 03:18:00+00', 4000000000, 'MONOTONIC_NS', 4000000000, 6000000000, 2000000000, 60, 60, 400, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "position": "m", "rotation": "quaternion"}, "camera": {"source": "S3_SEED"}, "device": {"deviceId": "51000000-0000-4000-8000-000000000001", "handleNumber": "UMI-001"}, "coordinateSystem": {"pose": "ARCORE_WORLD"}}', '{"values": {"seedFixture": true, "trackingGapCount": 0, "missingFrameCount": 0}}', '2026-09-15 03:18:00+00', NULL, '2026-09-22 03:18:00+00', NULL, NULL, NULL, '2026-09-15 03:18:00+00', '2026-09-15 03:18:00+00', 0);
-INSERT INTO public.episodes (id, owner_id, umi_device_id, storage_node_id, retention_policy_id, skill_id, session_id, source, success, label_status, label_source, labeled_at, contract_version, meta_schema_version, summary_schema_version, status, started_at, ended_at, start_monotonic_ns, timestamp_timebase, first_timestamp_ns, last_timestamp_ns, duration_ns, frame_count, pose_sample_count, imu_sample_count, gripper_sample_count, missing_frame_count, tracking_gap_count, tracking_lost_duration_ns, quality_status, capture_metadata, quality_summary, validated_at, last_used_at, retention_expires_at, deleted_at, error_code, error_message, created_at, updated_at, row_version) VALUES ('61000000-0000-4000-8000-000000000003', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000002', '13845047-dc3f-4ce5-985f-e9d9baece5bb', 'REAL', true, 'LABELED', 'UMI', '2026-09-15 03:18:05+00', 'episode-archive-v1', 'meta-v1', 'summary-v1', 'READY', '2026-09-15 03:18:03+00', '2026-09-15 03:18:05+00', 7000000000, 'MONOTONIC_NS', 7000000000, 9000000000, 2000000000, 60, 60, 400, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "position": "m", "rotation": "quaternion"}, "camera": {"source": "S3_SEED"}, "device": {"deviceId": "51000000-0000-4000-8000-000000000001", "handleNumber": "UMI-001"}, "coordinateSystem": {"pose": "ARCORE_WORLD"}}', '{"values": {"seedFixture": true, "trackingGapCount": 0, "missingFrameCount": 0}}', '2026-09-15 03:18:05+00', NULL, '2026-09-22 03:18:05+00', NULL, NULL, NULL, '2026-09-15 03:18:05+00', '2026-09-15 03:18:05+00', 0);
-INSERT INTO public.episodes (id, owner_id, umi_device_id, storage_node_id, retention_policy_id, skill_id, session_id, source, success, label_status, label_source, labeled_at, contract_version, meta_schema_version, summary_schema_version, status, started_at, ended_at, start_monotonic_ns, timestamp_timebase, first_timestamp_ns, last_timestamp_ns, duration_ns, frame_count, pose_sample_count, imu_sample_count, gripper_sample_count, missing_frame_count, tracking_gap_count, tracking_lost_duration_ns, quality_status, capture_metadata, quality_summary, validated_at, last_used_at, retention_expires_at, deleted_at, error_code, error_message, created_at, updated_at, row_version) VALUES ('61000000-0000-4000-8000-000000000004', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000002', '0b4a7981-552e-40e5-8db3-fdcbdd0b5ca3', 'REAL', true, 'LABELED', 'UMI', '2026-09-15 03:18:09+00', 'episode-archive-v1', 'meta-v1', 'summary-v1', 'READY', '2026-09-15 03:18:07+00', '2026-09-15 03:18:09+00', 10000000000, 'MONOTONIC_NS', 10000000000, 12000000000, 2000000000, 60, 60, 400, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "position": "m", "rotation": "quaternion"}, "camera": {"source": "S3_SEED"}, "device": {"deviceId": "51000000-0000-4000-8000-000000000001", "handleNumber": "UMI-001"}, "coordinateSystem": {"pose": "ARCORE_WORLD"}}', '{"values": {"seedFixture": true, "trackingGapCount": 0, "missingFrameCount": 0}}', '2026-09-15 03:18:09+00', NULL, '2026-09-22 03:18:09+00', NULL, NULL, NULL, '2026-09-15 03:18:09+00', '2026-09-15 03:18:09+00', 0);
+INSERT INTO public.episodes VALUES ('a14071bf-3677-46bf-aa2b-e32bea650982', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', '5cb1d732-404a-42c1-840c-53d449fd9ab5', 'REAL', true, 'LABELED', 'UMI', '2026-09-21 09:00:05.684578+00', 'umi-raw-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-21 09:00:00+00', '2026-09-21 09:00:05.684578+00', 1014759411269965, 'MONOTONIC_NS', 1014760010155241, 1014764843195501, 4833040260, 145, 0, 2395, 0, 0, 0, 0, 'WARNING', '{"units": {"time": "ns", "gyroscope": "rad/s", "markerSide": "mm", "accelerometer": "m/s^2"}, "camera": {"id": "2", "width": 1920, "height": 1080, "focalLengthsMm": [2.2], "timestampSource": 1, "sensorOrientation": 90, "encoderTimestampBase": "SENSOR", "imageRotationDegrees": 180, "minimumFocusDistance": 0, "horizontalFovEstimate": 104.12870803319929, "decoderRotationDegrees": 0, "rotationBakedIntoPixels": true, "imageOrientationContract": "upright_v1"}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "imuRotationApplied": false}}', '{"values": {"task": "grasp_lift_hold", "outcome": "failure", "framesRows": 145, "encodedRows": 145, "calibrationId": null, "gyroscopeRows": 1190, "trainingReady": false, "warningReason": "Manifest marks this recording as a failed, non-training-ready demonstration", "manifestStatus": "recorded", "accelerometerRows": 1205, "ptsMatchesSensorTimestamp": true, "markerBlackSquareSizeVerified": false}}', '2026-09-21 09:05:15+00', NULL, '2026-09-28 09:00:00+00', NULL, NULL, NULL, '2026-09-21 09:05:15+00', '2026-09-26 03:39:30.15721+00', 0);
+INSERT INTO public.episodes VALUES ('851988a6-3e73-559c-bcf2-68546fbc60ec', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '6968e1b0-c9e9-525a-8b2b-5ac359a264d6', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:01:03.122+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:00:00+00', '2026-09-22 01:01:03.122+00', 1041922384410622, 'MONOTONIC_NS', 1041923018435084, 1041985246210191, 62227775107, 1867, 0, 26998, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 1867, "datasetRole": "MAPPING", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "unrated", "imuSampleCount": 26998, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:01:03.122+00', NULL, '2026-10-22 01:01:03.122+00', NULL, NULL, NULL, '2026-09-22 01:01:03.122+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('ec7f4cf0-41cf-589d-9763-b5c3af853281', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '1a4ae096-f735-5343-98ab-483f82ea6e12', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:01:13.376+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:01:04.122+00', '2026-09-22 01:01:13.376+00', 1043450721535404, 'MONOTONIC_NS', 1043451084265152, 1043459749530659, 8665265507, 260, 0, 3949, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 260, "datasetRole": "CALIBRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 3949, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:01:13.376+00', NULL, '2026-10-22 01:01:13.376+00', NULL, NULL, NULL, '2026-09-22 01:01:13.376+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('027140cd-9fed-54c4-aca4-bc41679416df', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '0cf912e1-381f-5044-a948-4e0aa24bbf0f', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:01:25.573+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:01:14.376+00', '2026-09-22 01:01:25.573+00', 1042085631602956, 'MONOTONIC_NS', 1042086010694602, 1042096575394618, 10564700016, 317, 0, 4775, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 317, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 4775, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:01:25.573+00', NULL, '2026-10-22 01:01:25.573+00', NULL, NULL, NULL, '2026-09-22 01:01:25.573+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('b13ab2ab-50ed-5f4a-9ec4-5fc0402b6eac', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', 'c59d3bb6-0134-5cdf-a614-25d9738cbb51', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:01:37.132+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:01:26.573+00', '2026-09-22 01:01:37.132+00', 1042104852570032, 'MONOTONIC_NS', 1042105224509669, 1042115155229566, 9930719897, 298, 0, 4500, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 298, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 4500, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:01:37.132+00', NULL, '2026-10-22 01:01:37.132+00', NULL, NULL, NULL, '2026-09-22 01:01:37.132+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('f3174fcd-977f-5caa-806f-2c965ec3b709', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '134e9e04-0cf1-58ce-aa94-64d1d8c12b58', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:01:49.049+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:01:38.132+00', '2026-09-22 01:01:49.049+00', 1042120034474089, 'MONOTONIC_NS', 1042120414805871, 1042130712119097, 10297313226, 309, 0, 4653, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 309, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 4653, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:01:49.049+00', NULL, '2026-10-22 01:01:49.049+00', NULL, NULL, NULL, '2026-09-22 01:01:49.049+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('ab71d02a-cdeb-5250-86fb-1f7699b92d90', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '00b26c4f-4b74-5a7c-b968-46769cafd5db', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:01:59.639+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:01:50.049+00', '2026-09-22 01:01:59.639+00', 1042135587848874, 'MONOTONIC_NS', 1042135982648904, 1042144947203576, 8964554672, 269, 0, 4088, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 269, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 4088, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:01:59.639+00', NULL, '2026-10-22 01:01:59.639+00', NULL, NULL, NULL, '2026-09-22 01:01:59.639+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('aa955a2a-a519-509f-a50d-135cb8ddf9cb', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', 'eb4d6141-b153-51e7-950b-b7288dad6a20', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:02:10.569+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:02:00.639+00', '2026-09-22 01:02:10.569+00', 1042152119552410, 'MONOTONIC_NS', 1042152504640860, 1042161802083003, 9297442143, 279, 0, 4232, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 279, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 4232, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:02:10.569+00', NULL, '2026-10-22 01:02:10.569+00', NULL, NULL, NULL, '2026-09-22 01:02:10.569+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('c7e97607-df48-5a44-a6c4-9150553e9752', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', 'fed8aef2-cfe8-5f51-92b1-6ad123f726f1', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:02:19.767+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:02:11.569+00', '2026-09-22 01:02:19.767+00', 1042172841450110, 'MONOTONIC_NS', 1042173215701308, 1042180813385347, 7597684039, 228, 0, 3490, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 228, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 3490, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:02:19.767+00', NULL, '2026-10-22 01:02:19.767+00', NULL, NULL, NULL, '2026-09-22 01:02:19.767+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('59cad5e1-c1a7-545f-9d62-66303f1289da', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '11dac813-8cb3-5392-8560-dbeaa52d19bc', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:02:27.946+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:02:20.767+00', '2026-09-22 01:02:27.946+00', 1042188620753750, 'MONOTONIC_NS', 1042189018948003, 1042195550225920, 6531277917, 196, 0, 3051, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 196, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 3051, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:02:27.946+00', NULL, '2026-10-22 01:02:27.946+00', NULL, NULL, NULL, '2026-09-22 01:02:27.946+00', '2026-09-26 03:39:30.811757+00', 0);
+INSERT INTO public.episodes VALUES ('b89a2578-2db6-5321-ae39-ad16c29749ed', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '18000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '16f06c3e-9fc2-508c-80cc-16fa9bf03234', 'REAL', true, 'LABELED', 'SERVER', '2026-09-22 01:02:37.417+00', 'umi-episode-v2', '2', 'manifest-derived-v1', 'READY', '2026-09-22 01:02:28.946+00', '2026-09-22 01:02:37.417+00', 1042204133029682, 'MONOTONIC_NS', 1042204524331753, 1042212355658524, 7831326771, 235, 0, 3602, 0, 0, 0, 0, 'VALID', '{"units": {"time": "ns", "gyroscope": "rad/s", "accelerometer": "m/s^2"}, "camera": {"id": "2", "candidates": [{"id": "0", "focal_mm": 5.400000095367432, "horizontal_fov_estimate": 74.14614334943072}, {"id": "2", "focal_mm": 2.200000047683716, "horizontal_fov_estimate": 104.12870803319929}], "focal_lengths_mm": [2.2], "timestamp_source": "SENSOR", "sensor_orientation": 90, "minimum_focus_distance": 0, "horizontal_fov_estimate": 104.12870803319929}, "device": {"model": "SM-S901N", "android": "16", "deviceId": "51000000-0000-4000-8000-000000000001", "appVersion": "0.3", "handleNumber": "UMI-001"}, "coordinateSystem": {"imuAxes": "Android device axes; acceleration includes gravity", "timestampBase": "elapsedRealtimeNanos", "imageOrientation": "upright_v1", "imuRotationApplied": false}}', '{"values": {"frameCount": 235, "datasetRole": "DEMONSTRATION", "calibrationId": "calibration-81c59aa8", "captureStatus": "recorded", "trainingReady": true, "captureOutcome": "success", "imuSampleCount": 3602, "serverSeedVerified": true, "markerBlackSquareSizeVerified": true}}', '2026-09-22 01:02:37.417+00', NULL, '2026-10-22 01:02:37.417+00', NULL, NULL, NULL, '2026-09-22 01:02:37.417+00', '2026-09-26 03:39:30.811757+00', 0);
 
 
 --
@@ -3632,7 +3537,7 @@ INSERT INTO public.episodes (id, owner_id, umi_device_id, storage_node_id, reten
 -- Data for Name: retention_policies; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.retention_policies (id, name, default_retention_days, post_training_grace_days, max_retention_days, max_delete_attempts, allow_manual_extension, allow_manual_purge, is_default, active, created_at, updated_at) VALUES ('40000000-0000-4000-8000-000000000001', 'dev-provisional-retention', 7, 3, 30, 3, false, false, true, true, '2026-09-18 02:02:43.324112+00', '2026-09-18 02:02:43.324112+00');
+INSERT INTO public.retention_policies VALUES ('40000000-0000-4000-8000-000000000001', 'dev-provisional-retention', 7, 3, 30, 3, false, false, true, true, '2026-09-18 02:02:43.324112+00', '2026-09-18 02:02:43.324112+00');
 
 
 --
@@ -3645,7 +3550,7 @@ INSERT INTO public.retention_policies (id, name, default_retention_days, post_tr
 -- Data for Name: robot_profiles; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.robot_profiles (id, name, contract_version, architecture, runtime, runtime_version, camera_contract, state_contract, action_contract, created_at, updated_at) VALUES ('52000000-0000-4000-8000-000000000001', 'demo-robot-arm', 'umi-policy-v1', 'jetson-orin-nano', 'ros2', 'humble', '{"cameraNames": ["front"]}', '{"jointCount": 6, "includesGripper": true}', '{"type": "JOINT_ABSOLUTE", "jointCount": 6, "includesGripper": true}', '2026-09-09 00:00:00+00', '2026-09-09 00:00:00+00');
+INSERT INTO public.robot_profiles VALUES ('52000000-0000-4000-8000-000000000001', 'demo-robot-arm', 'umi-policy-v1', 'jetson-orin-nano', 'ros2', 'humble', '{"cameraNames": ["camera0_rgb"]}', '{"camera0_rgb": {"shape": [2, 3, 224, 224]}, "robot0_eef_pos": {"shape": [2, 3]}, "robot0_gripper_width": {"shape": [2, 1]}, "robot0_eef_rot_axis_angle": {"shape": [2, 6]}, "robot0_eef_rot_axis_angle_wrt_start": {"shape": [2, 6]}}', '{"actionSpec": {"dim": 10, "layout": ["dx", "dy", "dz", "r00", "r01", "r02", "r10", "r11", "r12", "gap_m"], "rateHz": 10, "compose": "T_next = T_cur @ A_relative", "gapUnit": "m", "horizon": 16, "gapRange": [0, 0.09], "rotation": "ROTATION_MATRIX_ROWS_0_1", "nActionSteps": 8, "schemaVersion": 1}, "actionSpace": "EEF_RELATIVE_ROT6D", "runtimeSpec": {"execSlice": {"endExclusive": 5, "startInclusive": 1}, "convertedDim": 7, "convertedFrame": "ABSOLUTE", "convertedLayout": ["x", "y", "z", "rx", "ry", "rz", "gap_m"], "reobserveRateHz": 2.5, "actionPointRateHz": 10, "convertedRotation": "AXIS_ANGLE_ROTVEC", "execSliceAppliesTo": "raw", "consumerMustConvert": true}, "outputSchema": {"actionShape": [16, 10]}}', '2026-09-09 00:00:00+00', '2026-09-26 03:39:31.457789+00');
 
 
 --
@@ -3658,53 +3563,55 @@ INSERT INTO public.robot_profiles (id, name, contract_version, architecture, run
 -- Data for Name: robots; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.robots (id, owner_id, jetson_device_id, robot_profile_id, name, connection_status, current_deployment_id, last_seen_at, created_at, updated_at, row_version) VALUES ('53000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000002', '52000000-0000-4000-8000-000000000001', 'SHANKS', 'ONLINE', NULL, '2026-09-09 00:30:00+00', '2026-09-09 00:00:00+00', '2026-09-09 00:30:00+00', 0);
+INSERT INTO public.robots VALUES ('53000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000002', '52000000-0000-4000-8000-000000000001', 'SHANKS', 'ONLINE', NULL, '2026-09-09 00:30:00+00', '2026-09-09 00:00:00+00', '2026-09-09 00:30:00+00', 0);
 
 
 --
 -- Data for Name: skill_versions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.skill_versions (id, skill_id, training_job_id, training_profile_id, training_config_sha256, robot_profile_id, version, status, checkpoint_bucket, checkpoint_key, checkpoint_sha256, checkpoint_bytes, architecture, framework, framework_version, contract_version, action_space, n_params, control_rate_hz, camera_names, input_schema, output_schema, gate_metric, gate_n, gate_runs, gate_value, gate_ci_low, gate_ci_high, gate_measured_at, created_at, validated_at, archived_at, parent_skill_version_id) VALUES ('56000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', 'e7b06e63bf92bfa6f126060e9bb7150c3a55be0dbc9269a55e3bc805a5d19275', '52000000-0000-4000-8000-000000000001', 1, 'READY', 'ssafy-model-checkpoints', 'ckpt/50000000-0000-4000-8000-000000000001/grab_blue_flag/v1/grab_blue_flag_20260909T001000Z.ckpt', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 104857600, 'ACT', 'PyTorch', '2.4.0', 'umi-policy-v1', 'JOINT_ABSOLUTE', 45000000, 20.000, '["front"]', '{"state": "JOINT_POSITION", "camera": "RGB"}', '{"action": "JOINT_ABSOLUTE", "includesGripper": true}', 'rollout_success', 100, 3, 0.9, 0.82, 0.96, '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', NULL, NULL);
-INSERT INTO public.skill_versions (id, skill_id, training_job_id, training_profile_id, training_config_sha256, robot_profile_id, version, status, checkpoint_bucket, checkpoint_key, checkpoint_sha256, checkpoint_bytes, architecture, framework, framework_version, contract_version, action_space, n_params, control_rate_hz, camera_names, input_schema, output_schema, gate_metric, gate_n, gate_runs, gate_value, gate_ci_low, gate_ci_high, gate_measured_at, created_at, validated_at, archived_at, parent_skill_version_id) VALUES ('56000000-0000-4000-8000-000000000002', '54000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000001', 'e7b06e63bf92bfa6f126060e9bb7150c3a55be0dbc9269a55e3bc805a5d19275', '52000000-0000-4000-8000-000000000001', 1, 'READY', 'ssafy-model-checkpoints', 'ckpt/50000000-0000-4000-8000-000000000001/raise_arm/v1/raise_arm_20260909T002000Z.ckpt', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 94371840, 'ACT', 'PyTorch', '2.4.0', 'umi-policy-v1', 'JOINT_ABSOLUTE', 45000000, 20.000, '["front"]', '{"state": "JOINT_POSITION", "camera": "RGB"}', '{"action": "JOINT_ABSOLUTE", "includesGripper": true}', 'rollout_success', 100, 3, 0.87, 0.78, 0.93, '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', NULL, NULL);
+INSERT INTO public.skill_versions VALUES ('56000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', '55000000-0000-4000-8000-000000000001', '52000000-0000-4000-8000-000000000001', 1, 'READY', 'pjt2-shanks-ssafy-720223570179-ap-northeast-2-an', 'ckpt/50000000-0000-4000-8000-000000000001/grab_blue_flag/v1/grab_blue_flag_20260909T001000Z.ckpt', 'e9682288c1a5b34e31977d484cc433d8e03fc202fd84e0a19977cd5143289e0e', 71, 'ACT', 'PyTorch', '2.4.0', 'umi-policy-v1', 'JOINT_ABSOLUTE', 45000000, 20.000, '["front"]', '{"state": "JOINT_POSITION", "camera": "RGB"}', '{"action": "JOINT_ABSOLUTE", "includesGripper": true}', 'rollout_success', 100, 3, 0.9, 0.82, 0.96, '2026-09-09 00:10:00+00', DEFAULT, '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', NULL, NULL, '{}', '{}');
+INSERT INTO public.skill_versions VALUES ('56000000-0000-4000-8000-000000000002', '54000000-0000-4000-8000-000000000002', '55000000-0000-4000-8000-000000000002', '52000000-0000-4000-8000-000000000001', 1, 'READY', 'pjt2-shanks-ssafy-720223570179-ap-northeast-2-an', 'ckpt/50000000-0000-4000-8000-000000000001/raise_arm/v1/raise_arm_20260909T002000Z.ckpt', 'c3c7269a691a71abbb5d7012a85981a0e016f8ddf544ff91ff9e2b627a7ea5b1', 70, 'ACT', 'PyTorch', '2.4.0', 'umi-policy-v1', 'JOINT_ABSOLUTE', 45000000, 20.000, '["front"]', '{"state": "JOINT_POSITION", "camera": "RGB"}', '{"action": "JOINT_ABSOLUTE", "includesGripper": true}', 'rollout_success', 100, 3, 0.87, 0.78, 0.93, '2026-09-09 00:20:00+00', DEFAULT, '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', NULL, NULL, '{}', '{}');
+INSERT INTO public.skill_versions VALUES ('56000000-0000-4000-8000-000000000003', '54000000-0000-4000-8000-000000000003', '55000000-0000-4000-8000-000000000003', '52000000-0000-4000-8000-000000000001', 1, 'READY', 'pjt2-shanks-ssafy-720223570179-ap-northeast-2-an', 'ckpt/50000000-0000-4000-8000-000000000001/custom_00000000000040008000000000000003/v1/custom_00000000000040008000000000000003_20260923T000000Z.tgz', '90d12f77cb6eed129381c868c2b58904e88e6c90e8b74f8dba9bb27b03222e67', 131570882, 'DiffusionPolicy', 'PyTorch', '2.x', 'umi-policy-v1', 'EEF_RELATIVE_ROT6D', 2, 10.000, '["camera0_rgb"]', '{"camera0_rgb": {"shape": [2, 3, 224, 224]}, "robot0_eef_pos": {"shape": [2, 3]}, "robot0_gripper_width": {"shape": [2, 1]}, "robot0_eef_rot_axis_angle": {"shape": [2, 6]}, "robot0_eef_rot_axis_angle_wrt_start": {"shape": [2, 6]}}', '{"actionShape": [16, 10]}', 'rollout_success', 100, 3, 1, 0.9, 1, '2026-09-23 00:00:00+00', DEFAULT, '2026-09-23 00:00:00+00', '2026-09-23 00:00:00+00', NULL, NULL, '{"dim": 10, "layout": ["dx", "dy", "dz", "r00", "r01", "r02", "r10", "r11", "r12", "gap_m"], "rateHz": 10, "compose": "T_next = T_cur @ A_relative", "gapUnit": "m", "horizon": 16, "gapRange": [0, 0.09], "rotation": "ROTATION_MATRIX_ROWS_0_1", "nActionSteps": 8, "schemaVersion": 1}', '{"execSlice": {"endExclusive": 5, "startInclusive": 1}, "convertedDim": 7, "convertedFrame": "ABSOLUTE", "convertedLayout": ["x", "y", "z", "rx", "ry", "rz", "gap_m"], "reobserveRateHz": 2.5, "actionPointRateHz": 10, "convertedRotation": "AXIS_ANGLE_ROTVEC", "execSliceAppliesTo": "raw", "consumerMustConvert": true}');
 
 
 --
 -- Data for Name: skills; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.skills (id, skill_key, tier, status, display_name, description, persona, created_at, updated_at, owner_id) VALUES ('54000000-0000-4000-8000-000000000001', 'grab_blue_flag', 'TUTORIAL', 'DEPLOYED', '청기잡기', '청기를 잡는 학습 동작', NULL, '2026-09-09 00:00:00+00', '2026-09-09 00:10:00+00', NULL);
-INSERT INTO public.skills (id, skill_key, tier, status, display_name, description, persona, created_at, updated_at, owner_id) VALUES ('54000000-0000-4000-8000-000000000002', 'raise_arm', 'TUTORIAL', 'DEPLOYED', '팔 올리기', '로봇팔을 위로 올리는 학습 동작', NULL, '2026-09-09 00:10:00+00', '2026-09-09 00:20:00+00', NULL);
+INSERT INTO public.skills VALUES ('54000000-0000-4000-8000-000000000001', 'grab_blue_flag', 'TUTORIAL', 'DEPLOYED', '청기잡기', '청기를 잡는 학습 동작', NULL, '2026-09-09 00:00:00+00', '2026-09-09 00:10:00+00', NULL);
+INSERT INTO public.skills VALUES ('54000000-0000-4000-8000-000000000002', 'raise_arm', 'TUTORIAL', 'DEPLOYED', '팔 올리기', '로봇팔을 위로 올리는 학습 동작', NULL, '2026-09-09 00:10:00+00', '2026-09-09 00:20:00+00', NULL);
+INSERT INTO public.skills VALUES ('54000000-0000-4000-8000-000000000003', 'custom_00000000000040008000000000000003', 'CUSTOM', 'DEPLOYED', '구운감자 옮기기', '구운감자 포장용 동작', NULL, '2026-09-26 03:39:30.370211+00', '2026-09-26 03:39:32.787266+00', '50000000-0000-4000-8000-000000000001');
 
 
 --
 -- Data for Name: storage_nodes; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.storage_nodes (id, worker_id, node_key, name, storage_type, status, capacity_bytes, available_bytes, last_seen_at, created_at, updated_at, row_version) VALUES ('18000000-0000-4000-8000-000000000001', 'ec2-episode-storage', 'episode-s3', 'Episode S3 Storage', 'S3', 'ONLINE', 9223372036854775807, 9223372036854775807, '2026-09-18 02:02:43.47003+00', '2026-09-18 02:02:43.47003+00', '2026-09-18 02:02:43.47003+00', 0);
-INSERT INTO public.storage_nodes (id, worker_id, node_key, name, storage_type, status, capacity_bytes, available_bytes, last_seen_at, created_at, updated_at, row_version) VALUES ('18000000-0000-4000-8000-000000000002', 'ssafy_gpu_01', 'gpu-01-local-cache', 'SSAFY GPU Worker', 'LOCAL', 'ONLINE', 1099511627776, 1099511627776, '2026-09-18 02:02:43.497596+00', '2026-09-18 02:02:43.497596+00', '2026-09-18 02:02:43.497596+00', 0);
+INSERT INTO public.storage_nodes VALUES ('18000000-0000-4000-8000-000000000001', 'ec2-episode-storage', 'episode-s3', 'Episode S3 Storage', 'S3', 'ONLINE', 9223372036854775807, 9223372036854775807, '2026-09-18 02:02:43.47003+00', '2026-09-18 02:02:43.47003+00', '2026-09-18 02:02:43.47003+00', 0);
+INSERT INTO public.storage_nodes VALUES ('18000000-0000-4000-8000-000000000002', 'ssafy_gpu_01', 'gpu-01-local-cache', 'SSAFY GPU Worker', 'LOCAL', 'ONLINE', 1099511627776, 1099511627776, '2026-09-18 02:02:43.497596+00', '2026-09-18 02:02:43.497596+00', '2026-09-18 02:02:43.497596+00', 0);
 
 
 --
 -- Data for Name: task_steps; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.task_steps (id, task_version_id, skill_version_id, step_order, parameters, timeout_seconds, parent_step_id, step_type, repeat_count) VALUES ('57200000-0000-4000-8000-000000000001', '57100000-0000-4000-8000-000000000001', '56000000-0000-4000-8000-000000000001', 1, '{}', 30, NULL, 'SKILL', NULL);
-INSERT INTO public.task_steps (id, task_version_id, skill_version_id, step_order, parameters, timeout_seconds, parent_step_id, step_type, repeat_count) VALUES ('57200000-0000-4000-8000-000000000002', '57100000-0000-4000-8000-000000000001', '56000000-0000-4000-8000-000000000002', 2, '{}', 30, NULL, 'SKILL', NULL);
+INSERT INTO public.task_steps VALUES ('57200000-0000-4000-8000-000000000001', '57100000-0000-4000-8000-000000000001', '56000000-0000-4000-8000-000000000001', 1, '{}', 30, NULL, 'SKILL', NULL);
+INSERT INTO public.task_steps VALUES ('57200000-0000-4000-8000-000000000002', '57100000-0000-4000-8000-000000000001', '56000000-0000-4000-8000-000000000002', 2, '{}', 30, NULL, 'SKILL', NULL);
 
 
 --
 -- Data for Name: task_versions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.task_versions (id, task_id, version, created_at) VALUES ('57100000-0000-4000-8000-000000000001', '57000000-0000-4000-8000-000000000001', 1, '2026-09-09 00:25:00+00');
+INSERT INTO public.task_versions VALUES ('57100000-0000-4000-8000-000000000001', '57000000-0000-4000-8000-000000000001', 1, '2026-09-09 00:25:00+00');
 
 
 --
 -- Data for Name: tasks; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.tasks (id, owner_id, task_key, display_name, description, latest_version, created_at, updated_at, deleted_at) VALUES ('57000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', 'raise_blue_flag', '청기 들기', '청기를 잡고 팔을 올린 뒤 종료하는 작업', 1, '2026-09-09 00:25:00+00', '2026-09-09 00:25:00+00', NULL);
+INSERT INTO public.tasks VALUES ('57000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', 'raise_blue_flag', '청기 들기', '청기를 잡고 팔을 올린 뒤 종료하는 작업', 1, '2026-09-09 00:25:00+00', '2026-09-09 00:25:00+00', NULL);
 
 
 --
@@ -3723,22 +3630,16 @@ INSERT INTO public.tasks (id, owner_id, task_key, display_name, description, lat
 -- Data for Name: training_jobs; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.training_jobs (id, owner_id, skill_id, umi_device_id, training_profile_id, assigned_storage_node_id, assigned_worker_id, input_mode, status, attempt, lease_token_hash, lease_expires_at, training_config_snapshot, training_config_sha256, dataset_query, gpu_index, git_rev, expected_episode_count, received_episode_count, received_bytes, episode_count, input_snapshot_sha256, progress_stage, progress_percent, current_epoch, total_epochs, result_skill_version_id, error_code, error_message, created_at, started_at, model_completed_at, finished_at, updated_at, row_version, deleted_at, training_mode, base_skill_version_id) VALUES ('55000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', NULL, NULL, 'EXISTING_EPISODES', 'SUCCEEDED', 1, NULL, NULL, '{"algorithm": "ACT", "profileKey": "umi-act-default", "profileVersion": 1, "hyperparameters": {"seed": 42, "epochs": 100, "batchSize": 16, "optimizer": "AdamW", "learningRate": 0.0001}}', 'e7b06e63bf92bfa6f126060e9bb7150c3a55be0dbc9269a55e3bc805a5d19275', '{"source": "DEVELOPMENT_SEED", "seedFixture": true}', NULL, NULL, 0, 0, 0, 0, '1111111111111111111111111111111111111111111111111111111111111111', 'COMPLETED', 100.00, 100, 100, '56000000-0000-4000-8000-000000000001', NULL, NULL, '2026-09-09 00:01:00+00', '2026-09-09 00:02:00+00', '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', 0, NULL, 'FROM_SCRATCH', NULL);
-INSERT INTO public.training_jobs (id, owner_id, skill_id, umi_device_id, training_profile_id, assigned_storage_node_id, assigned_worker_id, input_mode, status, attempt, lease_token_hash, lease_expires_at, training_config_snapshot, training_config_sha256, dataset_query, gpu_index, git_rev, expected_episode_count, received_episode_count, received_bytes, episode_count, input_snapshot_sha256, progress_stage, progress_percent, current_epoch, total_epochs, result_skill_version_id, error_code, error_message, created_at, started_at, model_completed_at, finished_at, updated_at, row_version, deleted_at, training_mode, base_skill_version_id) VALUES ('55000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000002', '51000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', NULL, NULL, 'EXISTING_EPISODES', 'SUCCEEDED', 1, NULL, NULL, '{"algorithm": "ACT", "profileKey": "umi-act-default", "profileVersion": 1, "hyperparameters": {"seed": 42, "epochs": 100, "batchSize": 16, "optimizer": "AdamW", "learningRate": 0.0001}}', 'e7b06e63bf92bfa6f126060e9bb7150c3a55be0dbc9269a55e3bc805a5d19275', '{"source": "DEVELOPMENT_SEED", "seedFixture": true}', NULL, NULL, 0, 0, 0, 0, '2222222222222222222222222222222222222222222222222222222222222222', 'COMPLETED', 100.00, 100, 100, '56000000-0000-4000-8000-000000000002', NULL, NULL, '2026-09-09 00:11:00+00', '2026-09-09 00:12:00+00', '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', 0, NULL, 'FROM_SCRATCH', NULL);
-
-
---
--- Data for Name: training_profiles; Type: TABLE DATA; Schema: public; Owner: -
---
-
-INSERT INTO public.training_profiles (id, profile_key, version, status, algorithm, hyperparameters, config_sha256, description, activated_at, retired_at, created_at) VALUES ('30000000-0000-4000-8000-000000000001', 'umi-act-default', 1, 'ACTIVE', 'ACT', '{"seed": 42, "epochs": 100, "batchSize": 16, "optimizer": "AdamW", "learningRate": 0.0001}', 'e7b06e63bf92bfa6f126060e9bb7150c3a55be0dbc9269a55e3bc805a5d19275', NULL, NULL, NULL, '2026-09-18 02:02:43.321919+00');
+INSERT INTO public.training_jobs VALUES ('55000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000001', NULL, NULL, 'EXISTING_EPISODES', 'SUCCEEDED', 1, NULL, NULL, '{"source": "DEVELOPMENT_SEED", "seedFixture": true}', NULL, NULL, 0, 0, 0, 0, '1111111111111111111111111111111111111111111111111111111111111111', 'COMPLETED', 100.00, 100, 100, '56000000-0000-4000-8000-000000000001', NULL, NULL, '2026-09-09 00:01:00+00', '2026-09-09 00:02:00+00', '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', '2026-09-09 00:10:00+00', 0, NULL, 'FROM_SCRATCH', NULL);
+INSERT INTO public.training_jobs VALUES ('55000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000002', '51000000-0000-4000-8000-000000000001', NULL, NULL, 'EXISTING_EPISODES', 'SUCCEEDED', 1, NULL, NULL, '{"source": "DEVELOPMENT_SEED", "seedFixture": true}', NULL, NULL, 0, 0, 0, 0, '2222222222222222222222222222222222222222222222222222222222222222', 'COMPLETED', 100.00, 100, 100, '56000000-0000-4000-8000-000000000002', NULL, NULL, '2026-09-09 00:11:00+00', '2026-09-09 00:12:00+00', '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', '2026-09-09 00:20:00+00', 0, NULL, 'FROM_SCRATCH', NULL);
+INSERT INTO public.training_jobs VALUES ('55000000-0000-4000-8000-000000000003', '50000000-0000-4000-8000-000000000001', '54000000-0000-4000-8000-000000000003', '51000000-0000-4000-8000-000000000001', NULL, NULL, 'EXISTING_EPISODES', 'SUCCEEDED', 1, NULL, NULL, '{"source": "DEVELOPMENT_SEED", "description": "구운감자 옮기기 임시 모델", "seedFixture": true}', NULL, NULL, 0, 0, 0, 0, '3333333333333333333333333333333333333333333333333333333333333333', 'MODEL_VALIDATED', 100.00, NULL, NULL, '56000000-0000-4000-8000-000000000003', NULL, NULL, '2026-09-23 00:00:00+00', '2026-09-23 00:00:00+00', '2026-09-23 00:00:00+00', '2026-09-23 00:00:00+00', '2026-09-26 03:39:32.56199+00', 0, NULL, 'FROM_SCRATCH', NULL);
 
 
 --
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.users (id, email, password_hash, name, status, created_at, updated_at) VALUES ('50000000-0000-4000-8000-000000000001', 'admin01@ssafy.local', '$2a$10$ylKVWybCimE9yO2EWUnV4OesA4liqYxdzWmWeCyb4Mo65MpxSrQCu', 'admin01', 'ACTIVE', '2026-09-09 00:00:00+00', '2026-09-09 00:00:00+00');
+INSERT INTO public.users VALUES ('50000000-0000-4000-8000-000000000001', 'admin01@ssafy.local', '$2a$10$ylKVWybCimE9yO2EWUnV4OesA4liqYxdzWmWeCyb4Mo65MpxSrQCu', 'admin01', 'ACTIVE', '2026-09-09 00:00:00+00', '2026-09-09 00:00:00+00');
 
 
 --
@@ -4190,43 +4091,11 @@ ALTER TABLE ONLY public.training_job_events
 
 
 --
--- Name: training_jobs training_jobs_id_training_profile_id_training_config_sha256_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.training_jobs
-    ADD CONSTRAINT training_jobs_id_training_profile_id_training_config_sha256_key UNIQUE (id, training_profile_id, training_config_sha256);
-
-
---
 -- Name: training_jobs training_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.training_jobs
     ADD CONSTRAINT training_jobs_pkey PRIMARY KEY (id);
-
-
---
--- Name: training_profiles training_profiles_id_config_sha256_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.training_profiles
-    ADD CONSTRAINT training_profiles_id_config_sha256_key UNIQUE (id, config_sha256);
-
-
---
--- Name: training_profiles training_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.training_profiles
-    ADD CONSTRAINT training_profiles_pkey PRIMARY KEY (id);
-
-
---
--- Name: training_profiles training_profiles_profile_key_version_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.training_profiles
-    ADD CONSTRAINT training_profiles_profile_key_version_key UNIQUE (profile_key, version);
 
 
 --
@@ -4456,7 +4325,7 @@ CREATE INDEX ix_outbox_expired_processing ON public.outbox_events USING btree (l
 -- Name: ix_outbox_publishable; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_outbox_publishable ON public.outbox_events USING btree (available_at, created_at) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'FAILED'::character varying])::text[]));
+CREATE INDEX ix_outbox_publishable ON public.outbox_events USING btree (available_at, created_at) WHERE ((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('FAILED'::character varying)::text]));
 
 
 --
@@ -4548,13 +4417,6 @@ CREATE INDEX ix_skill_versions_1 ON public.skill_versions USING btree (skill_id,
 --
 
 CREATE INDEX ix_skill_versions_2 ON public.skill_versions USING btree (robot_profile_id, status);
-
-
---
--- Name: ix_skill_versions_3; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_skill_versions_3 ON public.skill_versions USING btree (training_profile_id);
 
 
 --
@@ -4663,13 +4525,6 @@ CREATE INDEX ix_training_jobs_4 ON public.training_jobs USING btree (assigned_wo
 
 
 --
--- Name: ix_training_jobs_5; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_training_jobs_5 ON public.training_jobs USING btree (training_profile_id, status);
-
-
---
 -- Name: ix_training_jobs_base_skill_version; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4680,14 +4535,14 @@ CREATE INDEX ix_training_jobs_base_skill_version ON public.training_jobs USING b
 -- Name: ix_training_jobs_claim_candidate; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_training_jobs_claim_candidate ON public.training_jobs USING btree (created_at, training_profile_id) WHERE ((deleted_at IS NULL) AND ((status)::text = ANY ((ARRAY['CREATED'::character varying, 'QUEUED'::character varying])::text[])));
+CREATE INDEX ix_training_jobs_claim_candidate ON public.training_jobs USING btree (created_at) WHERE ((deleted_at IS NULL) AND ((status)::text = ANY ((ARRAY['CREATED'::character varying, 'QUEUED'::character varying])::text[])));
 
 
 --
 -- Name: ix_training_jobs_expired_lease; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_training_jobs_expired_lease ON public.training_jobs USING btree (lease_expires_at) WHERE ((lease_expires_at IS NOT NULL) AND ((status)::text = ANY ((ARRAY['COLLECTING'::character varying, 'PREPARING'::character varying, 'RUNNING'::character varying, 'MODEL_UPLOADING'::character varying, 'MODEL_VALIDATING'::character varying, 'CANCEL_REQUESTED'::character varying])::text[])));
+CREATE INDEX ix_training_jobs_expired_lease ON public.training_jobs USING btree (lease_expires_at) WHERE ((lease_expires_at IS NOT NULL) AND ((status)::text = ANY (ARRAY[('COLLECTING'::character varying)::text, ('PREPARING'::character varying)::text, ('RUNNING'::character varying)::text, ('MODEL_UPLOADING'::character varying)::text, ('MODEL_VALIDATING'::character varying)::text, ('CANCEL_REQUESTED'::character varying)::text])));
 
 
 --
@@ -4715,7 +4570,7 @@ CREATE UNIQUE INDEX uq_device_enrollments_active_device ON public.device_enrollm
 -- Name: uq_episode_active_purge_job; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_episode_active_purge_job ON public.data_purge_jobs USING btree (episode_id) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'RUNNING'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_episode_active_purge_job ON public.data_purge_jobs USING btree (episode_id) WHERE ((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('RUNNING'::character varying)::text]));
 
 
 --
@@ -4729,14 +4584,14 @@ CREATE UNIQUE INDEX uq_retention_policy_default ON public.retention_policies USI
 -- Name: uq_robot_active_deployment; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_robot_active_deployment ON public.deployments USING btree (robot_id) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'DOWNLOADING'::character varying, 'VERIFYING'::character varying, 'APPLYING'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_robot_active_deployment ON public.deployments USING btree (robot_id) WHERE ((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DOWNLOADING'::character varying)::text, ('VERIFYING'::character varying)::text, ('APPLYING'::character varying)::text]));
 
 
 --
 -- Name: uq_robot_active_execution; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_robot_active_execution ON public.robot_executions USING btree (robot_id) WHERE ((status)::text = ANY ((ARRAY['REQUESTED'::character varying, 'STARTING'::character varying, 'RUNNING'::character varying, 'CANCEL_REQUESTED'::character varying, 'STATUS_UNKNOWN'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_robot_active_execution ON public.robot_executions USING btree (robot_id) WHERE ((status)::text = ANY (ARRAY[('REQUESTED'::character varying)::text, ('STARTING'::character varying)::text, ('RUNNING'::character varying)::text, ('CANCEL_REQUESTED'::character varying)::text, ('STATUS_UNKNOWN'::character varying)::text]));
 
 
 --
@@ -4768,10 +4623,17 @@ CREATE UNIQUE INDEX uq_task_steps_sibling_order ON public.task_steps USING btree
 
 
 --
+-- Name: uq_training_job_one_mapping_episode; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_training_job_one_mapping_episode ON public.training_job_episodes USING btree (training_job_id) WHERE ((input_role)::text = 'MAPPING'::text);
+
+
+--
 -- Name: uq_training_jobs_active_worker_gpu; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_training_jobs_active_worker_gpu ON public.training_jobs USING btree (assigned_worker_id, gpu_index) WHERE ((assigned_worker_id IS NOT NULL) AND (gpu_index IS NOT NULL) AND ((status)::text = ANY ((ARRAY['COLLECTING'::character varying, 'PREPARING'::character varying, 'RUNNING'::character varying, 'MODEL_UPLOADING'::character varying, 'MODEL_VALIDATING'::character varying, 'CANCEL_REQUESTED'::character varying])::text[])));
+CREATE UNIQUE INDEX uq_training_jobs_active_worker_gpu ON public.training_jobs USING btree (assigned_worker_id, gpu_index) WHERE ((assigned_worker_id IS NOT NULL) AND (gpu_index IS NOT NULL) AND ((status)::text = ANY (ARRAY[('COLLECTING'::character varying)::text, ('PREPARING'::character varying)::text, ('RUNNING'::character varying)::text, ('MODEL_UPLOADING'::character varying)::text, ('MODEL_VALIDATING'::character varying)::text, ('CANCEL_REQUESTED'::character varying)::text])));
 
 
 --
@@ -4779,13 +4641,6 @@ CREATE UNIQUE INDEX uq_training_jobs_active_worker_gpu ON public.training_jobs U
 --
 
 COMMENT ON INDEX public.uq_training_jobs_active_worker_gpu IS 'worker의 GPU 슬롯별 활성 학습 작업 하나, gpuIndex 0~29로 최대 30개 병렬 실행';
-
-
---
--- Name: uq_training_profiles_one_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX uq_training_profiles_one_active ON public.training_profiles USING btree ((1)) WHERE ((status)::text = 'ACTIVE'::text);
 
 
 --
@@ -5123,22 +4978,6 @@ ALTER TABLE ONLY public.robots
 
 
 --
--- Name: skill_versions fk_skill_versions_23; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.skill_versions
-    ADD CONSTRAINT fk_skill_versions_23 FOREIGN KEY (training_profile_id, training_config_sha256) REFERENCES public.training_profiles(id, config_sha256) ON DELETE RESTRICT;
-
-
---
--- Name: skill_versions fk_skill_versions_24; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.skill_versions
-    ADD CONSTRAINT fk_skill_versions_24 FOREIGN KEY (training_job_id, training_profile_id, training_config_sha256) REFERENCES public.training_jobs(id, training_profile_id, training_config_sha256) ON DELETE RESTRICT;
-
-
---
 -- Name: skill_versions fk_skill_versions_25; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5152,14 +4991,6 @@ ALTER TABLE ONLY public.skill_versions
 
 ALTER TABLE ONLY public.skill_versions
     ADD CONSTRAINT fk_skill_versions_26 FOREIGN KEY (training_job_id) REFERENCES public.training_jobs(id) ON DELETE RESTRICT;
-
-
---
--- Name: skill_versions fk_skill_versions_27; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.skill_versions
-    ADD CONSTRAINT fk_skill_versions_27 FOREIGN KEY (training_profile_id) REFERENCES public.training_profiles(id) ON DELETE RESTRICT;
 
 
 --
@@ -5251,14 +5082,6 @@ ALTER TABLE ONLY public.training_job_events
 
 
 --
--- Name: training_jobs fk_training_jobs_13; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.training_jobs
-    ADD CONSTRAINT fk_training_jobs_13 FOREIGN KEY (training_profile_id, training_config_sha256) REFERENCES public.training_profiles(id, config_sha256) ON DELETE RESTRICT;
-
-
---
 -- Name: training_jobs fk_training_jobs_14; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5280,14 +5103,6 @@ ALTER TABLE ONLY public.training_jobs
 
 ALTER TABLE ONLY public.training_jobs
     ADD CONSTRAINT fk_training_jobs_16 FOREIGN KEY (umi_device_id) REFERENCES public.devices(id) ON DELETE RESTRICT;
-
-
---
--- Name: training_jobs fk_training_jobs_17; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.training_jobs
-    ADD CONSTRAINT fk_training_jobs_17 FOREIGN KEY (training_profile_id) REFERENCES public.training_profiles(id) ON DELETE RESTRICT;
 
 
 --
