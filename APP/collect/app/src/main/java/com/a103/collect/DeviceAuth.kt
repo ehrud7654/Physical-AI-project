@@ -26,6 +26,10 @@ object DeviceAuth {
         return refresh(ctx)
     }
 
+    /** 장치 초기화 시 메모리의 토큰도 폐기(안 하면 대기 중 업로드가 이전 장치 토큰으로 나감). */
+    @Synchronized
+    fun clear() { token = null; expiryMs = 0L }
+
     /** QR URI 의 enrollmentId·registrationToken 을 교환해 자격을 저장. 성공 시 true. (백그라운드 스레드) */
     fun enroll(ctx: Context, enrollmentId: String, registrationToken: String): Boolean {
         val body = JSONObject().put("enrollmentId", enrollmentId)

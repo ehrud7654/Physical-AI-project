@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -23,12 +25,16 @@ import java.util.concurrent.Executors
 
 /**
  * 초기화면. QR(umi://enroll?enrollmentId=..&registrationToken=..)을 스캔해 장치를 등록하고 촬영 화면으로.
- * 이미 등록된(Device Secret 보유) 기기는 바로 진입. dev/테스트용 'QR 없이 진행' 스킵 허용.
+ * 이미 등록된(Device Secret 보유) 기기는 바로 진입. 등록은 필수라 QR 없이 진행은 없다(ARpose 와 동일).
+ * 카메라 권한 거부 시 '카메라 권한 허용' 버튼 → 앱 설정, 허용하고 돌아오면 자동 재개.
  */
 class OnboardingActivity : ComponentActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var status: TextView
+    private lateinit var guide: TextView
+    private lateinit var grantBtn: Button
+    private var cameraStarted = false
     private val analysisExec = Executors.newSingleThreadExecutor()
     private val scanner = BarcodeScanning.getClient()
     private var provider: ProcessCameraProvider? = null
@@ -40,20 +46,34 @@ class OnboardingActivity : ComponentActivity() {
         setContentView(R.layout.activity_onboarding)
         previewView = findViewById(R.id.previewView)
         status = findViewById(R.id.scanStatus)
-        findViewById<Button>(R.id.skipBtn).setOnClickListener { goMain() }
+        guide = findViewById(R.id.scanGuide)
+        grantBtn = findViewById(R.id.grantBtn)
+        grantBtn.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+        }
 
         if (hasCam()) startCamera()
         else requestPermissions(arrayOf(Manifest.permission.CAMERA), CAM_REQ)
+    }
+
+    /** 설정에서 권한을 허용하고 돌아오면 자동으로 카메라 재개. */
+    override fun onResume() {
+        super.onResume()
+        if (::previewView.isInitialized && !cameraStarted && hasCam()) startCamera()
     }
 
     private fun hasCam() = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<String>, g: IntArray) {
         super.onRequestPermissionsResult(rc, p, g)
-        if (hasCam()) startCamera() else status.text = "카메라 권한 필요 — QR 없이 진행 가능"
+        if (hasCam()) startCamera()
+        else { status.text = "카메라 권한이 필요해요"; guide.visibility = View.GONE; grantBtn.visibility = View.VISIBLE }
     }
 
     private fun startCamera() {
+        if (cameraStarted) return
+        cameraStarted = true
+        status.text = ""; grantBtn.visibility = View.GONE; guide.visibility = View.VISIBLE
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             try {
@@ -65,7 +85,7 @@ class OnboardingActivity : ComponentActivity() {
                 provider?.unbindAll()
                 provider?.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
             } catch (e: Exception) {
-                Log.e(TAG, "카메라 시작 실패", e); status.text = "카메라 오류 — QR 없이 진행 가능"
+                Log.e(TAG, "카메라 시작 실패", e); status.text = "카메라 오류 — 앱을 다시 실행해 주세요"
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -92,7 +112,7 @@ class OnboardingActivity : ComponentActivity() {
             runOnUiThread { status.text = "등록 QR 아님 — 다시 비춰주세요" }
             return
         }
-        runOnUiThread { status.text = "QR 인식 완료 · 장치 등록 중…" }
+        runOnUiThread { status.text = "QR 인식 완료 · 장치 등록 중…"; guide.visibility = View.GONE }
         Thread {
             val ok = DeviceAuth.enroll(this, enrollmentId, regToken)
             runOnUiThread {

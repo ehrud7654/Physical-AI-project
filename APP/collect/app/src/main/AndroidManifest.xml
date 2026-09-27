@@ -44,6 +44,12 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
+            android:name=".StreamActivity"
+            android:exported="false"
+            android:screenOrientation="reverseLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
             android:name=".TutorialActivity"
             android:exported="false"
             android:screenOrientation="reverseLandscape"

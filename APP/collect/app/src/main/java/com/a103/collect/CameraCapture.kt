@@ -1,6 +1,7 @@
 package com.a103.collect
 
 import android.content.Context
+import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -23,9 +24,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.atan
 
 /**
- * 후면 초광각(최대 FOV·고정초점) 렌즈를 골라 프리뷰+인코더에 30fps 로 연속 공급한다.
+ * 후면 초광각(최대 FOV·고정초점) 렌즈를 골라 프리뷰+출력(수집: 인코더 / 스트리밍: YUV ImageReader)에 30fps 로 연속 공급한다.
  * 세션은 한 번 열고 계속 유지(녹화/정지 시 재구성 없음 → 화면 멈춤 없음).
- * AF/OIS/EIS/왜곡보정 OFF, 인코더 출력 timestampBase=SENSOR(PTS=센서 시각).
+ * AF/OIS/EIS/왜곡보정 OFF, 출력 timestampBase=SENSOR(PTS·Image.timestamp=센서 시각).
  * frames.csv 는 rec 가 설정된 동안(녹화 중)에만 기록한다.
  */
 class CameraCapture(context: Context) {
@@ -87,15 +88,20 @@ class CameraCapture(context: Context) {
             .put("horizontal_fov_estimate", bestFov)
     }
 
-    /** 프리뷰 + 인코더 surface 를 한 세션에 물려 연속 공급 시작. */
-    fun open(preview: Surface, encoder: Surface, listener: Listener) {
+    /** 스트리밍(YUV ImageReader)용 1920×1080 YUV 출력 지원 여부. 수집용 검사는 인코더 크기만 본다. */
+    fun supportsYuv1080(): Boolean =
+        characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            ?.getOutputSizes(ImageFormat.YUV_420_888)?.contains(Size(1920, 1080)) == true
+
+    /** 프리뷰 + 출력 surface(인코더 또는 ImageReader)를 한 세션에 물려 연속 공급 시작. */
+    fun open(preview: Surface, output: Surface, listener: Listener) {
         handler.post {
             try {
                 manager.openCamera(id, object : CameraDevice.StateCallback() {
                     override fun onOpened(device: CameraDevice) {
                         if (closed) { device.close(); return }
                         camera = device
-                        try { configure(device, preview, encoder, listener) }
+                        try { configure(device, preview, output, listener) }
                         catch (e: Exception) { listener.failed(e.toString()) }
                     }
                     override fun onDisconnected(device: CameraDevice) { device.close(); if (!closed) listener.failed("카메라 연결 종료") }
@@ -105,9 +111,9 @@ class CameraCapture(context: Context) {
         }
     }
 
-    private fun configure(device: CameraDevice, preview: Surface, encoder: Surface, listener: Listener) {
+    private fun configure(device: CameraDevice, preview: Surface, output: Surface, listener: Listener) {
         val req = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-        req.addTarget(preview); req.addTarget(encoder)
+        req.addTarget(preview); req.addTarget(output)
         req.set(CaptureRequest.CONTROL_AF_MODE, 0)
         req.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, 0)
         characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)
@@ -119,8 +125,8 @@ class CameraCapture(context: Context) {
         req.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(30, 30))
 
         val previewCfg = OutputConfiguration(preview)
-        val encoderCfg = OutputConfiguration(encoder).apply { timestampBase = OutputConfiguration.TIMESTAMP_BASE_SENSOR }
-        device.createCaptureSessionByOutputConfigurations(listOf(previewCfg, encoderCfg),
+        val outputCfg = OutputConfiguration(output).apply { timestampBase = OutputConfiguration.TIMESTAMP_BASE_SENSOR }
+        device.createCaptureSessionByOutputConfigurations(listOf(previewCfg, outputCfg),
             object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(cs: CameraCaptureSession) {
                     if (closed) { cs.close(); return }

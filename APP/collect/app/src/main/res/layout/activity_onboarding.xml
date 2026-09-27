@@ -29,18 +29,29 @@
                 android:layout_height="match_parent" />
         </FrameLayout>
 
+        <!-- 진행 상태(인식 완료·등록 중·실패 등)만 표시. 처음엔 비어 있음. -->
         <TextView
             android:id="@+id/scanStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="QR 을 인식해 주세요"
             android:textColor="#FFFFFF"
             android:textSize="18sp" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/scanGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="120dp"
+        android:text="QR을 스캔하세요"
+        android:textColor="#AEB8D4"
+        android:textSize="17sp" />
+
+    <!-- 권한 거부 시에만 노출: 설정에서 카메라 권한 허용(등록은 카메라 필수) -->
     <Button
-        android:id="@+id/skipBtn"
+        android:id="@+id/grantBtn"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
@@ -50,5 +61,6 @@
         android:background="#FF2A6E3F"
         android:textColor="#FFFFFF"
         android:textSize="17sp"
-        android:text="QR 없이 진행 →" />
+        android:visibility="gone"
+        android:text="카메라 권한 허용" />
 </FrameLayout>

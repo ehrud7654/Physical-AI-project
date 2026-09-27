@@ -220,6 +220,7 @@ class MainActivity : Activity() {
             }
         }
         container.addView(row("기록", R.drawable.ic_history, HistoryActivity::class.java))
+        container.addView(row("로봇 연결", R.drawable.ic_stream, StreamActivity::class.java))
         container.addView(row("설정", R.drawable.ic_tune, SettingsActivity::class.java))
         container.addView(row("도움말", R.drawable.ic_help, TutorialActivity::class.java))
         pop.showAsDropDown(menuBtn)

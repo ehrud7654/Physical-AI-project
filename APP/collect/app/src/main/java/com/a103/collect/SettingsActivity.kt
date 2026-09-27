@@ -3,16 +3,18 @@ package com.a103.collect
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import java.io.File
 
 /**
  * 설정 — 수집 현황(학습별 N/GOAL편·총 세션·저장공간), 앱 정보.
- * 스킬 카탈로그는 진입 시 자동 동기화(버튼 없음).
+ * 스킬 카탈로그는 진입 시 자동 동기화(버튼 없음). 앱 정보 7연타 = 숨은 장치 초기화.
  */
 class SettingsActivity : Activity() {
 
@@ -61,24 +63,32 @@ class SettingsActivity : Activity() {
         body.addView(card(valueText("총 영상 %d개 · 남은 저장 %.1f GB".format(total, freeGb))))
 
         body.addView(sectionTitle("정보"))
-        body.addView(card(valueText("앱 v${BuildConfig.VERSION_NAME}")))
-
-        body.addView(sectionTitle("디버그"))
-        val reset = TextView(this).apply {
-            text = "장치 초기화 — QR 재등록"; setTextColor(0xFFE0685E.toInt()); textSize = 15f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
-        body.addView(card(reset).apply { setOnClickListener { confirmResetDevice() } })
+        body.addView(card(valueText("앱 v${BuildConfig.VERSION_NAME}")).apply { setOnClickListener { onInfoTap() } })
     }
 
-    /** 저장된 장치 자격을 지우고 온보딩(QR)으로. DB에서 장치가 삭제됐을 때 재등록용. */
+    private var infoTaps = 0
+    private var lastInfoTap = 0L
+    private var tapToast: Toast? = null
+
+    /** 앱 정보를 1초 이내 간격으로 7번 연속 탭하면 장치 초기화(안드로이드 개발자 모드 켜기처럼 숨김). */
+    private fun onInfoTap() {
+        val now = SystemClock.uptimeMillis()
+        infoTaps = if (now - lastInfoTap < 1000) infoTaps + 1 else 1
+        lastInfoTap = now
+        val left = RESET_TAPS - infoTaps
+        tapToast?.cancel()
+        if (left <= 0) { infoTaps = 0; confirmResetDevice(); return }
+        if (left <= 3) tapToast = Toast.makeText(this, "장치 초기화까지 ${left}번 남았어요", Toast.LENGTH_SHORT).also { it.show() }
+    }
+
+    /** 저장된 장치 자격을 지우고 온보딩(QR)으로. DB에서 장치가 삭제됐을 때 재등록용. 되돌릴 수 없어 확인을 받는다. */
     private fun confirmResetDevice() {
         android.app.AlertDialog.Builder(this)
             .setTitle("장치 초기화")
             .setMessage("저장된 장치 자격을 지웁니다. 다음 실행 때 QR 재등록 화면이 떠요. 계속할까요?")
             .setNegativeButton("취소", null)
             .setPositiveButton("초기화") { _, _ ->
-                Prefs.clearDevice(this); DeviceSkills.clear()
+                Prefs.clearDevice(this); DeviceSkills.clear(); DeviceAuth.clear()
                 startActivity(Intent(this, OnboardingActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                 finish()
@@ -110,4 +120,6 @@ class SettingsActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
         addView(v)
     }
+
+    companion object { private const val RESET_TAPS = 7 }
 }
