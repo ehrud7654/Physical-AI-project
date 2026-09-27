@@ -7,6 +7,7 @@ SO-101 로봇 팔의 **배포·실물 제어** ROS2 (Humble) 워크스페이스.
 > 마지막 갱신(2026-09-09): **ros2_control 표준층 전환**. 커스텀 `so101_driver`·`so101_msgs` 폐기 → `so101_hardware`(132)+`so101_bringup`(150). 정책=EE pose 액션, IK는 AI측. FakeBus 30Hz end-to-end 검증 완료.
 > 같은 날: **정책 노드 골격(46)** — lifecycle + 더미 사인 모드. 정책노드→/commands→FakeBus→/joint_states 루프 닫힘 확인. ckpt·관측·IK 는 슬롯만.
 > **2026-09-21 (46): 실행 엔진 = UMI 체크포인트 런타임 채택.** 실물 검증된 팀원 런타임(카메라→추론→IK→모터)을 `ROS/runtime/`+`ROS/shanks/` 로 들여오고, 오케스트레이터가 **subprocess 로 기동 + stdout/exit 파싱 → BE 리포트**. 자체 추론 이식(so101_policy 슬롯 채우기)은 병행 발전 트랙으로 유지. 상세 §3.5.
+> **2026-09-23 (46):** 런타임 자기완결 버전 편입 + 실행 중 안전 게이트, 부팅 자동 실행 서비스(`deploy/`), BE 실연동 검증(배포 → 실행 → timeout → SUCCEEDED, `runtime_move:=false`). **실물 모터 구동(`move=True`) 전 구간은 미검증.** 남은 항목 §9.
 
 ---
 
@@ -30,6 +31,8 @@ SO-101 로봇 팔의 **배포·실물 제어** ROS2 (Humble) 워크스페이스.
 
 **BE는 관절 명령을 보내지 않는다.** 고수준(시작/정지/ckpt)만. 실제 관절 명령은 젯슨 내부 정책이 30Hz로 생성한다.
 
+> 위 데이터 평면(ros2_control)은 **시뮬·개발 트랙**(`executor:=ros2_policy`)이다. 젯슨 **실물 추론은 §3.5 UMI 런타임**이 서보를 직접 제어하고 ros2_control 을 거치지 않는다.
+
 ---
 
 ## 2. 데이터 파이프라인 (학습까지 — 참고)
@@ -45,7 +48,7 @@ arpose 앱 (폰, ARCore) ── SE(3) pose + 영상 + IMU ──> BE /upload
 
 ---
 
-## 3. 배포 런타임 — 젯슨 ROS 그래프 (ros2_control)
+## 3. 시뮬·개발 트랙 — ROS 그래프 (ros2_control, `executor:=ros2_policy`)
 
 ```
 [오케스트레이터]  ── SSE/POST ──> BE          (rclpy + httpx, FastAPI 아님)
@@ -98,9 +101,10 @@ ros2_control 이 안 떠 있으므로 `/joint_states` 기반 워치독·리밋�
 
 | 층 | 수단 | 비고 |
 |---|---|---|
-| 리밋·워치독 | **런타임 자체 게이트** | workspace·joint margin·tick delta·live lag·IK residual·path_min_z·torque_enabled·settle timeout. 우리 safety_node 보다 촘촘하므로 **위임**한다 |
+| 리밋 | 런타임 **틱 범위 클램프**·토크 꺼짐 거부 | 기하 판정(workspace·joint margin·IK residual·path_min_z)과 tick delta·state drift 한계는 런타임이 **계산·기록만 하고 차단하지 않는다**(`safe=True`, 한계 기본값 0 — 팀 결정, 캘리브 오탐). 실측 보정 후 켤 항목 |
 | **estop** | `/estop` → `estop_bridge` → **`/tmp/umi_ESTOP` 파일** | 런타임이 매 청크마다 `refuse_if_estopped()` 로 확인. 포트 점유·프로세스와 무관하게 먹는 유일한 정지 수단. 해제는 팔 확인 후 **수동 삭제** |
-| **과열·과부하·저전압** | ① 오케스트레이터 **프리플라이트/사후 온도 체크**(포트 빈 시점) ② 런타임 **실행 중 게이트**(`robot_hardware.check_diagnostics`: 60°C/부하750/전압115, 온도만 3연속 확인) | 진단이 waypoint마다 이미 실려와 추가 버스 read 0. 값 출처 `ser0070_pid_tuning`(팀 공통). 서보 자체 보호(~70°C)는 토크를 끊어 **팔이 낙하**하므로 그 전에 막는다 |
+| **과열·과부하·저전압** | ① 오케스트레이터 **프리플라이트/사후 온도 체크**(포트 빈 시점) ② 런타임 **실행 중 게이트**(`robot_hardware.check_diagnostics`: 60°C/부하750/전압115, 온도만 3연속 확인) | 진단이 waypoint마다 이미 실려와 추가 버스 read 0. 값 출처 `ser0070_pid_tuning`(팀 공통). 서보 자체 보호(~70°C)는 토크를 끊어 **팔이 낙하**하므로 그 전에 막는다. ⚠️ 부하 750 은 실물 정상 동작에서 걸릴 수 있음 — 실측 후 조정. 게이트는 우리 로컬 패치(upstream 반영 요청) |
+| 중복 실행 | orchestrator **단일 인스턴스 락**(`/tmp/so101_orchestrator.lock`, flock) | 같은 device_id 두 개가 SSE 를 서로 끊는 사고 방지. 한 기계 안에서만 막음 — **PC·젯슨 동시 실행 금지** |
 | 고아 프로세스 | **`PR_SET_PDEATHSIG`** | 오케스트레이터가 SIGKILL 돼도 런타임에 SIGINT → hold 후 종료 (젯슨에서 실증) |
 | 응답 없음 | SIGINT 후 10초 유예 → **SIGKILL** | |
 | 최종 | 하드웨어 전원 차단 | 소프트웨어로 못 덮는 층 |
@@ -109,7 +113,10 @@ ros2_control 이 안 떠 있으므로 `/joint_states` 기반 워치독·리밋�
 
 | 경로 | 내용 | git |
 |---|---|---|
-| `runtime/` | UMI 체크포인트 실행기 (cli·policy_runtime·motion_planner·robot_controller·camera_stream·calibration) | ✅ |
+| `runtime/` | UMI 체크포인트 실행기 — 자기완결(cli·policy_runtime·motion_planner·robot_controller·camera_stream·calibration + servo_bus·robot_calibration·kinematics·robot_hardware). `runtime/README.md` 는 **팀원 원본 문서**(`stanford_umi_demo` 경로 기준, 리팩터 이전판) — 최신본으로 교체 필요 | ✅ |
+| `deploy/` | 부팅 자동 실행 systemd 유닛(`robot-orchestrator`·`robot-estop`)·`install.sh`·`.env.example`·`pack-wheelhouse.sh` | ✅ |
+| `.env` | device secret (`SO101_DEVICE_SECRET`, 권한 600) | ❌ |
+| `wheelhouse-jetson/` · `wheelhouse-jetson.tar.gz` | torch 등 오프라인 휠(약 1GB) — 제출 별첨 | ❌ |
 | `shanks/` | **수동 운용도구** (런타임 실행 경로 아님). `torque.py`(비상 토크 off)·`move.py`·`pose.py` 등. 런타임은 2026-09-22 리팩터로 자기완결화되어 shanks 를 더 이상 참조하지 않는다 | ✅ |
 | `configs/s22_camera_tcp.json` | camera-TCP 캘리브 (provenance sha256 대조용) | ✅ |
 | `requirements-jetson.txt` · `setup_runtime.sh` | venv 재현 | ✅ |
@@ -133,7 +140,7 @@ tgz 내용(필수 4): `encoder.pt` · `denoiser.pt` · `metadata.json` · `datas
 
 ```bash
 cd ROS
-./setup_runtime.sh [wheelhouse 경로]   # 기본 ~/Workspace/stanford_umi_demo/wheelhouse-jetson
+./setup_runtime.sh [wheelhouse 경로]   # 기본 ROS/wheelhouse-jetson (별첨 tar.gz 를 ROS/ 에 풀기)
 ```
 젯슨 torch 는 PyPI 에 없다(JetPack aarch64 전용 휠) → **wheelhouse 오프라인 설치**.
 실행 시 `LD_LIBRARY_PATH` 에 `cusparselt/lib` 가 없으면 `libcusparseLt.so.0` 로 **torch import 부터 실패** → 오케스트레이터가 subprocess env 에 넣어준다.
@@ -220,6 +227,19 @@ bash src/so101_policy/scripts/verify_fakebus_loop.sh   # bringup(FakeBus)+정책
 기대: lifecycle 전이 3개 성공, `/commands`·`/joint_states` ≈30Hz, 6관절 값이 샘플마다 변함.
 `ros2` CLI 가 `!rclpy.ok()` 로 죽으면 데몬이 죽은 것 → `ros2 daemon stop && ros2 daemon start` (스크립트는 자동 처리).
 
+**젯슨 부팅 자동 실행 (systemd):** 상세 `Docs/porting_jetson.md`
+```bash
+cp deploy/.env.example .env && chmod 600 .env    # SO101_DEVICE_SECRET 채우기
+./deploy/install.sh                              # 유닛 설치(경로·유저 자동 치환)
+sudo systemctl enable --now robot-estop robot-orchestrator
+journalctl -u robot-orchestrator -f
+```
+부팅 순서: `sync-time-http` → `robot-estop` → `robot-orchestrator`. 카메라는 별도로
+`bash ~/Workspace/stanford_umi_demo/setup/adb_local.sh forward tcp:8765 tcp:8765` (재부팅·폰 재연결 시 풀림).
+
+**팔 없이 실물 경로 테스트:** 가짜 ST3215 서보 버스 `ros2_ws/src/so101_orchestrator/test/fake_servo_bus.py`
+(pty) + orchestrator `-p runtime_move:=false -p motor_port:=/tmp/so101_fake_servo`. 절차는 파일 상단 주석.
+
 **젯슨 세팅 시 겪은 함정 (재삽질 방지):**
 - **RTC 시간 어긋남** → apt "Release file not valid yet". NTP(123) 캠퍼스망 차단 시 HTTP로: `sudo date -s "$(curl -sI https://www.google.com | grep -i '^date:' | cut -d' ' -f2- | tr -d '\r')"`
 - **`rosdep update` base.yaml HTTP 400** (캠퍼스망 프록시). 빈 패키지 빌드엔 무관. 실제 의존성 생기면 다른 망/Tailscale에서 1회 캐싱.
@@ -229,15 +249,26 @@ bash src/so101_policy/scripts/verify_fakebus_loop.sh   # bringup(FakeBus)+정책
 
 ## 9. 미결 / 열린 항목
 
+**실물 런타임 트랙 (46)**
+
 | 항목 | 상태 |
 |---|---|
-| **st3215_bus C++** (IServoBus 구현) | 151, 팀원 진행 (핸드오프 전달) |
-| **실물 캘리브** (zero_tick·방향) | URDF param placeholder 상태. 실측 후 교체 → REAL 게이트 |
-| **그리퍼 신호 캡처** | arpose 미지원 (손가락 마커/포텐셔미터 추가 필요). **파지 학습 전제조건** |
-| 틱 관측(raw present-position) 발행 여부 | AI 확인 대기 |
-| ckpt 메타데이터 스키마 | AI와 합의 |
+| 실물 모터 구동 `move=True` 전 구간 | 미검증 (prediction_only·가짜 버스까지 검증) |
+| 과부하 게이트 임계 750 | 실물 정상 부하에서 걸릴 수 있음 → 실측 후 조정 |
+| 실물 모드 MOTOR step | 미동작 — `executor` 무관하게 ros2_control 토픽으로 발행. 런타임 servo_bus 경로 필요 |
+| BE E-stop 명령 → `/estop` | 미구현 (젯슨에서 토픽 직접 발행은 동작) |
+| 카메라 adb forward | 수동 (재부팅·폰 재연결 시 풀림) |
+| 스킬 전환 로딩 | 스킬마다 런타임 재기동 약 12s. 상주 런타임은 팀원 구조 변경 필요 |
+| 안전 게이트 upstream 반영 | `robot_controller.py` 로컬 패치 — 팀원 반영 요청 |
+| 재배포 시 기존 스킬 재다운로드 | sha256 같으면 건너뛰기 미구현 |
+| 서비스 시작 직전 시각 재동기화 | `User=a103` 라 `date` 권한 없음(부팅 root 동기화로 대체) — `ExecStartPre=+` 로 수정 가능 |
+
+**시뮬·개발 트랙**
+
+| 항목 | 상태 |
+|---|---|
 | **정책 노드 슬롯** (`_build_obs`·`_infer`·`_ik`) | 골격만. 관측 스펙·ckpt 는 AI, IK(pinocchio 포팅)는 ROS |
-| 오케스트레이터 BE 계약 | SSE/POST 포맷·인증·run_id → BE와 (docs 초안) |
+| **실물 캘리브** (zero_tick·방향, URDF param) | ros2_control 트랙은 placeholder. 런타임은 `robot_calibration.py` 사용 |
 | MoveIt/RViz 시각화 | ver1 URDF(mesh·gripper prismatic) 붙일 때 |
 | hand-eye 캘리브 값 `T_cam→tcp` | 트랙 A (오프라인 데이터 변환에서 적용) |
 

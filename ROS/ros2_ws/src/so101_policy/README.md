@@ -5,6 +5,9 @@
 지금은 **골격 + 더미 모드**: ckpt·관측·IK 는 슬롯(`NotImplementedError`)만 비워 두었고,
 ckpt 가 없으면 사인파로 팔을 흔들어 배관을 검증한다.
 
+> **시뮬·개발 트랙 전용** — 오케스트레이터 `executor:=ros2_policy` 일 때 쓴다. 젯슨 실물 추론은
+> UMI 런타임(`executor:=umi_runtime`, `ROS/runtime/`)이 담당하고 이 노드는 거치지 않는다.
+
 ## 구성
 
 | 파일 | 역할 |
