@@ -34,7 +34,7 @@ SSAFY 특화 프로젝트 (Physical AI 조작 로봇) · FLY ASIA 출품 (창업
 
 | | 상태 | 이슈 |
 |---|---|---|
-| MuJoCo 씬 (로봇·작업대·물체·카메라 2대) | 됨 | 63 |
+| MuJoCo 씬 (로봇·작업대·물체·`cam_wrist`) | 됨 | 63 |
 | 자세구속 IK + 파지 시퀀스 | 됨 | 63 |
 | 작업공간 도달성 지도 | 됨 | 63 |
 | 데이터 계약 (코드 + 검증기 + 왕복 검증) | **코드는 됨. 결정 3건 트랙 A 합의 대기** | 27 |
@@ -139,10 +139,10 @@ SSAFY 특화 프로젝트 (Physical AI 조작 로봇) · FLY ASIA 출품 (창업
 ## 4. 데이터 규격 (계약)
 
 ```
-관측  image             (3, 224, 224) uint8, CHW, 카메라 2대
+관측  image             (3, 224, 224) uint8, CHW, cam_wrist 1대
       state             (6,) float32, [-1, 1]
       state_timestamp   float64, 초
-행동  action            (6,) float32, [-1, 1]   목표 관절각 5 + 그리퍼
+행동  action            (6,) float32, [-1, 1]   state[t+1] 관절각 5 + 전체 gap
       action_timestamp  float64, 초
 주기  30 Hz
 

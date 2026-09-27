@@ -84,6 +84,7 @@ from typing import Any
 
 import numpy as np
 
+from contract.episode import GRIPPER_GAP_RANGE_M
 from contract.ids import SKILL_IDS
 
 # Bump when the raw schema changes. Independent of CONTRACT_VERSION: raw is not
@@ -121,7 +122,7 @@ GRIPPER_STATUS_VALID = ("D", "M")
 """`gap_m` 이 있는 상태값. D=양쪽 직접검출 · M=중심선 대칭 추정 (SPEC, 약 97%).
 T=템플릿 보강 · X=실패 는 `gap_m` 이 **결측**이다 — 채우지 않고 학습에서 제외한다."""
 
-UMI_GAP_RANGE_M = (0.0, 0.090)
+UMI_GAP_RANGE_M = GRIPPER_GAP_RANGE_M
 """UMI 리그의 물리 개구 실측 (SPEC). SO-101 패드 간격은 0.0053~0.0794m 다."""
 
 FRAME_ROBOT_BASE = "robot_base"
@@ -244,7 +245,7 @@ def validate_raw(ep: RawEpisode) -> list[str]:
     elif ep.gripper_status.dtype.kind not in ("U", "S"):
         problems.append(f"gripper_status.dtype must be a string kind, got {ep.gripper_status.dtype}")
     elif ep.gripper_gap_m.shape == (t,):
-        status = np.asarray(ep.gripper_status).astype("<U1")
+        status = np.asarray(ep.gripper_status).astype(str)
         bad = sorted(set(status.tolist()) - set("DMTX"))
         if bad:
             problems.append(f"gripper_status 에 알 수 없는 값 {bad} — SPEC 은 D/M/T/X 다")

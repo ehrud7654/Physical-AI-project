@@ -143,17 +143,68 @@ def grasp_point(model: mujoco.MjModel, data: mujoco.MjData, offset_local: np.nda
     return data.xpos[bid] + rot @ np.asarray(offset_local, dtype=float)
 
 
-def approach_axis(model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray:
+def pinch_offset_for_gap(grasp_cfg: dict[str, Any], gap_m: float) -> np.ndarray:
+    """Return the contact-surface midpoint in the gripper body frame.
+
+    ``pinch_offset_local`` remains the legacy fixed point.  An asymmetric
+    parallel jaw has one fixed and one moving contact surface, so its physical
+    midpoint moves by half the requested pad gap.  Keeping that dependence in
+    one function prevents FK, IK and rollout scoring from silently aiming at
+    different points.
+    """
+    legacy = np.asarray(grasp_cfg["pinch_offset_local"], dtype=float)
+    block = grasp_cfg.get("gap_dependent_pinch_midpoint")
+    if block is None:
+        return legacy.copy()
+    kind = block.get("kind")
+    if kind == "symmetric_parallel_jaw":
+        # Both contact surfaces travel by equal and opposite half-gaps, so
+        # their midpoint is fixed in the wrist-roll body frame.
+        return legacy.copy()
+    if kind != "asymmetric_parallel_jaw":
+        raise ValueError("unknown gap_dependent_pinch_midpoint kind")
+    fixed = np.asarray(block["fixed_inner_surface_local_m"], dtype=float)
+    axis = np.asarray(block["gap_axis_local"], dtype=float)
+    if fixed.shape != (3,) or axis.shape != (3,) or not np.isfinite(fixed).all():
+        raise ValueError("gap-dependent pinch geometry must contain finite 3-vectors")
+    axis_norm = float(np.linalg.norm(axis))
+    if not np.isfinite(axis_norm) or axis_norm <= 1e-12:
+        raise ValueError("gap_axis_local must be a non-zero finite vector")
+    gap = float(gap_m)
+    if not np.isfinite(gap) or gap < 0.0:
+        raise ValueError("gap_m must be finite and non-negative")
+    return fixed + 0.5 * gap * axis / axis_norm
+
+
+def _unit_local_axis(value: np.ndarray, *, name: str) -> np.ndarray:
+    axis = np.asarray(value, dtype=float)
+    if axis.shape != (3,) or not np.isfinite(axis).all():
+        raise ValueError(f"{name} must be a finite 3-vector")
+    norm = float(np.linalg.norm(axis))
+    if norm <= 1e-12:
+        raise ValueError(f"{name} must be non-zero")
+    return axis / norm
+
+
+def approach_axis(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    local_axis: np.ndarray | None = None,
+) -> np.ndarray:
     """Unit vector the fingers point along, in world coordinates.
     손가락이 향하는 방향의 월드 단위벡터.
 
-    Measured: the TCP sits at gripper-body-local (-0.0079, 0, -0.0981), so the
-    fingers point along body-local -z.
-    실측: TCP가 gripper body 로컬 (-0.0079, 0, -0.0981)에 있으므로
-    손가락은 body 로컬 -z 방향을 향한다.
+    The legacy model defaults to body-local -Z.  A reviewed kinematic overlay
+    may supply another local axis; the caller must not infer one from visuals.
+    레거시 모델은 body 로컬 -Z가 기본이다. 검토된 기구학 overlay가 다른 로컬
+    축을 줄 수 있으며, 호출자가 visual mesh를 보고 축을 추정하면 안 된다.
     """
     bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "gripper")
-    return -data.xmat[bid].reshape(3, 3)[:, 2]
+    axis = _unit_local_axis(
+        np.array([0.0, 0.0, -1.0]) if local_axis is None else local_axis,
+        name="approach_axis_local",
+    )
+    return data.xmat[bid].reshape(3, 3) @ axis
 
 
 def solve_pose_ik(
@@ -161,6 +212,7 @@ def solve_pose_ik(
     target_xyz: np.ndarray,
     offset_local: np.ndarray,
     desired_axis: np.ndarray,
+    approach_axis_local: np.ndarray | None = None,
     q_init: np.ndarray | None = None,
     wrist_roll: float | None = None,
     max_iters: int = 500,
@@ -202,7 +254,7 @@ def solve_pose_ik(
         mujoco.mj_forward(model, data)
         point = grasp_point(model, data, offset_local)
         e_pos = target - point
-        axis_now = approach_axis(model, data)
+        axis_now = approach_axis(model, data, approach_axis_local)
         e_axis = np.cross(axis_now, axis_goal)
         pos_err = float(np.linalg.norm(e_pos))
         axis_err_rad = float(np.arcsin(np.clip(np.linalg.norm(e_axis), 0.0, 1.0)))

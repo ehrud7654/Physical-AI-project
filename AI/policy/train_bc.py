@@ -56,7 +56,7 @@ from policy.bc import (
 )
 from tracking.exp_log import code_digest, file_digest, log_run
 
-DEFAULT_CAMERAS = ["cam_front", "cam_wrist"]
+DEFAULT_CAMERAS = ["cam_wrist"]
 
 
 GRIPPER_LOSS_WEIGHT = 1.0

@@ -139,8 +139,7 @@ R5 의 거짓 근거로 `convert()` 의 시드 규칙을 "채택된 스텝만" �
 
 ## 다음 계측
 
-1. `max_iters=500` 재대조. **예측: 다양체 밖 잔여 오차가 소폭 줄고 수용률 곡선의
-   형태는 바뀌지 않는다.** 바뀌면 위 표 전체를 다시 써야 한다
+1. ~~`max_iters=500` 재대조~~ — 2026-09-09 완료. 아래 후속 계측 참고
 2. 표준 환경(`aiot_ai`)에서 R1 재실행
 3. 내부 폐기 스텝의 관절 보간 + FK 대조 (`MEASURE_umi_roundtrip_0907` 다음 계측 3)
 
@@ -161,8 +160,27 @@ datasets/_superseded_0907/umi_synth_v3   되돌린 시드 규칙으로 생성. �
 # [로컬]
 cd AI
 python tools/umi_reach_study.py --episodes 4 --steps 50                      # R1
+python tools/umi_reach_study.py --episodes 4 --steps 50 --max-iters 500      # R1 상한 대조
 python tools/umi_reach_study.py --episodes 6 --steps 50 --pos-mm 20 50 \
        --tilt-deg 10 20 --multistart --advance-seed-on-success-only          # R6
 ```
+
+## 2026-09-09 후속 — `max_iters=120` 대 `500`
+
+같은 코드·seed 0·4편×50스텝·다중시작 off·시드 항상 갱신 조건으로 반복
+상한만 바꿔 로컬에서 재실행했다. 11개 섭동 조건의 위치 중앙/p95, 축 중앙/p95,
+예산 초과 수, 관절 한계 수, 수용률이 **표시 정밀도에서 전부 동일**했다.
+
+| 조건 | 120 수용률 | 500 수용률 |
+|---|---:|---:|
+| position 20mm | 92.0% | 92.0% |
+| position 50mm | 63.5% | 63.5% |
+| tilt 5도 | 93.5% | 93.5% |
+| tilt 10도 | 20.5% | 20.5% |
+| tilt 20도 | 9.0% | 9.0% |
+
+따라서 현재 섭동 곡선과 90% 경계는 `max_iters=120` 조기 종료의 산물이 아니다.
+이 결론은 합성 FK pose 섭동에만 해당하며 실제 사람 손 궤적 수용률(L65)은 여전히
+미검증이다.
 
 코드 리비전 

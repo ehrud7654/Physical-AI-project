@@ -45,6 +45,7 @@ from contract.ids import DESTINATIONS, SKILL_IDS, STATUSES, TIERS
 # The only place a skill identifier is defined. Everything else derives from this.
 # 스킬 식별자가 정의되는 유일한 자리. 나머지는 전부 여기서 파생된다.
 POLICY_KINDS: tuple[str, ...] = ("learned", "scripted")
+ACTION_SPACES: tuple[str, ...] = ("next_joint_position_and_gap",)
 
 # Gates. Fixed before any skill was registered.
 # 게이트. 스킬을 하나도 등록하기 전에 확정했다.
@@ -200,7 +201,7 @@ class PolicyRef:
     contract_version: str = CONTRACT_VERSION
     ckpt_uri: str = ""
     trained_on: str = ""
-    action_space: str = "joint_delta"
+    action_space: str = "next_joint_position_and_gap"
     gate: GateRecord | None = None
 
 
@@ -272,6 +273,11 @@ def validate_entry(entry: SkillEntry, cfg: dict[str, Any]) -> list[str]:
         problems.append(
             f"contract_version {entry.policy.contract_version!r} != {CONTRACT_VERSION!r} "
             "— 다른 규격으로 학습된 정책이다"
+        )
+    if entry.policy.action_space not in ACTION_SPACES:
+        problems.append(
+            f"action_space {entry.policy.action_space!r} 이 {ACTION_SPACES} 에 없다 — "
+            "계약 0.3은 state[t+1] 관절 위치 5개와 전체 gap만 허용한다"
         )
     if entry.policy.kind == "learned":
         if not entry.policy.ckpt_uri:
