@@ -20,7 +20,7 @@ pty(가상 시리얼)를 만들고 LINK 경로에 심볼릭 링크를 건 뒤, s
   sudo systemctl stop so101-fake-servo
   sudo rm -r /etc/systemd/system/robot-orchestrator.service.d
   sudo systemctl daemon-reload && sudo systemctl restart robot-orchestrator
-카메라는 별도: bash ~/Workspace/stanford_umi_demo/setup/adb_local.sh forward tcp:8765 tcp:8765
+카메라는 별도: adb forward tcp:8765 tcp:8765
 """
 import os
 import signal

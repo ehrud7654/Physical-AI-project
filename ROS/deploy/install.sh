@@ -28,11 +28,10 @@ if ! grep -q '^SO101_DEVICE_SECRET=.\+' "$ROS_ROOT/.env"; then
     exit 1
 fi
 
-# 2) sync-time-http.sh 존재 확인(orchestrator 가 ExecStartPre 로 부른다).
-if [ ! -x /usr/local/bin/sync-time-http.sh ]; then
-    echo "!! /usr/local/bin/sync-time-http.sh 가 없다(시간동기 스크립트). 먼저 설치해라."
-    exit 1
-fi
+# 2) 시간동기 스크립트·유닛 설치(orchestrator 가 Requires·ExecStartPre 로 쓴다).
+sudo install -m 755 "$DEPLOY/sync-time-http.sh" /usr/local/bin/sync-time-http.sh
+sudo install -m 644 "$DEPLOY/sync-time-http.service" "$UNIT_DIR/sync-time-http.service"
+echo "설치: /usr/local/bin/sync-time-http.sh, $UNIT_DIR/sync-time-http.service"
 
 # 3) 유닛 설치 — @ROS_ROOT@·@USER_HOME@ 치환.
 for unit in robot-estop.service robot-orchestrator.service; do
@@ -44,7 +43,7 @@ done
 
 # 4) 활성화.
 sudo systemctl daemon-reload
-sudo systemctl enable robot-estop.service robot-orchestrator.service
+sudo systemctl enable sync-time-http.service robot-estop.service robot-orchestrator.service
 echo
 echo "완료. 지금 바로 시작하려면:"
 echo "  sudo systemctl start robot-estop robot-orchestrator"

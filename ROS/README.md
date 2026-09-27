@@ -118,7 +118,7 @@ journalctl -u robot-orchestrator -f
 카메라(S22 폰)는 USB로 연결하고 포트 포워딩을 따로 걸어야 합니다. 재부팅하거나 폰을 다시 꽂으면 풀리니 다시 해줘야 합니다.
 
 ```bash
-bash ~/Workspace/stanford_umi_demo/setup/adb_local.sh forward tcp:8765 tcp:8765
+adb forward tcp:8765 tcp:8765
 ```
 
 ### 팔 없이 테스트
