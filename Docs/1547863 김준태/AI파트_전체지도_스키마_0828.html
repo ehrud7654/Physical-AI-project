@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 파트 전체 지도와 실제 스키마</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#16181d; --muted:#5c6370; --line:#e3e6ec;
+    --code-bg:#f6f8fa; --accent:#2b5fd9; --warn:#b45309; --bad:#b91c1c; --ok:#15803d;
+    --box:#f9fafb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    line-height:1.75;font-size:16px;}
+  .wrap{display:grid;grid-template-columns:260px minmax(0,1fr);gap:0;max-width:1400px;margin:0 auto;}
+  nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    border-right:1px solid var(--line);padding:24px 18px;font-size:13.5px;background:var(--box);}
+  nav h2{font-size:13px;letter-spacing:.04em;color:var(--muted);margin:0 0 12px;text-transform:uppercase}
+  nav a{display:block;color:var(--fg);text-decoration:none;padding:3px 0;border-left:2px solid transparent;padding-left:8px}
+  nav a:hover{color:var(--accent);border-left-color:var(--accent)}
+  nav a.sub{padding-left:20px;color:var(--muted);font-size:12.5px}
+  main{padding:40px 48px 120px;min-width:0}
+  h1{font-size:30px;line-height:1.3;margin:0 0 6px}
+  h2{font-size:23px;margin:56px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--fg)}
+  h3{font-size:18px;margin:34px 0 10px}
+  h4{font-size:15.5px;margin:22px 0 8px;color:#333}
+  p{margin:10px 0}
+  .lead{color:var(--muted);font-size:15px}
+  code{background:var(--code-bg);padding:1px 5px;border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"D2Coding",monospace;font-size:13.5px}
+  pre{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;
+    padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.6;margin:12px 0}
+  pre code{background:none;padding:0;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;display:block;overflow-x:auto}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--box);font-weight:600;white-space:nowrap}
+  .box{border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:6px;
+    padding:12px 16px;margin:16px 0;background:var(--box)}
+  .box.warn{border-left-color:var(--warn);background:#fffbeb}
+  .box.bad{border-left-color:var(--bad);background:#fef2f2}
+  .box.ok{border-left-color:var(--ok);background:#f0fdf4}
+  .box.key{border-left-color:var(--accent);background:#eff6ff}
+  .box p:first-child{margin-top:0}.box p:last-child{margin-bottom:0}
+  .tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:20px;
+    border:1px solid var(--line);background:#fff;color:var(--muted);white-space:nowrap}
+  .g{color:var(--ok)} .b{color:var(--accent)} .y{color:var(--warn)}
+  .why{font-size:14px;color:var(--muted);border-left:3px solid var(--line);padding-left:12px;margin:8px 0 18px}
+  hr{border:0;border-top:1px solid var(--line);margin:40px 0}
+  .meta{font-size:13.5px;color:var(--muted);margin-bottom:28px}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}main{padding:24px 18px 80px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <h2>목차</h2>
+  <a href="#s0">0. 30초 요약</a>
+  <a href="#s1">1. 배경지식</a>
+  <a class="sub" href="#s1-1">1.1 무엇을 만드는가</a>
+  <a class="sub" href="#s1-2">1.2 모방학습이 다른 지점</a>
+  <a class="sub" href="#s1-3">1.3 BC → ACT → Diffusion</a>
+  <a class="sub" href="#s1-4">1.4 관측·행동 공간</a>
+  <a class="sub" href="#s1-5">1.5 카메라 2대·30Hz</a>
+  <a class="sub" href="#s1-6">1.6 VLM 층과 어댑터</a>
+  <a class="sub" href="#s1-7">1.7 Sim2Real</a>
+  <a class="sub" href="#s1-8">1.8 용어 사전</a>
+  <a href="#s2">2. 전체 지도 (12단계)</a>
+  <a href="#s3">3. 데이터 스키마 3계층</a>
+  <a class="sub" href="#s3-1">3.1 어디에 무엇을 두나</a>
+  <a class="sub" href="#s3-2">3.2 파일 레벨 (실측)</a>
+  <a class="sub" href="#s3-3">3.3 스토리지 경로</a>
+  <a class="sub" href="#s3-4">3.4 DB DDL 제안</a>
+  <a class="sub" href="#s3-5">3.5 실제 쿼리 9종</a>
+  <a href="#s4">4. API 실제 페이로드</a>
+  <a href="#s5">5. 협의 질문 목록</a>
+  <a href="#s6">6. 순서와 선행조건</a>
+  <a href="#s7">7. 함정 목록</a>
+</nav>
+<main>
+
+<h1>AI 파트 전체 지도와 실제 스키마</h1>
+<p class="lead">시뮬레이션까지 온 상태에서, 여기서부터 끝까지 무엇을 어떤 순서로 하는가 —<br>
+그리고 데이터가 실제로 어떤 모양으로 오가는가를 쿼리·페이로드 수준까지.</p>
+<p class="meta">
+2026-08-28 · 작성 김준태(AI 트랙 B) · 프로젝트 S15P21A103<br>
+확신도 표기 — <span class="g">🟢 실행·로그로 확인</span> · <span class="b">🔵 문서·공개자료 근거</span> · <span class="y">🟡 설계 판단(미검증)</span><br>
+<b>이 문서의 DDL·API·쿼리는 전부 <span class="y">🟡 제안</span>이다.</b> BE 파트(최은찬)와 합의되지 않았고, 합의 없이 구현하면 두 번 짠다.
+</p>
+
+<h2 id="s0">0. 30초 요약</h2>
+
+<div class="box key">
+<p><b>제품 한 문장</b> — 사람이 리더 암을 손으로 움직여 시연하면, 그 시연으로 정책 모델이 학습되고, 팔로워 로봇이 같은 작업을 스스로 수행한다. 위에 "빨간 블록 집어" 같은 자연어 층을 얹는다.</p>
+</div>
+
+<table>
+<tr><th>질문</th><th>답</th></tr>
+<tr><td>지금 어디까지 왔나</td><td>12단계 중 <b>1~4단계(계약·시뮬·baseline·수집도구)</b>. 실물 로봇 없이 할 수 있는 것은 대부분 끝. <span class="g">🟢</span></td></tr>
+<tr><td>가장 중요한 수치 하나</td><td><b>학습 정책 롤아웃 성공률 &gt; 20.0%</b>. 이 값은 결과를 보기 전에 코드에 박혔다. val loss 는 판정에 쓰지 않는다.</td></tr>
+<tr><td>지금 막혀 있는 것</td><td>데이터 계약(이슈 27) 3건 미확정 — 정규화 규칙 / 타임스탬프 필드 / <b>범위 초과값 처리</b>. 트랙 A 합의 필요. 이게 풀려야 28·29·30·31·34·64가 움직인다.</td></tr>
+<tr><td>BE 와 합의해야 할 것</td><td>이슈 <b>18(저장·배포 계약)</b>이 아직 "해야 할 일"이다. 여기서 §3·§4 를 그대로 들고 가면 된다.</td></tr>
+<tr><td>실물 오면 제일 먼저</td><td>이미지-액션 <b>타임스탬프 오차 계측</b>(이슈 30). 수집 전에. 어긋난 채 100개 찍으면 전량 폐기다.</td></tr>
+</table>
+
+<h2 id="s1">1. 배경지식 — 왜 이런 규칙들이 있는가</h2>
+
+<h3 id="s1-1">1.1 우리가 만드는 것</h3>
+
+<p>로봇에게 작업을 가르치는 방법은 크게 세 가지다.</p>
+
+<table>
+<tr><th>방법</th><th>어떻게</th><th>왜 우리가 안 쓰나 / 쓰나</th></tr>
+<tr><td>고전 제어 + 계획</td><td>물체 위치를 인식 → 역기구학으로 경로 계산 → 실행</td><td>동작 하나마다 사람이 규칙을 짠다. "가르친다"가 성립 안 함. 다만 <b>우리 scripted baseline 이 정확히 이것</b>이고, 상한선 측정용으로 쓴다</td></tr>
+<tr><td>강화학습(RL)</td><td>보상 함수를 주고 시행착오로 학습</td><td>실물에서 수만 번 시도가 필요하고 보상 설계가 어렵다. 2개월·실물 1대로는 불가능</td></tr>
+<tr><td><b>모방학습(IL)</b></td><td>사람 시연 데이터를 보고 "이 상황에서 이 행동"을 지도학습</td><td><b>우리 것.</b> 시연 수십~수백 개로 동작 1종이 나온다. 보상 설계 불필요</td></tr>
+</table>
+
+<p>모방학습을 고른 순간 시스템의 형태가 결정된다. <b>학습 데이터를 사람이 직접 만들어야 하므로, 데이터 수집 장치·데이터 규격·데이터 품질 검증이 모델보다 먼저</b> 온다. 이 프로젝트에서 데이터 계약(이슈 27)이 다른 모든 이슈의 선행조건인 이유가 이것이다.</p>
+
+<h3 id="s1-2">1.2 모방학습이 일반 지도학습과 다른 지점 — 이 문서에서 제일 중요한 절</h3>
+
+<p>이미지 분류기는 사진 한 장을 받아 라벨 하나를 낸다. 틀려도 다음 사진에는 영향이 없다. 각 예측이 독립이다.</p>
+
+<p>로봇은 아니다. <b>t 시점의 행동이 t+1 시점의 관측을 만든다.</b> 조금 어긋난 행동을 하면, 다음 스텝에서 로봇은 학습 데이터에 없던 자세를 보게 된다. 없던 입력에는 더 엉뚱한 출력을 내고, 그것이 더 낯선 자세를 만든다. 오차가 스스로를 증폭한다.</p>
+
+<div class="box key">
+<p><b>이것을 covariate shift / compounding error 라고 한다 <span class="b">🔵</span></b><br>
+학습 데이터의 상태 분포와, 학습된 정책을 실제로 굴렸을 때 방문하는 상태 분포가 다르다. 그리고 그 차이는 에피소드가 길어질수록 커진다.</p>
+</div>
+
+<p>여기서 이 프로젝트의 규칙 대부분이 파생된다.</p>
+
+<table>
+<tr><th>파생된 규칙</th><th>이유</th></tr>
+<tr><td><b>평가는 롤아웃 성공률로 한다. val loss 가 아니다</b></td><td>val loss 는 "데이터에 있던 상태"에서만 잰다. 정작 실패는 데이터에 없던 상태에서 난다. 손실이 낮은데 성공률이 0%인 상황은 이상 현상이 아니라 <b>기본값</b>이다</td></tr>
+<tr><td>시연 방식은 일정하게, 환경은 다양하게</td><td>같은 상황에서 사람이 매번 다른 궤적을 보이면 정답이 여러 개가 되고, 평균을 배운 모델은 어느 쪽도 아닌 행동을 낸다(mode averaging). 반면 물체 위치·조명이 다양하면 방문 가능한 상태가 넓어져 오차 누적에 강해진다</td></tr>
+<tr><td>단계식 수집 (20 → 검증 → 100)</td><td>궤적 품질 문제는 학습해 보기 전에는 잘 안 보인다. 몰아 찍고 나중에 발견하면 전량 폐기</td></tr>
+<tr><td>실패 근처 데이터가 귀하다</td><td>정확히 성공한 궤적만 있으면 "빗나갔을 때 어떻게 복구하는지"를 배울 데이터가 없다. <b>DAgger</b>(사람이 정책을 굴려보고 틀린 곳에서 개입해 라벨을 추가하는 방법) <span class="b">🔵</span> 가 이 문제의 표준 대응이다. 우리 스코프에는 아직 없다 — 리더-팔로워 구조라 나중에 넣을 수는 있다</td></tr>
+</table>
+
+<h3 id="s1-3">1.3 BC → ACT → Diffusion Policy — 무엇이 더해지는가</h3>
+
+<table>
+<tr><th>모델</th><th>더하는 것</th><th>해결하는 문제</th><th>비용</th></tr>
+<tr><td><b>BC</b> (Behavior Cloning)</td><td>없음. 관측 → 행동 1개, 지도학습</td><td>기준선. "데이터로 학습이 되긴 하는가"</td><td>우리 구현 <b>1,307,974 파라미터 / 약 5.0MB</b> <span class="g">🟢</span></td></tr>
+<tr><td><b>ACT</b> (Action Chunking Transformer) <span class="b">🔵</span></td><td>① 한 번에 미래 <i>k</i>스텝을 통째로 예측(action chunking) ② 겹치는 예측을 가중평균(temporal ensembling) ③ 시연 다양성을 잠재변수로 흡수(CVAE)</td><td>스텝마다 새로 결정하며 생기는 떨림과 오차 누적. 청크 단위로 밀고 나가면 누적 지점이 <i>k</i>배 줄어든다</td><td>파라미터 수십 배. Jetson 예산 재확인 필요</td></tr>
+<tr><td><b>Diffusion Policy</b> <span class="b">🔵</span></td><td>행동을 하나로 회귀하지 않고 <b>행동 분포</b>에서 샘플링(디노이징)</td><td>정답이 여러 개인 상황(왼쪽으로 돌아가도, 오른쪽으로 돌아가도 됨)에서 BC 가 평균을 내버리는 문제</td><td>추론 시 디노이징 반복 → <b>지연 시간</b>. 30Hz 실시간 예산에 직결</td></tr>
+</table>
+
+<div class="box warn">
+<p><b>순서를 지키는 이유.</b> BC 수치를 먼저 재지 않고 ACT 를 돌리면, 잘 나와도 왜 잘 나왔는지 설명 못 하고 안 나와도 원인이 데이터인지 모델인지 못 좁힌다. 발표에서 "ACT 썼습니다"는 아무 말도 아니고, "BC 가 X%, ACT 가 Y%, 차이는 청킹에서 왔습니다"가 결과다.</p>
+</div>
+
+<h3 id="s1-4">1.4 관측·행동 공간을 왜 이렇게 정했나</h3>
+
+<p>정책이 무엇을 보고 무엇을 뱉을지는 순수한 설계 선택이고, 한 번 정하면 수집한 데이터 전부가 거기 묶인다.</p>
+
+<table>
+<tr><th>선택지</th><th>우리 결정</th><th>근거</th></tr>
+<tr><td>행동 = 관절각 vs 엔드이펙터 포즈(x,y,z,회전)</td><td><b>관절각 6개</b></td><td>포즈로 내면 매 스텝 IK 를 풀어야 하고, IK 가 실패하거나 특이점 근처에서 튀면 그 실패가 정책 탓인지 IK 탓인지 분리가 안 된다. SO-101 은 <b>팔 관절이 5개</b>라 6자유도 포즈를 그대로 따라갈 수도 없다 <span class="g">🟢</span></td></tr>
+<tr><td>행동 = 절대 목표각 vs 증분(delta)</td><td><b>절대 목표각</b></td><td>증분은 오차가 적분된다. 한 스텝 놓치면 그 뒤가 전부 밀린다. 절대값은 스텝을 놓쳐도 다음 명령이 제자리를 잡아준다</td></tr>
+<tr><td>단위 = rad vs 정규화</td><td><b>[-1,1] 정규화</b></td><td>축마다 범위가 다르면(<code>wrist_roll</code> 5.58 rad vs <code>gripper</code> 1.92 rad) 손실이 범위 큰 축에 지배된다. 정규화 식과 관절 범위는 <code>configs/so101.yaml</code> 단일 출처 <span class="g">🟢</span></td></tr>
+<tr><td>관측에 관절 state 를 넣나</td><td><b>넣는다(6차원)</b></td><td>이미지만으로는 팔의 현재 자세가 가려질 수 있다. 다만 state 에만 의존하면 물체를 안 보고 궤적을 외운다 — 그래서 평가는 물체 위치를 바꿔가며 한다</td></tr>
+</table>
+
+<div class="box bad">
+<p><b>⚠️ 이 규격이 바뀌면 이미 수집한 데이터가 전부 무효다.</b> 관절 순서 하나만 바뀌어도 그렇다. 그래서 데이터 계약은 산문이 아니라 <b>코드</b>(<code>contract/episode.py</code>)이고, 위반한 에피소드는 저장 자체가 거부된다. 실제로 수집 18건 중 1건이 <code>state max 1.0062</code> 로 거부됐다 <span class="g">🟢</span></p>
+</div>
+
+<h3 id="s1-5">1.5 카메라 2대와 30Hz의 의미</h3>
+
+<p><b>고정 카메라(cam_front)</b>는 물체가 어디 있는지, 작업대 전체가 어떤 상태인지를 본다. <b>손목 카메라(cam_wrist)</b>는 그리퍼와 물체의 상대 위치를 본다 — 팔이 어디에 있든 "잡기 직전"의 모습이 일관되게 찍히므로, 최종 접근 정밀도는 대부분 여기서 나온다 <span class="b">🔵</span>.</p>
+
+<p>30Hz 는 "33.3ms 안에 <b>이미지 취득 + 전처리 + 추론 + 명령 전송</b>이 전부 끝나야 한다"는 뜻이다. 이건 예산이지 목표가 아니다. 이미 시뮬에서 걸린 적이 있다 — 텔레옵 녹화를 켜면 틱당 <b>519ms</b>가 걸려 예산 33.3ms를 15배 초과했다(녹화 끄면 0.19ms) <span class="g">🟢</span>. 실물에서는 여기에 카메라 지연·USB 대역·서보 응답이 더해진다.</p>
+
+<h3 id="s1-6">1.6 VLM 층 — 왜 정책과 분리하는가, 어댑터가 뭔가</h3>
+
+<p>"빨간 블록 집어"를 처리하는 방식은 두 가지다.</p>
+
+<table>
+<tr><th>구조</th><th>내용</th><th>판단</th></tr>
+<tr><td>VLA (end-to-end)</td><td>비전-언어-행동을 한 모델이 통째로. RT-2, OpenVLA 계열 <span class="b">🔵</span></td><td>모델이 수 GB~수십 GB. <b>Jetson 8GB 에 안 들어간다.</b> 학습 데이터도 우리 규모가 아니다</td></tr>
+<tr><td><b>계층형</b> (우리)</td><td>VLM 은 <b>말을 스킬 이름과 대상으로 바꾸는 것까지만</b> 한다. 실제 관절 제어는 별도 정책 모델이 30Hz 로 돈다</td><td>VLM 은 초당 여러 번 돌 필요가 없다(지시가 들어올 때 1회). 정책은 작고 빠르다. 8GB 안에서 유일하게 성립하는 구조 <span class="y">🟡</span></td></tr>
+</table>
+
+<pre><code>사용자: "빨간 블록 집어"
+   ↓  VLM (지시가 들어올 때 1회 실행)
+{"skill": "pick", "target": {"color": "red", "bbox": [x1,y1,x2,y2]}}
+   ↓  정책 모델 (30Hz 로 계속 실행)
+action (6,) → Safety Controller → 서보</code></pre>
+
+<h4>파인튜닝·어댑터·양자화 — 용어 정리</h4>
+<table>
+<tr><th>용어</th><th>뜻</th><th>우리 경우</th></tr>
+<tr><td>파인튜닝</td><td>공개 모델을 우리 데이터로 추가 학습</td><td>"우리 작업대 사진 + 우리 스킬 이름"으로 맞춘다</td></tr>
+<tr><td><b>LoRA</b></td><td>원본 가중치는 얼리고, 작은 저랭크 행렬만 학습 <span class="b">🔵</span></td><td>학습 산출물이 <b>수십 MB 짜리 어댑터 파일 하나</b>. 베이스는 그대로</td></tr>
+<tr><td>QLoRA</td><td>베이스를 4bit 로 양자화한 상태에서 LoRA <span class="b">🔵</span></td><td><b>우리는 불필요.</b> H200 이면 메모리가 남는다. 양자화 학습은 품질 리스크만 추가</td></tr>
+<tr><td>양자화(Q4 등)</td><td>가중치를 4bit 등으로 줄여 용량·속도 확보</td><td>Jetson 배포 시 검토. <b>학습 때와 추론 때 베이스가 달라지는 문제</b>가 여기서 생긴다</td></tr>
+<tr><td>어댑터 분리 배포</td><td>베이스는 두고 어댑터만 교체</td><td>llama.cpp 는 어댑터를 별도 GGUF 로 런타임 로드/핫스왑 지원 <span class="b">🔵</span>. 다만 <b>양자화 인지 학습은 하지 않는다</b> — bf16 어댑터를 Q4 베이스에 붙이는 조합의 품질 비용은 <b>아무도 안 쟀다</b></td></tr>
+</table>
+
+<h3 id="s1-7">1.7 Sim2Real — 시뮬로 무엇이 되고 무엇이 안 되나</h3>
+
+<table>
+<tr><th>시뮬이 주는 것 <span class="g">🟢</span></th><th>시뮬이 못 주는 것</th></tr>
+<tr><td>기하학적 사실 — 도달 가능 영역, 관절 한계, 특이점, 그리퍼 개폐 폭</td><td>마찰 계수, 물체 미끄러짐</td></tr>
+<tr><td>파이프라인 검증 — 계약 왕복, 학습 루프, 평가 harness</td><td>카메라 노이즈·모션블러·자동노출·조명</td></tr>
+<tr><td>baseline 과 게이트 — 상한(scripted 95%)과 하한(chance 0%)</td><td>서보 지연·백래시·캘리브레이션 오차</td></tr>
+<tr><td>실행가능성 검사 — 사람 시연을 로봇이 재현할 수 있는지 수집 <b>전에</b> 판정</td><td>실제 성공률. <b>시뮬 90%가 실물 90%를 보장하지 않는다</b></td></tr>
+</table>
+
+<h3 id="s1-8">1.8 용어 사전</h3>
+<table>
+<tr><th>용어</th><th>뜻</th></tr>
+<tr><td>에피소드</td><td>시연 1회 전체. 관측·행동·타임스탬프의 시계열 묶음 = 우리 데이터의 최소 단위</td></tr>
+<tr><td>롤아웃</td><td>학습된 정책을 실제로 굴려서 끝까지 가보는 것. 그 결과가 성공/실패</td></tr>
+<tr><td>정책(policy)</td><td>관측 → 행동 함수. 우리 코드에서는 <code>Policy</code> 프로토콜</td></tr>
+<tr><td>체크포인트(ckpt)</td><td>학습된 가중치 파일 + 그것을 올바로 불러오는 데 필요한 메타</td></tr>
+<tr><td>게이트</td><td>"이 값을 넘어야 다음 단계로 간다"는 숫자. <b>결과 보기 전에</b> 정한다</td></tr>
+<tr><td>baseline</td><td>비교 기준. hold(정지)·zero·replay(녹화 재생)·scripted(특권정보 사용 규칙기반)</td></tr>
+<tr><td>특권정보(privileged)</td><td>실물에서는 못 얻는 정보(시뮬 내부 물체 좌표 등). scripted 만 쓴다. 학습 정책은 금지</td></tr>
+<tr><td>텔레옵(teleop)</td><td>사람이 직접 조종. 우리는 리더 암 조작 = 시연 수집 그 자체</td></tr>
+<tr><td>계약 위반</td><td>에피소드가 규격을 벗어난 상태. 저장·학습·배포 어디서든 <b>거부</b> 대상</td></tr>
+<tr><td><code>config_sha</code> / <code>code_sha</code></td><td>설정·소스의 해시. "이 수치가 어느 코드에서 나왔나"를 나중에 대조하기 위한 것</td></tr>
+</table>
+
+<h2 id="s2">2. 전체 지도 — 시연 한 번에서 자율 수행까지 12단계</h2>
+
+<p>지금 우리가 어디 서 있는지, 각 단계가 무엇에 막혀 있는지. Jira 이슈 키는 실제 조회한 값이다 <span class="g">🟢</span>.</p>
+
+<table>
+<tr><th>#</th><th>단계</th><th>산출물</th><th>담당</th><th>Jira</th><th>상태</th></tr>
+<tr><td>1</td><td><b>데이터 계약 확정</b></td><td>obs/action 규격, 정규화 규칙, 검증기</td><td>AI 양 트랙</td><td>27</td><td><b>잠정.</b> 3건 미확정 — 다른 전부를 막고 있다</td></tr>
+<tr><td>2</td><td>시뮬 환경·실행가능성 도구</td><td>MuJoCo 씬, 도달영역 지도, 파지 검사</td><td>AI B</td><td>[ROS] 63 · 64 · 65</td><td><span class="g">완료(시뮬)</span></td></tr>
+<tr><td>3</td><td>baseline·게이트 확정</td><td>hold/zero/replay/scripted 성공률, 통과선 20%</td><td>AI B</td><td>35</td><td><span class="g">완료(시뮬)</span></td></tr>
+<tr><td>4</td><td>시연 수집 도구</td><td>텔레옵 녹화 → 계약 준수 에피소드</td><td>AI B + HW</td><td>64</td><td>시뮬 <span class="g">완료</span> / 실물 리더암 대기</td></tr>
+<tr><td>5</td><td><b>캘리브레이션·시간동기화 계측</b></td><td>카메라 내·외부 파라미터, 이미지↔액션 오차 ms</td><td>AI A</td><td>28 · 29 · 30</td><td>미착수. <b>실물 수집 전에 반드시</b></td></tr>
+<tr><td>6</td><td>실제 수집 (20 → 검증 → 100)</td><td>데이터셋 v1</td><td>AI A + B</td><td>31</td><td>미착수 (HW 대기)</td></tr>
+<tr><td>7</td><td>데이터셋 업로드·등록</td><td>서버 저장, 학습 대기 큐</td><td>BE</td><td>18 · 19 · 22</td><td>미착수 — <b>여기가 §3·§4 합의 지점</b></td></tr>
+<tr><td>8</td><td>학습 (BC → ACT)</td><td>ckpt + 학습 메타</td><td>AI B</td><td>34 / BE 21</td><td>BC 루프 <span class="g">완료</span>(랜덤 텐서). H200 미할당</td></tr>
+<tr><td>9</td><td><b>평가·게이트 판정</b></td><td>롤아웃 성공률 (시뮬 → 실물)</td><td>AI B</td><td>35</td><td><b>미측정.</b> 이 숫자가 나오기 전엔 아무것도 배포 안 한다</td></tr>
+<tr><td>10</td><td>배포 등록 → Jetson 로드</td><td>배포 매니페스트, 추론 노드</td><td>BE + ROS</td><td>BE 23 / [ROS] 44 · 46 · 66</td><td>미착수</td></tr>
+<tr><td>11</td><td>VLM 파인튜닝·어댑터</td><td>어댑터 GGUF, 스킬 선택</td><td>AI B</td><td>36 · 42 / [ROS] 47</td><td>미착수. <b>라벨 필드가 계약에 없다</b></td></tr>
+<tr><td>12</td><td>관제 수집</td><td>롤아웃 1건 = 1행 → 대시보드</td><td>ROS → BE → FE</td><td>[ROS] 51 / BE 24 / [FE] 55</td><td>미착수</td></tr>
+</table>
+
+<div class="box warn">
+<p><b>이 표에서 읽어야 할 것 하나.</b> 우리가 <b>혼자 진도를 낼 수 있는 구간은 8·9번(학습·평가)뿐</b>이다. 5·6번은 하드웨어, 7·10·12번은 BE·ROS 합의에 걸려 있다. 그래서 지금 시간을 써야 할 곳은 "혼자 되는 학습 코드"와 "남과 맞춰야 하는 계약 문서" 두 갈래고, 이 문서가 후자다.</p>
+</div>
+
+<h2 id="s3">3. 데이터 스키마 3계층</h2>
+
+<h3 id="s3-1">3.1 어디에 무엇을 두나 — 이 결정이 먼저다</h3>
+
+<p>초보자가 제일 많이 틀리는 지점: <b>이미지 배열을 DB 에 넣으려는 것.</b> 우리 에피소드 1건이 <b>9.20 MB</b>다 <span class="g">🟢</span>. 100건이면 0.92 GB, 1000건이면 9.2 GB. 이걸 RDB 에 넣으면 백업·조회·마이그레이션이 전부 무너진다.</p>
+
+<table>
+<tr><th>계층</th><th>무엇을</th><th>어디에</th><th>누가 소유</th></tr>
+<tr><td>파일</td><td>이미지·state·action 시계열 (<code>.npz</code>)</td><td>오브젝트 스토리지 (S3/MinIO) 또는 서버 디스크</td><td>BE 가 저장소를 제공, <b>포맷은 AI 가 정한다</b></td></tr>
+<tr><td>DB</td><td>메타데이터 — 누가·언제·어떤 스킬·성공 여부·계약 버전·<b>파일 URI</b></td><td>PostgreSQL</td><td>BE (이슈 19)</td></tr>
+<tr><td>API</td><td>둘 사이를 오가는 경계</td><td>HTTP/JSON + multipart</td><td>BE 가 구현, <b>필수 필드는 AI 가 지정</b></td></tr>
+</table>
+
+<div class="box key">
+<p><b>원칙: 검증은 보내는 쪽이 한다.</b> 받는 쪽이 나중에 발견하면 원인 추적이 불가능해진다. 그래서 업로드 요청 자체가 계약 위반이면 <b>서버가 거부</b>해야 하고, 거부 사유는 목록으로 돌려줘야 한다(첫 위반에서 멈추지 않는다).</p>
+</div>
+
+<h3 id="s3-2">3.2 파일 레벨 — 지금 코드가 실제로 뱉는 것 <span class="g">🟢</span></h3>
+
+<p>아래는 상상이 아니라 <code>datasets/sim_pick_v0/ep_00000.json</code> 원문이다.</p>
+
+<pre><code>{
+  "episode_id": "ep_00000",
+  "task": "pick_cube_2cm",
+  "source": "sim",                    // "sim" | "real"
+  "success": true,
+  "n_steps": 141,
+  "control_rate_hz": 30.0,
+  "cameras": ["cam_front", "cam_wrist"],
+  "contract_version": "0.1.0-provisional",
+  "collected_by": "김준태(트랙B)",
+  "config_sha": "be8b756269c0",
+  "git_rev": "unknown",
+  "notes": {
+    "object_init_xy": [0.2337, -0.02302],
+    "lift_height_m": 0.11228,
+    "contacts_at_end": 9,
+    "simulator": "mujoco",
+    "scripted": true,
+    "caveat": "스크립트 시연이다. 사람 시연이 아니다. 궤적 다양성이 없다."
+  }
+}</code></pre>
+
+<p>같은 이름의 <code>.npz</code> 안에 배열이 들어 있다. 실측 shape:</p>
+
+<pre><code>state             (141, 6)            float32   [-1, 1] 정규화
+state_timestamp   (141,)              float64   초
+action            (141, 6)            float32   목표 관절각 5 + 그리퍼
+action_timestamp  (141,)              float64   초
+image__cam_front  (141, 3, 224, 224)  uint8     CHW
+image__cam_wrist  (141, 3, 224, 224)  uint8     CHW
+
+파일 크기 9,106,936 bytes (npz 압축 후)</code></pre>
+
+<div class="box">
+<p><b>왜 타임스탬프가 state/action 두 개인가.</b> 시뮬에서는 같은 스텝에서 나오므로 오차가 구조적으로 0이고, 필드가 무의미해 보인다. 실물은 아니다 — 카메라 프레임이 도착한 시각과 명령이 나간 시각이 다르다. <b>필드가 없으면 이슈 30 의 계측 자체가 불가능</b>하고, 어긋난 데이터로 학습한 정책은 시뮬에서 멀쩡하고 실물에서만 실패한다. 검증기는 이미 <b>오차 10ms 초과 시 위반</b>으로 잡는다 <span class="g">🟢</span>.</p>
+</div>
+
+<h4>정규화 공식 (양 트랙 공용, <code>configs/so101.yaml</code>)</h4>
+<pre><code>x_norm = 2 * (x_rad - lo) / (hi - lo) - 1
+x_rad  = (x_norm + 1) / 2 * (hi - lo) + lo
+
+관절 순서 = 벡터 인덱스 순서. 이 순서를 바꾸면 데이터가 무효다.
+  0 shoulder_pan   [-1.9198621771937616,  1.9198621771937634]
+  1 shoulder_lift  [-1.7453292519943224,  1.7453292519943366]
+  2 elbow_flex     [-1.69,                1.69]
+  3 wrist_flex     [-1.6580628494556928,  1.6580627293335335]
+  4 wrist_roll     [-2.7438472969992493,  2.841206309382605]
+  5 gripper        [-0.17453297762778586, 1.7453291995659765]   // 하한 = 닫힘</code></pre>
+
+<div class="box bad">
+<p><b>미확정 3건 — 트랙 A 합의 필요 (이슈 27).</b></p>
+<p>① <b>범위 초과값 처리</b>: 실물 엔코더가 <code>1.0062</code> 같은 값을 줄 때 — 거부? 클립? 클립하고 기록? 지금 코드는 <b>거부</b>다. 실물에서 거부율이 높으면 수집이 안 된다.<br>
+② 정규화 기준을 <code>new_calib</code> 로 고정할지 (실물 펌웨어 캘리브 방식은 HW 확인 전까지 미검증)<br>
+③ 카메라 이름·개수·배치 — <code>cam_front</code>/<code>cam_wrist</code> 는 잠정</p>
+</div>
+
+<h3 id="s3-3">3.3 스토리지 경로 규칙 <span class="y">🟡 제안</span></h3>
+
+<pre><code>s3://robotarm/
+  episodes/{skill_key}/{yyyymmdd}/{episode_id}.npz      # 원본, 불변
+  episodes/{skill_key}/{yyyymmdd}/{episode_id}.json     # 메타 사본(감사용)
+  datasets/{dataset_name}/v{n}/index.json               # 어떤 에피소드로 구성됐나
+  checkpoints/{train_run_id}/policy.pt                  # 정책 가중치
+  checkpoints/{train_run_id}/manifest.json              # 게이트 결과 포함
+  vlm/base/{base_name}-{quant}.gguf                     # 베이스 (드물게 교체)
+  vlm/adapters/{adapter_id}.gguf                        # 어댑터 (자주 교체)
+  rollouts/{rollout_id}.mp4                             # 관제 영상(선택)</code></pre>
+
+<p><b>불변 규칙</b>: <code>episodes/</code> 아래 파일은 덮어쓰지 않는다. 잘못 찍었으면 새 id 로 다시 찍고, DB 에서 <code>excluded_reason</code> 을 단다. 데이터가 바뀌면 그 데이터로 낸 수치가 전부 의미를 잃는다.</p>
+
+<h3 id="s3-4">3.4 DB 스키마 제안 <span class="y">🟡</span> — BE 이슈 18·19 에 그대로 들고 갈 것</h3>
+
+<pre><code>-- PostgreSQL. AI 파트가 "필요하다"고 말하는 최소 집합이다.
+-- 컬럼 이름·타입은 BE 재량이지만, ★ 표시는 없으면 판정·추적이 불가능해진다.
+
+CREATE TABLE skill (
+  id            BIGSERIAL PRIMARY KEY,
+  key           TEXT UNIQUE NOT NULL,      -- 'pick' ★ VLM 이 뱉는 값과 동일해야 한다
+  display_name  TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE robot (
+  id            BIGSERIAL PRIMARY KEY,
+  name          TEXT UNIQUE NOT NULL,      -- 'so101-01'
+  urdf_uri      TEXT,
+  config_sha    TEXT,                      -- ★ 이 로봇의 관절범위 설정 해시
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE episode (
+  id               BIGSERIAL PRIMARY KEY,
+  episode_id       TEXT UNIQUE NOT NULL,   -- 'ep_00000'
+  skill_id         BIGINT NOT NULL REFERENCES skill(id),
+  robot_id         BIGINT REFERENCES robot(id),
+  source           TEXT NOT NULL CHECK (source IN ('sim','real')),   -- ★
+  success          BOOLEAN NOT NULL,
+  n_steps          INT    NOT NULL CHECK (n_steps > 0),
+  control_rate_hz  REAL   NOT NULL,
+  cameras          JSONB  NOT NULL,        -- ["cam_front","cam_wrist"] ★
+  contract_version TEXT   NOT NULL,        -- ★ 이게 없으면 섞인 데이터를 못 잡는다
+  collected_by     TEXT,
+  config_sha       TEXT,
+  git_rev          TEXT,
+  npz_uri          TEXT   NOT NULL,        -- ★ 배열은 DB 에 넣지 않는다
+  bytes            BIGINT NOT NULL,
+  max_sync_offset_ms REAL,                 -- ★ 이슈 30 계측값. 실물 필수
+  instruction      TEXT,                   -- ★ VLM 학습용. 지금 계약에 없다
+  excluded_reason  TEXT,                   -- 폐기 사유. 행은 지우지 않는다
+  notes            JSONB  NOT NULL DEFAULT '{}',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ON episode (skill_id, source, success);
+CREATE INDEX ON episode (contract_version);
+
+CREATE TABLE dataset (
+  id               BIGSERIAL PRIMARY KEY,
+  name             TEXT NOT NULL,
+  version          INT  NOT NULL,
+  contract_version TEXT NOT NULL,          -- ★ 이 데이터셋이 따르는 계약
+  frozen_at        TIMESTAMPTZ,            -- ★ 얼린 뒤에는 구성 변경 금지
+  note             TEXT,
+  UNIQUE (name, version)
+);
+
+CREATE TABLE dataset_episode (
+  dataset_id  BIGINT NOT NULL REFERENCES dataset(id) ON DELETE CASCADE,
+  episode_id  BIGINT NOT NULL REFERENCES episode(id),
+  split       TEXT   NOT NULL CHECK (split IN ('train','val')),   -- ★ 고정 분할
+  PRIMARY KEY (dataset_id, episode_id)
+);
+
+CREATE TABLE train_run (
+  id             BIGSERIAL PRIMARY KEY,
+  dataset_id     BIGINT NOT NULL REFERENCES dataset(id),
+  algo           TEXT   NOT NULL CHECK (algo IN ('bc','act','diffusion')),
+  status         TEXT   NOT NULL CHECK (status IN
+                   ('queued','running','succeeded','failed','cancelled')),
+  priority       INT    NOT NULL DEFAULT 100,
+  config_sha     TEXT   NOT NULL,          -- ★ 하이퍼파라미터 해시
+  code_sha       TEXT   NOT NULL,          -- ★ 소스 해시. git_rev 가 없을 때의 대안
+  gpu            TEXT,                     -- 'H200'
+  epochs_run     INT,
+  best_val_loss  REAL,                     -- 참고용. 판정 근거 아님
+  error          TEXT,
+  queued_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at     TIMESTAMPTZ,
+  finished_at    TIMESTAMPTZ
+);
+CREATE INDEX ON train_run (status, priority, queued_at);
+
+CREATE TABLE checkpoint (
+  id               BIGSERIAL PRIMARY KEY,
+  train_run_id     BIGINT NOT NULL REFERENCES train_run(id),
+  uri              TEXT   NOT NULL,
+  bytes            BIGINT NOT NULL,
+  n_params         BIGINT NOT NULL,        -- ★ Jetson 예산 판단
+  contract_version TEXT   NOT NULL,        -- ★ 로드 시 대조
+  cameras          JSONB  NOT NULL,        -- ★ 이름·순서 다르면 로드 거부
+  -- ↓ 게이트. 이 5개가 NULL 인 체크포인트는 배포 후보가 될 수 없다 ★★
+  gate_metric      TEXT,                   -- 'rollout_success_rate'
+  gate_value       REAL,                   -- 0.35
+  gate_threshold   REAL,                   -- 0.20
+  gate_passed      BOOLEAN,
+  gate_eval_env    TEXT,                   -- 'sim' | 'real' ★ 어디서 잰 값인가
+  gate_n_trials    INT,                    -- ★ 20회 중 7회인지 200회 중 70회인지
+  baselines        JSONB,                  -- {"scripted":0.95,"replay":0.0,...}
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE vlm_adapter (
+  id            BIGSERIAL PRIMARY KEY,
+  base_model    TEXT NOT NULL,             -- ★ 어댑터는 베이스와 짝이다
+  base_quant    TEXT NOT NULL,             -- 'fp16' | 'Q4_K_M' ★
+  base_sha      TEXT NOT NULL,             -- ★ 베이스가 바뀌면 어댑터는 무효
+  adapter_uri   TEXT NOT NULL,
+  adapter_rank  INT,
+  train_quant   TEXT,                      -- ★ 학습 때 베이스 정밀도 (미스매치 감지용)
+  skills        JSONB NOT NULL,            -- ["pick"] ★ 뱉을 수 있는 스킬 목록
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE deployment (
+  id              BIGSERIAL PRIMARY KEY,
+  robot_id        BIGINT NOT NULL REFERENCES robot(id),
+  checkpoint_id   BIGINT NOT NULL REFERENCES checkpoint(id),
+  vlm_adapter_id  BIGINT REFERENCES vlm_adapter(id),
+  status          TEXT NOT NULL CHECK (status IN ('active','superseded','rolled_back')),
+  deployed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deployed_by     TEXT,
+  note            TEXT
+);
+-- ★ 로봇 1대에 active 배포는 하나뿐
+CREATE UNIQUE INDEX ON deployment (robot_id) WHERE status = 'active';
+
+CREATE TABLE rollout (
+  id              BIGSERIAL PRIMARY KEY,
+  deployment_id   BIGINT NOT NULL REFERENCES deployment(id),
+  skill_id        BIGINT NOT NULL REFERENCES skill(id),
+  instruction     TEXT,                    -- 사용자가 실제로 말한 문장
+  success         BOOLEAN NOT NULL,        -- ★ 이 컬럼이 최종 지표의 원천
+  failure_reason  TEXT,                    -- 'grasp_miss'|'drop'|'ik_fail'|'timeout'|'estop'
+  duration_s      REAL,
+  video_uri       TEXT,
+  started_at      TIMESTAMPTZ NOT NULL,
+  ended_at        TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX ON rollout (deployment_id, started_at DESC);</code></pre>
+
+<div class="box key">
+<p><b>이 스키마의 핵심 한 줄</b>: <code>checkpoint</code> 의 게이트 컬럼과 <code>deployment</code> 의 부분 유니크 인덱스. 전자는 "안 재본 모델은 배포 못 한다"를, 후자는 "지금 이 로봇에 뭐가 올라가 있나"를 <b>DB 제약으로</b> 강제한다. 규칙을 문서로만 두면 발표 전날 반드시 깨진다.</p>
+</div>
+
+<h3 id="s3-5">3.5 실제 쿼리 9종 — 각각 없으면 무엇이 안 되는가 <span class="y">🟡</span></h3>
+
+<h4>① 학습 큐에서 다음 잡을 원자적으로 집기</h4>
+<pre><code>UPDATE train_run
+   SET status = 'running', started_at = now(), gpu = $1
+ WHERE id = (
+   SELECT id FROM train_run
+    WHERE status = 'queued'
+    ORDER BY priority, queued_at
+      FOR UPDATE SKIP LOCKED
+    LIMIT 1)
+RETURNING id, dataset_id, algo, config_sha, code_sha;</code></pre>
+<p class="why"><code>FOR UPDATE SKIP LOCKED</code> 가 없으면 워커 두 대가 같은 잡을 집어 H200 시간을 두 배로 태우고, 같은 <code>train_run_id</code> 로 체크포인트가 두 개 올라온다. 큐를 직접 짜는 이슈 22 에서 제일 흔한 사고다.</p>
+
+<h4>② 데이터셋에 계약 버전이 섞였는지 — 학습 시작 전 필수 검사</h4>
+<pre><code>SELECT d.contract_version AS declared,
+       e.contract_version AS found,
+       count(*)           AS n_episodes
+  FROM dataset d
+  JOIN dataset_episode de ON de.dataset_id = d.id
+  JOIN episode e          ON e.id = de.episode_id
+ WHERE d.id = $1
+ GROUP BY 1, 2
+ ORDER BY 3 DESC;
+
+-- 행이 2개 이상 나오거나 declared != found 이면 학습을 시작하지 않는다.</code></pre>
+<p class="why">계약이 한 번이라도 바뀐 뒤에는 옛 에피소드와 새 에피소드가 한 디렉터리에 섞이기 쉽다. 섞인 채로 학습하면 손실은 멀쩡하게 떨어지고 성공률만 이유 없이 낮다 — 이 프로젝트에서 가장 추적하기 어려운 실패 유형이다.</p>
+
+<h4>③ 데이터셋 현황 — 이 데이터로 학습해도 되나</h4>
+<pre><code>SELECT de.split,
+       count(*)                                   AS n_episodes,
+       sum(e.n_steps)                             AS n_samples,
+       pg_size_pretty(sum(e.bytes))               AS size,
+       round(avg(e.n_steps)::numeric, 1)          AS avg_steps,
+       count(*) FILTER (WHERE e.success)          AS n_success,
+       count(*) FILTER (WHERE e.source = 'real')  AS n_real,
+       max(e.max_sync_offset_ms)                  AS worst_sync_ms
+  FROM dataset_episode de
+  JOIN episode e ON e.id = de.episode_id
+ WHERE de.dataset_id = $1
+ GROUP BY de.split;
+
+-- worst_sync_ms > 10 이면 학습 금지. 이미지-액션이 어긋난 데이터다.</code></pre>
+<p class="why">"에피소드 몇 개 모였나"는 FE 진행바가 쓰고, <code>worst_sync_ms</code> 는 우리가 쓴다. 후자가 없으면 어긋난 데이터를 걸러낼 방법이 사후에는 없다.</p>
+
+<h4>④ 배포 후보 조회 — 게이트를 통과했고 이 로봇에 로드 가능한 것</h4>
+<pre><code>SELECT c.id, c.uri, c.n_params, c.gate_value, c.gate_n_trials, c.gate_eval_env,
+       c.baselines, tr.algo, tr.dataset_id, c.created_at
+  FROM checkpoint c
+  JOIN train_run tr ON tr.id = c.train_run_id
+ WHERE c.gate_passed IS TRUE
+   AND c.contract_version = $1        -- 이 로봇이 쓰는 계약 버전
+   AND c.cameras          = $2::jsonb -- 카메라 이름·순서까지 동일해야 한다
+   AND c.gate_n_trials   >= 20        -- 5회 중 2회로 40% 라고 우기지 못하게
+ ORDER BY c.gate_value DESC, c.created_at DESC
+ LIMIT 5;</code></pre>
+<p class="why"><code>gate_n_trials</code> 조건이 핵심이다. 시행 횟수가 없는 성공률은 숫자가 아니다. 이 프로젝트 절대 원칙 3(모든 수치에 측정 조건 병기)을 SQL 로 옮긴 것.</p>
+
+<h4>⑤ 감사 — 게이트를 통과하지 않은 것이 배포돼 있나</h4>
+<pre><code>SELECT r.name AS robot, d.id AS deployment, d.deployed_at, d.deployed_by,
+       c.id AS checkpoint, c.gate_passed, c.gate_value, c.gate_threshold
+  FROM deployment d
+  JOIN robot r      ON r.id = d.robot_id
+  JOIN checkpoint c ON c.id = d.checkpoint_id
+ WHERE d.status = 'active'
+   AND c.gate_passed IS NOT TRUE;      -- NULL(미측정) 도 잡힌다
+
+-- 한 행이라도 나오면 그건 조회 결과가 아니라 사고 보고다.</code></pre>
+<p class="why">발표 전날 "일단 이거라도 올려보자"가 반드시 나온다. 그때 이 쿼리가 있으면 무엇을 올렸는지 나중에 설명할 수 있고, 없으면 발표에서 나온 숫자의 출처를 아무도 모른다.</p>
+
+<h4>⑥ 시뮬 성공률 vs 실물 성공률 — Sim2Real gap 을 숫자로</h4>
+<pre><code>SELECT s.key                                       AS skill,
+       d.id                                        AS deployment,
+       c.gate_value                                AS sim_rate,
+       count(*)                                    AS n_real,
+       count(*) FILTER (WHERE ro.success)          AS ok_real,
+       round(100.0 * count(*) FILTER (WHERE ro.success) / count(*), 1) AS real_pct,
+       round(100.0 * c.gate_value, 1) -
+       round(100.0 * count(*) FILTER (WHERE ro.success) / count(*), 1)  AS gap_pp
+  FROM rollout ro
+  JOIN deployment d ON d.id = ro.deployment_id
+  JOIN checkpoint c ON c.id = d.checkpoint_id
+  JOIN skill s      ON s.id = ro.skill_id
+ WHERE ro.started_at > now() - interval '7 days'
+ GROUP BY 1, 2, 3
+HAVING count(*) >= 10
+ ORDER BY gap_pp DESC;</code></pre>
+<p class="why">이 <code>gap_pp</code> 한 컬럼이 발표에서 제일 값나가는 숫자다. "시뮬 90%가 실물 90%를 보장하지 않는다"는 우리가 아는 사실이고, <b>얼마나 차이나는지를 잰 팀</b>은 드물다. 관제 수집(이슈 51·24)이 있어야 나온다.</p>
+
+<h4>⑦ 실패 원인 분포</h4>
+<pre><code>SELECT coalesce(failure_reason, '(성공)')                       AS reason,
+       count(*)                                                 AS n,
+       round(100.0 * count(*) / sum(count(*)) OVER (), 1)        AS pct
+  FROM rollout
+ WHERE deployment_id = $1
+ GROUP BY 1
+ ORDER BY 2 DESC;</code></pre>
+<p class="why">성공률 30% 는 정보가 아니다. "실패 70% 중 50%p 가 <code>grasp_miss</code>"면 데이터 문제, "<code>ik_fail</code>"이면 작업 배치 문제, "<code>drop</code>"이면 그리퍼 문제다. <b>다음에 무엇을 고칠지가 이 표에서 나온다.</b> 그래서 <code>failure_reason</code> 값 목록은 ROS 파트와 미리 맞춰야 한다.</p>
+
+<h4>⑧ 관제 화면 상단 — 지금 각 로봇에 뭐가 올라가 있나</h4>
+<pre><code>SELECT r.name                AS robot,
+       c.id                  AS ckpt,
+       tr.algo,
+       c.contract_version,
+       round(100.0 * c.gate_value, 1) AS gate_pct,
+       va.base_model, va.base_quant, va.adapter_rank,
+       d.deployed_at, d.deployed_by
+  FROM robot r
+  LEFT JOIN deployment  d  ON d.robot_id = r.id AND d.status = 'active'
+  LEFT JOIN checkpoint  c  ON c.id  = d.checkpoint_id
+  LEFT JOIN train_run   tr ON tr.id = c.train_run_id
+  LEFT JOIN vlm_adapter va ON va.id = d.vlm_adapter_id
+ ORDER BY r.name;</code></pre>
+<p class="why"><code>LEFT JOIN</code> 인 이유: 배포가 없는 로봇도 화면에 나와야 한다. 그리고 시연 중에 "이거 어느 버전이에요?"라는 질문이 반드시 나온다.</p>
+
+<h4>⑨ 어댑터-베이스 정밀도 미스매치 감지</h4>
+<pre><code>SELECT id, base_model, base_quant, train_quant, adapter_rank, created_at
+  FROM vlm_adapter
+ WHERE train_quant IS DISTINCT FROM base_quant;
+
+-- 학습 때 베이스와 배포 때 베이스의 정밀도가 다른 어댑터.
+-- 동작은 한다. 품질 비용은 아무도 안 쟀다(§1.6). 이슈 42 에서 잰다.</code></pre>
+
+<h2 id="s4">4. API 실제 페이로드 <span class="y">🟡 제안</span></h2>
+
+<p>경계 5개. 각각 <b>성공했을 때</b>와 <b>거부됐을 때</b>를 같이 적는다 — 거부 응답이 정의되지 않은 API 는 통합할 때 반드시 터진다.</p>
+
+<h3>B1. 시연 수집 → 서버 (에피소드 업로드)</h3>
+<pre><code>POST /api/v1/episodes
+Content-Type: multipart/form-data
+
+  meta: {  ← §3.2 의 ep_00000.json 을 그대로 올린다. 필드를 새로 만들지 않는다
+    "episode_id": "ep_00042", "task": "pick_cube_2cm", "source": "real",
+    "success": true, "n_steps": 137, "control_rate_hz": 30.0,
+    "cameras": ["cam_front", "cam_wrist"],
+    "contract_version": "0.1.0-provisional",
+    "collected_by": "김준태", "config_sha": "be8b756269c0", "git_rev": "a1b2c3d",
+    "max_sync_offset_ms": 4.2,
+    "instruction": "빨간 블록을 집어",          ← VLM 학습용, 계약 확장 필요
+    "notes": {"lighting": "형광등", "object_init_xy": [0.21, -0.03]}
+  }
+  file: ep_00042.npz   (약 9MB)
+
+201 Created
+{ "id": 42, "episode_id": "ep_00042",
+  "npz_uri": "s3://robotarm/episodes/pick/20260901/ep_00042.npz",
+  "bytes": 9106936, "validated": true }
+
+422 Unprocessable Entity   ← 계약 위반. 저장하지 않는다
+{ "error": "contract_violation",
+  "contract_version": "0.1.0-provisional",
+  "problems": [                                ← 첫 위반에서 멈추지 않는다
+    "state out of (-1.0, 1.0): min=-0.8182 max=1.0062",
+    "state_timestamp is not strictly increasing",
+    "state/action timestamp offset 18.30ms exceeds 10ms — S15P21A103-30 게이트 위반"
+  ] }</code></pre>
+<div class="box">
+<p><b>협의 포인트</b>: 9MB × 수백 건을 <code>multipart</code> 로 밀지, presigned URL 을 받아 클라이언트가 스토리지에 직접 올릴지. 전자가 단순하고, 후자가 서버 부하에 유리하다. <b>어느 쪽이든 검증 로직은 서버에 있어야 하고, 검증기 코드는 우리가 제공한다</b>(<code>contract/episode.py</code> 그대로).</p>
+</div>
+
+<h3>B2. 데이터셋 구성 → 학습 요청</h3>
+<pre><code>POST /api/v1/datasets
+{ "name": "real_pick_v1", "contract_version": "0.1.0-provisional",
+  "episodes": {"train": [1,2,3,...,90], "val": [91,...,100]} }
+→ 201 { "id": 7, "version": 1, "frozen_at": null }
+
+POST /api/v1/datasets/7/freeze          ← 얼린 뒤에는 구성 변경 금지
+→ 200 { "id": 7, "frozen_at": "2026-09-02T11:20:00Z", "n_episodes": 100 }
+
+POST /api/v1/train-runs
+{ "dataset_id": 7, "algo": "bc", "priority": 50,
+  "config_sha": "3f1a...", "code_sha": "9c22..." }
+→ 202 { "id": 31, "status": "queued", "queued_at": "..." }
+
+409 Conflict
+{ "error": "dataset_not_frozen",
+  "message": "얼리지 않은 데이터셋으로 학습하면 나중에 이 수치가 어떤 데이터에서 나왔는지 재현할 수 없다" }
+
+409 Conflict
+{ "error": "contract_version_mixed",
+  "found": {"0.1.0-provisional": 87, "0.2.0": 13} }   ← §3.5 ② 쿼리 결과</code></pre>
+
+<h3>B2'. 학습 워커 ↔ 서버 (H200)</h3>
+<pre><code>GET /api/v1/train-runs/next?gpu=H200
+→ 200 { "id": 31, "dataset_id": 7, "algo": "bc",
+        "dataset_index_uri": "s3://robotarm/datasets/real_pick_v1/v1/index.json" }
+→ 204 No Content        ← 큐가 비었다
+
+PATCH /api/v1/train-runs/31
+{ "status": "running", "epochs_run": 12, "best_val_loss": 0.0661 }
+→ 200
+   ⚠️ best_val_loss 는 진행 표시용이다. 이 값으로 배포를 판단하지 않는다.</code></pre>
+
+<h3>B3. 학습 → 배포 등록 <span class="tag">게이트가 여기 있다</span></h3>
+<pre><code>POST /api/v1/checkpoints
+{ "train_run_id": 31,
+  "uri": "s3://robotarm/checkpoints/31/policy.pt",
+  "bytes": 5242880, "n_params": 1307974,
+  "contract_version": "0.1.0-provisional",
+  "cameras": ["cam_front", "cam_wrist"],
+  "gate": {
+    "metric": "rollout_success_rate",
+    "value": 0.35, "threshold": 0.20, "passed": true,
+    "eval_env": "sim", "n_trials": 20, "seed": 0
+  },
+  "baselines": {"hold": 0.0, "zero": 0.0, "replay": 0.0, "scripted": 0.95} }
+→ 201 { "id": 12, "deployable": true }
+
+409 Conflict
+{ "error": "gate_not_passed",
+  "gate": {"value": 0.05, "threshold": 0.20},
+  "message": "게이트 미통과 체크포인트는 배포 등록하지 않는다" }
+
+422 Unprocessable Entity
+{ "error": "gate_missing",
+  "message": "gate 필드 없이 등록할 수 없다. 안 재본 모델은 배포 후보가 아니다" }</code></pre>
+<div class="box key">
+<p><b>BE 에 요청할 것은 이 한 줄이다</b> — "체크포인트 등록 API 에서 <code>gate</code> 를 필수 필드로 하고, <code>passed=false</code> 면 409 로 거부해 주세요." 규칙을 문서에만 두면 안 지켜지고, API 에 두면 지켜진다.</p>
+</div>
+
+<h3>B4. 배포 → Jetson</h3>
+<pre><code>POST /api/v1/deployments
+{ "robot_id": 1, "checkpoint_id": 12, "vlm_adapter_id": 3, "deployed_by": "김준태" }
+→ 201 { "id": 55, "status": "active" }      ← 기존 active 는 자동으로 superseded
+
+GET /api/v1/robots/so101-01/deployment/current     ← Jetson 이 부팅 때 호출
+→ 200
+{ "deployment_id": 55,
+  "policy": { "uri": "...policy.pt", "sha256": "...", "bytes": 5242880,
+              "n_params": 1307974, "contract_version": "0.1.0-provisional",
+              "cameras": ["cam_front", "cam_wrist"], "control_rate_hz": 30.0 },
+  "vlm":    { "base": "vlm/base/xxx-Q4_K_M.gguf", "base_quant": "Q4_K_M",
+              "base_sha": "...", "adapter": "vlm/adapters/3.gguf",
+              "adapter_rank": 16, "train_quant": "bf16",
+              "skills": ["pick"] },
+  "config_sha": "be8b756269c0" }</code></pre>
+<div class="box warn">
+<p><b>Jetson 쪽 로드 거부 조건</b>(클라이언트가 판단, ROS 이슈 46): <code>contract_version</code> 이 자기 어댑터와 다르거나, <code>cameras</code> 이름·순서가 실제 연결된 카메라와 다르거나, <code>sha256</code> 이 안 맞으면 <b>로드하지 않고 관제에 실패를 보고</b>한다. 조용히 로드해서 이상하게 움직이는 것이 최악이다.</p>
+</div>
+
+<h3>B5. Jetson → 관제 (롤아웃 결과)</h3>
+<pre><code>POST /api/v1/rollouts
+{ "client_rollout_id": "b7f1c2e0-...",     ← ★ 멱등성 키. 재전송해도 1행만
+  "deployment_id": 55, "skill": "pick",
+  "instruction": "빨간 블록 집어",
+  "success": false, "failure_reason": "grasp_miss",
+  "duration_s": 7.4,
+  "started_at": "2026-09-10T04:11:02.310Z",
+  "ended_at":   "2026-09-10T04:11:09.710Z",
+  "video_uri": null }
+→ 201 { "id": 981 }
+→ 200 { "id": 981, "duplicate": true }      ← 같은 키 재전송
+
+POST /api/v1/rollouts:batch   [ {...}, {...} ]   ← 네트워크 끊김 대비
+   Jetson 은 전송 실패 시 로컬 큐에 쌓았다가 재전송한다. 멱등성 키가 없으면
+   재전송이 성공률 통계를 오염시킨다.</code></pre>
+
+<h4>공통 에러 규약 제안</h4>
+<table>
+<tr><th>상황</th><th>코드</th><th>본문</th></tr>
+<tr><td>계약 위반</td><td>422</td><td><code>{"error":"contract_violation","problems":[...]}</code> — 배열, 첫 위반에서 멈추지 않음</td></tr>
+<tr><td>게이트 미통과·미측정</td><td>409 / 422</td><td><code>gate_not_passed</code> / <code>gate_missing</code></td></tr>
+<tr><td>상태 충돌(얼리지 않음 등)</td><td>409</td><td><code>{"error":"dataset_not_frozen"}</code></td></tr>
+<tr><td>중복 전송</td><td>200</td><td><code>{"duplicate":true}</code> — 에러가 아니다</td></tr>
+</table>
+
+<h2 id="s5">5. 협의 질문 목록 — 회의에서 그대로 읽으면 되는 것</h2>
+
+<p>각 질문 옆에 <b>답이 없으면 무엇이 막히는지</b>를 붙였다. 그게 없으면 질문이 잡담이 된다.</p>
+
+<h3>BE — 최은찬 (이슈 18 · 19 · 21 · 22 · 23 · 24, 전부 "해야 할 일") <span class="g">🟢 조회 확인</span></h3>
+<table>
+<tr><th>#</th><th>질문</th><th>답이 없으면</th></tr>
+<tr><td>1</td><td>에피소드 파일은 어디에 저장하나 — S3/MinIO/서버 디스크? <b>1000건 = 9.2GB</b> 를 감당하나?</td><td>업로드 방식(멀티파트 vs presigned)이 안 정해져 수집 도구를 못 만든다</td></tr>
+<tr><td>2</td><td>계약 검증을 <b>서버가</b> 해줄 수 있나? 검증기 코드는 우리가 준다(<code>contract/episode.py</code>)</td><td>깨진 데이터가 조용히 쌓인다. 나중에 발견하면 그만큼 폐기</td></tr>
+<tr><td>3</td><td>체크포인트 등록에서 <code>gate</code> 를 <b>필수</b>로 하고 미통과는 409 로 막아줄 수 있나</td><td>안 재본 모델이 배포된다. 발표 수치의 출처가 사라진다</td></tr>
+<tr><td>4</td><td>로봇당 <code>active</code> 배포 1개를 DB 유니크 제약으로 걸 수 있나</td><td>"지금 뭐가 올라가 있나"에 두 개가 나온다</td></tr>
+<tr><td>5</td><td>학습 워커가 큐를 <b>폴링</b>하나, 서버가 잡을 밀어주나? H200 에서 서버로 나가는 네트워크는 되나</td><td>학습 자동화 경로가 안 정해진다 (당장은 수동 실행으로 우회 가능)</td></tr>
+<tr><td>6</td><td>롤아웃 보고에 <b>멱등성 키</b>를 받아줄 수 있나</td><td>Jetson 재전송이 성공률 통계를 부풀린다</td></tr>
+<tr><td>7</td><td>Jetson·학습워커의 인증 방식 (토큰?)</td><td>배포·수집 API 를 못 붙인다</td></tr>
+</table>
+
+<h3>ROS/MW (이슈 44 · 46 · 47 · 48 · 49 · 51 · 66)</h3>
+<table>
+<tr><th>#</th><th>질문</th><th>답이 없으면</th></tr>
+<tr><td>8</td><td>이미지를 <b>누가</b> 224×224 CHW 로 만드나 — 카메라 노드? 어댑터? 정책 노드?</td><td>학습 때와 추론 때 전처리가 달라진다. 이 불일치는 증상이 "그냥 성능이 안 나옴"이라 추적이 매우 어렵다</td></tr>
+<tr><td>9</td><td>state 정규화를 어댑터(이슈 66)가 우리 공식으로 적용해 주나</td><td>정책 입력 단위가 어긋난다. 사실상 무작위 동작</td></tr>
+<tr><td>10</td><td>Safety Controller 가 우리 action 을 클립하면 <b>그 사실을 돌려주나</b></td><td>클립 빈도는 정책 진단 신호다(현재 코드도 카운트한다). 모르면 "정책이 이상하다"까지만 알고 끝난다</td></tr>
+<tr><td>11</td><td>타임스탬프 소스가 ROS time 인가 wall clock 인가. 카메라 프레임 시각은 어디서 찍히나</td><td>이슈 30(동기화 계측)을 시작할 수 없다</td></tr>
+<tr><td>12</td><td>VLM 노드와 정책 노드가 같은 프로세스인가 별도인가</td><td>8GB 예산 계산이 안 선다 (이슈 42)</td></tr>
+<tr><td>13</td><td><code>failure_reason</code> 값 목록을 같이 정하자 — <code>grasp_miss / drop / ik_fail / timeout / estop</code></td><td>§3.5 ⑦ 이 자유 문자열 쓰레기통이 된다</td></tr>
+</table>
+
+<h3>HW</h3>
+<table>
+<tr><th>#</th><th>질문</th><th>답이 없으면</th></tr>
+<tr><td>14</td><td>실물 서보 캘리브레이션이 <code>new_calib</code>(중앙=0)인가 <code>old_calib</code>인가</td><td>정규화 기준이 어긋나 <b>수집한 데이터 전량이 무효</b></td></tr>
+<tr><td>15</td><td>손목 카메라 마운트 최종 확정은 언제인가</td><td>마운트가 바뀌면 카메라 외부 파라미터가 바뀌고, 그 전에 찍은 데이터는 못 쓴다</td></tr>
+<tr><td>16</td><td>대상물 규격 확정 — 그리퍼 닫힘 간격 기준 <b>1.5~2.5cm</b></td><td>수집 태스크 자체가 안 정해진다</td></tr>
+</table>
+
+<h3>트랙 A (AI 내부, 이슈 27)</h3>
+<table>
+<tr><th>#</th><th>질문</th><th>답이 없으면</th></tr>
+<tr><td>17</td><td><b>범위 초과값 처리</b> — 거부 / 클립 / 클립+기록 중 무엇인가</td><td>28·29·30·31·34·64 전부 대기. 지금 가장 크게 막고 있는 것</td></tr>
+<tr><td>18</td><td>에피소드 메타에 <code>instruction</code>·<code>skill</code> 필드를 넣을 것인가</td><td>VLM 파인튜닝 학습 데이터가 없다. 계약 변경이므로 D-AI 기록 필요</td></tr>
+</table>
+
+<h2 id="s6">6. 순서와 선행조건 — 여기서부터 뭘 하면 되나</h2>
+
+<table>
+<tr><th>시점</th><th>할 것</th><th>선행조건</th><th>끝났다는 판정</th></tr>
+<tr><td rowspan="4"><b>이번 주</b><br>(하드웨어 전)</td><td>텔레옵으로 시연 20건 수집 → 검증</td><td>없음 (시뮬)</td><td>계약 위반 0건, 도달영역 안 100%</td></tr>
+<tr><td>BC 학습 → <b>롤아웃 게이트 판정</b></td><td>위 20건</td><td>성공률 숫자가 나온다 (20% 넘든 못 넘든)</td></tr>
+<tr><td>§3·§4 를 BE 이슈 18 에 코멘트로 붙이고 회의</td><td>이 문서</td><td>질문 1~7 에 답이 달린다</td></tr>
+<tr><td>트랙 A 와 계약 3건 확정 → D-AI 기록</td><td>없음</td><td><code>CONTRACT_VERSION</code> 이 <code>0.1.0</code> 으로 올라간다</td></tr>
+<tr><td rowspan="3"><b>다음 주</b></td><td>Isaac Sim 비교 (집 RTX 5070)</td><td><b>"왜 Isaac 인가"를 먼저 정한다</b> — 렌더 사실성인지, 도메인 랜덤화인지</td><td>MuJoCo 대비 4개 지표 비교표</td></tr>
+<tr><td>ACT 착수</td><td><b>BC 성공률 측정 완료</b></td><td>BC 대비 차이를 청킹으로 귀속 가능</td></tr>
+<tr><td>VLM 후보 선정 + 이슈 42 용량 실측</td><td>계약에 <code>instruction</code> 추가</td><td>A/B/C 경로 3종 메모리·지연 실측표</td></tr>
+<tr><td><b>실물 도착 직후</b></td><td><b>①</b> 캘리브레이션 <b>②</b> 시간동기화 계측 <b>③</b> 실행가능성 검사 <b>④</b> 그 다음 수집</td><td>순서를 바꾸지 않는다</td><td>동기화 오차 &lt; 10ms 가 나온 뒤에만 수집 시작</td></tr>
+</table>
+
+<h2 id="s7">7. 함정 목록 — 모르면 반드시 밟는 것</h2>
+
+<table>
+<tr><th>함정</th><th>증상</th><th>막는 법</th></tr>
+<tr><td>val loss 를 성과로 본다</td><td>손실은 예쁘게 떨어지는데 로봇은 계속 실패</td><td>판정은 롤아웃 성공률만. 손실은 "학습이 망가졌나" 확인용</td></tr>
+<tr><td>baseline 없이 고급 모델</td><td>잘 돼도 이유를 모르고, 안 돼도 원인을 못 좁힘</td><td>BC 수치 먼저</td></tr>
+<tr><td>결과 보고 게이트 정하기</td><td>판정이 아니라 사후 합리화</td><td>게이트를 코드에 먼저 박는다 (이미 그렇게 했다)</td></tr>
+<tr><td>이미지-액션 시간 어긋남</td><td>시뮬은 통과, <b>실물에서만</b> 실패. 추적 최악</td><td>수집 <b>전에</b> 계측. 검증기가 10ms 초과를 위반으로 잡는다</td></tr>
+<tr><td>시연 방식이 매번 다름</td><td>학습할 패턴 자체가 사라짐</td><td>환경은 다양하게, 접근 궤적·속도·그립 위치는 동일하게</td></tr>
+<tr><td>한 번에 몰아 찍기</td><td>문제 발견 시 전량 폐기</td><td>20 → 검증 → 프로토콜 확정 → 100 → 게이트</td></tr>
+<tr><td>사람 손 궤적을 로봇이 재현 못 함</td><td>수집 후에 알면 그 비율만큼 통째로 버림</td><td>수집 전 실행가능성 검사 — 도달영역 <b>15×35cm</b> 밖은 애초에 찍지 않는다 <span class="g">🟢</span></td></tr>
+<tr><td>계약 버전 혼입</td><td>손실 정상, 성공률만 낮음</td><td>§3.5 ② 쿼리를 학습 시작 조건에 넣는다</td></tr>
+<tr><td>시뮬 성공률을 최종 지표로</td><td>발표에서 실물이 안 움직임</td><td>시뮬은 상한 추정. 최종은 실물 롤아웃 (§3.5 ⑥)</td></tr>
+</table>
+
+<hr>
+<p class="meta">
+이 문서의 <b>측정값</b>(9.20MB/에피소드, 1,307,974 파라미터, 15×35cm 도달영역, scripted 95%, 게이트 20.0%, 텔레옵 519ms/틱)은 전부 시뮬 실측이다 —
+MuJoCo 3.12.0 / Python 3.11 / EGL 헤드리스 / GPU 없음 / 30Hz / 2cm 20g 큐브 조건 <span class="g">🟢</span>.<br>
+<b>DDL·API·쿼리·경로 규칙은 전부 제안이며 합의되지 않았다 <span class="y">🟡</span>.</b> 실물 수치는 아직 하나도 없다.
+</p>
+
+</main>
+</div>
+</body>
+</html>

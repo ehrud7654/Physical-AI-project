@@ -1,0 +1,56 @@
+[
+  {
+    "File": "EC2_Backend.tar",
+    "Tag": "ec2_backend:submission",
+    "ComposeTag": "ssafy-ec2-api:local",
+    "ImageId": "sha256:a968694b4f3dcba6fe367930f2edbed2e7892538795d2fe7d4ac74a5b3bae791",
+    "Platform": "linux/amd64",
+    "Bytes": 151675904,
+    "SHA256": "1b4fb2dcc448b9255ace5a4b40c7f8d224e0e2cef47dc5d2f805ed1efbe7fbc9"
+  },
+  {
+    "File": "EC2_Frontend.tar",
+    "Tag": "ec2_frontend:submission",
+    "ComposeTag": "ssafy-fe:local",
+    "ImageId": "sha256:73b264ad0f20ab133da2d3218fbfb530923901eb5aa309811c5f24f854db39d4",
+    "Platform": "linux/amd64",
+    "Bytes": 284450816,
+    "SHA256": "23c17093628203ba5f448a056e163627dd94b82e8ee25f0a71d85b7fd2074dad"
+  },
+  {
+    "File": "EC2_Nginx.tar",
+    "Tag": "ec2_nginx:submission",
+    "ComposeTag": "ssafy-nginx:local",
+    "ImageId": "sha256:c9813d087018cc89f1d6af0f008f05f095e6ea891ac0669d642b04b34123b804",
+    "Platform": "linux/amd64",
+    "Bytes": 28574720,
+    "SHA256": "7065a405671dbdd5315e658791309441b3ab15063bbb994f2c232e4cf5ede0a3"
+  },
+  {
+    "File": "GPU_Backend_Spring.tar",
+    "Tag": "gpu_backend_spring:submission",
+    "ComposeTag": "ssafy-gpu-backend:local",
+    "ImageId": "sha256:cbe47b6c325fcd41dd161c725ea9a451082f50036272190586eb31a6f5122c41",
+    "Platform": "linux/amd64",
+    "Bytes": 102626304,
+    "SHA256": "28f969c3523bb29cc37ccaccf9e923ceda3065da985aab49eb408c6e1c32d2a8"
+  },
+  {
+    "File": "GPU_Backend_FastAPI.tar",
+    "Tag": "gpu_backend_fastapi:submission",
+    "ComposeTag": "ssafy-gpu-fastapi:local",
+    "ImageId": "sha256:72db5e8e0a4b05b65cfaf3bd8505df3a0333654fc3ef49b7baf01bae38ff90be",
+    "Platform": "linux/amd64",
+    "Bytes": 57656832,
+    "SHA256": "99c1d3b8b3a26b5394363d3c1b6ca2ca362a52a04193dfd5110d5baacf3ef6f7"
+  },
+  {
+    "File": "GPU_Backend_Preprocessor.tar",
+    "Tag": "gpu_backend_preprocessor:submission",
+    "ComposeTag": "umi-server-preprocessor:2026.09.23-orbslam-v3",
+    "ImageId": "sha256:77b2973f7796ff21ce253d85a3be8afaf124a88930a2d7c34a79a960f834101f",
+    "Platform": "linux/amd64",
+    "Bytes": 1166168576,
+    "SHA256": "85880dafbc6ed460210c4844a7c2c8e8d9f535d8cc978bab61a2b48bb85965e5"
+  }
+]

@@ -34,10 +34,11 @@ from contract.episode import (
     write_episode,
 )
 
+from contract.ids import SKILL_IDS
 from sim.mujoco.build_scene import DEFAULT_CONFIG, build_model, load_config, normalize
 from tracking.exp_log import _git_rev, file_digest, log_run
 from sim.mujoco.grasp import contact_on_object, gripper_geom_ids
-from sim.mujoco.kinematics import solve_pose_ik
+from sim.mujoco.kinematics import pick_waypoints, solve_pose_ik
 
 
 class EpisodeRecorder:
@@ -48,12 +49,18 @@ class EpisodeRecorder:
         self.model = model
         self.cfg = cfg
         self.renderer = renderer
-        self.cameras = [
+        from contract.episode import CAMERA_NAMES
+
+        _all = [
             mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(model.ncam)
         ]
+        # 계약 0.3.0 은 cam_wrist 한 대다 (D-AI-46). 씬은 2대 그대로 두고 기록만 거른다 —
+        # configs/so101.yaml 은 양 트랙 공유 파일이라 건드리지 않는다.
+        self.cameras = [c for c in _all if c in CAMERA_NAMES]
+        if not self.cameras:
+            raise RuntimeError(f"계약 카메라가 씬에 없다: {CAMERA_NAMES} vs {_all}")
         self.images: dict[str, list[np.ndarray]] = {c: [] for c in self.cameras}
         self.state: list[np.ndarray] = []
-        self.action: list[np.ndarray] = []
         self.state_ts: list[float] = []
         self.action_ts: list[float] = []
 
@@ -64,8 +71,9 @@ class EpisodeRecorder:
             self.renderer.update_scene(data, camera=cam)
             frame = self.renderer.render()  # HWC uint8
             self.images[cam].append(np.transpose(frame, (2, 0, 1)).copy())  # -> CHW
-        self.state.append(normalize(data.qpos[:6].copy(), self.cfg))
-        self.action.append(normalize(data.ctrl[:6].copy(), self.cfg))
+        # Keep physical qpos until build(): contract 0.3 derives both sides of a
+        # transition from measured states and maps the gripper through physical gap.
+        self.state.append(data.qpos[:6].copy())
         # In sim both stamps are the same clock. On hardware they will not be —
         # the fields exist so S15P21A103-30 can measure the difference.
         # 시뮬에서는 두 타임스탬프가 같은 시계다. 실물은 아니다 —
@@ -76,15 +84,23 @@ class EpisodeRecorder:
     def build(self, meta: EpisodeMeta) -> Episode:
         """Assemble the recorded buffers into a contract Episode.
         기록한 버퍼를 계약 Episode 로 조립한다."""
-        meta.n_steps = len(self.state)
+        if len(self.state) < 2:
+            raise ValueError("at least two raw states are required for action[t] = state[t+1]")
+        physical = np.stack(self.state)
+        normalized = np.stack([normalize(q, self.cfg) for q in physical])
+        curve = np.asarray(self.cfg["grasp"]["gap_curve"], dtype=float)
+        gap_m = np.interp(physical[:, 5], curve[:, 0], curve[:, 1]) / 100.0
+        normalized[:, 5] = 2.0 * gap_m / 0.09 - 1.0
+        n = len(physical) - 1
+        meta.n_steps = n
         meta.cameras = list(self.cameras)
         return Episode(
             meta=meta,
-            images={c: np.stack(v).astype(np.uint8) for c, v in self.images.items()},
-            state=np.stack(self.state).astype(np.float32),
-            state_timestamp=np.asarray(self.state_ts, dtype=np.float64),
-            action=np.stack(self.action).astype(np.float32),
-            action_timestamp=np.asarray(self.action_ts, dtype=np.float64),
+            images={c: np.stack(v[:-1]).astype(np.uint8) for c, v in self.images.items()},
+            state=normalized[:-1].astype(np.float32),
+            state_timestamp=np.asarray(self.state_ts[:-1], dtype=np.float64),
+            action=normalized[1:].astype(np.float32),
+            action_timestamp=np.asarray(self.action_ts[:-1], dtype=np.float64),
         )
 
 
@@ -118,6 +134,7 @@ def collect_one(
     episode_id: str,
     object_xy: tuple[float, float],
     author: str,
+    skill_id: str,
 ) -> Episode | None:
     """Collect one scripted pick episode, or None if the pose is unreachable.
     스크립트 파지 에피소드 하나를 수집한다. 자세가 도달 불가면 None."""
@@ -143,32 +160,44 @@ def collect_one(
     z0 = float(obj_xyz[2])
     grasp_pt = obj_xyz + np.array([0.0, 0.0, float(g["grasp_z_offset_m"])])
 
-    plan = [
-        (grasp_pt + np.array([0.0, 0.0, float(g["approach_height_m"])]), g["open_cmd"], 1.2),
-        (grasp_pt, g["open_cmd"], 1.0),
-    ]
-    solved = []
+    # One definition, shared with the evaluation baseline. See pick_waypoints.
+    # 평가 baseline 과 공유하는 유일한 정의. pick_waypoints 참조.
+    #
+    # Required segments are solved up front, seed chained from one solution to
+    # the next -- the same order the pre-refactor code used. Chaining turned out
+    # not to matter for the rejection count (2 either way 🟢); what matters is
+    # that the lift is not gated. See PickSegment.required.
+    # 필수 구간은 앞에서 미리 풀고, 시드를 한 해에서 다음 해로 이어간다 —
+    # 리팩터링 이전과 같은 순서다. 원인 분리 결과 시드 연결은 탈락 수와 무관했고
+    # (양쪽 2개 🟢), 결정적인 것은 들어올리기에 게이트를 걸지 않는 것이다.
+    # PickSegment.required 참조.
+    segments = pick_waypoints(cfg, obj_xyz)
     q_seed = data.qpos[:6]
-    for target, grip, dur in plan:
-        res = solve_pose_ik(model, target, offset, axis, q_init=q_seed)
+    q_pre: list[np.ndarray | None] = []
+    for seg in segments:
+        if seg.target is None or not seg.required:
+            q_pre.append(None)          # 구동 시점에 결정한다
+            continue
+        res = solve_pose_ik(model, seg.target, offset, axis, q_init=q_seed)
         if not res.ok:
             return None
-        solved.append((res.qpos, float(grip), dur))
+        q_pre.append(res.qpos)
         q_seed = res.qpos
 
     rec = EpisodeRecorder(model, cfg, renderer)
-    for q, grip, dur in solved:
-        _drive(model, data, rec, q, grip, dur, rate_hz)
-    _drive(model, data, rec, data.ctrl[:5].copy(), float(g["close_cmd"]), 1.0, rate_hz)
-
-    res = solve_pose_ik(
-        model,
-        grasp_pt + np.array([0.0, 0.0, float(g["lift_height_m"])]),
-        offset,
-        axis,
-        q_init=data.qpos[:6],
-    )
-    _drive(model, data, rec, res.qpos, float(g["close_cmd"]), 1.5, rate_hz)
+    for seg, pre in zip(segments, q_pre):
+        if pre is not None:
+            q_target = pre
+        elif seg.target is None:
+            q_target = data.ctrl[:5].copy()          # dwell · 제자리 닫기
+        else:
+            # Best effort: solved from the actual pose after closing, and a
+            # failure here is tolerated -- as it was before the refactor.
+            # 최선 노력: 닫은 뒤의 실제 자세에서 풀고, 실패해도 허용한다 —
+            # 리팩터링 이전과 같다.
+            q_target = solve_pose_ik(model, seg.target, offset, axis,
+                                     q_init=data.qpos[:6]).qpos
+        _drive(model, data, rec, q_target, seg.grip, seg.seconds, rate_hz)
 
     lifted = float(data.xpos[obj_bid][2]) - z0
     _, n_end = contact_on_object(model, data, obj_gid, jaws)
@@ -176,6 +205,7 @@ def collect_one(
 
     meta = EpisodeMeta(
         episode_id=episode_id,
+        skill_id=skill_id,
         task="pick_cube_2cm",
         source="sim",
         success=success,
@@ -195,7 +225,7 @@ def collect_one(
             "caveat": "스크립트 시연이다. 사람 시연이 아니다. 궤적 다양성이 없다.",
         },
     )
-    return rec.build(meta)
+    return rec.build(meta), rec.command
 
 
 def main() -> None:
@@ -204,6 +234,13 @@ def main() -> None:
     parser.add_argument("--jitter", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("datasets/sim_pick_v0"))
+    parser.add_argument(
+        "--skill-id",
+        type=str,
+        required=True,
+        choices=list(SKILL_IDS),
+        help="이 수집분이 어느 스킬의 시연인가. 계약 필수 필드다",
+    )
     parser.add_argument("--author", type=str, default="김준태(트랙B)")
     parser.add_argument("--log", action="store_true")
     args = parser.parse_args()
@@ -216,22 +253,36 @@ def main() -> None:
 
     written: list[Path] = []
     skipped = 0
+    # ⚠️ 2026-09-15 추가 — 이 카운터가 없었다. 계약 검증에 걸려 버려진 편이
+    # **어디에도 집계되지 않아** 요약이 "136 중 1개 건너뜀" 으로 보였고 실제로는
+    # 3편이 빠져 있었다. 버리는 경로가 둘인데 요약이 하나만 셌다.
+    invalid = 0
     n_success = 0
     with mujoco.Renderer(model, height=height, width=width) as renderer:
         for i in range(args.episodes):
             xy = base_xy + rng.uniform(-args.jitter, args.jitter, size=2)
-            ep = collect_one(
-                cfg, model, renderer, f"ep_{i:05d}", (float(xy[0]), float(xy[1])), args.author
+            got = collect_one(
+                cfg,
+                model,
+                renderer,
+                f"ep_{i:05d}",
+                (float(xy[0]), float(xy[1])),
+                args.author,
+                args.skill_id,
             )
-            if ep is None:
+            if got is None:
                 skipped += 1
                 print(f"[{i + 1:3d}/{args.episodes}] SKIP  도달 불가 xy=({xy[0]:+.3f},{xy[1]:+.3f})")
                 continue
+            ep, command = got
             problems = validate(ep)
             if problems:
+                invalid += 1
                 print(f"[{i + 1:3d}/{args.episodes}] INVALID: {problems}")
                 continue
             path = write_episode(ep, args.out)
+            # 사이드카: 내린 명령. 계약 npz 를 건드리지 않으므로 검증기와 무관하다.
+            np.save(path.with_suffix(".command.npy"), command)
             written.append(path)
             n_success += int(ep.meta.success)
             print(
@@ -243,12 +294,23 @@ def main() -> None:
         args.out,
         extra={
             "collected_by": args.author,
+            "skill_id": args.skill_id,
             "jitter_m": args.jitter,
             "seed": args.seed,
             "scripted": True,
         },
     )
-    print(f"\n에피소드 {len(written)}개 저장 (도달불가로 건너뜀 {skipped}개)")
+    # Every attempt lands in exactly one bucket, and the sum is checked. A summary
+    # a human has to reconcile by hand is a summary that hides things.
+    # 시도는 전부 정확히 한 칸에 들어가고, 합을 검산한다. 사람이 눈으로 맞춰봐야
+    # 하는 요약은 숨기는 요약이다.
+    print(f"\n시도 {args.episodes} = 저장 {len(written)} + 도달불가 {skipped} "
+          f"+ 계약위반 {invalid}")
+    accounted = len(written) + skipped + invalid
+    if accounted != args.episodes:
+        print(f"!! 합이 안 맞는다: {accounted} != {args.episodes}. "
+              f"집계되지 않는 폐기 경로가 있다")
+        raise SystemExit(4)
     print(f"파지 성공 {n_success}/{len(written)}")
     print(f"인덱스: {index}")
 
@@ -270,6 +332,7 @@ def main() -> None:
                 author=args.author,
                 issue="S15P21A103-64",
                 conditions={
+                    "skill_id": args.skill_id,
                     "episodes_requested": args.episodes,
                     "jitter_m": args.jitter,
                     "seed": args.seed,

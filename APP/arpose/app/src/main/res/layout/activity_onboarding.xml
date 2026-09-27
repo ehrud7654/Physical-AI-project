@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/navy900">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <ImageView
+            android:layout_width="220dp"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ssafy_wordmark"
+            android:adjustViewBounds="true"
+            android:contentDescription="SSAFY" />
+
+        <!-- QR 스캔 라이브 미리보기 -->
+        <FrameLayout
+            android:layout_width="240dp"
+            android:layout_height="240dp"
+            android:layout_marginTop="24dp"
+            android:background="#1C1C1C">
+
+            <androidx.camera.view.PreviewView
+                android:id="@+id/previewView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- 스캔 가이드 프레임 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_margin="16dp"
+                android:background="@android:color/transparent" />
+        </FrameLayout>
+
+        <!-- 상태줄: 기본 안내 → QR 인식 완료 → 장치 등록 중… -->
+        <TextView
+            android:id="@+id/scanStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="QR 을 인식해 주세요"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <!-- 권한 거부 시에만 노출: 설정에서 카메라 권한 허용 -->
+    <Button
+        android:id="@+id/grantBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="28dp"
+        android:paddingHorizontal="40dp"
+        android:paddingVertical="12dp"
+        android:background="#FF2A6E3F"
+        android:textColor="#FFFFFF"
+        android:textSize="17sp"
+        android:visibility="gone"
+        android:text="카메라 권한 허용" />
+</FrameLayout>

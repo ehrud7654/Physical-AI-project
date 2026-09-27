@@ -1,0 +1,231 @@
+package com.ssafy.arpose
+
+import android.content.Context
+import android.provider.Settings
+import android.util.Log
+import java.io.BufferedOutputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.util.zip.CRC32
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import org.json.JSONObject
+
+/**
+ * 녹화 폴더 하나를 zip 으로 묶어 서버에 올린다.
+ *
+ * 전송 형식은 multipart 가 아니라 zip 원본을 본문으로 보내고 정보는 헤더에 싣는다.
+ * 받는 쪽 구현이 단순해지고, 목 서버와 실제 서버가 같은 규약을 쓸 수 있다.
+ *
+ *   POST {BASE_URL}/upload
+ *   X-Device-Id       : 기기 식별자
+ *   X-Episode         : rec_YYYYMMDD_HHmmss
+ *   X-Idempotency-Key : {기기ID}_{에피소드}
+ *   Content-Type      : application/zip
+ *   본문               : zip 바이트
+ *
+ * 응답 처리
+ *   200/201 : 성공. 로컬 삭제
+ *   409     : 서버에 이미 있음. 성공과 동일하게 로컬 삭제 (재전송 방지)
+ *   4xx     : 고칠 수 없는 요청. 재시도해도 소용없으므로 실패로 확정
+ *   5xx/예외 : 일시적. 재시도
+ */
+object Uploader {
+
+    private const val TAG = "UPLOAD"
+
+    /**
+     * 업로드 대상. build.gradle.kts 의 buildConfigField 에서 온다.
+     *
+     *   debug   : 목 서버 (adb reverse tcp:8000 tcp:8000 으로 USB 터널)
+     *   release : 실제 서버
+     *
+     * 여기 한 곳에서만 정하므로 테스트 빌드가 실서버로 나가는 사고가 없다.
+     * 나중에 QR 프로비저닝이 들어오면 이 값을 기본값으로 두고 덮어쓰면 된다.
+     */
+    val BASE_URL: String = BuildConfig.UPLOAD_BASE_URL
+
+    private const val CONNECT_TIMEOUT_MS = 15_000
+    private const val READ_TIMEOUT_MS = 60_000
+
+    enum class Result { SUCCESS, RETRY, FAILED }
+
+    fun deviceId(ctx: Context): String =
+        Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+
+    /**
+     * 녹화 폴더를 zip 으로 묶는다. 이미 있으면 다시 만들지 않는다.
+     *
+     * 압축률 0(STORED). 프레임이 이미 JPEG 라 재압축은 CPU·시간만 먹고 크기 이득이 없고,
+     * STORED 는 받는 쪽이 압축 해제 없이 바이트를 바로 읽을 수 있다(서버 계약).
+     * STORED 는 엔트리마다 size·crc 를 미리 채워야 하므로 파일을 한 번 읽어 계산한다.
+     */
+    fun zipEpisode(dir: File, outDir: File): File {
+        val zip = File(outDir, "${dir.name}.zip")
+        if (zip.exists() && zip.length() > 0) return zip
+        val tmp = File(outDir, "${dir.name}.zip.part")
+        ZipOutputStream(BufferedOutputStream(tmp.outputStream(), 1 shl 16)).use { zos ->
+            zos.setMethod(ZipOutputStream.STORED)
+            dir.walkTopDown().filter { it.isFile }.forEach { f ->
+                val rel = f.relativeTo(dir).path.replace(File.separatorChar, '/')
+                val bytes = f.readBytes()
+                val crc = CRC32().apply { update(bytes) }.value
+                val entry = ZipEntry(rel).apply {
+                    method = ZipEntry.STORED
+                    size = bytes.size.toLong()
+                    compressedSize = bytes.size.toLong()
+                    this.crc = crc
+                }
+                zos.putNextEntry(entry)
+                zos.write(bytes)
+                zos.closeEntry()
+            }
+        }
+        // 다 만든 뒤에 이름을 바꾼다. 중간에 죽어도 반쪽 zip 을 올리지 않는다.
+        if (zip.exists()) zip.delete()
+        tmp.renameTo(zip)
+        return zip
+    }
+
+    fun upload(ctx: Context, episode: String, zip: File): Result {
+        val id = deviceId(ctx)
+        val conn = (URL("$BASE_URL/upload").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Content-Type", "application/zip")
+            setRequestProperty("X-Device-Id", id)
+            setRequestProperty("X-Episode", episode)
+            setRequestProperty("X-Idempotency-Key", "${id}_$episode")
+            setFixedLengthStreamingMode(zip.length())
+        }
+        return try {
+            BufferedOutputStream(conn.outputStream, 1 shl 16).use { out ->
+                zip.inputStream().use { it.copyTo(out) }
+            }
+            val code = conn.responseCode
+            Log.i(TAG, "$episode -> HTTP $code (${zip.length() / 1024}KB)")
+            when {
+                code in 200..299 -> Result.SUCCESS
+                code == 409 -> Result.SUCCESS          // 이미 있음. 다시 보낼 이유가 없다
+                code in 400..499 -> Result.FAILED
+                else -> Result.RETRY
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "$episode 업로드 실패 - 재시도 예정: ${e.message}")
+            Result.RETRY
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    // ---------------- presigned S3 3-step (EPISODE-UPLOAD-01/02) ----------------
+
+    /** DEVICE-05 토큰(캐시·자동갱신). 발급 실패 시 스텁으로 폴백(목·오프라인 대비). 로그엔 안 남긴다. */
+    private fun bearer(ctx: Context) =
+        DeviceAuth.token(ctx)?.let { "Bearer $it" } ?: "Bearer stub-${deviceId(ctx)}"
+
+    /** ZIP 전체 SHA-256 (소문자 hex 64). 스트리밍. */
+    fun sha256Hex(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { ins ->
+            val buf = ByteArray(1 shl 16); var n: Int
+            while (ins.read(buf).also { n = it } > 0) md.update(buf, 0, n)
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** requiredHeaders 를 그대로 담는다(계약 6.1: 이름·값까지 그대로 S3 PUT 에 사용). */
+    data class Session(val uploadSessionId: String, val uploadUrl: String, val requiredHeaders: Map<String, String>)
+
+    /** ① 업로드 세션 발급 (API 1.5.0: TrainingJob 분리, skillKey 기반). metadata·summary 는 lower camel. */
+    fun requestSession(
+        ctx: Context, sessionId: String,
+        sizeBytes: Long, sha256: String, idemKey: String,
+        metadata: JSONObject, summary: JSONObject
+    ): Session? {
+        val body = JSONObject()
+            .put("sessionId", sessionId).put("contentType", "application/zip")
+            .put("sizeBytes", sizeBytes).put("sha256", sha256)
+            .put("metadata", metadata).put("summary", summary).toString()
+        val conn = (URL("$BASE_URL/api/v1/episode/data-upload-request")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", bearer(ctx))
+            setRequestProperty("Idempotency-Key", idemKey)
+        }
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            if (code == 401) { DeviceAuth.refresh(ctx); Log.w(TAG, "session 401 → 토큰 갱신 후 재시도 대기"); return null }
+            if (code !in 200..299) {
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "session 발급 HTTP $code body=$err"); return null
+            }
+            val d = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONObject("data")
+            val hdrs = mutableMapOf<String, String>()
+            d.optJSONObject("requiredHeaders")?.let { rh -> rh.keys().forEach { k -> hdrs[k] = rh.getString(k) } }
+            if (!hdrs.containsKey("Content-Type")) hdrs["Content-Type"] = "application/zip"
+            Session(d.getString("uploadSessionId"), d.getString("uploadUrl"), hdrs)
+        } catch (e: Exception) { Log.w(TAG, "session 발급 실패: ${e.message}"); null }
+        finally { conn.disconnect() }
+    }
+
+    /** ② S3 presigned PUT. requiredHeaders 를 이름·값 그대로 실어야 한다(checksum·If-None-Match 등). 성공 시 ETag. */
+    fun putS3(uploadUrl: String, zip: File, requiredHeaders: Map<String, String>): String? {
+        val conn = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"; doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            // 큰 본문 전송 전에 서버가 4xx 로 거절할 수 있게 100-continue. 없으면 조기 거절 시 Broken pipe 로 에러코드 못 봄.
+            setRequestProperty("Expect", "100-continue")
+            requiredHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
+            setFixedLengthStreamingMode(zip.length())
+        }
+        return try {
+            BufferedOutputStream(conn.outputStream, 1 shl 16).use { out ->
+                zip.inputStream().use { it.copyTo(out) }
+            }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                // [임시 진단] 서명 노출 방지 위해 host+path 만, S3 에러 XML 바디도.
+                val u = URL(uploadUrl)
+                val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (e: Exception) { null }
+                Log.w(TAG, "S3 PUT HTTP $code url=${u.host}${u.path} body=$err")
+                return null
+            }
+            conn.getHeaderField("ETag") ?: "no-etag"
+        } catch (e: Exception) { Log.w(TAG, "S3 PUT 실패: ${e.message}"); null }
+        finally { conn.disconnect() }
+    }
+
+    /** ③ 완료 통지. 202/200 이면 true. */
+    fun complete(
+        ctx: Context, uploadSessionId: String, sessionId: String,
+        sizeBytes: Long, sha256: String, idemKey: String
+    ): Boolean {
+        // complete 엔 endedAt 을 다시 보내지 않는다(세션의 metadata.endedAt 과 meta.json 비교).
+        val body = JSONObject().put("sessionId", sessionId)
+            .put("sizeBytes", sizeBytes).put("sha256", sha256).toString()
+        val conn = (URL("$BASE_URL/api/v1/episode/data-upload-request/$uploadSessionId/complete")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true
+            connectTimeout = CONNECT_TIMEOUT_MS; readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", bearer(ctx))
+            setRequestProperty("Idempotency-Key", idemKey)
+        }
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val code = conn.responseCode
+            if (code == 401) DeviceAuth.refresh(ctx)
+            Log.i(TAG, "complete HTTP $code")
+            code in 200..299
+        } catch (e: Exception) { Log.w(TAG, "complete 실패: ${e.message}"); false }
+        finally { conn.disconnect() }
+    }
+}

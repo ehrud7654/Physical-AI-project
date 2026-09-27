@@ -16,6 +16,7 @@ Hardware-dependent numbers live only in the config. Nothing here is hardcoded.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ import mujoco
 import numpy as np
 import yaml
 
-from paths import AI_ROOT, DEFAULT_CONFIG, DEFAULT_SCENE  # noqa: F401
+from paths import AI_ROOT, DEFAULT_CONFIG, DEFAULT_SCENE, resolve_for_mujoco  # noqa: F401
 
 REPO_AI_ROOT = AI_ROOT
 
@@ -82,11 +83,34 @@ def build_model(
     cfg = cfg if cfg is not None else load_config()
     cams = cfg["cameras"]
     resolution = cams["resolution"]
-    spec = mujoco.MjSpec.from_file(str(scene_path))
+    # MuJoCo opens XML from C++ and cannot handle non-ASCII paths on Windows.
+    # MuJoCo 는 C++ 에서 XML 을 열고 Windows 에서 비ASCII 경로를 처리하지 못한다.
+    spec = mujoco.MjSpec.from_file(str(resolve_for_mujoco(scene_path)))
+
+    # The XML supplies defaults, while the reviewed runtime contract lives in
+    # so101.yaml.  Apply the task block before compilation so configuration
+    # overrides are real model changes rather than misleading report metadata.
+    task = cfg["task"]
+    object_body = spec.body("target_object")
+    if object_body is None:
+        raise ValueError("scene has no target_object body")
+    object_body.pos = np.asarray(task["object"]["init_pos"], dtype=float)
+    object_geoms = [g for g in object_body.geoms if g.name == "target_object_geom"]
+    if len(object_geoms) != 1:
+        raise ValueError("scene must have exactly one target_object_geom")
+    object_geoms[0].size = np.asarray(task["object"]["half_size_m"], dtype=float)
+    object_geoms[0].mass = float(task["object"]["mass_kg"])
+    table_geoms = [g for g in spec.worldbody.geoms if g.name == "table"]
+    if len(table_geoms) != 1:
+        raise ValueError("scene must have exactly one table geom")
+    table_geoms[0].size = np.asarray(task["table"]["half_size_m"], dtype=float)
+    table_geoms[0].pos = np.asarray(task["table"]["pos"], dtype=float)
 
     names = [k for k in cams if isinstance(cams[k], dict)]
     if len(names) != int(cams["count"]):
         raise ValueError(f"cameras.count={cams['count']} but {len(names)} camera blocks defined")
+
+    _add_visual_domain_geometry(spec, cfg)
 
     for name in names:
         block = cams[name]
@@ -107,12 +131,79 @@ def build_model(
         _set_camera(cam, block, resolution)
 
     _apply_gripper_pads(spec, cfg)
+    # Render determinism knob, from config -- see cameras.offsamples in so101.yaml.
+    # 렌더 결정성 노브. 설정에서 읽는다 — so101.yaml 의 cameras.offsamples.
+    if "offsamples" in cams:
+        spec.visual.quality.offsamples = int(cams["offsamples"])
     model = spec.compile()
+
+    _apply_visual_domain(model, cfg)
 
     found = {mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(model.ncam)}
     if found != set(names):
         raise RuntimeError(f"camera injection failed: expected {set(names)}, got {found}")
     return model
+
+
+def _apply_visual_domain(model: mujoco.MjModel, cfg: dict[str, Any]) -> None:
+    """Apply optional simulation appearance after material compilation."""
+    appearance = cfg.get("visual_domain")
+    if not appearance:
+        return
+    names = {
+        "object_rgba": "target_object_geom",
+        "table_rgba": "table",
+        "floor_rgba": "floor",
+    }
+    for key, geom_name in names.items():
+        rgba = np.asarray(appearance[key], dtype=float)
+        if rgba.shape != (4,) or not np.isfinite(rgba).all():
+            raise ValueError(f"visual_domain.{key} must be finite RGBA")
+        geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, geom_name)
+        if geom_id < 0:
+            raise ValueError(f"visual-domain geom {geom_name!r} is missing")
+        model.geom_rgba[geom_id] = rgba
+    diffuse = np.asarray(appearance["light_diffuse_rgb"], dtype=float)
+    if diffuse.shape != (3,) or not np.isfinite(diffuse).all():
+        raise ValueError("visual_domain.light_diffuse_rgb must be finite RGB")
+    if model.nlight:
+        model.light_diffuse[:] = diffuse
+
+
+def _add_visual_domain_geometry(spec: Any, cfg: dict[str, Any]) -> None:
+    """Add render-only package details and background clutter before compile.
+
+    Every added geom has both collision masks cleared and zero mass.  This lets
+    the visual domain resemble the recorded S22 workspace without silently
+    changing contact, inertia, IK, or recorded-oracle physics.
+    """
+    appearance = cfg.get("visual_domain")
+    if not appearance:
+        return
+    for row in appearance.get("visual_geometry", []):
+        parent_name = str(row["parent"])
+        parent = spec.worldbody if parent_name == "world" else spec.body(parent_name)
+        if parent is None:
+            raise ValueError(f"visual-domain parent {parent_name!r} is missing")
+        geom = parent.add_geom()
+        geom.name = str(row["name"])
+        kind = str(row.get("type", "box"))
+        if kind == "box":
+            geom.type = mujoco.mjtGeom.mjGEOM_BOX
+        elif kind == "cylinder":
+            geom.type = mujoco.mjtGeom.mjGEOM_CYLINDER
+        else:
+            raise ValueError(f"unsupported visual-domain geom type {kind!r}")
+        geom.pos = np.asarray(row["pos_m"], dtype=float)
+        size = np.asarray(row["size_m"], dtype=float)
+        if kind == "cylinder":
+            size = np.r_[size, 0.0]
+        geom.size = size
+        geom.rgba = np.asarray(row["rgba"], dtype=float)
+        geom.contype = 0
+        geom.conaffinity = 0
+        geom.group = 2
+        geom.mass = 0.0
 
 
 def _apply_gripper_pads(spec: Any, cfg: dict[str, Any]) -> None:
@@ -136,7 +227,12 @@ def _apply_gripper_pads(spec: Any, cfg: dict[str, Any]) -> None:
 
     disabled = set(block.get("disable_mesh_collision", []))
     n_disabled = 0
-    for body_name in {p["body"] for p in block["pads"]} | {"gripper", "moving_jaw_so101_v1"}:
+    configured_bodies = (
+        {str(block["parent_body"])}
+        if block.get("kind") == "symmetric_parallel_jaw_runtime_proxy"
+        else {str(value["body"]) for value in block["pads"]}
+    )
+    for body_name in configured_bodies | {"gripper", "moving_jaw_so101_v1"}:
         body = spec.body(body_name)
         if body is None:
             continue
@@ -153,6 +249,9 @@ def _apply_gripper_pads(spec: Any, cfg: dict[str, Any]) -> None:
 
     friction = np.asarray(block["friction"], dtype=float)
     rgba = np.asarray(block["rgba"], dtype=float)
+    if block.get("kind") == "symmetric_parallel_jaw_runtime_proxy":
+        _add_symmetric_parallel_jaw_proxy(spec, cfg, block, friction, rgba)
+        return
     for pad in block["pads"]:
         body = spec.body(pad["body"])
         if body is None:
@@ -169,6 +268,233 @@ def _apply_gripper_pads(spec: Any, cfg: dict[str, Any]) -> None:
         geom.rgba = rgba
         geom.group = 3
         geom.mass = 0.0
+
+
+def _add_symmetric_parallel_jaw_proxy(
+    spec: Any,
+    cfg: dict[str, Any],
+    block: dict[str, Any],
+    friction: np.ndarray,
+    rgba: np.ndarray,
+) -> None:
+    """Add the reviewed ver1 visual hand and aligned provisional pad boxes.
+
+    The legacy rotary-jaw meshes are hidden.  The handoff's parallel-jaw meshes
+    and the diagnostic collision pads share the same two moving bodies, so the
+    rendered fingers cannot disagree with the contact geometry.  Their local
+    positions are synchronised from the measured gripper gap before every
+    MuJoCo step.  This remains a contact diagnostic, not validated dynamics.
+    """
+    if block.get("schema") != "so101_parallel_jaw_collision_proxy/0.1.0-provisional":
+        raise ValueError("unsupported symmetric gripper collision proxy schema")
+    parent = spec.body(str(block["parent_body"]))
+    if parent is None:
+        raise ValueError("collision proxy parent body is missing")
+    names = list(block.get("pad_names", []))
+    half = np.asarray(block.get("finger_half_size_m"), dtype=float)
+    gap_range = np.asarray(block.get("gap_range_m"), dtype=float)
+    frame_cfg = cfg["grasp"].get("eef_frame_local", {})
+    frame = np.column_stack([
+        np.asarray(frame_cfg.get("jaw_axis"), dtype=float),
+        np.asarray(frame_cfg.get("up_axis"), dtype=float),
+        np.asarray(frame_cfg.get("approach_axis"), dtype=float),
+    ])
+    if (names != ["ver1_pad_negative", "ver1_pad_positive"]
+            or half.shape != (3,) or np.any(~np.isfinite(half))
+            or np.any(half <= 0.0)
+            or gap_range.shape != (2,) or np.any(~np.isfinite(gap_range))
+            or gap_range[0] < 0.0 or gap_range[0] >= gap_range[1]
+            or frame.shape != (3, 3)
+            or not np.allclose(frame.T @ frame, np.eye(3), atol=1e-6, rtol=0.0)
+            or not np.isclose(np.linalg.det(frame), 1.0, atol=1e-6, rtol=0.0)):
+        raise ValueError("invalid symmetric gripper collision proxy geometry")
+    quat = np.empty(4, dtype=float)
+    mujoco.mju_mat2Quat(quat, frame.reshape(-1))
+    pinch = np.asarray(cfg["grasp"]["pinch_offset_local"], dtype=float)
+    initial_gap = float(gap_range[1])
+    visual = block.get("visual_model")
+    if (not isinstance(visual, dict)
+            or visual.get("schema")
+            != "so101_parallel_jaw_visual/0.1.0-provisional"
+            or visual.get("visual_collision_alignment_required") is not True):
+        raise ValueError(
+            "symmetric collision proxy requires the matching visible ver1 hand"
+        )
+
+    transform = visual.get("custom_hand_fixed_from_legacy_gripper", {})
+    xyz = np.asarray(transform.get("xyz_m"), dtype=float)
+    rpy = np.asarray(transform.get("rpy_rad"), dtype=float)
+    fingers = visual.get("finger_bodies")
+    if (xyz.shape != (3,) or rpy.shape != (3,)
+            or not np.isfinite(xyz).all() or not np.isfinite(rpy).all()
+            or not isinstance(fingers, list) or len(fingers) != 2
+            or sorted(float(row.get("sign", 0.0)) for row in fingers) != [-1.0, 1.0]):
+        raise ValueError("invalid ver1 visible-hand transform or finger declaration")
+
+    roll, pitch, yaw = (float(value) for value in rpy)
+    cr, sr = math.cos(roll / 2.0), math.sin(roll / 2.0)
+    cp, sp = math.cos(pitch / 2.0), math.sin(pitch / 2.0)
+    cy, sy = math.cos(yaw / 2.0), math.sin(yaw / 2.0)
+    hand_quat = np.asarray([
+        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+    ], dtype=float)
+
+    asset_dir = (REPO_AI_ROOT / str(visual.get("asset_dir", ""))).resolve()
+    mesh_files = list(visual.get("static_meshes", []))
+    for row in fingers:
+        mesh_files.extend(row.get("meshes", []))
+    if len(mesh_files) != len(set(mesh_files)):
+        raise ValueError("ver1 visible-hand mesh declarations must be unique")
+    mesh_names: dict[str, str] = {}
+    for filename in mesh_files:
+        path = asset_dir / str(filename)
+        if path.suffix.lower() != ".obj" or not path.is_file():
+            raise ValueError(f"missing ver1 visible-hand mesh: {path}")
+        mesh_name = f"ver1_visual_{path.stem}"
+        spec.add_mesh(name=mesh_name, file=str(resolve_for_mujoco(path)))
+        mesh_names[str(filename)] = mesh_name
+
+    hidden = set(visual.get("hide_legacy_meshes", []))
+    if hidden != set(block.get("disable_mesh_collision", [])):
+        raise ValueError("legacy visual and collision replacement lists must match")
+    hidden_count = 0
+    for body_name in {str(block["parent_body"]), "moving_jaw_so101_v1"}:
+        body = spec.body(body_name)
+        if body is None:
+            continue
+        for geom in body.geoms:
+            if geom.meshname in hidden:
+                geom.rgba = np.asarray([1.0, 1.0, 1.0, 0.0])
+                hidden_count += 1
+    if hidden_count != 4:
+        raise RuntimeError(
+            f"expected four legacy jaw visual/collision geoms, hid {hidden_count}"
+        )
+
+    hand = parent.add_body(
+        name=str(visual["custom_hand_body"]), pos=xyz, quat=hand_quat)
+    for filename in visual.get("static_meshes", []):
+        hand.add_geom(
+            name=f"ver1_static_{Path(filename).stem}",
+            type=mujoco.mjtGeom.mjGEOM_MESH,
+            meshname=mesh_names[str(filename)],
+            contype=0,
+            conaffinity=0,
+            group=2,
+            rgba=np.asarray([0.65, 0.69, 0.73, 1.0]),
+            mass=0.0,
+        )
+
+    # In custom_hand coordinates the TCP is [0, -0.078018753, 0.027000012].
+    # The pad's long axis points from palm to fingertip (-Y).  Attach both the
+    # visual meshes and the box to the same translated body so a contact can
+    # never occur at an invisible, differently moving location.
+    hand_rotation = frame @ np.asarray([
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 1.0, 0.0],
+    ]).T
+    hand_origin = pinch - hand_rotation @ np.asarray(
+        [0.0, -0.0780187530518, 0.0270000119209])
+    if not np.allclose(hand_origin, xyz, atol=2e-6, rtol=0.0):
+        raise ValueError("visible hand transform disagrees with the reviewed pinch frame")
+    local_pad_frame = np.asarray([
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 1.0, 0.0],
+    ])
+    local_pad_quat = np.empty(4, dtype=float)
+    mujoco.mju_mat2Quat(local_pad_quat, local_pad_frame.reshape(-1))
+    finger_by_sign = {float(row["sign"]): row for row in fingers}
+    for name, sign in zip(names, (-1.0, 1.0)):
+        row = finger_by_sign[sign]
+        finger = hand.add_body(
+            name=str(row["name"]), pos=np.asarray([sign * initial_gap / 2.0, 0.0, 0.0]))
+        for filename in row["meshes"]:
+            color = [0.12, 0.35, 0.8, 1.0] if "holder" in filename else [0.75, 0.78, 0.82, 1.0]
+            finger.add_geom(
+                name=f"{row['name']}_{Path(filename).stem}",
+                type=mujoco.mjtGeom.mjGEOM_MESH,
+                meshname=mesh_names[str(filename)],
+                contype=0,
+                conaffinity=0,
+                group=2,
+                rgba=np.asarray(color),
+                mass=0.0,
+            )
+        pad = finger.add_geom()
+        pad.name = name
+        pad.type = mujoco.mjtGeom.mjGEOM_BOX
+        pad.pos = np.asarray([
+            sign * half[0],
+            -0.0780187530518 + half[2],
+            0.0270000119209,
+        ])
+        pad.quat = local_pad_quat
+        pad.size = half
+        pad.contype = 1
+        pad.conaffinity = 1
+        pad.condim = int(block["condim"])
+        pad.friction = friction
+        pad.rgba = rgba
+        pad.group = 3
+        pad.mass = 0.0
+
+
+def active_gripper_pad_ids(model: mujoco.MjModel, cfg: dict[str, Any]) -> set[int]:
+    """Return only configured pad geoms, excluding motor and palm collisions."""
+    block = cfg.get("gripper_pads") or {}
+    names = (
+        list(block.get("pad_names", []))
+        if block.get("kind") == "symmetric_parallel_jaw_runtime_proxy"
+        else [str(value["name"]) for value in block.get("pads", [])]
+    )
+    ids = {
+        mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+        for name in names
+    }
+    if -1 in ids or len(ids) != len(names):
+        raise ValueError("configured gripper pad geoms are missing or duplicated")
+    return ids
+
+
+def sync_gripper_collision_proxy(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    cfg: dict[str, Any],
+) -> bool:
+    """Synchronise provisional symmetric pads to the measured current gap.
+
+    Returns True when the proxy exists. Callers must invoke this before contact
+    generation whenever qpos changes outside normal MuJoCo integration.
+    """
+    block = cfg.get("gripper_pads") or {}
+    if block.get("kind") != "symmetric_parallel_jaw_runtime_proxy":
+        return False
+    joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "gripper")
+    if joint_id < 0:
+        raise ValueError("gripper joint is missing for collision proxy")
+    qpos_address = int(model.jnt_qposadr[joint_id])
+    curve = np.asarray(cfg["grasp"]["gap_curve"], dtype=float)
+    gap_m = float(np.interp(float(data.qpos[qpos_address]), curve[:, 0], curve[:, 1])) / 100.0
+    gap_range = np.asarray(block["gap_range_m"], dtype=float)
+    if not gap_range[0] - 1e-9 <= gap_m <= gap_range[1] + 1e-9:
+        raise ValueError("measured gripper gap is outside collision proxy range")
+    visual = block.get("visual_model", {})
+    fingers = visual.get("finger_bodies", [])
+    if len(fingers) != 2:
+        raise ValueError("visible finger bodies are missing for collision proxy")
+    for row in fingers:
+        body_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_BODY, str(row["name"]))
+        if body_id < 0:
+            raise ValueError(f"visible finger body is missing: {row['name']}")
+        model.body_pos[body_id] = np.asarray([
+            float(row["sign"]) * gap_m / 2.0, 0.0, 0.0])
+    return True
 
 
 def verify_against_config(model: mujoco.MjModel, cfg: dict[str, Any]) -> list[str]:
@@ -199,8 +525,12 @@ def verify_against_config(model: mujoco.MjModel, cfg: dict[str, Any]) -> list[st
 def normalize(
     q_rad: np.ndarray, cfg: dict[str, Any], clip: bool = False
 ) -> np.ndarray:
-    """Map joint angles (rad) to the [-1, 1] data-contract range.
-    관절각(rad)을 데이터 계약의 [-1,1] 범위로 매핑한다.
+    """Map physical simulator joints to the shared data-contract range.
+
+    J1..J5 use their radian limits. Channel 6 is *not* a hinge angle in the
+    contract: the measured MuJoCo gap curve converts it to full jaw gap metres
+    before the common 0..0.09m -> [-1,1] mapping.
+    J1..J5 는 rad 범위를 쓰고, 6번은 hinge 각도가 아니라 전체 gap(m) 계약이다.
 
     MEASURED: joint limits in MuJoCo are soft, so contact forces push qpos a
     little past the range and this mapping then emits values outside [-1, 1].
@@ -224,16 +554,29 @@ def normalize(
     lo = np.array([s.lo for s in specs], dtype=np.float32)
     hi = np.array([s.hi for s in specs], dtype=np.float32)
     out = (2.0 * (np.asarray(q_rad, dtype=np.float32) - lo) / (hi - lo) - 1.0).astype(np.float32)
+    curve = np.asarray(cfg["grasp"]["gap_curve"], dtype=np.float32)
+    gap_m = np.interp(np.asarray(q_rad, dtype=np.float32)[..., 5],
+                      curve[:, 0], curve[:, 1]) / 100.0
+    out[..., 5] = 2.0 * gap_m / 0.09 - 1.0
     return np.clip(out, -1.0, 1.0).astype(np.float32) if clip else out
 
 
 def denormalize(q_norm: np.ndarray, cfg: dict[str, Any]) -> np.ndarray:
-    """Inverse of :func:`normalize`.
-    normalize의 역변환."""
+    """Convert contract actions to simulator joint targets.
+
+    The gripper channel is first decoded as gap metres, then mapped through the
+    inverse measured gap curve to the MuJoCo hinge target. Values outside the
+    simulated physical gap endpoints saturate at the nearest measured endpoint.
+    """
     specs = joint_specs(cfg)
     lo = np.array([s.lo for s in specs], dtype=np.float32)
     hi = np.array([s.hi for s in specs], dtype=np.float32)
-    return ((np.asarray(q_norm, dtype=np.float32) + 1.0) / 2.0 * (hi - lo) + lo).astype(np.float32)
+    norm = np.asarray(q_norm, dtype=np.float32)
+    out = ((norm + 1.0) / 2.0 * (hi - lo) + lo).astype(np.float32)
+    curve = np.asarray(cfg["grasp"]["gap_curve"], dtype=np.float32)
+    gap_cm = ((norm[..., 5] + 1.0) * 0.045) * 100.0
+    out[..., 5] = np.interp(gap_cm, curve[:, 1], curve[:, 0])
+    return out
 
 
 def dls_ik(
