@@ -18,6 +18,8 @@ Gate thresholds are set in GATES below, before any result was looked at.
 from __future__ import annotations
 
 import argparse
+import copy
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,6 +128,7 @@ def rollout(
     policy: Policy,
     seed: int,
     object_xy: tuple[float, float] | None = None,
+    initial_q_rad: np.ndarray | None = None,
 ) -> RolloutResult:
     """Run one episode to completion or to the tick limit.
     에피소드 하나를 완료 또는 틱 제한까지 돌린다.
@@ -140,7 +143,7 @@ def rollout(
     조용히 "1편 과적합 후 일반화 검사"가 된다. jitter=0 은 물체를 그 에피소드가 기록된
     자리가 아니라 config 기본값에 놓기 때문이다.
     """
-    obs = env.reset(seed=seed, object_xy=object_xy)
+    obs = env.reset(seed=seed, object_xy=object_xy, initial_q_rad=initial_q_rad)
     policy.reset(seed=seed)
     obj = env.object_position()
     success = False
@@ -188,6 +191,7 @@ def evaluate(
     policy: Policy,
     seeds: list[int],
     object_xy: tuple[float, float] | None = None,
+    initial_q_rad: np.ndarray | None = None,
 ) -> tuple[float, list[RolloutResult]]:
     """Run one policy over a fixed seed list and return its success rate.
     고정된 시드 목록으로 정책 하나를 돌리고 성공률을 반환한다.
@@ -197,7 +201,7 @@ def evaluate(
     모든 정책이 **같은** 시드를 본다. 즉 같은 물체 배치를 본다.
     다른 시드로 얻은 성공률끼리 비교하는 것은 비교가 아니다.
     """
-    results = [rollout(env, policy, s, object_xy) for s in seeds]
+    results = [rollout(env, policy, s, object_xy, initial_q_rad) for s in seeds]
     return sum(r.success for r in results) / len(results), results
 
 
@@ -421,12 +425,40 @@ def main() -> None:
                              "표류 감지기가 잡는다")
     parser.add_argument("--author", type=str, default="김준태(트랙B)")
     parser.add_argument("--log", action="store_true")
+    parser.add_argument("--registration", type=Path, default=None,
+                        help="provisional registration JSON: fixes start q and object xy")
+    parser.add_argument("--object-height-m", type=float, default=None)
+    parser.add_argument("--grasp-width-m", type=float, default=None)
+    parser.add_argument("--max-ticks", type=int, default=200,
+                        help="rollout horizon; real time-scaled episodes can exceed 200 ticks")
     args = parser.parse_args()
 
-    cfg: dict[str, Any] = load_config()
+    cfg: dict[str, Any] = copy.deepcopy(load_config())
+    if args.object_height_m is not None:
+        cfg["task"]["object"]["half_size_m"][2] = args.object_height_m / 2.0
+        cfg["task"]["object"]["init_pos"][2] = args.object_height_m / 2.0 + 0.001
+    if args.grasp_width_m is not None:
+        cfg["task"]["object"]["half_size_m"][:2] = [args.grasp_width_m / 2.0] * 2
     seeds = [args.seed_base + i for i in range(args.episodes)]
 
     object_xy: tuple[float, float] | None = None
+    initial_q_rad: np.ndarray | None = None
+    if args.registration is not None:
+        registration = json.loads(args.registration.read_text(encoding="utf-8"))
+        selected = registration["selected"]
+        arm = np.asarray(selected["start_arm_rad"], dtype=float)
+        if arm.shape != (5,) or not np.isfinite(arm).all():
+            raise ValueError("registration selected.start_arm_rad must be five finite values")
+        # Keep the normalised-open reset used by the policy contract.
+        initial_q_rad = np.r_[arm, 0.60]
+        xyz = selected["object_xyz_m"]
+        object_xy = (float(xyz[0]), float(xyz[1]))
+        # Registration search uses the extended pilot support surface; without
+        # the same surface the object settles off the nominal table edge and
+        # the rollout no longer evaluates the searched condition.
+        cfg["task"]["table"]["half_size_m"][:2] = [0.40, 0.40]
+        print(f"등록값 적용: 시작 arm={arm.round(4).tolist()}, "
+              f"물체 xy=({object_xy[0]:+.4f}, {object_xy[1]:+.4f})")
     if args.from_episode is not None:
         import json as _json
 
@@ -455,11 +487,12 @@ def main() -> None:
     action_space: str | None = None
 
     with MujocoPickEnv(cfg, render=args.render, object_jitter_m=args.jitter) as env:
+        env.max_ticks = args.max_ticks
         for policy in build_policies(env, args.replay_from, args.policy_ckpt,
                                      device=args.policy_device,
                                      image_perturb=args.image_perturb,
                                      image_perturb_sigma=args.image_perturb_sigma):
-            rate, results = evaluate(env, policy, seeds, object_xy)
+            rate, results = evaluate(env, policy, seeds, object_xy, initial_q_rad)
             if policy.name == "bc":
                 action_space = getattr(policy, "action_space", "joint_absolute")
             rates[policy.name] = rate
@@ -497,7 +530,7 @@ def main() -> None:
     where = (f"물체 고정 ({object_xy[0]:+.4f}, {object_xy[1]:+.4f})"
              if object_xy is not None else f"물체 xy ±{args.jitter * 1000:.0f}mm")
     print(f"\n조건: {where}, 시드 {seeds[0]}~{seeds[-1]}, "
-          f"모든 정책이 동일 시드, 틱 제한 {MujocoPickEnv(cfg, render=False).max_ticks}")
+          f"모든 정책이 동일 시드, 틱 제한 {args.max_ticks}")
 
     tolerance: dict[str, Any] | None = None
     if args.replay_tolerance and args.replay_from is not None:
@@ -577,6 +610,8 @@ def main() -> None:
                 "seeds": [seeds[0], seeds[-1]],
                 "jitter_m": args.jitter,
                 "object_xy_fixed": list(object_xy) if object_xy else None,
+                "registration": str(args.registration) if args.registration else None,
+                "initial_q_rad": initial_q_rad.tolist() if initial_q_rad is not None else None,
                 "render": args.render,
                 "config_sha": file_digest(DEFAULT_CONFIG),
                 # Without these a rollout number cannot be attributed to a

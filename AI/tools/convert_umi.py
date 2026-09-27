@@ -29,6 +29,8 @@ itself is in `umi/convert.py`, which imports neither.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import subprocess
 import sys
 from collections import Counter
@@ -41,11 +43,30 @@ import numpy as np  # noqa: E402
 from contract.episode import validate, write_dataset_index, write_episode  # noqa: E402
 from paths import DATASET_DIR, DEFAULT_CONFIG, DEFAULT_SCENE, OUT_DIR  # noqa: E402
 from sim.mujoco.build_scene import build_model, load_config  # noqa: E402
-from tracking.exp_log import file_digest, log_run  # noqa: E402
+from tracking.exp_log import code_digest, file_digest, log_run  # noqa: E402
 from umi.convert import ConversionError, ConversionPolicy, convert  # noqa: E402
 from umi.raw import read_raw  # noqa: E402
+from umi.provenance import conversion_digest
+from umi.trajectory import TrajectoryLimits
 from tools.make_umi_synth import decode_frame  # noqa: E402
 from tools.umi_mujoco import MujocoIK  # noqa: E402
+
+
+def raw_bundle_digest(raw_dir: Path, raw_npzs: list[Path]) -> str:
+    """Hash raw arrays and their metadata with stable relative file names."""
+    root = raw_dir.resolve()
+    files: list[Path] = []
+    for npz_path in raw_npzs:
+        meta_path = npz_path.with_suffix("").with_suffix(".raw.json")
+        if not meta_path.is_file():
+            raise FileNotFoundError(f"raw metadata missing: {meta_path}")
+        files.extend((npz_path, meta_path))
+    digest = hashlib.sha256()
+    for path in sorted(files, key=lambda item: item.resolve().relative_to(root).as_posix()):
+        relative = path.resolve().relative_to(root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()[:12]
 
 
 def verify_image_index(episode, raw, kept_span: tuple[int, int]) -> tuple[int, int]:
@@ -55,7 +76,9 @@ def verify_image_index(episode, raw, kept_span: tuple[int, int]) -> tuple[int, i
     Returns (frame index mismatches, camera code mismatches).
     반환 (프레임 번호 불일치 수, 카메라 코드 불일치 수)."""
     start, end = kept_span
-    pose_ts = np.asarray(raw.pose_timestamp[start:end], dtype=np.float64)
+    # The final raw state is only the target of the preceding action and has no
+    # image-bearing training row of its own.
+    pose_ts = np.asarray(raw.pose_timestamp[start:end - 1], dtype=np.float64)
     codes = raw.meta.notes.get("camera_codes", {})
     bad_idx = bad_cam = 0
     for cam, frames in episode.images.items():
@@ -89,12 +112,17 @@ def main() -> int:
     ap.add_argument("--log", action="store_true", help="EXP_LOG.jsonl 에 한 줄 append")
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     ap.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
+    ap.add_argument('--trajectory-limits', type=Path,
+                    help='JSON: max_step, max_velocity, max_acceleration; 5 rad channels + gap m')
     args = ap.parse_args()
 
     raws = sorted(args.raw.glob("*.raw.npz"))
     if not raws:
         print(f"raw 기록이 없다: {args.raw}")
         return 1
+    raw_path = str(args.raw.resolve())
+    raw_sha = raw_bundle_digest(args.raw, raws)
+    tool_sha = conversion_digest()
     if args.out.exists() and sorted(args.out.glob("*.npz")):
         print(f"이미 에피소드가 있다: {args.out}\n"
               "  기존 이름을 재사용하지 않는다 — ckpt 까지 덮어쓴다. --out 에 다음 번호를 줘라")
@@ -109,7 +137,9 @@ def main() -> int:
         ik_kw["axis_tol_deg"] = args.axis_tol_deg
     ik = MujocoIK(model, cfg, **ik_kw)
     policy = ConversionPolicy(
-        max_pos_error_m=args.max_pos_error_mm / 1000.0, clamp_gap=args.clamp_gap
+        max_pos_error_m=args.max_pos_error_mm / 1000.0, clamp_gap=args.clamp_gap,
+        trajectory_limits=(TrajectoryLimits(**json.loads(args.trajectory_limits.read_text(encoding='utf-8')))
+                           if args.trajectory_limits else None)
     )
     rev = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True
@@ -224,6 +254,9 @@ def main() -> int:
             "image_index_not_applicable_episodes": n_index_skipped,
             "solver_pos_tol_m": ik.pos_tol_m,
             "match_roll": ik.match_roll,
+            "raw_path": raw_path,
+            "raw_sha": raw_sha,
+            "tool_sha": tool_sha,
         })
         print(f"인덱스: {index}")
 
@@ -235,6 +268,7 @@ def main() -> int:
             conditions={
                 "raw_dir": str(args.raw), "out": str(args.out), "n_raw": len(raws),
                 "config_sha": config_sha, "git_rev": rev,
+                "raw_path": raw_path, "raw_sha": raw_sha, "tool_sha": tool_sha,
                 "solver_pos_tol_m": ik.pos_tol_m, "match_roll": ik.match_roll,
                 "python": ".".join(map(str, sys.version_info[:3])),
             },
