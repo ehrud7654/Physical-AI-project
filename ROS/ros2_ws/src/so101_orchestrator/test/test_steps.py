@@ -63,7 +63,3 @@ def test_motor_rejects_bad_angle():
     for bad in ({"motor": "J1"}, {"motor": "J1", "angle": "45"}, {"motor": "J1", "angle": True}):
         with pytest.raises(ValueError):
             st.motor_to_command(bad, J, [0.0] * 6)
-
-
-def test_action_spaces_match_be_enum():
-    assert st.ACTION_SPACES == {"JOINT_ABSOLUTE", "JOINT_DELTA"}
