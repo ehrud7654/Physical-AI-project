@@ -37,6 +37,7 @@ import com.google.ar.core.CameraIntrinsics
 import com.google.ar.core.Config
 import com.google.ar.core.Session
 import com.google.ar.core.SharedCamera
+import com.google.ar.core.TrackingFailureReason
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.NotYetAvailableException
@@ -810,8 +811,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                 val dropped = rec?.droppedFrames ?: 0
                 val elapsed = if (recording && recStartMs > 0) (System.currentTimeMillis() - recStartMs) / 1000 else 0L
                 val (roll, pitch, yaw) = quatToEulerDeg(q)
-                val reason = if (state == TrackingState.PAUSED)
-                    "  (${camera.trackingFailureReason})" else ""
+                val failReason = if (state == TrackingState.PAUSED) camera.trackingFailureReason else null
+                val reason = if (failReason != null) "  ($failReason)" else ""
                 val recLine = if (recording)
                     "\n● REC ${rec?.savedFrames ?: 0}프레임  드롭${dropped}  점프${rec?.jumpCount ?: 0}" +
                         (if ((rec?.jumpCount ?: 0) > 0) " (최대 ${"%.0f".format(rec?.maxJumpMm ?: 0.0)}mm)" else "")
@@ -830,7 +831,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
                     when {
                         lowSpaceNotice -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "저장공간 부족 — 녹화 불가" }
                         trackingOk -> { sigDot.setTextColor(0xFF3FBF87.toInt()); sigText.text = if (recording) "녹화 중" else "동작 촬영 가능" }
-                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = "카메라 안정 중 — 천천히 움직이세요" }
+                        state == TrackingState.PAUSED -> { sigDot.setTextColor(0xFFE0685E.toInt()); sigText.text = pauseGuidance(failReason) }
                         else -> { sigDot.setTextColor(0xFFE0A44E.toInt()); sigText.text = "준비 중…" }
                     }
                     aeBadge.visibility = if (aeLock) View.GONE else View.VISIBLE
@@ -851,6 +852,19 @@ class MainActivity : Activity(), GLSurfaceView.Renderer {
         } catch (e: Throwable) {
             Log.e(TAG, "onDrawFrame 예외", e)
         }
+    }
+
+    /** 빨간불 사유별 촬영자 안내. ARCore 가 왜 추적을 놓쳤는지로 갈라 말해준다. */
+    private fun pauseGuidance(reason: TrackingFailureReason?): String = when (reason) {
+        TrackingFailureReason.INSUFFICIENT_FEATURES ->
+            "주변에 무늬가 부족해요 — 바닥·배경이 함께 보이게 하세요"
+        TrackingFailureReason.EXCESSIVE_MOTION ->
+            "너무 빨라요 — 천천히 움직이세요"
+        TrackingFailureReason.INSUFFICIENT_LIGHT ->
+            "너무 어두워요 — 밝은 곳에서 촬영하세요"
+        TrackingFailureReason.CAMERA_UNAVAILABLE ->
+            "카메라 사용 불가 — 잠시 후 다시 시도하세요"
+        else -> "위치 잡는 중… 잠시만요"
     }
 
     private fun f5(v: Float) = String.format(Locale.US, "%.5f", v)
