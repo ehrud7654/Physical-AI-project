@@ -154,7 +154,7 @@ function toTraining(job: ApiTrainingJob, deviceName?: string): Training {
     name: job.skillDisplayName,
     robot: deviceName ?? job.umiDeviceId,
     progress: Math.round(Number(job.progressPercent)),
-    stage: job.progressStage ?? stageFor(job.status),
+    stage: trainingStatusLabel(job.status),
     status: statusFor(job.status),
     started: formatDateTime(job.startedAt ?? job.createdAt),
   };
@@ -168,13 +168,13 @@ function statusFor(status: ApiTrainingStatus): TrainingStatus {
   return '진행 중';
 }
 
-function stageFor(status: ApiTrainingStatus): string {
-  const labels: Record<ApiTrainingStatus, string> = {
+export function trainingStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
     CREATED: '학습 생성', COLLECTING: '데이터 수집', INPUT_VALIDATING: '입력 검증', INPUT_READY: '입력 준비 완료',
     QUEUED: '학습 대기', PREPARING: '학습 준비', RUNNING: '모델 학습', MODEL_UPLOADING: '모델 업로드',
     MODEL_VALIDATING: '모델 검증', CANCEL_REQUESTED: '취소 확인 중', CANCELED: '취소 완료', SUCCEEDED: '학습 완료', FAILED: '학습 실패',
   };
-  return labels[status];
+  return labels[status] ?? '상태 확인 중';
 }
 
 function formatDateTime(value: string): string {
