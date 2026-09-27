@@ -79,7 +79,7 @@ ros2 run so101_orchestrator orchestrator --ros-args \
   -p base_url:=https://j15a103.p.ssafy.io -p executor:=ros2_policy -p models_dir:=$HOME/so101_models
 ```
 
-젯슨에서 계속 띄워둘 때는 systemd 서비스로 돌립니다. `ROS/deploy/`와 `Docs/porting_jetson.md`를 참고하세요.
+젯슨에서 계속 띄워둘 때는 systemd 서비스로 돌립니다. `ROS/deploy/`와 `exec/01_빌드_배포_포팅매뉴얼.md`의 1.10절을 참고하세요.
 
 같은 device_id로 PC와 젯슨을 동시에 띄우면 BE가 SSE 연결을 서로 끊어서 명령이 제대로 안 들어옵니다. 한 기계 안에서 두 번 띄우는 건 락 파일로 막아뒀지만, 기계가 다르면 못 막습니다.
 

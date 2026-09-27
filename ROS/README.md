@@ -2,7 +2,7 @@
 
 SO-101 로봇 팔을 젯슨에서 실제로 돌리는 쪽 코드입니다. 학습과 시뮬레이션은 `AI/`에서 하고, 여기서는 학습된 모델을 받아서 팔을 움직이고 결과를 백엔드(BE)에 보고합니다.
 
-ROS 2 Humble 기준이고, 젯슨은 Jetson Orin Nano(JetPack 6, Ubuntu 22.04)를 씁니다. 설치 절차는 `Docs/porting_jetson.md`에 따로 정리했습니다.
+ROS 2 Humble 기준이고, 젯슨은 Jetson Orin Nano(JetPack 6, Ubuntu 22.04)를 씁니다. 설치 절차는 `exec/01_빌드_배포_포팅매뉴얼.md`의 1.10절에 정리했습니다.
 
 ## 전체 흐름
 
@@ -84,7 +84,7 @@ ROS 패키지별 설명은 각 폴더 README에 있습니다.
 
 ## 설치와 빌드
 
-자세한 순서는 `Docs/porting_jetson.md`를 보면 됩니다. 요약하면 이렇습니다.
+자세한 순서는 `exec/01_빌드_배포_포팅매뉴얼.md`의 1.10절을 보면 됩니다. 요약하면 이렇습니다.
 
 ```bash
 # 런타임 venv (젯슨). wheelhouse는 첨부된 tar.gz를 ROS/ 아래에 풀어서 준비
