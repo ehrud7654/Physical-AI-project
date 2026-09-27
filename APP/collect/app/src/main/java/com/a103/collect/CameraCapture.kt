@@ -78,8 +78,12 @@ class CameraCapture(context: Context) {
             .put("candidates", candidates)
             .put("minimum_focus_distance", minFocus)
             .put("sensor_orientation", characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION))
-            .put("timestamp_source", characteristics.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE))
-            .put("focal_lengths_mm", characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.contentToString())
+            // 인코더는 TIMESTAMP_BASE_SENSOR 사용 → 계약대로 문자열 "SENSOR". 원시 특성값은 별도 보존.
+            .put("timestamp_source", "SENSOR")
+            .put("sensor_info_timestamp_source", characteristics.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE))
+            .put("focal_lengths_mm", JSONArray().apply {   // 계약: 비어있지 않은 숫자 배열
+                characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.forEach { put(it.toDouble()) }
+            })
             .put("horizontal_fov_estimate", bestFov)
     }
 
@@ -134,11 +138,12 @@ class CameraCapture(context: Context) {
     private val frameCb = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureCompleted(s: CameraCaptureSession, req: CaptureRequest, res: TotalCaptureResult) {
             val r = rec ?: return   // 녹화 중에만 기록
+            val sensorTs = res.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
             val crop = res.get(CaptureResult.SCALER_CROP_REGION)
             val cropStr = if (crop == null) ",,," else "${crop.left},${crop.top},${crop.right},${crop.bottom}"
-            r.row("frames.csv", listOf(
-                res.frameNumber,
-                v(res, CaptureResult.SENSOR_TIMESTAMP),
+            // frame_number 는 인코딩 매칭 시 부여. 여기선 sensor_timestamp_ns 이후 컬럼만 보관.
+            val metaRest = listOf(
+                sensorTs,
                 v(res, CaptureResult.SENSOR_EXPOSURE_TIME),
                 v(res, CaptureResult.SENSOR_FRAME_DURATION),
                 v(res, CaptureResult.SENSOR_SENSITIVITY),
@@ -147,7 +152,8 @@ class CameraCapture(context: Context) {
                 v(res, CaptureResult.CONTROL_AF_MODE),
                 v(res, CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE),
                 v(res, CaptureResult.LENS_OPTICAL_STABILIZATION_MODE),
-            ).joinToString(",") + ",$cropStr")
+            ).joinToString(",") + ",$cropStr"
+            r.putFrameMeta(sensorTs, metaRest)
         }
         override fun onCaptureFailed(s: CameraCaptureSession, req: CaptureRequest, f: CaptureFailure) {
             rec?.error = "카메라 캡처 실패: ${f.frameNumber}"

@@ -271,9 +271,13 @@ class MainActivity : Activity() {
     private fun pickLearning() {
         if (recording) return
         DeviceSkills.load(this)
+        cardSheet("학습 선택", learnRows())   // 캐시 기준 표시(카탈로그는 앱 시작·재등록 시 동기화)
+    }
+
+    /** 학습 선택 시트 행: 실제 학습 먼저, 미분류는 맨 아래. */
+    private fun learnRows(): List<CardRow> {
         val activeKey = Prefs.activeSkillKey(this)
         val rows = ArrayList<CardRow>()
-        // 실제 학습 먼저, 미분류는 맨 아래.
         for (s in DeviceSkills.cached) {
             rows.add(CardRow(s.displayName, "${Episodes.count(root, s.skillKey)}/${Episodes.GOAL}편",
                 s.skillKey == activeKey && s.skillKey.isNotBlank()) {
@@ -283,8 +287,7 @@ class MainActivity : Activity() {
         rows.add(CardRow("미분류 (나중에 지정)", "${Episodes.count(root, "")}/${Episodes.GOAL}편", activeKey.isBlank()) {
             Prefs.setActiveSkill(this, "", "미분류"); updateLearnBadge()
         })
-        cardSheet("학습 선택", rows)
-        syncSkills()   // 열 때 백그라운드로 카탈로그 최신화(다음 열람 반영)
+        return rows
     }
 
     /** 스킬 카탈로그 백그라운드 동기화 후 배지 갱신. */

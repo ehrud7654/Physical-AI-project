@@ -2,9 +2,7 @@ package com.a103.collect
 
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import java.io.File
@@ -17,16 +15,6 @@ import java.util.concurrent.TimeUnit
 object UploadQueue {
     const val WORK_NAME = "collect-upload"
 
-    private fun networkType(): NetworkType {
-        val url = BuildConfig.UPLOAD_BASE_URL
-        val local = url.contains("127.0.0.1") || url.contains("localhost") || url.contains("10.0.2.2")
-        return when {
-            local -> NetworkType.NOT_REQUIRED
-            BuildConfig.DEBUG -> NetworkType.CONNECTED   // 디버그: 셀룰러 포함 허용
-            else -> NetworkType.UNMETERED                // 릴리즈: Wi-Fi 전용(데이터 요금 보호)
-        }
-    }
-
     fun pending(ctx: Context): List<File> {
         val base = File(ctx.getExternalFilesDir(null), "sessions")
         return base.listFiles { f -> f.isDirectory && f.name.startsWith("rec_") }
@@ -35,8 +23,8 @@ object UploadQueue {
     }
 
     fun enqueue(ctx: Context) {
+        // 네트워크 제약 없음 — 대기 즉시 시도(실패 시 백오프 재시도).
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(networkType()).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(ctx).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, req)

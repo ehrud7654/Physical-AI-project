@@ -131,6 +131,8 @@ class HistoryActivity : Activity() {
         setContentView(outer)
         populate()
         uploadWork.observeForever(uploadObserver)
+        // 대기 중 항목 있으면 재개(제약 변경 등으로 멈춘 큐 되살리기).
+        if (UploadQueue.pending(this).isNotEmpty()) UploadQueue.enqueue(this)
     }
 
     override fun onDestroy() { super.onDestroy(); uploadWork.removeObserver(uploadObserver) }

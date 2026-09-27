@@ -25,6 +25,9 @@ object DeviceSkills {
         Skill(o.getString("id"), o.getString("skillKey"), o.optString("displayName", o.getString("skillKey")))
     }
 
+    /** 디버그 초기화용 메모리 캐시 비우기. */
+    fun clear() { cached = emptyList() }
+
     /** 디스크 캐시에서 로드(메모리 비어있을 때만). */
     fun load(ctx: Context) {
         if (cached.isNotEmpty()) return

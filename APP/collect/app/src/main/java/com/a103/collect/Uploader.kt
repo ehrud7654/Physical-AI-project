@@ -129,9 +129,22 @@ object Uploader {
         return try {
             conn.outputStream.use { it.write(body.toByteArray()) }
             val code = conn.responseCode
-            if (code == 401) DeviceAuth.refresh(ctx)
-            Log.i(TAG, "complete HTTP $code")
-            code in 200..299
+            if (code == 401) { DeviceAuth.refresh(ctx); Log.w(TAG, "complete 401 → 토큰 갱신"); return false }
+            val resp = try {
+                (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText()
+            } catch (e: Exception) { null }.orEmpty()
+            Log.i(TAG, "complete HTTP $code body=$resp")
+            if (code !in 200..299) return false
+            // 2xx 라도 검증 상태를 본문에서 확인 — INVALID/FAILED 면 전송 성공 아님(서버가 상태만 담아 2xx 반환).
+            val status = runCatching {
+                val o = JSONObject(resp)
+                (o.optJSONObject("data")?.optString("status").takeUnless { it.isNullOrBlank() }
+                    ?: o.optString("status"))
+            }.getOrNull().orEmpty().uppercase()
+            if (Regex("FAIL|INVALID|REJECT|ERROR").containsMatchIn(status)) {
+                Log.w(TAG, "complete 상태=$status → 검증 실패"); return false
+            }
+            true
         } catch (e: Exception) { Log.w(TAG, "complete 실패: ${e.message}"); false }
         finally { conn.disconnect() }
     }

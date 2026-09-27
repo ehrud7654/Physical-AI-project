@@ -29,7 +29,6 @@ class VideoEncoder {
     @Volatile private var rec: Recording? = null
     @Volatile private var startDir: File? = null
     @Volatile private var stopLatch: CountDownLatch? = null
-    @Volatile private var count = 0L
     @Volatile private var quit = false
     @Volatile var error: String? = null; private set
 
@@ -50,7 +49,7 @@ class VideoEncoder {
 
     /** 녹화 파일 시작 — muxer 생성 예약 + 인코더 공급 개시. */
     fun startFile(recording: Recording) {
-        rec = recording; count = 0; startDir = recording.dir
+        rec = recording; startDir = recording.dir
         rotation.active = true
     }
 
@@ -95,7 +94,8 @@ class VideoEncoder {
                                 try {
                                     val buf = codec.getOutputBuffer(out)!!
                                     mx.writeSampleData(track, buf, info)
-                                    r.row("encoded.csv", "${count++},${info.presentationTimeUs},${info.size},${info.flags}")
+                                    // frames.csv·encoded.csv 를 센서 ts 매칭으로 함께 기록(정합).
+                                    r.emitEncoded(info.presentationTimeUs, info.size, info.flags)
                                 } catch (e: Exception) { error = e.toString(); r.error = error }
                             }
                         }

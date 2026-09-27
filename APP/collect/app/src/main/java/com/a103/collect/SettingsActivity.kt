@@ -1,6 +1,7 @@
 package com.a103.collect
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -61,6 +62,27 @@ class SettingsActivity : Activity() {
 
         body.addView(sectionTitle("정보"))
         body.addView(card(valueText("앱 v${BuildConfig_versionName()}")))
+
+        body.addView(sectionTitle("디버그"))
+        val reset = TextView(this).apply {
+            text = "장치 초기화 — QR 재등록"; setTextColor(0xFFE0685E.toInt()); textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        body.addView(card(reset).apply { setOnClickListener { confirmResetDevice() } })
+    }
+
+    /** 저장된 장치 자격을 지우고 온보딩(QR)으로. DB에서 장치가 삭제됐을 때 재등록용. */
+    private fun confirmResetDevice() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("장치 초기화")
+            .setMessage("저장된 장치 자격을 지웁니다. 다음 실행 때 QR 재등록 화면이 떠요. 계속할까요?")
+            .setNegativeButton("취소", null)
+            .setPositiveButton("초기화") { _, _ ->
+                Prefs.clearDevice(this); DeviceSkills.clear()
+                startActivity(Intent(this, OnboardingActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                finish()
+            }.show()
     }
 
     private fun progressRow(name: String, n: Int): View {

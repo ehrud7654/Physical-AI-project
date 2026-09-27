@@ -30,4 +30,8 @@ object Prefs {
     fun deviceSecret(ctx: Context): String = SecureStore.decrypt(sp(ctx).getString("device_secret", "") ?: "")
     fun setDeviceCreds(ctx: Context, id: String, secret: String) =
         sp(ctx).edit().putString("device_id", id).putString("device_secret", SecureStore.encrypt(secret)).apply()
+
+    /** 디버그: 장치 자격·카탈로그 초기화 → 다음 실행 시 QR 재등록 상태로. */
+    fun clearDevice(ctx: Context) =
+        sp(ctx).edit().remove("device_id").remove("device_secret").remove("skill_catalog").apply()
 }
