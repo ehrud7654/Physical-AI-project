@@ -1,0 +1,262 @@
+package com.anssa8bu.ssafy.model.entity;
+
+import com.anssa8bu.ssafy.common.entity.CreatedEntity;
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.*;
+import org.hibernate.annotations.*;
+import org.hibernate.type.SqlTypes;
+
+@Entity
+@Table(name = "skill_versions")
+public class SkillVersion extends CreatedEntity {
+  @Id private UUID id;
+
+  @Column(name = "skill_id", nullable = false)
+  private UUID skillId;
+
+  @Column(name = "training_job_id", nullable = false)
+  private UUID trainingJobId;
+
+  @Column(name = "robot_profile_id", nullable = false)
+  private UUID robotProfileId;
+
+  @Column(name = "parent_skill_version_id")
+  private UUID parentSkillVersionId;
+
+  @Column(nullable = false)
+  private int version;
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 30)
+  private SkillVersionStatus status;
+
+  @Column(name = "checkpoint_bucket", nullable = false, length = 255)
+  private String checkpointBucket;
+
+  @Column(name = "checkpoint_key", nullable = false, length = 700)
+  private String checkpointKey;
+
+  @Column(name = "checkpoint_sha256", nullable = false, length = 64)
+  private String checkpointSha256;
+
+  @Column(name = "checkpoint_bytes", nullable = false)
+  private long checkpointBytes;
+
+  @Column(nullable = false, length = 100)
+  private String architecture;
+
+  @Column(nullable = false, length = 100)
+  private String framework;
+
+  @Column(name = "framework_version", nullable = false, length = 100)
+  private String frameworkVersion;
+
+  @Column(name = "contract_version", nullable = false, length = 100)
+  private String contractVersion;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "action_space", nullable = false, length = 30)
+  private ActionSpace actionSpace;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "action_spec", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> actionSpec;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "runtime_spec", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> runtimeSpec;
+
+  @Column(name = "n_params", nullable = false)
+  private long parameterCount;
+
+  @Column(name = "control_rate_hz", nullable = false, precision = 10, scale = 3)
+  private BigDecimal controlRateHz;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "camera_names", nullable = false, columnDefinition = "jsonb")
+  private List<String> cameraNames;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "input_schema", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> inputSchema;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "output_schema", nullable = false, columnDefinition = "jsonb")
+  private Map<String, Object> outputSchema;
+
+  @Column(name = "gate_metric", length = 100)
+  private String gateMetric;
+
+  @Column(name = "gate_n")
+  private Integer gateN;
+
+  @Column(name = "gate_runs")
+  private Integer gateRuns;
+
+  @Column(name = "gate_value")
+  private Double gateValue;
+
+  @Column(name = "gate_ci_low")
+  private Double gateCiLow;
+
+  @Column(name = "gate_ci_high")
+  private Double gateCiHigh;
+
+  @Column(name = "gate_measured_at")
+  private Instant gateMeasuredAt;
+
+  @Generated
+  @Column(name = "gate_passed", insertable = false, updatable = false)
+  private boolean gatePassed;
+
+  @Column(name = "validated_at")
+  private Instant validatedAt;
+
+  @Column(name = "archived_at")
+  private Instant archivedAt;
+
+  protected SkillVersion() {}
+
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
+      UUID robotProfileId, int version, String bucket, String key,
+      String sha256, long bytes, String architecture, String framework, String frameworkVersion,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec, long parameterCount,
+      BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
+      Map<String, Object> outputSchema) {
+    this(id, skillId, trainingJobId, robotProfileId,
+        version, bucket, key, sha256, bytes, architecture, framework, frameworkVersion,
+        contractVersion, actionSpace, actionSpec, runtimeSpec, parameterCount, controlRateHz, cameraNames, inputSchema,
+        outputSchema, null);
+  }
+
+  public SkillVersion(UUID id, UUID skillId, UUID trainingJobId,
+      UUID robotProfileId, int version, String bucket, String key,
+      String sha256, long bytes, String architecture, String framework, String frameworkVersion,
+      String contractVersion, ActionSpace actionSpace, Map<String, Object> actionSpec,
+      Map<String, Object> runtimeSpec, long parameterCount,
+      BigDecimal controlRateHz, List<String> cameraNames, Map<String, Object> inputSchema,
+      Map<String, Object> outputSchema, UUID parentSkillVersionId) {
+    this.id = Objects.requireNonNull(id);
+    this.skillId = Objects.requireNonNull(skillId);
+    this.trainingJobId = Objects.requireNonNull(trainingJobId);
+    this.robotProfileId = Objects.requireNonNull(robotProfileId);
+    this.parentSkillVersionId = parentSkillVersionId;
+    this.version = version;
+    this.status = SkillVersionStatus.UPLOADING;
+    this.checkpointBucket = Objects.requireNonNull(bucket);
+    this.checkpointKey = Objects.requireNonNull(key);
+    this.checkpointSha256 = Objects.requireNonNull(sha256);
+    this.checkpointBytes = bytes;
+    this.architecture = Objects.requireNonNull(architecture);
+    this.framework = Objects.requireNonNull(framework);
+    this.frameworkVersion = Objects.requireNonNull(frameworkVersion);
+    this.contractVersion = Objects.requireNonNull(contractVersion);
+    this.actionSpace = Objects.requireNonNull(actionSpace);
+    this.actionSpec = Map.copyOf(Objects.requireNonNull(actionSpec));
+    this.runtimeSpec = Map.copyOf(Objects.requireNonNull(runtimeSpec));
+    this.parameterCount = parameterCount;
+    this.controlRateHz = Objects.requireNonNull(controlRateHz);
+    this.cameraNames = List.copyOf(cameraNames);
+    this.inputSchema = Map.copyOf(inputSchema);
+    this.outputSchema = Map.copyOf(outputSchema);
+  }
+
+  public void beginValidation() { status = SkillVersionStatus.VALIDATING; }
+  public void markReady(Instant at) { status = SkillVersionStatus.READY; validatedAt = at; }
+  public void markFailed(Instant at) { status = SkillVersionStatus.FAILED; validatedAt = at; }
+  public void recordGate(String metric, int n, int runs, double value, double low, double high,
+      Instant measuredAt) {
+    this.gateMetric = metric; this.gateN = n; this.gateRuns = runs; this.gateValue = value;
+    this.gateCiLow = low; this.gateCiHigh = high; this.gateMeasuredAt = measuredAt;
+  }
+  public UUID getTrainingJobId() { return trainingJobId; }
+
+  public boolean isGatePassed() {
+    return gatePassed;
+  }
+
+  public UUID getId() {
+    return id;
+  }
+
+  public UUID getSkillId() {
+    return skillId;
+  }
+
+  public UUID getRobotProfileId() {
+    return robotProfileId;
+  }
+
+  public UUID getParentSkillVersionId() { return parentSkillVersionId; }
+
+  public int getVersion() {
+    return version;
+  }
+
+  public SkillVersionStatus getStatus() {
+    return status;
+  }
+
+  public long getCheckpointBytes() {
+    return checkpointBytes;
+  }
+
+  public String getCheckpointSha256() {
+    return checkpointSha256;
+  }
+
+  public String getContractVersion() {
+    return contractVersion;
+  }
+
+  public String getCheckpointBucket() {
+    return checkpointBucket;
+  }
+
+  public String getCheckpointKey() {
+    return checkpointKey;
+  }
+
+  public String getArchitecture() {
+    return architecture;
+  }
+
+  public String getFramework() {
+    return framework;
+  }
+
+  public String getFrameworkVersion() {
+    return frameworkVersion;
+  }
+
+  public ActionSpace getActionSpace() {
+    return actionSpace;
+  }
+
+  public Map<String, Object> getActionSpec() { return actionSpec; }
+
+  public Map<String, Object> getRuntimeSpec() { return runtimeSpec; }
+
+  public long getParameterCount() {
+    return parameterCount;
+  }
+
+  public BigDecimal getControlRateHz() {
+    return controlRateHz;
+  }
+
+  public List<String> getCameraNames() {
+    return cameraNames;
+  }
+
+  public Map<String, Object> getInputSchema() {
+    return inputSchema;
+  }
+
+  public Map<String, Object> getOutputSchema() {
+    return outputSchema;
+  }
+}

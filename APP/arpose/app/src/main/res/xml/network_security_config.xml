@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  기본은 HTTPS 만 허용한다. 실제 서버는 HTTPS 로 붙는다.
+  목 서버 검증용으로 로컬 주소에만 평문을 열어둔다.
+  (adb reverse tcp:8000 tcp:8000 을 쓰면 폰이 PC 를 127.0.0.1 로 본다)
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <!-- 실서버(http) 업로드 테스트용. HTTPS 전환되면 제거. -->
+        <domain includeSubdomains="true">j15a103.p.ssafy.io</domain>
+    </domain-config>
+</network-security-config>

@@ -1,0 +1,223 @@
+services:
+  gpu-backend:
+    image: ssafy-gpu-backend:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8081"
+    environment:
+      SERVER_PORT: 8081
+
+      EC2_API_BASE_URL: ${EC2_API_BASE_URL:-https://j15a103.p.ssafy.io}
+      GPU_WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_laptop_01}
+      GPU_NODE_KEY: ${GPU_NODE_KEY:-gpu-laptop-local-cache}
+      GPU_NODE_NAME: ${GPU_NODE_NAME:-SSAFY GPU Laptop Worker}
+      GPU_STORAGE_ROOT: /data/ssafy-gpu
+      GPU_MAX_SLOTS: ${GPU_MAX_SLOTS:-1}
+      GPU_CLAIM_POLLING_ENABLED: ${GPU_CLAIM_POLLING_ENABLED:-true}
+      GPU_CLAIM_POLLING_INITIAL_DELAY: ${GPU_CLAIM_POLLING_INITIAL_DELAY:-20s}
+      GPU_CLAIM_POLLING_INTERVAL: ${GPU_CLAIM_POLLING_INTERVAL:-5s}
+      GPU_CLAIM_AVAILABLE_MEMORY_MIB: ${GPU_CLAIM_AVAILABLE_MEMORY_MIB:-32768}
+      GPU_GIT_REVISION: ${GPU_GIT_REVISION:-local}
+
+      FASTAPI_BASE_URL: http://training-api:8000
+      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:?FASTAPI_SERVICE_TOKEN is required}
+      FASTAPI_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:?GPU_SPRING_CALLBACK_TOKEN is required}
+      FASTAPI_CONNECT_TIMEOUT: ${FASTAPI_CONNECT_TIMEOUT:-3s}
+      FASTAPI_READ_TIMEOUT: ${FASTAPI_READ_TIMEOUT:-15s}
+      FASTAPI_MONITOR_INTERVAL: ${FASTAPI_MONITOR_INTERVAL:-2s}
+      CHECKPOINT_CONTENT_TYPE: ${CHECKPOINT_CONTENT_TYPE:-application/x-tar}
+      CHECKPOINT_UPLOAD_TIMEOUT: ${CHECKPOINT_UPLOAD_TIMEOUT:-10m}
+      CHECKPOINT_UPLOAD_MAX_ATTEMPTS: ${CHECKPOINT_UPLOAD_MAX_ATTEMPTS:-3}
+      GPU_SHARED_STORAGE_ROOT: /data/ssafy-gpu
+      GPU_TRAINING_CLEANUP_ENABLED: ${GPU_TRAINING_CLEANUP_ENABLED:-true}
+      GPU_ORPHAN_GRACE_PERIOD: ${GPU_ORPHAN_GRACE_PERIOD:-24h}
+      GPU_CLEANUP_SCAN_INTERVAL: ${GPU_CLEANUP_SCAN_INTERVAL:-1h}
+      UMI_PREPROCESSOR_BASE_URL: http://umi-preprocessor:8080
+      UMI_PREPROCESSOR_CONNECT_TIMEOUT: ${UMI_PREPROCESSOR_CONNECT_TIMEOUT:-3s}
+      UMI_PREPROCESSOR_READ_TIMEOUT: ${UMI_PREPROCESSOR_READ_TIMEOUT:-30s}
+      UMI_PREPROCESSOR_POLL_INTERVAL: ${UMI_PREPROCESSOR_POLL_INTERVAL:-2s}
+      UMI_PREPROCESSOR_TIMEOUT: ${UMI_PREPROCESSOR_TIMEOUT:-30m}
+      UMI_PREPROCESSOR_CALIBRATION_PROFILE: ${UMI_PREPROCESSOR_CALIBRATION_PROFILE:-s22_20260921}
+      UMI_PREPROCESSOR_REQUIRE_MAPPING: ${UMI_PREPROCESSOR_REQUIRE_MAPPING:-true}
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/actuator/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - default
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      gpu-backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  training-api:
+    image: ssafy-gpu-fastapi:local
+    build:
+      context: ./FastAPI_
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:?FASTAPI_SERVICE_TOKEN is required}
+      GPU_SPRING_BASE_URL: http://gpu-backend:8081
+      GPU_SPRING_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:?GPU_SPRING_CALLBACK_TOKEN is required}
+      WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_laptop_01}
+      STORAGE_NODE_ID: ${STORAGE_NODE_ID:?Set STORAGE_NODE_ID to the id registered in EC2}
+      SHARED_STORAGE_ROOT: /data/ssafy-gpu
+      RUN_JOURNAL_ROOT: /data/ssafy-gpu/journal/training-runs
+      # The host grants this project physical GPU 2 only. Docker exposes that
+      # device as logical CUDA device 0 inside this container.
+      GPU_COUNT: 1
+      CUDA_VISIBLE_DEVICES: 0
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      TRAINING_COMMAND_DURATION_SECONDS: ${TRAINING_COMMAND_DURATION_SECONDS:-5}
+      ROBOT_PROFILE_ID: ${ROBOT_PROFILE_ID:-52000000-0000-4000-8000-000000000001}
+      MODEL_FRAMEWORK: ${MODEL_FRAMEWORK:-PyTorch}
+      MODEL_FRAMEWORK_VERSION: ${MODEL_FRAMEWORK_VERSION:-umi-d095ba9590df789df5189eea5ee7e431689038a6}
+      MODEL_CONTRACT_VERSION: ${MODEL_CONTRACT_VERSION:-umi-policy-v1}
+      MODEL_ACTION_SPACE: ${MODEL_ACTION_SPACE:-EEF_RELATIVE_ROT6D}
+      MODEL_ACTION_SPEC_JSON: '${MODEL_ACTION_SPEC_JSON}'
+      MODEL_RUNTIME_SPEC_JSON: '${MODEL_RUNTIME_SPEC_JSON}'
+      TRAINING_EPOCHS: ${TRAINING_EPOCHS:-120}
+      TRAINING_BATCH_SIZE: ${TRAINING_BATCH_SIZE:-64}
+      TRAINING_EVAL_BATCH_SIZE: ${TRAINING_EVAL_BATCH_SIZE:-64}
+      TRAINING_SEED: ${TRAINING_SEED:-}
+      TRAINING_NATIVE_HZ: ${TRAINING_NATIVE_HZ:-30}
+      UMI_TRAINING_BUNDLE_ROOT: ${UMI_TRAINING_BUNDLE_ROOT:-/opt/umi-training}
+      UMI_ROOT: ${UMI_ROOT:-/opt/umi-training/third_party/umi}
+      UMI_TRAINING_PYTHON: ${UMI_TRAINING_PYTHON:-/opt/umi-training/.venv/bin/python}
+      UMI_TRAINING_PROFILE: ${UMI_TRAINING_PROFILE:-/opt/umi-training/03_umi_policy_trainer/configs/policy_resnet18_gpu.yaml}
+      UMI_TRAINING_RUNS_DIR: ${UMI_TRAINING_RUNS_DIR:-trainer/runs}
+      WANDB_MODE: ${WANDB_MODE:-disabled}
+      HYDRA_FULL_ERROR: ${HYDRA_FULL_ERROR:-1}
+      MODEL_CONTROL_RATE_HZ: ${MODEL_CONTROL_RATE_HZ:-10}
+      MODEL_CAMERA_NAMES_JSON: '${MODEL_CAMERA_NAMES_JSON:-["camera0_rgb"]}'
+      MODEL_INPUT_SCHEMA_JSON: '${MODEL_INPUT_SCHEMA_JSON:-{"camera0_rgb":{"shape":[2,3,224,224]},"robot0_eef_pos":{"shape":[2,3]},"robot0_eef_rot_axis_angle":{"shape":[2,6]},"robot0_eef_rot_axis_angle_wrt_start":{"shape":[2,6]},"robot0_gripper_width":{"shape":[2,1]}}}'
+      MODEL_OUTPUT_SCHEMA_JSON: '${MODEL_OUTPUT_SCHEMA_JSON:-{"actionShape":[16,10]}}'
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+      - model_cache:/home/fastapi/.cache
+      - ${UMI_TRAINING_BUNDLE_DIR:-./training_bundle}:/opt/umi-training:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # Simulation and training share the only GPU assigned to this project.
+  # Start this profile only after pausing training-api workloads:
+  # docker compose --profile simulation up -d simulation-worker
+  simulation-worker:
+    image: ${SIMULATION_WORKER_IMAGE:-ssafy-simulation-worker:local}
+    profiles: ["simulation"]
+    environment:
+      CUDA_VISIBLE_DEVICES: 0
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      MUJOCO_GL: egl
+      PYOPENGL_PLATFORM: egl
+      SHARED_STORAGE_ROOT: /data/ssafy-gpu
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+      - model_cache:/root/.cache
+      - simulation_output:/data/ssafy-gpu/simulation-output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
+              capabilities: [gpu]
+    restart: "no"
+
+  dcgm-exporter:
+    image: ${DCGM_EXPORTER_IMAGE:-nvcr.io/nvidia/k8s/dcgm-exporter:latest}
+    ports:
+      - "127.0.0.1:${DCGM_EXPORTER_PORT:-9400}:9400"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE_ID:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    cap_add:
+      - SYS_ADMIN
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_DEVICE_ID:-0}"]
+              capabilities: [gpu]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9400;
+          printf "GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3;
+          read -r status <&3;
+          [[ "$$status" == *" 200 "* ]]'
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  umi-preprocessor:
+    build:
+      context: ./umi_server_preprocessor
+      dockerfile: Dockerfile
+      args:
+        JOBS: "4"
+    image: umi-server-preprocessor:2026.09.23-orbslam-v3
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18181:8080"
+    volumes:
+      - gpu_data:/data/ssafy-gpu
+      - ./umi_server_preprocessor/profiles:/profiles:ro
+    environment:
+      UMI_JOBS_ROOT: /data/ssafy-gpu/preprocessing-jobs
+      UMI_PROFILES_ROOT: /profiles
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)" || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+
+volumes:
+  gpu_data:
+  model_cache:
+  simulation_output:

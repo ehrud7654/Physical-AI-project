@@ -1,0 +1,166 @@
+services:
+  nginx:
+    image: ssafy-nginx:local
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TLS_DOMAIN: ${TLS_DOMAIN:-j15a103.p.ssafy.io}
+    volumes:
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["tls"]
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: ["certbot"]
+
+  frontend:
+    image: ssafy-fe:local
+    build:
+      context: ../../FE
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api/v1
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  backend:
+    image: ssafy-ec2-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
+      SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-8h}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-local-development-only-change-this-secret-key}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,https://j15a103.p.ssafy.io}
+      EPISODE_MAX_UPLOAD_BYTES: ${EPISODE_MAX_UPLOAD_BYTES:-209715200}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}
+      AWS_PROFILE: ${AWS_PROFILE:-personal-s3}
+      AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
+      AWS_CONFIG_FILE: /aws/config
+    volumes:
+      - ${AWS_CONFIG_DIR:?AWS_CONFIG_DIR is required for the selected AWS profile}:/aws:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=- http://127.0.0.1:8080/actuator/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:${POSTGRES_IMAGE_TAG:?POSTGRES_IMAGE_TAG is required}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:${REDIS_IMAGE_TAG:?REDIS_IMAGE_TAG is required}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ORB-SLAM Atlas 전처리 handoff 이미지 검증/운영용 서비스입니다.
+  # 기본 EC2 웹 스택과 분리해 필요할 때만 다음 명령으로 실행합니다.
+  # docker compose --profile preprocessing up -d --build umi-preprocessor
+  umi-preprocessor:
+    profiles: ["preprocessing"]
+    image: umi-server-preprocessor:2026.09.23-v1
+    build:
+      context: ../GPU_/umi_server_preprocessor
+      dockerfile: Dockerfile
+      args:
+        JOBS: ${UMI_PREPROCESSOR_BUILD_JOBS:-4}
+    init: true
+    ports:
+      - "127.0.0.1:${UMI_PREPROCESSOR_PORT:-18181}:8080"
+    environment:
+      UMI_JOBS_ROOT: /jobs
+      UMI_PROFILES_ROOT: /profiles
+    volumes:
+      - umi_preprocessor_jobs:/jobs
+      - ../GPU_/umi_server_preprocessor/profiles:/profiles:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)" || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  certbot_conf:
+  certbot_www:
+  umi_preprocessor_jobs:

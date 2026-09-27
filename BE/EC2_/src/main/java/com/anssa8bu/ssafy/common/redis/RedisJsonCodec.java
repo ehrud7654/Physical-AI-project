@@ -1,0 +1,40 @@
+package com.anssa8bu.ssafy.common.redis;
+
+import com.anssa8bu.ssafy.common.entity.CreatedEntity;
+import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
+
+@Component
+public class RedisJsonCodec {
+  private final ObjectMapper mapper;
+
+  public RedisJsonCodec(ObjectMapper mapper) {
+    this.mapper = mapper;
+  }
+
+  public String encode(Object dto) {
+    if (dto instanceof CreatedEntity)
+      throw new IllegalArgumentException("JPA entities must not be cached");
+    try {
+      return mapper.writeValueAsString(dto);
+    } catch (Exception e) {
+      throw new RedisSerializationException("redis encode failed", e);
+    }
+  }
+
+  public <T> T decode(String json, Class<T> type) {
+    if (CreatedEntity.class.isAssignableFrom(type))
+      throw new IllegalArgumentException("JPA entities must not be cached");
+    try {
+      return mapper.readValue(json, type);
+    } catch (Exception e) {
+      throw new RedisSerializationException("redis decode failed", e);
+    }
+  }
+
+  public static class RedisSerializationException extends RuntimeException {
+    public RedisSerializationException(String m, Throwable c) {
+      super(m, c);
+    }
+  }
+}

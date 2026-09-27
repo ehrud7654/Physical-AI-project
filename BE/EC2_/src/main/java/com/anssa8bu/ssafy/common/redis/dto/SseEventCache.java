@@ -1,0 +1,17 @@
+package com.anssa8bu.ssafy.common.redis.dto;
+
+import java.time.Instant;
+import java.util.*;
+
+public record SseEventCache(
+    int schemaVersion,
+    String eventId,
+    String eventType,
+    String aggregateId,
+    Instant occurredAt,
+    Map<String, Object> payload) {
+  public SseEventCache {
+    if (schemaVersion != 1) throw new IllegalArgumentException();
+    payload = Map.copyOf(payload);
+  }
+}
