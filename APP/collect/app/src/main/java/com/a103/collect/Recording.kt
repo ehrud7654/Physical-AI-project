@@ -39,7 +39,7 @@ class Recording(root: File, camera: JSONObject, skillKey: String) {
         if (!dir.mkdirs()) throw IOException("세션 폴더 생성 실패: $dir")
         manifest
             .put("schema_version", 2)
-            .put("app_version", BuildConfig_VERSION)
+            .put("app_version", BuildConfig.VERSION_NAME)
             .put("status", "incomplete")
             .put("session_id", sessionId)
             .put("skill_key", skillKey)        // "" = 미분류(나중에 지정)
@@ -165,10 +165,5 @@ class Recording(root: File, camera: JSONObject, skillKey: String) {
     fun outcome(value: String) {
         manifest.put("outcome", value)
         save()
-    }
-
-    companion object {
-        // build.gradle 의 versionName 을 코드에서 상수로 (BuildConfig 활성화 없이 간단히).
-        const val BuildConfig_VERSION = "0.1"
     }
 }

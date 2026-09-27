@@ -61,7 +61,7 @@ class SettingsActivity : Activity() {
         body.addView(card(valueText("총 영상 %d개 · 남은 저장 %.1f GB".format(total, freeGb))))
 
         body.addView(sectionTitle("정보"))
-        body.addView(card(valueText("앱 v${BuildConfig_versionName()}")))
+        body.addView(card(valueText("앱 v${BuildConfig.VERSION_NAME}")))
 
         body.addView(sectionTitle("디버그"))
         val reset = TextView(this).apply {
@@ -99,7 +99,6 @@ class SettingsActivity : Activity() {
         return row
     }
 
-    private fun BuildConfig_versionName() = "0.1"
 
     private fun sectionTitle(t: String) = TextView(this).apply {
         text = t; setTextColor(0xFF8A909E.toInt()); textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD)
