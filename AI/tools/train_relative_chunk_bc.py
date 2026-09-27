@@ -71,12 +71,15 @@ def lateral_sampling_weights(actions: np.ndarray, gaps_m: np.ndarray, *,
 
 def run_epoch(model: nn.Module, loader: DataLoader, criterion: nn.Module,
               device: torch.device, mean: torch.Tensor, std: torch.Tensor,
-              optimizer: torch.optim.Optimizer | None, grad_clip: float) -> float:
+              optimizer: torch.optim.Optimizer | None, grad_clip: float,
+              cancel_event=None) -> float:
     model.train(optimizer is not None)
     total, count = 0.0, 0
     context = torch.enable_grad() if optimizer is not None else torch.no_grad()
     with context:
         for image, proprio, action in loader:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("RelativeChunkBC training cancelled")
             image = image.to(device, non_blocking=True)
             proprio = proprio.to(device, non_blocking=True)
             target = (action.to(device, non_blocking=True) - mean) / std
