@@ -8,7 +8,7 @@ plugins {
 // release 서명 정보 — 로컬 전용(gitignore). 없으면 release 는 서명 없이 빌드된다.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
+    if (f.exists()) f.reader(Charsets.UTF_8).use { load(it) }   // 경로에 한글(특화·앱서명) → UTF-8 로 읽기
 }
 
 android {
