@@ -135,6 +135,35 @@ def interpolate(a: list[float], b: list[float], max_step_rad: float) -> list[lis
     return [[x + (y - x) * (k + 1) / n for x, y in zip(a, b)] for k in range(n)]
 
 
+def parse_waypoints(raw: list) -> tuple[list[list[float]], list[float] | None]:
+    """Accept [[q1..q5], ...] or [[q1..q5, gap_m], ...]. 5폭 또는 6폭을 받는다.
+
+    ⚠️ 2026-09-19: 원래 그리퍼는 궤적 전체에 상수 하나(`--gripper`)였다.
+    파지는 궤적 도중에 닫는 동작이라 그걸로는 **집을 수가 없다.**
+    폭이 섞여 있으면 조용히 한쪽으로 해석하지 않고 거부한다."""
+    if not raw:
+        raise ValueError("궤적이 비었다")
+    widths = sorted({len(w) for w in raw})
+    if widths not in ([5], [6]):
+        raise ValueError(f"경유점 폭이 {widths} 다. 전부 5 이거나 전부 6 이어야 한다 "
+                         f"(6 = 관절5 + gap_m)")
+    if widths == [5]:
+        return [list(map(float, w)) for w in raw], None
+    q = [list(map(float, w[:5])) for w in raw]
+    g = [float(w[5]) for w in raw]
+    return q, g
+
+
+def interpolate_pair(a_q, a_g, b_q, b_g, max_step_rad):
+    """Interpolate joints and gripper together so they stay in step.
+    관절과 그리퍼를 같은 개수로 쪼갠다. 개수가 어긋나면 파지 시점이 밀린다."""
+    seg = interpolate(a_q, b_q, max_step_rad)
+    n = len(seg)
+    if a_g is None or b_g is None:
+        return seg, [None] * n
+    return seg, [a_g + (b_g - a_g) * (k + 1) / n for k in range(n)]
+
+
 # ── 시리얼 ───────────────────────────────────────────────────────────────
 
 def checksum(body: list[int]) -> int:
@@ -212,10 +241,20 @@ def selftest() -> int:
     print(f"[4] 200도 거부  ", end=""); print("OK" if caught else "!! 실패 — 통과시켰다")
     bad += (not caught)
 
-    g = [(0.0, 1720), (0.09, 70), (0.045, 895)]
-    ok = all(gripper_to_tick(w) == t for w, t in g)
-    print(f"[5] 그리퍼 0/0.045/0.09 m → {[gripper_to_tick(w) for w,_ in g]}  "
-          f"기대 [1720, 895, 70]  ", end="")
+    # ⚠️ 기대값을 손으로 적지 않는다. 데이터에서 뽑는다.
+    #    2026-09-19: 비교 리스트는 0/0.09/0.045 순인데 라벨과 기대 문자열은
+    #    0/0.045/0.09 로 하드코딩돼 있어, 맞는 결과가 틀려 보였다. 순서를 바꾸면
+    #    반대로 **틀린 답에도 OK** 가 찍힌다.
+    g = [(0.0, 1720), (0.045, 895), (0.09, 70)]
+    got = [gripper_to_tick(w) for w, _ in g]
+    exp = [t for _, t in g]
+    ok = got == exp
+    print(f"[5] 그리퍼 {'/'.join(str(w) for w, _ in g)} m → {got}  기대 {exp}  ", end="")
+    print("OK" if ok else "!! 실패"); bad += (not ok)
+
+    # 판별력: 기대값을 일부러 어긋내면 잡히는가
+    ok = [gripper_to_tick(w) for w, _ in g] != [1720, 70, 895]
+    print(f"[5b] 순서 뒤바뀐 기대값은 불일치로 잡힌다  ", end="")
     print("OK" if ok else "!! 실패"); bad += (not ok)
 
     over = [0, 0, 0, 0, math.radians(70.0)]
@@ -232,6 +271,67 @@ def selftest() -> int:
     ok = packet(1, PING) == bytes([0xFF, 0xFF, 0x01, 0x02, 0x01, 0xFB])
     print(f"[8] PING 프레임 바이트 대조  ", end="")
     print("OK" if ok else "!! 실패"); bad += (not ok)
+
+    q, g = parse_waypoints([[0.0] * 5, [0.1] * 5])
+    ok = g is None and len(q) == 2
+    print(f"[9] 5폭 궤적 → gap 없음  ", end="")
+    print("OK" if ok else "!! 실패"); bad += (not ok)
+
+    q, g = parse_waypoints([[0.0] * 5 + [0.09], [0.1] * 5 + [0.0]])
+    ok = g == [0.09, 0.0] and len(q[0]) == 5
+    print(f"[10] 6폭 궤적 → gap {g}  기대 [0.09, 0.0]  ", end="")
+    print("OK" if ok else "!! 실패"); bad += (not ok)
+
+    try:
+        parse_waypoints([[0.0] * 5, [0.0] * 6])
+        raised = False
+    except ValueError:
+        raised = True
+    print(f"[11] 폭이 섞이면 거부 (조용히 해석하지 않는다)  ", end="")
+    print("OK" if raised else "!! 실패"); bad += (not raised)
+
+    seg, sg = interpolate_pair([0.0] * 5, 0.09, [math.radians(30.0)] + [0.0] * 4, 0.0,
+                               math.radians(3.0))
+    ok = len(seg) == len(sg) == 10 and abs(sg[-1]) < 1e-12 and abs(sg[0] - 0.081) < 1e-9
+    print(f"[12] 관절·그리퍼 같은 개수로 보간 → {len(seg)}/{len(sg)} 스텝, "
+          f"gap {sg[0]:.4f}→{sg[-1]:.4f}  ", end="")
+    print("OK" if ok else "!! 실패 — 개수가 어긋나면 파지 시점이 밀린다"); bad += (not ok)
+
+    # 판별력: 범위 밖 gap 을 사전검사가 잡는가
+    try:
+        gripper_to_tick(0.15)
+        caught = False
+    except ValueError:
+        caught = True
+    print(f"[13] gap 0.15m (범위 밖) 거부  ", end="")
+    print("OK" if caught else "!! 실패"); bad += (not caught)
+
+    # [14~17] HW 속도 상한 게이트 (2026-09-19)
+    # 비상정지가 릴레이 준비 단계라 **소프트웨어가 마지막 방벽**이다.
+    try:
+        speed_gate(3.0, 0.05, HW_MAX_JOINT_SPEED_RAD_S)   # 초판 기본값 = 1.047 rad/s
+        caught = False
+    except SystemExit:
+        caught = True
+    print("[14] 판별력: 초판 기본값 3도/0.05s (=1.047 rad/s) 거부  ", end="")
+    print("OK" if caught else "!! 실패"); bad += (not caught)
+
+    v = speed_gate(0.85, 0.05, HW_MAX_JOINT_SPEED_RAD_S)
+    ok = v <= HW_MAX_JOINT_SPEED_RAD_S + 1e-9
+    print(f"[15] 현재 기본값 {v:.4f} rad/s <= 상한  ", end="")
+    print("OK" if ok else "!! 실패"); bad += (not ok)
+
+    ok = abs(HW_MAX_JOINT_SPEED_RAD_S - 0.3) < 1e-12
+    print(f"[16] 상한이 HW 회신값 0.3 rad/s  ", end="")
+    print("OK" if ok else "!! 실패"); bad += (not ok)
+
+    try:
+        speed_gate(1.0, 0.0, HW_MAX_JOINT_SPEED_RAD_S)
+        caught = False
+    except SystemExit:
+        caught = True
+    print("[17] 판별력: period 0 은 나눗셈 전에 거부  ", end="")
+    print("OK" if caught else "!! 실패"); bad += (not caught)
 
     print(f"\n자체검증 {'통과' if bad == 0 else f'실패 {bad}건'}")
     return 1 if bad else 0
@@ -251,9 +351,40 @@ def read_all(bus: Bus) -> tuple[list[float] | None, float | None, int]:
     return q, (tick_to_gripper(gt) if gt is not None else None), okn
 
 
-def preflight(waypoints: list[list[float]]) -> None:
+HW_MAX_JOINT_SPEED_RAD_S = 0.3
+"""HW(김현석) 가 실물에 건 관절 최대 속도. 2026-09-19 회신 🟢
+
+⚠️ 초판 기본값(`--max-step-deg 3.0` · `--period 0.05`)은 3/0.05 = 60 도/초 =
+**1.047 rad/s** 로 이 상한의 3.5배였다. 실물에 그대로 내보낼 뻔했다.
+비상정지가 아직 릴레이 준비 단계이므로 **소프트웨어가 마지막 방벽**이다."""
+
+
+def speed_gate(max_step_deg: float, period_s: float, limit_rad_s: float) -> float:
+    """Refuse a step size that exceeds the hardware speed limit.
+    하드웨어 속도 상한을 넘는 스텝 크기를 거부한다.
+
+    돌려주는 값은 실제 요구 속도 [rad/s]. 모수를 같이 찍기 위해 반환한다."""
+    if period_s <= 0:
+        raise SystemExit("!! --period 가 0 이하다")
+    implied = math.radians(max_step_deg) / period_s
+    print(f"속도 검사: {max_step_deg}도 / {period_s}s = {implied:.4f} rad/s "
+          f"· 상한 {limit_rad_s} rad/s")
+    if implied > limit_rad_s + 1e-9:
+        need = math.degrees(limit_rad_s * period_s)
+        raise SystemExit(
+            f"!! 요구 속도 {implied:.4f} rad/s 가 상한 {limit_rad_s} 를 넘는다.\n"
+            f"   --max-step-deg {need:.3f} 이하로 낮추거나 --period 를 "
+            f"{math.radians(max_step_deg)/limit_rad_s:.4f} 이상으로 올려라.\n"
+            "   비상정지가 물리적으로 확인되지 않은 상태다. 소프트웨어가 마지막 방벽이다.")
+    return implied
+
+
+def preflight(waypoints: list[list[float]], gaps: list | None = None) -> None:
     """Check EVERY step before moving anything. 한 스텝도 빠짐없이 먼저 검사한다."""
     errs = []
+    if gaps is not None and len(gaps) != len(waypoints):
+        raise SystemExit(f"!! 관절 {len(waypoints)}스텝 vs 그리퍼 {len(gaps)}스텝. "
+                         "개수가 다르면 파지 시점이 밀린다. 중단")
     for i, q in enumerate(waypoints):
         for j, r in zip(JOINTS, q):
             try:
@@ -262,7 +393,13 @@ def preflight(waypoints: list[list[float]]) -> None:
                 errs.append(f"  스텝 {i}: {e}")
         for m in check_extra_limits(q):
             errs.append(f"  스텝 {i}: {m}")
-    print(f"사전검사 {len(waypoints)}스텝 · 위반 {len(errs)}건")
+        if gaps is not None and gaps[i] is not None:
+            try:
+                gripper_to_tick(gaps[i])
+            except ValueError as e:
+                errs.append(f"  스텝 {i}: {e}")
+    ng = 0 if gaps is None else sum(g is not None for g in gaps)
+    print(f"사전검사 {len(waypoints)}스텝 · 그리퍼 {ng}스텝 · 위반 {len(errs)}건")
     if errs:
         for e in errs[:20]:
             print(e)
@@ -279,14 +416,25 @@ def main() -> None:
     ap.add_argument("--read-only", action="store_true", help="현재 자세만 읽고 끝")
     ap.add_argument("--pose", help="목표 관절각 5개, rad, 콤마 구분")
     ap.add_argument("--trajectory", help="[[q1..q5], ...] 형태 JSON 파일")
-    ap.add_argument("--gripper", type=float, default=None, help="개구 m (0~0.09)")
-    ap.add_argument("--max-step-deg", type=float, default=3.0)
+    ap.add_argument("--gripper", type=float, default=None,
+                    help="개구 m (0~0.09). 궤적이 6폭이면 쓰지 마라")
+    # 0.3 rad/s x 0.05s = 0.859도. HW 상한에서 역산한 값이다 (초판 3.0 은 3.5배 초과였다)
+    ap.add_argument("--max-step-deg", type=float, default=0.85)
+    ap.add_argument("--max-joint-speed", type=float, default=HW_MAX_JOINT_SPEED_RAD_S,
+                    help="관절 최대 속도 [rad/s]. HW 회신 0.3. 넘으면 한 스텝도 안 움직인다")
     ap.add_argument("--period", type=float, default=0.05, help="명령 간격 초")
     ap.add_argument("--speed", type=int, default=300)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", action="store_true", help="확인 프롬프트 생략")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
+
+    if not a.selftest:
+        print("=" * 56)
+        print("⚠️ 물리 비상정지는 **미확인** 상태다 (HW: 릴레이 준비만).")
+        print("   소프트웨어 검사가 마지막 방벽이다. 사람이 옆에 있어야 한다.")
+        print("=" * 56)
+        implied_speed = speed_gate(a.max_step_deg, a.period, a.max_joint_speed)
 
     if a.selftest:
         sys.exit(selftest())
@@ -321,16 +469,35 @@ def main() -> None:
             raise SystemExit("!! --pose 는 관절각 5개다")
         waypoints = [target]
     elif a.trajectory:
-        waypoints = json.loads(Path(a.trajectory).read_text(encoding="utf-8"))
+        raw = json.loads(Path(a.trajectory).read_text(encoding="utf-8"))
+        try:
+            waypoints, wp_gaps = parse_waypoints(raw)
+        except ValueError as e:
+            bus.close(); raise SystemExit(f"!! {e}")
+        print(f"궤적 {len(waypoints)}경유점 · 그리퍼 "
+              f"{'웨이포인트별' if wp_gaps else '없음 (--gripper 상수 사용)'}")
     else:
         bus.close(); raise SystemExit("!! --pose 또는 --trajectory 가 필요하다")
 
+    if wp_gaps is None and a.gripper is not None:
+        wp_gaps = [a.gripper] * len(waypoints)
+    elif wp_gaps is not None and a.gripper is not None:
+        bus.close()
+        raise SystemExit("!! 궤적에 웨이포인트별 gap 이 있는데 --gripper 도 줬다. "
+                         "어느 쪽을 쓸지 모른다. 하나만 줘라")
+
     steps: list[list[float]] = []
-    cur = q0
-    for w in waypoints:
-        seg = interpolate(cur, w, math.radians(a.max_step_deg))
-        steps.extend(seg); cur = w
-    preflight(steps)
+    step_gaps: list = []
+    cur, cur_g = q0, (g0 if wp_gaps is not None else None)
+    if wp_gaps is not None and cur_g is None:
+        cur_g = wp_gaps[0]            # 현재 개구를 못 읽었으면 첫 목표에서 출발
+        print("   현재 개구 읽기 실패 → 첫 목표값에서 출발한다")
+    for k, w in enumerate(waypoints):
+        gw = None if wp_gaps is None else wp_gaps[k]
+        seg, seg_g = interpolate_pair(cur, cur_g, w, gw, math.radians(a.max_step_deg))
+        steps.extend(seg); step_gaps.extend(seg_g)
+        cur, cur_g = w, gw
+    preflight(steps, step_gaps if wp_gaps is not None else None)
 
     dur = len(steps) * a.period
     print(f"\n계획: 경유점 {len(waypoints)} → 보간 {len(steps)}스텝 · "
@@ -347,13 +514,14 @@ def main() -> None:
             ticks = [joint_to_tick(j, r) for j, r in zip(JOINTS, q)]
             for j, t in zip(JOINTS, ticks):
                 bus.move(j[1], t, speed=a.speed)
-            if a.gripper is not None:
-                bus.move(GRIPPER[1], gripper_to_tick(a.gripper), speed=a.speed)
+            gi = step_gaps[i] if i < len(step_gaps) else None
+            if gi is not None:
+                bus.move(GRIPPER[1], gripper_to_tick(gi), speed=a.speed)
             time.sleep(a.period)
             qa, ga, _ = read_all(bus)
             err = [math.degrees(c - m) for c, m in zip(q, qa)]
             log.append({"step": i, "cmd_rad": q, "act_rad": qa, "err_deg": err,
-                        "gripper_m": ga})
+                        "cmd_gripper_m": gi, "gripper_m": ga})
             if i % 10 == 0 or i == len(steps) - 1:
                 print(f"  {i+1}/{len(steps)}  최대오차 "
                       f"{max(abs(e) for e in err if math.isfinite(e)):.2f}도", end="\r")

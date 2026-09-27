@@ -6,3 +6,8 @@ Claude outputs/
 
 # Claude Code 세션 설정·산출물. 개인 도구 상태라 저장소에 올리지 않는다.
 .claude/
+
+# 삭제 권한이 없어 옮겨둔 git lock 잔여물 (세션 한정)
+_to_delete/
+AI/notebooks/work_*.ipynb
+.ipynb_checkpoints/

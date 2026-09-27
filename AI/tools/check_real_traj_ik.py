@@ -193,7 +193,8 @@ def step_durations(z, n_steps: int) -> np.ndarray:
     """Real seconds between consecutive waypoints, from recorded timestamps.
     웨이포인트 사이 실제 초. 기록된 타임스탬프에서 읽는다.
 
-    ⚠️ `source_row` 간격이 균일하지 않다(3 과 2 가 섞인다). 0.1초 고정으로
+    ⚠️ 정정 2026-09-21 — "3 과 2 가 섞인다"는 틀렸다. 0918 v10 74편·차분 4640개 전부 source_row step=3 으로 확정 (2026-09-21, 황도경).
+       그래도 0.1초를 고정으로 쓰지 않는다. 0.1초 고정으로
     계산하면 속도가 최대 1.5배 어긋난다. 고정값을 쓰지 않는다."""
     ot = np.asarray(z["observation_timestamp"], dtype=np.float64)
     cur = ot[:, -1]                       # 각 행의 현재 관측 시각
@@ -205,6 +206,53 @@ def step_durations(z, n_steps: int) -> np.ndarray:
     return np.r_[d, d[-1]]                # 마지막은 직전 간격으로 채운다
 
 
+def rotation_error_split(R_target: np.ndarray, R_actual: np.ndarray) -> tuple[float, float]:
+    """Split the orientation error into the free axis and the rest [deg].
+    자세 오차를 **자유 축 성분**과 **나머지**로 가른다.
+
+    왜 나누나 / Why split
+    ---------------------
+    평행 그리퍼 측면 파지는 **접근축(TCP z) 둘레 회전이 자유**다 (프로젝트 기조).
+    그 축 둘레로 틀어진 것은 파지에 해가 없는데, 측지각 하나로 재면 해로운 오차와
+    **같은 숫자**가 된다. 그러면 "5도 초과 거부" 가 무해한 것까지 거부한다.
+
+    ⚠️ 이 함수는 **보고만 한다.** 거부 규칙은 바꾸지 않는다 — 결과를 보고 게이트를
+    옮기는 것이 되기 때문이다. 바꾸려면 사전등록이 먼저다.
+
+    Returns (접근축 둘레 성분, 나머지 성분) [deg].
+    """
+    Rerr = np.asarray(R_target).T @ np.asarray(R_actual)
+    # 회전벡터로 펴서 목표 프레임의 z(접근축)에 투영한다.
+    c = (float(np.trace(Rerr)) - 1.0) / 2.0
+    ang = float(np.arccos(max(-1.0, min(1.0, c))))
+    if ang < 1e-12:
+        return 0.0, 0.0
+    axis = np.array([Rerr[2, 1] - Rerr[1, 2],
+                     Rerr[0, 2] - Rerr[2, 0],
+                     Rerr[1, 0] - Rerr[0, 1]]) / (2.0 * np.sin(ang))
+    v = axis * ang                                  # 목표 프레임에서 본 회전벡터
+    about = abs(float(v[2]))                        # z = 접근축
+    perp = float(np.linalg.norm(v[:2]))
+    return float(np.degrees(about)), float(np.degrees(perp))
+
+
+def step_dt(dts, i0: int, i: int) -> float:
+    """dt between local waypoints i-1 and i, read from the GLOBAL dts array.
+    지역 인덱스 i-1→i 사이의 dt 를 **전역** dts 에서 읽는다.
+
+    qs 는 span 의 lo(=i0) 부터 채운 지역 인덱스이고 dts 는 에피소드 전역이다.
+    초판은 dts[i-1] 로 읽어 lo 만큼 어긋났다 (2026-09-20 정정).
+    """
+    gi = i0 + i - 1
+    return float(dts[gi]) if 0 <= gi < len(dts) else float("nan")
+
+
+def window_count(n_waypoints: int, horizon: int) -> int:
+    """How many length-H windows fit in a length-L sequence: L-H+1, not L-H.
+    길이 L 안에 들어가는 길이 H 창의 개수. 초판은 L-H 라 마지막 창을 늘 빠뜨렸다."""
+    return max(0, n_waypoints - horizon + 1)
+
+
 def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
                   horizon: int, ik_tol: float, dts: np.ndarray,
                   span: tuple[int, int] | None = None) -> dict:
@@ -214,9 +262,15 @@ def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
 
     vbud = np.asarray(limits["joint_speed_rad_s"], dtype=np.float64)
     abud = np.asarray(limits["joint_accel_rad_s2"], dtype=np.float64)
-    lo, hi = env.limits[:, 0], env.limits[:, 1]
+    # ⚠️ 2026-09-19 수정 — 이 두 줄이 아래 `lo, hi = span ...` 에 **덮어써지고 있었다.**
+    #    그 결과 관절 한계 검사가 `q < 구간인덱스` 를 비교했고, 관절각(rad)은 거의 항상
+    #    그 정수보다 작아서 **전부 joint_limit 으로 거부**됐다.
+    #    0917 MEASURE §7 에 결함 #11 로 적혀 있었으나 **수정이 저장소에 들어오지 않았다.**
+    #    이름을 분리한다. 같은 이름을 두 뜻으로 쓰지 않는다.
+    q_lo, q_hi = env.limits[:, 0], env.limits[:, 1]
 
-    qs, reasons, residuals = [], [], []
+    qs, reasons, residuals, splits = [], [], [], []
+    margins: list = []                        # [joint_margin_patch]
     seed = env.home_q.copy()
     first_fail = None
 
@@ -236,8 +290,10 @@ def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
             Tc = env.tcp(env.ik_data)
             e_pos = float(np.linalg.norm(Tc[:3, 3] - pos))
             e_rot = geodesic_deg(R, Tc[:3, :3])
+            e_free, e_perp = rotation_error_split(R, Tc[:3, :3])
             residuals.append((e_pos, e_rot))
-            if np.any(q < lo - 1e-6) or np.any(q > hi + 1e-6):
+            splits.append((e_free, e_perp))
+            if np.any(q < q_lo - 1e-6) or np.any(q > q_hi + 1e-6):
                 why = "joint_limit"
             elif e_pos > ik_tol:
                 why = f"position_residual>{ik_tol}"
@@ -245,9 +301,13 @@ def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
                 why = "rotation_residual>5deg"
         else:
             residuals.append((float("nan"), float("nan")))
+            splits.append((float("nan"), float("nan")))
         if why is None:
             qs.append(q)
             seed = q
+            # [joint_margin_patch] 한계까지 남은 여유를 관절별로 적재한다.
+            #    통과 여부만으로는 아슬아슬한 편과 여유 있는 편이 구분되지 않는다.
+            margins.append(np.minimum(np.asarray(q) - q_lo, q_hi - np.asarray(q)))
         else:
             qs.append(None)
             if first_fail is None:
@@ -262,7 +322,12 @@ def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
     for i in range(1, len(qs)):
         if qs[i] is None or qs[i - 1] is None:
             continue
-        dt = float(dts[i - 1]) if i - 1 < len(dts) else float("nan")
+        # ⚠️ 2026-09-20 정정 (황도경 검토) — qs 는 span 의 lo 부터 채운 **지역 인덱스**인데
+        #    dts 는 에피소드 **전역 인덱스**다. 초판은 dts[i-1] 로 읽어 lo 만큼 어긋났다.
+        #    --segment grasp 는 lo = closure-2 이므로 항상 어긋난다. v10 은 간격이 균일하지
+        #    않아 (재현: 앞 20행 0.05초 · 파지 구간 0.30초인 편에서 위반 0 이어야 할 것이
+        #    위반 8 · 확대율 1.6 으로 나왔다) 양방향으로 틀린다.
+        dt = step_dt(dts, i0, i)
         if not np.isfinite(dt) or dt <= 0:
             continue
         v = np.abs(np.asarray(qs[i]) - np.asarray(qs[i - 1])) / dt
@@ -277,11 +342,17 @@ def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
                 vio_a += 1
                 need_scale = max(need_scale, math.sqrt(ar))
 
-    n_chunks = max(0, len(ok_way) - horizon)
+    # ⚠️ 2026-09-20 정정 — 길이 L 안에 들어가는 길이 H 창은 L-H+1 개다. 초판은 L-H 라
+    #    **마지막 창 하나를 늘 평가하지 않았다** — 그 창이 파지 직후 리프트 행을 담는다.
+    #    기본값(pre2/post6)이 정확히 L=9, H=8 이라 코드 1 / 실제 2, 즉 분모가 절반이었다.
+    #    ⚠️ 이 수정은 기존 chunk 수치와 게이트 분모를 바꾼다. 재산출 대상이다.
+    n_chunks = window_count(len(ok_way), horizon)
     ok_chunks = sum(1 for i in range(n_chunks) if all(ok_way[i:i + horizon]))
     fin = [r for r in residuals if not math.isnan(r[0])]
+    _free = [a for a, _ in splits if not math.isnan(a)]
+    _perp = [b for _, b in splits if not math.isnan(b)]
 
-    too_short = len(ok_way) < horizon + 1
+    too_short = len(ok_way) < horizon        # L == H 면 창이 1개 있다. 초판은 버렸다
     return {
         "span": [lo, hi],
         "too_short_for_chunk": bool(too_short),
@@ -296,7 +367,46 @@ def check_episode(env, chain: np.ndarray, T_base_home: np.ndarray, limits: dict,
         "required_uniform_time_scale": round(need_scale, 4),
         "position_residual_max_mm": round(max((r[0] for r in fin), default=float("nan")) * 1000, 3) if fin else None,
         "rotation_residual_max_deg": round(max((r[1] for r in fin), default=float("nan")), 3) if fin else None,
+        # 보고용 분해 (거부 규칙에는 안 쓴다)
+        # 빈 목록에 max 를 걸지 않는다. 비었으면 None 이고, 그건 "0도" 와 다른 상태다.
+        "rot_free_axis_max_deg": (round(max(_free), 3) if _free else None),
+        "rot_perp_max_deg": (round(max(_perp), 3) if _perp else None),
+        "rot_split_n": len(_free),
+        "rot_split_note": "접근축 둘레 성분은 평행 그리퍼 측면파지에서 자유 축이다. "
+                          "거부 판정에는 쓰지 않았다",
         "reasons": reasons,
+        # [joint_margin_patch] 여유 계측. 모수(scored/총)를 항상 같이 낸다.
+        **_margin_block(margins, len(ok_way)),
+    }
+
+
+def _margin_block(margins: list, n_waypoints: int) -> dict:
+    """Summarize per-joint distance to the nearest joint limit, in degrees.
+    관절별 한계까지 남은 여유를 도 단위로 요약한다.
+
+    IK 가 한 번도 안 풀린 편은 여유를 잴 수 없다. 값은 None 으로 두되 사유를 같이 실어서
+    '여유 없음' 과 '여유 못 쟀음' 이 같은 출력이 되지 않게 한다.
+    """
+    scored = len(margins)
+    if scored == 0:
+        return {
+            "margin_scored_waypoints": 0,
+            "margin_total_waypoints": int(n_waypoints),
+            "joint_margin_min_deg": None,
+            "joint_margin_min_overall_deg": None,
+            "tightest_joint_index": None,
+            "margin_unmeasured_reason": "no_successful_ik — 여유를 못 쟀다. 여유가 넉넉한 것이 아니다",
+        }
+    M = np.degrees(np.stack(margins))
+    per_joint = M.min(axis=0)
+    j = int(np.argmin(per_joint))
+    return {
+        "margin_scored_waypoints": int(scored),
+        "margin_total_waypoints": int(n_waypoints),
+        "joint_margin_min_deg": [round(float(v), 3) for v in per_joint],
+        "joint_margin_min_overall_deg": round(float(per_joint[j]), 3),
+        "tightest_joint_index": j,
+        "margin_unmeasured_reason": None,
     }
 
 
@@ -354,6 +464,79 @@ def selftest() -> int:
     caught = cb["position_max_mm"] > 40.0
     print(f"[4] 고의 손상 감지 위치최대 {cb['position_max_mm']:.3f}mm", end="  ")
     print("OK" if caught else "!! 실패 — 망가진 데이터를 못 잡는다"); bad += not caught
+
+    # [N] 자세 오차 분해 — 정답 아는 행 + 판별력
+
+    def _rot(ax, deg):
+
+        a = np.deg2rad(deg)
+
+        v = np.asarray(ax, float) / np.linalg.norm(ax)
+
+        K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+
+        return np.eye(3) + np.sin(a) * K + (1 - np.cos(a)) * K @ K
+
+
+    _f, _p = rotation_error_split(np.eye(3), _rot([0, 0, 1], 7.0))
+
+    _ok1 = abs(_f - 7.0) < 1e-6 and _p < 1e-6
+
+    _f2, _p2 = rotation_error_split(np.eye(3), _rot([1, 0, 0], 7.0))
+
+    _ok2 = _f2 < 1e-6 and abs(_p2 - 7.0) < 1e-6
+
+    _f3, _p3 = rotation_error_split(np.eye(3), np.eye(3))
+
+    print(f"[{'OK' if (_ok1 and _ok2 and _f3 == 0) else '!!'}] 자세오차 분해 "
+
+          f"자유축7도->({_f:.3f},{_p:.3f}) 수직7도->({_f2:.3f},{_p2:.3f}) "
+
+          f"동일->({_f3:.3f},{_p3:.3f})")
+
+    if not (_ok1 and _ok2):
+
+        raise SystemExit("!! 자세오차 분해가 축을 못 가른다")
+
+
+    # [N] 이름 충돌 재발 방지 (2026-09-19). 관절 한계와 구간 인덱스가 같은 이름을
+
+    #     쓰면 검사가 조용히 무력화된다. 소스에서 직접 확인한다.
+
+    src = Path(__file__).read_text(encoding="utf-8")
+
+    body = src[src.index("def check_episode("):src.index("# \u2500\u2500 \uc790\uccb4 \uac80\uc99d")]
+
+    # ⚠️ 2026-09-20 정정 — 초판은 여기서 `bad` 에 **재대입**했다. 그 순간 위 [1]~[4]
+    #    의 실패 카운트가 통째로 사라져, rot6d 를 열로 되돌려도 "자체검증 통과 · EXIT 0"
+    #    이 나왔다(실증). 247행 주석이 경고한 `lo, hi` 이름 충돌과 **같은 종류의 실수**가
+    #    같은 파일 안에서 재발했다. 이름을 분리한다.
+    name_clash = ("lo, hi = env.limits" in body) and ("lo, hi = span" in body)
+    bad += 1 if name_clash else 0
+
+    print(f"[{'!!' if name_clash else 'OK'}] 관절한계·구간인덱스 이름 분리 "
+
+          f"(q_lo/q_hi {'있음' if 'q_lo' in body else '없음'})")
+
+    if name_clash:
+
+        raise SystemExit("!! 관절 한계 변수가 구간 인덱스에 덮어써진다. 수치를 내지 않는다")
+
+
+    # [C-2] dt 를 전역 인덱스에서 읽는가. 파지 구간이 뒤쪽이면 앞 구간 dt 를 읽으면 안 된다
+    dts_t = [0.05] * 20 + [0.30] * 10
+    got_dt = step_dt(dts_t, 20, 1)          # 지역 0→1 = 전역 20→21
+    wrong_dt = dts_t[0]                     # 초판이 읽던 값
+    okc2 = abs(got_dt - 0.30) < 1e-12 and abs(got_dt - wrong_dt) > 1e-9
+    print(f"[C-2] 파지 구간 dt {got_dt:.3f}초 (초판은 {wrong_dt:.3f}초를 읽었다)", end="  ")
+    print("OK" if okc2 else "!! 실패"); bad += not okc2
+
+    # [C-3] 길이 L 안의 길이 H 창 개수. 양성·음성 둘 다 본다
+    cases = [(8, 8, 1), (9, 8, 2), (65, 8, 58), (7, 8, 0)]
+    okc3 = all(window_count(L, H) == want for L, H, want in cases)
+    print(f"[C-3] 창 개수 {[(L, H, window_count(L, H)) for L, H, _ in cases]} "
+          f"(기대 {[w for *_, w in cases]})", end="  ")
+    print("OK" if okc3 else "!! 실패 — 초판은 전부 1 씩 적었다"); bad += not okc3
 
     print(f"\n자체검증 {'통과' if bad == 0 else f'실패 {bad}건'}")
     return 1 if bad else 0
@@ -458,6 +641,23 @@ def main() -> None:
     ch = sum(r["chunks_ok"] for r in results), sum(r["chunks"] for r in results)
     ep_ok = sum(1 for r in results if r["episode_ok"])
 
+    # [joint_margin_patch] 편 단위 여유 분포. 분모를 항상 같이 찍는다.
+    def margin_summary(results: list) -> None:
+        scored = [r for r in results if r.get("joint_margin_min_overall_deg") is not None]
+        unscored = len(results) - len(scored)
+        print(f"\n관절 여유 — 잰 편 {len(scored)}/{len(results)} (못 잰 편 {unscored}: IK 전무)")
+        if not scored:
+            print("  ⚠️ 한 편도 못 쟀다. 여유가 넉넉한 것이 아니라 계측이 안 된 것이다")
+            return
+        vals = sorted(r["joint_margin_min_overall_deg"] for r in scored)
+        for thr in (1.0, 5.0, 10.0):
+            print(f"  여유 {thr:4.1f}도 미만  {sum(1 for v in vals if v < thr)}/{len(scored)}편")
+        print(f"  최소 {vals[0]:.2f}도 · 중앙 {vals[len(vals) // 2]:.2f}도 · 최대 {vals[-1]:.2f}도")
+        from collections import Counter
+        c = Counter(r["tightest_joint_index"] for r in scored)
+        print("  가장 빡빡한 관절: " + " · ".join(
+            f"j{k} {v}/{len(scored)}편" for k, v in sorted(c.items())))
+
     def rate(x, n):
         return round(100.0 * x / n, 1) if n else None
 
@@ -520,6 +720,7 @@ def main() -> None:
     if skipped:
         print(f"!! 건너뛴 {len(skipped)}편: {skipped[:3]}")
     print("거부 사유:", reason_counts if reason_counts else "없음")
+    margin_summary(results)                       # [joint_margin_patch]
     print(f"→ {a.out}")
     print("⚠️ simulation-only episode-start alignment 기준이다. 실물 캘리브레이션이 아니다.")
 
