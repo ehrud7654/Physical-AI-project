@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// release 서명 정보 — 로컬 전용(gitignore). 없으면 release 는 서명 없이 빌드된다.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -13,21 +21,30 @@ android {
         minSdk = 33
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1"
+        versionName = "1.0"
+        // 서버는 HTTPS 전용(http는 301 리다이렉트 → HttpURLConnection이 안 따라감). debug·release 공통.
+        buildConfigField("String", "UPLOAD_BASE_URL", "\"https://j15a103.p.ssafy.io\"")
     }
 
     buildFeatures {
         buildConfig = true
     }
 
-    buildTypes {
-        debug {
-            // 서버는 HTTPS 전용(http는 301 리다이렉트 → HttpURLConnection이 안 따라감).
-            buildConfigField("String", "UPLOAD_BASE_URL", "\"https://j15a103.p.ssafy.io\"")
+    signingConfigs {
+        create("release") {
+            if (!keystoreProps.isEmpty) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
         }
+    }
+
+    buildTypes {
         release {
             isMinifyEnabled = false
-            buildConfigField("String", "UPLOAD_BASE_URL", "\"https://TODO.example.com\"")
+            if (!keystoreProps.isEmpty) signingConfig = signingConfigs.getByName("release")
         }
     }
 
