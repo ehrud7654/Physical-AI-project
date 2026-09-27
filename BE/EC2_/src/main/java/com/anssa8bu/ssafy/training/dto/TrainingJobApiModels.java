@@ -43,7 +43,6 @@ public final class TrainingJobApiModels {
 
   public record ErrorInfo(String code, String message, String recoveryAction) {}
 
-  public record EpisodeInputResponse(
-      UUID episodeId, int inputOrder, TrainingEpisodeRole inputRole) {}
+  public record EpisodeInputResponse(UUID episodeId, int inputOrder) {}
 
 }

@@ -88,6 +88,13 @@ public class EpisodeUploadService {
         .filter(s -> s.getOwnerId().equals(ownerId) && s.getUmiDeviceId().equals(deviceId))
         .orElseThrow(() -> notFound("업로드 세션을 찾을 수 없습니다."));
     validateCompletion(session, request);
+    if (session.getStatus() == EpisodeUploadStatus.FAILED
+        && "VALIDATION_PROCESSING_FAILED".equals(session.getValidationErrorCode())) {
+      // Reuse the completed S3 upload; ownership, request identity and row lock were checked above.
+      session.retryValidation();
+      events.publishEvent(new EpisodeValidationRequested(session.getId()));
+      return result(session, true);
+    }
     if (session.getStatus() == EpisodeUploadStatus.VALIDATING) {
       events.publishEvent(new EpisodeValidationRequested(session.getId()));
       return result(session, true);

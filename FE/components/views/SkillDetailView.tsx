@@ -5,6 +5,7 @@ import type { SkillOverview, TrainingSkill } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 import { fetchSkillOverviews, fetchTrainingSkills, updateSkillDescription } from '@/services';
 import { datasetStatusMeta, deploymentStatusMeta, recoveryActionLabel } from '@/lib/datasets';
+import { DatasetWhen } from '@/components/DatasetWhen';
 import { Pagination } from '@/components/Pagination';
 import { usePagination } from '@/hooks/usePagination';
 
@@ -50,8 +51,8 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
   const skillTrainings = trainings.filter((item) => item.skillKey === skillKey);
   const skillDatasets = datasets.filter((item) => item.skillKey === skillKey);
   const attentionCount = skillDatasets.filter((item) => item.status === 'INVALID' || item.status === 'DELETE_FAILED').length;
-  /* 상세는 보조 목록이라 5개 단위로 짧게 끊는다. */
-  const dataPage = usePagination(skillDatasets, 5);
+  /* 학습 현황은 보조 목록이라 5개, 수집 데이터는 한 번에 여러 개씩 찍어 비교하며 보므로 10개 단위. */
+  const dataPage = usePagination(skillDatasets, 10);
   const trainingPage = usePagination(skillTrainings, 5);
 
   const submitDescription = async (event: FormEvent) => {
@@ -110,11 +111,11 @@ export function SkillDetailView({ skillId, onBack, onStartTraining, onOpenTraini
         <span className="skill-data-toggle" aria-hidden="true">▾</span>
       </summary>
       <div className="skill-data-list">
-        {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>수집 시각</span><span>수집 핸들</span><span>길이</span><span>상태</span><span>보관</span></div>}
+        {skillDatasets.length > 0 && <div className="skill-data-row header" aria-hidden="true"><span>업로드 시각</span><span>수집 핸들</span><span className="dataset-length">길이</span><span>상태</span><span>보관</span></div>}
         {dataPage.pageItems.map((item) => { const meta = datasetStatusMeta[item.status]; const needsAttention = item.status === 'INVALID' || item.status === 'DELETE_FAILED'; return <div className="skill-data-row" key={item.id}>
-          <span>{item.date}</span>
-          <span>{item.umiId}</span>
-          <span>{item.duration}</span>
+          <DatasetWhen item={item} />
+          <span className="dataset-handle">{item.umiId}</span>
+          <span className="dataset-length">{item.duration}</span>
           <span><span className={`dataset-status ${meta.className}`}><i />{meta.label}</span></span>
           <span>{item.retentionDays}일 남음</span>
           {needsAttention && (item.blockingReasons[0] || item.recoveryAction !== 'NONE') && <small className="skill-data-reason">{item.blockingReasons[0]?.message ?? '확인이 필요해요.'}{item.recoveryAction !== 'NONE' ? ` · ${recoveryActionLabel[item.recoveryAction]}` : ''}</small>}

@@ -80,12 +80,21 @@ public class TrainingJobService {
     if (selected.stream().anyMatch(episode -> !episode.getUmiDeviceId().equals(device.getId())))
       throw new BusinessConflictException(
           "EPISODE_DEVICE_MISMATCH", "선택한 Episode와 UMI 장치가 일치하지 않습니다.");
+    List<TrainingEpisodeInput> trainingInputs = selected.stream().map(this::trainingInput).toList();
+    long mappingCount = trainingInputs.stream()
+        .filter(input -> input.role() == TrainingEpisodeRole.MAPPING).count();
+    long demonstrationCount = trainingInputs.stream()
+        .filter(input -> input.role() == TrainingEpisodeRole.DEMONSTRATION).count();
+    if (mappingCount != 1)
+      throw new BusinessConflictException(
+          "MAPPING_EPISODE_REQUIRED", "학습에는 Mapping Episode가 정확히 하나 필요합니다.");
+    if (demonstrationCount < 1)
+      throw new BusinessConflictException(
+          "DEMONSTRATION_EPISODE_REQUIRED", "학습에는 Demonstration Episode가 하나 이상 필요합니다.");
     TrainingMode trainingMode =
         request.trainingMode() == null ? TrainingMode.FROM_SCRATCH : request.trainingMode();
     SkillVersion baseVersion = validateBaseVersion(skill, trainingMode, request.baseSkillVersionId());
-    int expected = selected.size();
-    if (expected < 1)
-      throw new BusinessConflictException("INVALID_EPISODE_COUNT", "Episode 수는 1 이상이어야 합니다.");
+    int expected = trainingInputs.size();
     Map<String, Object> query = new LinkedHashMap<>();
     query.put("skillKey", skill.getSkillKey());
     query.put("inputMode", TrainingInputMode.EXISTING_EPISODES.name());
@@ -104,9 +113,11 @@ public class TrainingJobService {
                 trainingMode,
                 baseVersion == null ? null : baseVersion.getId()));
     job.planInput(expected, true);
-    for (int i = 0; i < selected.size(); i++)
-      attach(job, selected.get(i), i + 1, TrainingEpisodeRole.DEMONSTRATION);
-    job.fixInputSnapshotSha256(inputSnapshotHash(selected));
+    for (int i = 0; i < trainingInputs.size(); i++) {
+      TrainingEpisodeInput input = trainingInputs.get(i);
+      attach(job, input.episode(), input.role(), i + 1);
+    }
+    job.fixInputSnapshotSha256(inputSnapshotHash(trainingInputs));
     idempotency.complete(
         owner, "POST", "/api/v1/training-jobs", claim, 201, "TRAINING_JOB", job.getId());
     return map(job, skill);
@@ -136,7 +147,10 @@ public class TrainingJobService {
 
   @Transactional
   public JobResponse cancel(UUID owner, UUID id) {
-    TrainingJob job = owned(owner, id);
+    // Serialize cancellation with worker claim, heartbeat and event updates.
+    TrainingJob job = jobs.findByIdForUpdate(id)
+        .filter(value -> value.getOwnerId().equals(owner) && value.getDeletedAt() == null)
+        .orElseThrow(() -> new ResourceNotFoundException("TrainingJob"));
     try {
       job.requestCancel();
     } catch (IllegalStateException e) {
@@ -149,8 +163,7 @@ public class TrainingJobService {
   public List<EpisodeInputResponse> inputEpisodes(UUID owner, UUID id) {
     owned(owner, id);
     return inputs.findAllByIdTrainingJobIdOrderByInputOrder(id).stream()
-        .map(input -> new EpisodeInputResponse(
-            input.getId().episodeId(), input.getInputOrder(), input.getInputRole()))
+        .map(input -> new EpisodeInputResponse(input.getId().episodeId(), input.getInputOrder()))
         .toList();
   }
 
@@ -204,13 +217,13 @@ public class TrainingJobService {
   }
 
   private void attach(
-      TrainingJob job, Episode episode, int order, TrainingEpisodeRole inputRole) {
+      TrainingJob job, Episode episode, TrainingEpisodeRole role, int order) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     inputs.save(
         new TrainingJobEpisode(
             new TrainingJobEpisodeId(job.getId(), episode.getId()),
             order,
-            inputRole,
+            role,
             archive.getSha256(),
             episode.getContractVersion(),
             episode.getSource(),
@@ -220,12 +233,12 @@ public class TrainingJobService {
             clock.instant()));
   }
 
-  private String inputSnapshotHash(List<Episode> selected) {
+  private String inputSnapshotHash(List<TrainingEpisodeInput> selected) {
     try {
       StringBuilder canonical = new StringBuilder();
       for (int index = 0; index < selected.size(); index++) {
-        Episode episode = selected.get(index);
-        appendSnapshot(canonical, index + 1, TrainingEpisodeRole.DEMONSTRATION, episode);
+        TrainingEpisodeInput input = selected.get(index);
+        appendSnapshot(canonical, index + 1, input.episode(), input.role());
       }
       return HexFormat.of().formatHex(
           MessageDigest.getInstance("SHA-256")
@@ -235,19 +248,41 @@ public class TrainingJobService {
     }
   }
 
+  private record TrainingEpisodeInput(Episode episode, TrainingEpisodeRole role) {}
+
+  private TrainingEpisodeInput trainingInput(Episode episode) {
+    EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
+    Object qualityRole = episode.getQualitySummary().values().get("datasetRole");
+    Object archiveRole = archive.getManifestSummary().details().get("datasetRole");
+    String qualityValue = qualityRole == null ? null : qualityRole.toString();
+    String archiveValue = archiveRole == null ? null : archiveRole.toString();
+    if (qualityValue != null && archiveValue != null
+        && !qualityValue.equalsIgnoreCase(archiveValue))
+      throw new BusinessConflictException(
+          "EPISODE_ROLE_MISMATCH", "Episode 품질 정보와 Archive 역할 정보가 일치하지 않습니다.");
+    String value = qualityValue != null ? qualityValue : archiveValue;
+    try {
+      return new TrainingEpisodeInput(
+          episode, TrainingEpisodeRole.valueOf(Objects.requireNonNull(value).toUpperCase(Locale.ROOT)));
+    } catch (IllegalArgumentException | NullPointerException exception) {
+      throw new BusinessConflictException(
+          "EPISODE_ROLE_REQUIRED", "MAPPING 또는 DEMONSTRATION 역할이 없는 Episode가 있습니다.");
+    }
+  }
+
   private void appendSnapshot(
-      StringBuilder canonical, int order, TrainingEpisodeRole role, Episode episode) {
+      StringBuilder canonical, int order, Episode episode, TrainingEpisodeRole role) {
     EpisodeArchive archive = archives.findByEpisodeId(episode.getId()).orElseThrow();
     canonical
         .append(order)
-        .append('|')
-        .append(role)
         .append('|')
         .append(episode.getId())
         .append('|')
         .append(archive.getSha256())
         .append('|')
         .append(episode.getContractVersion())
+        .append('|')
+        .append(role.name())
         .append('\n');
   }
 

@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useRouter } from 'next/navigation';
 import type { AuthenticatedUser } from '@/types';
 import { logout as serverLogout, clearAuthentication, restoreAuthentication } from '@/services';
-import { ApiError, SESSION_EXPIRED_EVENT } from '@/services/client';
+import { ApiError, SESSION_EXPIRED_EVENT, SESSION_UPDATED_EVENT, SESSION_LOGGED_OUT_EVENT } from '@/services/client';
+import { useSessionActivity } from '@/hooks/useSessionActivity';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useToast } from '@/hooks/useToast';
 
@@ -28,17 +29,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState('');
+  useSessionActivity(authenticated);
 
-  /* eslint-disable react-hooks/set-state-in-effect -- mount 시 저장된 세션을 1회 복원한다. */
+  /* HttpOnly 쿠키로 서버 세션을 복원한다. */
   useEffect(() => {
-    const restoredUser = restoreAuthentication();
-    if (restoredUser) {
-      setCurrentUser(restoredUser);
-      setAuthenticated(true);
-    }
-    setInitializing(false);
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
+    let active = true;
+    const restore = async () => {
+      try {
+        const restoredUser = await restoreAuthentication();
+        if (active && restoredUser) {
+          setCurrentUser(restoredUser);
+          setAuthenticated(true);
+        }
+      } catch {
+        if (active) showToast('로그인 상태를 확인하지 못했어요. 연결이 복구되면 다시 확인합니다.');
+      } finally {
+        if (active) setInitializing(false);
+      }
+    };
+    void restore();
+    window.addEventListener('online', restore);
+    return () => { active = false; window.removeEventListener('online', restore); };
+  }, [showToast]);
 
   const login = useCallback((user: AuthenticatedUser) => {
     setCurrentUser(user);
@@ -64,6 +76,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [resetLearningDraft, router, showToast]);
 
   useEffect(() => {
+    const handleSessionUpdated = (event: Event) => {
+      setCurrentUser((event as CustomEvent<AuthenticatedUser>).detail);
+      setAuthenticated(true);
+      setSessionExpiredMessage('');
+    };
+    const handleLoggedOut = () => {
+      clearAuthentication();
+      resetLearningDraft();
+      setCurrentUser(null);
+      setAuthenticated(false);
+      setSessionExpiredMessage('');
+      router.replace('/');
+    };
     const handleSessionExpired = () => {
       clearAuthentication();
       resetLearningDraft();
@@ -73,7 +98,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace('/');
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
-    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    window.addEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated);
+    window.addEventListener(SESSION_LOGGED_OUT_EVENT, handleLoggedOut);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+      window.removeEventListener(SESSION_UPDATED_EVENT, handleSessionUpdated);
+      window.removeEventListener(SESSION_LOGGED_OUT_EVENT, handleLoggedOut);
+    };
   }, [resetLearningDraft, router]);
 
   const value = useMemo<AuthState>(

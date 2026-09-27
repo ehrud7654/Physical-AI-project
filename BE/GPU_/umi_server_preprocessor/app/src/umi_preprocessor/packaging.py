@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import tarfile
 
 
 def sha256(path: Path) -> str:
@@ -28,4 +29,17 @@ def package_training_input(dataset: Path) -> dict:
     }
     manifest_path = dataset.parent / f"{dataset.name.removesuffix('.zarr.zip')}_gpu_input.manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    return manifest
+    archive = dataset.parent / f"{dataset.name.removesuffix('.zarr.zip')}_gpu_input.tgz"
+    temporary = archive.with_suffix(archive.suffix + ".tmp")
+    with tarfile.open(temporary, "w:gz") as bundle:
+        bundle.add(dataset, arcname=dataset.name)
+        bundle.add(report, arcname=report.name)
+        bundle.add(manifest_path, arcname=manifest_path.name)
+    temporary.replace(archive)
+    return {
+        **manifest,
+        "manifest": str(manifest_path),
+        "manifest_sha256": sha256(manifest_path),
+        "archive": str(archive),
+        "archive_sha256": sha256(archive),
+    }

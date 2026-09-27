@@ -59,6 +59,17 @@ public class EpisodeUploadSession extends AuditableEntity {
     expiresAt = Objects.requireNonNull(expiration);
   }
   public void complete(Instant at) { status = EpisodeUploadStatus.VALIDATING; completedAt = at; }
+  public void retryValidation() {
+    if (status != EpisodeUploadStatus.FAILED
+        || !"VALIDATION_PROCESSING_FAILED".equals(validationErrorCode)) {
+      throw new IllegalStateException("only processing failures can retry validation");
+    }
+    status = EpisodeUploadStatus.VALIDATING;
+    qualityStatus = null;
+    validationErrorCode = null;
+    validationErrorMessage = null;
+    validatedAt = null;
+  }
   public void markReady(String qualityStatus, Instant at) {
     requireValidating();
     if (!"VALID".equals(qualityStatus) && !"WARNING".equals(qualityStatus)) {

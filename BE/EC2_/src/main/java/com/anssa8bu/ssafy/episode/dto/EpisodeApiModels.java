@@ -35,6 +35,13 @@ public final class EpisodeApiModels {
 
   public record ResourceError(String code, String message, RecoveryAction recoveryAction) {}
 
+  /** 목록 표시 및 학습 선택에 필요한 필드만 반환한다. 업로드 시각은 완료 접수 시각이다. */
+  public record EpisodeListResponse(
+      UUID id, String skillKey, String fileName, Instant uploadedAt, long durationMs,
+      UUID umiDeviceId, String umiDeviceHandleNumber, EpisodeStatus status,
+      Instant retentionExpiresAt, boolean trainable,
+      List<BlockingReason> blockingReasons, RecoveryAction recoveryAction) {}
+
   /** EPISODE-01 쿼리. 모두 선택이며 지정한 조건만 AND로 적용한다. */
   public record ListQuery(
       UUID umiDeviceId,

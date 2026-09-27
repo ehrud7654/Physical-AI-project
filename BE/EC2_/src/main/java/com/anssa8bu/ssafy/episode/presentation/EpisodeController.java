@@ -1,6 +1,7 @@
 package com.anssa8bu.ssafy.episode.presentation;
 
 import static com.anssa8bu.ssafy.episode.dto.EpisodeApiModels.EpisodeResponse;
+import static com.anssa8bu.ssafy.episode.dto.EpisodeApiModels.EpisodeListResponse;
 import static com.anssa8bu.ssafy.episode.dto.EpisodeApiModels.ListQuery;
 import static com.anssa8bu.ssafy.episode.dto.EpisodeApiModels.RetentionPolicyResponse;
 
@@ -27,7 +28,7 @@ public class EpisodeController {
 
   /** EPISODE-01 */
   @GetMapping
-  public ApiResponse<List<EpisodeResponse>> list(
+  public ApiResponse<List<EpisodeListResponse>> list(
       @AuthenticationPrincipal Jwt jwt, @ModelAttribute ListQuery query) {
     return ApiResponse.of(service.list(owner(jwt), query));
   }

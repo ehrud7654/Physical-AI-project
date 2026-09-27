@@ -1,9 +1,11 @@
 from datetime import timezone
 import json
+import logging
 
 from app.core.canonical_json import sha256_hex
 from app.core.config import Settings
 from app.core.time import utc_now
+from app.core.run_lifecycle import synchronized_run_changes
 from app.domain.enums.training_run_status import TrainingRunStatus
 from app.domain.errors import DomainError
 from app.domain.models.training_run import TrainingRun
@@ -26,6 +28,7 @@ class TrainingRunService:
         self.paths = paths
         self.settings = settings
 
+    @synchronized_run_changes
     def create(self, request: CreateTrainingRunRequest) -> tuple[TrainingRun, bool]:
         self._validate(request)
         run_id = f"{request.training_job_id}:{request.attempt}"
@@ -65,6 +68,10 @@ class TrainingRunService:
 
     def _validate(self, request: CreateTrainingRunRequest) -> None:
         if request.worker_id != self.settings.worker_id or request.storage_node_id != self.settings.storage_node_id:
+            logging.getLogger(__name__).warning(
+                "Worker scope mismatch: requested workerId=%s storageNodeId=%s; configured workerId=%s storageNodeId=%s",
+                request.worker_id, request.storage_node_id, self.settings.worker_id, self.settings.storage_node_id,
+            )
             raise DomainError(403, "WORKER_SCOPE_MISMATCH", "인증된 worker 또는 StorageNode 범위와 다릅니다.")
         if request.execution_lease_expires_at.astimezone(timezone.utc) <= utc_now():
             raise DomainError(409, "EXECUTION_LEASE_EXPIRED", "실행 임대가 이미 만료되었습니다.")

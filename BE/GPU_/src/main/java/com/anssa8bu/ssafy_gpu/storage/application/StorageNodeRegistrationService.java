@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class StorageNodeRegistrationService {
+  private static final org.slf4j.Logger log =
+      org.slf4j.LoggerFactory.getLogger(StorageNodeRegistrationService.class);
   private final StorageNodeClient client;
   private final WorkerProperties properties;
   private final LocalStorageMetrics metrics;
@@ -37,6 +39,8 @@ public class StorageNodeRegistrationService {
                 capacity.totalBytes(),
                 capacity.availableBytes()));
     state.storageNodeId(response.id());
+    log.info(
+        "StorageNode 등록 완료: workerId={}, storageNodeId={}", properties.workerId(), response.id());
     return response;
   }
 }

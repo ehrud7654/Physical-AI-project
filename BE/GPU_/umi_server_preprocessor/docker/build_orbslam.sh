@@ -17,6 +17,9 @@ apply_once() {
 for patch in "$patches"/*.patch; do
   apply_once "$patch"
 done
+# Sophus enables -Werror for its test targets. GCC 13 reports a known Eigen SIMD
+# array-bounds false positive, so keep the warning visible without failing the image build.
+sed -i 's/-Werror/-Wno-error=array-bounds/g' "$root/Thirdparty/Sophus/CMakeLists.txt"
 sed -i "s/^make -j.*$/make -j$jobs/; s/^mkdir build$/mkdir -p build/" "$root/build.sh"
 (cd "$root" && bash build.sh)
 test -x "$root/Examples/Monocular-Inertial/gopro_slam"

@@ -41,7 +41,7 @@ class EpisodeQueryServiceIntegrationTest extends IntegrationTestBase {
     ListQuery all =
         new ListQuery(null, null, null, null, null, null, null, null, null, null, null, null);
     assertThat(service.list(g.userId(), all))
-        .extracting(EpisodeResponse::id)
+        .extracting(EpisodeListResponse::id)
         .containsExactly(g.episodeId());
     ListQuery bySkill =
         new ListQuery(

@@ -1,4 +1,5 @@
 from app.core.time import utc_now
+from app.core.run_lifecycle import synchronized_run_changes
 from app.domain.enums.training_run_status import TrainingRunStatus
 from app.domain.errors import RunNotFound
 from app.domain.models.training_run import TrainingRun
@@ -13,6 +14,7 @@ class CancellationService:
         self.controller = controller
         self.gpu = gpu
 
+    @synchronized_run_changes
     def cancel(self, run_id: str, reason: str) -> tuple[TrainingRun, bool]:
         run = self.repository.get(run_id)
         if run is None:

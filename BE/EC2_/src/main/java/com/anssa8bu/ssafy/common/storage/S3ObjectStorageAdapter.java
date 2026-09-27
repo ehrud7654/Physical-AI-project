@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.nio.file.Path;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
@@ -52,10 +53,8 @@ public class S3ObjectStorageAdapter implements ObjectStoragePort {
   }
 
   @Override
-  public byte[] readPrefix(String bucket, String key, int length) {
-    if (length < 1) throw new IllegalArgumentException("length must be positive");
-    var request=GetObjectRequest.builder().bucket(bucket).key(key)
-        .range("bytes=0-"+(length-1)).build();
-    return client.getObjectAsBytes(request).asByteArray();
+  public void download(String bucket, String key, Path destination) {
+    var request = GetObjectRequest.builder().bucket(bucket).key(key).build();
+    client.getObject(request, destination);
   }
 }

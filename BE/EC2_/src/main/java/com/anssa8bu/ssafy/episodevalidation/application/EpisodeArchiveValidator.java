@@ -16,6 +16,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -111,7 +112,8 @@ public class EpisodeArchiveValidator {
         Map.copyOf(coordinateSystem),
         Map.of("time", "ns", "acceleration", "m/s^2", "angularVelocity", "rad/s"),
         Map.copyOf(quality),
-        Map.copyOf(manifest),
+        // Valid manifests may contain optional JSON null values (for example error: null).
+        Collections.unmodifiableMap(new LinkedHashMap<>(manifest)),
         archive.hashes(),
         archive.uncompressedBytes(),
         archive.entryCount());

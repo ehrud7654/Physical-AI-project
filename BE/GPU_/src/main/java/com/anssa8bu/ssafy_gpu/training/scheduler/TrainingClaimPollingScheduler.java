@@ -98,17 +98,18 @@ public class TrainingClaimPollingScheduler {
             "학습 취소 요청 수신: trainingJobId={}, gpuIndex={}",
             assignment.trainingJobId(),
             assignment.gpuIndex());
-        if (assignment.runId() != null) fastApi.cancel(assignment.runId());
+        state.renew(assignment.gpuIndex(), response.leaseExpiresAt());
+        inputPreparation.cancel(assignment);
+        return;
       }
       state.renew(assignment.gpuIndex(), response.leaseExpiresAt());
-      if (assignment.runId() != null)
+      if (assignment.runId() != null && !fastApi.isTerminal(assignment.runId()))
         fastApi.renewLease(assignment.runId(), response.leaseExpiresAt());
     } catch (RuntimeException e) {
       if (assignment.leaseExpiresAt() != null
-          && !assignment.leaseExpiresAt().isAfter(java.time.Instant.now())
-          && assignment.runId() != null) {
+          && !assignment.leaseExpiresAt().isAfter(java.time.Instant.now())) {
         try {
-          fastApi.cancel(assignment.runId());
+          inputPreparation.cancel(assignment);
         } catch (RuntimeException cancelFailure) {
           e.addSuppressed(cancelFailure);
         }

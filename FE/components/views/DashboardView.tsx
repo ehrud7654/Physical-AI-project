@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { DashboardData, DashboardRobotStatus, DeviceType, RobotStatus, TrainingStatus, View } from '@/types';
 import { fetchDashboard } from '@/services';
 import { ActiveRobotExecutionsCard } from '@/components/ActiveRobotExecutionsCard';
-export function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { onNavigate: (view: View) => void; onOpenDevices: (tab: DeviceType) => void; onSelectRobot: (id: string) => void }) {
+export function DashboardView({ onNavigate, onOpenDevices, onSelectRobot, onOpenWork }: { onNavigate: (view: View) => void; onOpenDevices: (tab: DeviceType) => void; onSelectRobot: (id: string) => void; onOpenWork: (workId: string, robotId: string) => void }) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -25,7 +25,7 @@ export function DashboardView({ onNavigate, onOpenDevices, onSelectRobot }: { on
   const { summary, robots, recentTrainings } = dashboard;
   return <>
     <div className="page-heading title-divider"><div><h1>대시 보드</h1></div></div>
-    <ActiveRobotExecutionsCard />
+    <ActiveRobotExecutionsCard onOpenWork={onOpenWork} />
     <div className="overview-cards">
       <button onClick={() => onOpenDevices('umi')}><div><small>등록된 수집 핸들</small><strong>{summary.umi.totalCount}<em>개</em></strong></div></button>
       <button onClick={() => onOpenDevices('robot')}><div><small>등록된 로봇</small><strong>{summary.robots.totalCount}<em>개</em></strong><p><i className="online-dot" /> {summary.robots.availableCount}개 사용 가능</p></div></button>

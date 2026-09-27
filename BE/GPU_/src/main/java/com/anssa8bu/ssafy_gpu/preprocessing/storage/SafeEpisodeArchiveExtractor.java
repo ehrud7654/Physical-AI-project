@@ -10,8 +10,14 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SafeEpisodeArchiveExtractor {
-  private static final Set<String> REQUIRED = Set.of(
-      "manifest.json", "frames.csv", "encoded.csv", "accelerometer.csv", "gyroscope.csv", "video.mp4");
+  private static final Set<String> REQUIRED =
+      Set.of(
+          "manifest.json",
+          "frames.csv",
+          "encoded.csv",
+          "accelerometer.csv",
+          "gyroscope.csv",
+          "video.mp4");
   private final UmiPreprocessorProperties properties;
 
   public SafeEpisodeArchiveExtractor(UmiPreprocessorProperties properties) {
@@ -33,23 +39,32 @@ public class SafeEpisodeArchiveExtractor {
         ZipEntry entry;
         byte[] buffer = new byte[64 * 1024];
         while ((entry = input.getNextEntry()) != null) {
-          if (++count > properties.maxArchiveEntries()) throw new IllegalStateException("ZIP 항목 수가 제한을 초과했습니다.");
+          if (++count > properties.maxArchiveEntries())
+            throw new IllegalStateException("ZIP 항목 수가 제한을 초과했습니다.");
           String name = entry.getName();
-          if (entry.isDirectory() || name.contains("/") || name.contains("\\") || !REQUIRED.contains(name)
+          if (entry.isDirectory()
+              || name.contains("/")
+              || name.contains("\\")
+              || !REQUIRED.contains(name)
               || !names.add(name)) throw new IllegalStateException("허용되지 않은 ZIP 항목입니다: " + name);
           Path output = temporary.resolve(name).normalize();
-          if (!output.getParent().equals(temporary)) throw new IllegalStateException("ZIP 경로 이탈이 감지되었습니다.");
+          if (!output.getParent().equals(temporary))
+            throw new IllegalStateException("ZIP 경로 이탈이 감지되었습니다.");
           try (OutputStream out = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW)) {
             int read;
             while ((read = input.read(buffer)) != -1) {
+              if (Thread.currentThread().isInterrupted())
+                throw new java.util.concurrent.CancellationException("Episode ZIP 해제가 취소되었습니다.");
               total += read;
-              if (total > properties.maxExtractedBytes()) throw new IllegalStateException("ZIP 해제 크기가 제한을 초과했습니다.");
+              if (total > properties.maxExtractedBytes())
+                throw new IllegalStateException("ZIP 해제 크기가 제한을 초과했습니다.");
               out.write(buffer, 0, read);
             }
           }
         }
       }
-      if (!names.equals(REQUIRED)) throw new IllegalStateException("Episode ZIP 필수 파일 구성이 일치하지 않습니다.");
+      if (!names.equals(REQUIRED))
+        throw new IllegalStateException("Episode ZIP 필수 파일 구성이 일치하지 않습니다.");
       deleteTree(destination);
       try {
         Files.move(temporary, destination, StandardCopyOption.ATOMIC_MOVE);
@@ -62,8 +77,10 @@ public class SafeEpisodeArchiveExtractor {
   }
 
   private boolean isComplete(Path path) {
-    if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)) return false;
-    return REQUIRED.stream().allMatch(name -> Files.isRegularFile(path.resolve(name), LinkOption.NOFOLLOW_LINKS));
+    if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path))
+      return false;
+    return REQUIRED.stream()
+        .allMatch(name -> Files.isRegularFile(path.resolve(name), LinkOption.NOFOLLOW_LINKS));
   }
 
   private void deleteTree(Path root) throws IOException {

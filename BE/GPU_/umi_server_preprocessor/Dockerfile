@@ -4,6 +4,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG ORB_SLAM_COMMIT=b741dca39015330ef4bcc3a85f89493503ade04b
 ARG JOBS=4
 
+LABEL org.opencontainers.image.title="SSAFY UMI ORB-SLAM Atlas Preprocessor" \
+      org.opencontainers.image.version="2026.09.23-orbslam-v3" \
+      org.opencontainers.image.revision="b741dca39015330ef4bcc3a85f89493503ade04b"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git pkg-config ninja-build python3 python3-venv \
     libopencv-dev libeigen3-dev libboost-dev libboost-serialization-dev libssl-dev \
@@ -26,6 +30,9 @@ RUN git clone https://github.com/cheng-chi/ORB_SLAM3.git /opt/ORB_SLAM3 && \
     rm -rf /opt/ORB_SLAM3/.git
 
 COPY dataset_builder /opt/umi/dataset_builder
+COPY track_a /opt/umi/track_a
+COPY backend_contract.json SOURCE_PROVENANCE.txt /opt/umi/handoff/
+COPY backend /opt/umi/handoff/backend
 COPY app /opt/umi/app
 
 ENV PATH=/opt/venv/bin:$PATH \
@@ -33,6 +40,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     ORB_SLAM_BIN=/opt/ORB_SLAM3/Examples/Monocular-Inertial/gopro_slam \
     ORB_SLAM_VOCAB=/opt/ORB_SLAM3/Vocabulary/ORBvoc.txt \
     LD_LIBRARY_PATH=/opt/ORB_SLAM3/lib:/opt/ORB_SLAM3/Thirdparty/DBoW2/lib:/opt/ORB_SLAM3/Thirdparty/g2o/lib:/opt/ORB_SLAM3/Thirdparty/Pangolin/build \
+    UMI_TRACK_A_ROOT=/opt/umi/track_a \
+    UMI_BACKEND_CONTRACT=/opt/umi/handoff/backend_contract.json \
     UMI_JOBS_ROOT=/jobs \
     UMI_PROFILES_ROOT=/profiles
 

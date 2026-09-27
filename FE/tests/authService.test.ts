@@ -30,7 +30,6 @@ test('signup sends actual credentials and surfaces duplicate conflicts', async (
     return Response.json({ data: user }, { status: 201 });
   };
   assert.deepEqual(await signup(' Test ', ' TEST@EXAMPLE.COM ', 'password'), user);
-  assert.equal(restoreAuthentication(), null);
   globalThis.fetch = async () => Response.json({ code: 'EMAIL_ALREADY_EXISTS', message: '이미 사용 중인 이메일입니다.' }, { status: 409 });
   await assert.rejects(signup('Test', user.email, 'password'), /이미 사용/);
 });
@@ -43,45 +42,50 @@ beforeEach(() => {
     removeItem: (key: string) => stored.delete(key),
   } });
   Object.defineProperty(globalThis, 'window', { configurable: true, value: new EventTarget() });
+  Object.defineProperty(globalThis, 'BroadcastChannel', { configurable: true, value: undefined });
   clearAuthentication();
+  assert.ok(!stored.has('ssafy:auth-user'));
 });
 
 async function signIn() {
-  globalThis.fetch = async () => Response.json({ data: { accessToken: 'test-token', expiresIn: 900, user } });
+  globalThis.fetch = async () => Response.json({ data: { accessToken: 'test-token', expiresIn: 900, user, sessionExpiresAt: new Date(Date.now() + 1800000).toISOString(), absoluteExpiresAt: new Date(Date.now() + 28800000).toISOString() } });
   await login(user.email, 'password');
 }
 
-test('logout sends the existing token before clearing local authentication', async () => {
+test('logout uses the refresh cookie without depending on an access token', async () => {
   await signIn();
   globalThis.fetch = async (url, init) => {
     assert.ok(String(url).endsWith('/auth/logout'));
     assert.equal(init?.method, 'POST');
-    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer test-token');
-    assert.ok(stored.has('ssafy:auth-session'));
+    assert.equal(new Headers(init?.headers).get('Authorization'), null);
+    assert.equal(init?.credentials, 'include');
+    assert.equal(new Headers(init?.headers).get('X-Session-Request'), '1');
+    assert.ok(!stored.has('ssafy:auth-session'));
+    assert.ok(stored.has('ssafy:auth-user'));
     return new Response(null, { status: 204 });
   };
   await logout();
-  assert.equal(restoreAuthentication(), null);
-  assert.equal(stored.size, 0);
+  assert.ok(!stored.has('ssafy:auth-user'));
+  assert.ok(!stored.has('ssafy:auth-session'));
 });
 
 test('Redis/server failure preserves authentication so logout can be retried', async () => {
   await signIn();
   globalThis.fetch = async () => Response.json({ code: 'AUTH_SESSION_UNAVAILABLE' }, { status: 503 });
   await assert.rejects(logout());
-  assert.deepEqual(restoreAuthentication(), user);
+  assert.deepEqual(await restoreAuthentication(), user);
 });
 
 test('network failure preserves authentication and does not report logout success', async () => {
   await signIn();
   globalThis.fetch = async () => { throw new TypeError('Network unavailable'); };
-  await assert.rejects(logout(), /Network unavailable/);
-  assert.deepEqual(restoreAuthentication(), user);
+  await assert.rejects(logout(), /네트워크 상태/);
+  assert.deepEqual(await restoreAuthentication(), user);
 });
 
 test('local expiry cleanup never calls the logout endpoint', async () => {
   await signIn();
   globalThis.fetch = async () => { throw new Error('Unexpected network request'); };
   clearAuthentication();
-  assert.equal(restoreAuthentication(), null);
+  assert.ok(!stored.has('ssafy:auth-user'));
 });

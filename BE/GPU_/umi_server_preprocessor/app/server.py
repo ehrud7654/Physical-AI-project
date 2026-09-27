@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 from threading import Lock
+import psutil
 
 from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ PROFILES_ROOT = Path(os.environ.get("UMI_PROFILES_ROOT", "/profiles"))
 DEFAULT_PROFILE = "s22_20260921"
 processes: dict[str, subprocess.Popen] = {}
 lock = Lock()
-app = FastAPI(title="UMI Preprocessor", version="1.0.0")
+app = FastAPI(title="UMI Preprocessor", version="1.1.0")
 
 
 class JobRequest(BaseModel):
@@ -34,6 +35,12 @@ class JobRequest(BaseModel):
     dataset_name: str = "dataset"
     calibration_profile: str = DEFAULT_PROFILE
     require_mapping: bool = True
+    mapping_session_id: str | None = None
+    demonstration_session_ids: list[str] | None = None
+    external_atlas_path: str | None = None
+    external_alignment_path: str | None = None
+    external_atlas_sha256: str | None = None
+    external_alignment_sha256: str | None = None
 
 
 def profile_path(profile: str) -> Path:
@@ -52,6 +59,17 @@ def read_status(root: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"status": "not_started"}
 
 
+def job_local_file(root: Path, relative: str, field: str) -> Path:
+    """Resolve a request path below one job root; absolute/escaping paths are rejected."""
+    candidate = Path(relative)
+    if candidate.is_absolute():
+        raise ValueError(f"{field} must be relative to the job directory")
+    target = (root / candidate).resolve()
+    if root.resolve() not in target.parents or not target.is_file():
+        raise ValueError(f"{field} is missing or escapes the job directory: {relative}")
+    return target
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -68,7 +86,39 @@ def start_job(request: JobRequest) -> dict:
     if not (root / "raw").is_dir():
         raise HTTPException(status_code=400, detail=f"RAW input is missing: {root / 'raw'}")
 
+    try:
+        if request.require_mapping is not True:
+            raise ValueError("backend training jobs require a shared Mapping/Atlas")
+        if not request.demonstration_session_ids:
+            raise ValueError("demonstrationSessionIds must explicitly list at least one session")
+        if request.mapping_session_id is None and request.external_atlas_path is None:
+            raise ValueError("mappingSessionId or external Atlas must be supplied explicitly")
+        if request.mapping_session_id is not None:
+            validate_name(request.mapping_session_id, "mappingSessionId")
+        if request.demonstration_session_ids:
+            for session_id in request.demonstration_session_ids:
+                validate_name(session_id, "demonstrationSessionId")
+        external_atlas = (
+            job_local_file(root, request.external_atlas_path, "externalAtlasPath")
+            if request.external_atlas_path else None
+        )
+        external_alignment = (
+            job_local_file(root, request.external_alignment_path, "externalAlignmentPath")
+            if request.external_alignment_path else None
+        )
+        if (external_atlas is None) != (external_alignment is None):
+            raise ValueError("externalAtlasPath and externalAlignmentPath must be supplied together")
+        if external_atlas is not None and request.mapping_session_id is not None:
+            raise ValueError("choose either mappingSessionId or external Atlas, not both")
+        if external_atlas is not None:
+            if not request.external_atlas_sha256 or not request.external_alignment_sha256:
+                raise ValueError("external Atlas use requires both SHA-256 values")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     with lock:
+        if (root / ".cancel-requested").exists():
+            raise HTTPException(status_code=409, detail="job was cancelled")
         for job_id, process in list(processes.items()):
             if process.poll() is not None:
                 processes.pop(job_id)
@@ -82,6 +132,17 @@ def start_job(request: JobRequest) -> dict:
             "--config-dir", str(profile),
             "--require-mapping" if request.require_mapping else "--no-require-mapping",
         ]
+        if request.mapping_session_id is not None:
+            command.extend(["--mapping-session-id", request.mapping_session_id])
+        for session_id in request.demonstration_session_ids or []:
+            command.extend(["--demonstration-session-id", session_id])
+        if external_atlas is not None:
+            command.extend(["--external-atlas", str(external_atlas)])
+            command.extend(["--external-alignment", str(external_alignment)])
+            if request.external_atlas_sha256:
+                command.extend(["--external-atlas-sha256", request.external_atlas_sha256])
+            if request.external_alignment_sha256:
+                command.extend(["--external-alignment-sha256", request.external_alignment_sha256])
         root.mkdir(parents=True, exist_ok=True)
         with (root / "worker.log").open("ab") as output:
             processes[request.job_id] = subprocess.Popen(
@@ -113,10 +174,31 @@ def cancel_job(job_id: str) -> Response:
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     with lock:
+        # Persist the intent even if cancellation beats start_job to the server.
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".cancel-requested").touch()
         process = processes.get(job_id)
-        if process is None or process.poll() is not None:
-            raise HTTPException(status_code=409, detail="job is not running")
-        os.killpg(process.pid, signal.SIGTERM)
+        if process is not None and process.poll() is None:
+            try:
+                # Freeze the parent before enumerating children. SLAM creates its own
+                # session, so killing only the pipeline's process group leaves it alive.
+                parent = psutil.Process(process.pid)
+                parent.suspend()
+                descendants = parent.children(recursive=True)
+                groups = {process.pid}
+                for child in descendants:
+                    try:
+                        groups.add(os.getpgid(child.pid))
+                    except ProcessLookupError:
+                        pass
+                for group in groups:
+                    try:
+                        os.killpg(group, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=10)
+            except psutil.NoSuchProcess:
+                process.wait(timeout=10)
         processes.pop(job_id, None)
         state = read_status(root)
         state.update(status="cancelled")

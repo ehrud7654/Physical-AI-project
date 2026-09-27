@@ -4,6 +4,7 @@ import static com.anssa8bu.ssafy_gpu.checkpoint.dto.CheckpointModels.*;
 
 import com.anssa8bu.ssafy_gpu.checkpoint.client.CheckpointClient;
 import com.anssa8bu.ssafy_gpu.checkpoint.persistence.CheckpointTransferJournal;
+import com.anssa8bu.ssafy_gpu.checkpoint.storage.CheckpointPackageValidator;
 import com.anssa8bu.ssafy_gpu.checkpoint.storage.PresignedCheckpointUploader;
 import com.anssa8bu.ssafy_gpu.common.config.CheckpointUploadProperties;
 import com.anssa8bu.ssafy_gpu.common.config.WorkerProperties;
@@ -22,6 +23,7 @@ public class CheckpointUploadService {
   private final WorkerRuntimeState state;
   private final CheckpointUploadProperties properties;
   private final CheckpointTransferJournal journal;
+  private final CheckpointPackageValidator packageValidator;
 
   public CheckpointUploadService(
       CheckpointClient client,
@@ -30,7 +32,8 @@ public class CheckpointUploadService {
       WorkerProperties worker,
       WorkerRuntimeState state,
       CheckpointUploadProperties properties,
-      CheckpointTransferJournal journal) {
+      CheckpointTransferJournal journal,
+      CheckpointPackageValidator packageValidator) {
     this.client = client;
     this.uploader = uploader;
     this.hashes = hashes;
@@ -38,6 +41,7 @@ public class CheckpointUploadService {
     this.state = state;
     this.properties = properties;
     this.journal = journal;
+    this.packageValidator = packageValidator;
   }
 
   public UploadResult uploadAndComplete(
@@ -46,8 +50,11 @@ public class CheckpointUploadService {
       String leaseToken,
       String uploadIdempotencyKey,
       String completeIdempotencyKey,
-      LocalCheckpoint checkpoint) {
+      LocalCheckpoint checkpoint,
+      Runnable afterUpload) {
     Path file = validatePath(checkpoint.path());
+    packageValidator.validate(file);
+    validateMetadata(checkpoint.metadata());
     try {
       long size = Files.size(file);
       if (size <= 0) throw new IllegalArgumentException("CKPT 파일이 비어 있습니다.");
@@ -83,6 +90,7 @@ public class CheckpointUploadService {
         uploader.upload(session, file, sha256);
         journal.uploaded(jobId, attempt);
       }
+      afterUpload.run();
       CompleteResponse complete =
           client.complete(
               jobId,
@@ -104,6 +112,12 @@ public class CheckpointUploadService {
     } finally {
       state.uploadFinished();
     }
+  }
+
+  private void validateMetadata(Metadata metadata) {
+    if (metadata == null) throw new IllegalArgumentException("CKPT metadata가 필요합니다.");
+    if (metadata.nParams() <= 1)
+      throw new IllegalArgumentException("CKPT nParams는 실제 모델에서 계산한 1보다 큰 값이어야 합니다.");
   }
 
   private Path validatePath(Path path) {

@@ -39,8 +39,8 @@ public class BaseModelDownloader {
             .resolve("base-model")
             .toAbsolutePath()
             .normalize();
-    Path target = directory.resolve("model.ckpt").normalize();
-    Path temporary = directory.resolve("model.ckpt.part").normalize();
+    Path target = directory.resolve("model.tgz").normalize();
+    Path temporary = directory.resolve("model.tgz.part").normalize();
     try {
       Files.createDirectories(directory);
       log.info(

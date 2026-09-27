@@ -29,6 +29,7 @@ public class SecurityConfig {
   private static final String[] PUBLIC_ENDPOINTS = {
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
+    "/api/v1/auth/logout",
     "/api/v1/auth/signup",
     "/api/v1/auth/email-availability",
     "/api/v1/device-auth/token",
@@ -73,6 +74,15 @@ public class SecurityConfig {
                     .hasAuthority("SCOPE_user"))
         .oauth2ResourceServer(
             oauth2 -> {
+              var bearerResolver = new org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver();
+              oauth2.bearerTokenResolver(request -> {
+                String path = request.getServletPath();
+                if (path.equals("/api/v1/auth/refresh") || path.equals("/api/v1/auth/login")) return null;
+                if (path.equals("/api/v1/auth/logout") && request.getCookies() != null
+                    && java.util.Arrays.stream(request.getCookies()).anyMatch(c ->
+                        com.anssa8bu.ssafy.auth.security.SessionCookieService.NAME.equals(c.getName()))) return null;
+                return bearerResolver.resolve(request);
+              });
               oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)).authenticationEntryPoint(entryPoint);
               // The default failure handler rethrows AuthenticationServiceException.
               // Route Redis outages to the explicit 503 response instead.
@@ -95,8 +105,8 @@ public class SecurityConfig {
     CorsConfiguration configuration = new CorsConfiguration();
     configuration.setAllowedOrigins(allowedOrigins);
     configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
-    configuration.setAllowCredentials(false);
+    configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Session-Request"));
+    configuration.setAllowCredentials(true);
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/api/**", configuration);

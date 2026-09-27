@@ -47,8 +47,8 @@ public class FastApiRunMonitorScheduler {
   private void inspect(ActiveTraining assignment) {
     try {
       var run = fastApi.get(assignment.runId());
-      if (run.sequence() <= assignment.lastForwardedSequence()) return;
       long eventSequence = run.sequence() + 1;
+      if (eventSequence <= assignment.lastForwardedSequence()) return;
       String eventId = "fastapi-" + assignment.runId() + "-" + run.sequence();
       switch (run.status()) {
         case "STARTING" -> {
@@ -98,7 +98,7 @@ public class FastApiRunMonitorScheduler {
         }
         default -> throw new IllegalStateException("알 수 없는 FastAPI 상태: " + run.status());
       }
-      state.forwarded(assignment.gpuIndex(), run.sequence());
+      state.forwarded(assignment.gpuIndex(), eventSequence);
     } catch (RuntimeException e) {
       log.warn(
           "FastAPI 학습 상태 조회 또는 EC2 이벤트 전달 실패: trainingJobId={}, runId={}",

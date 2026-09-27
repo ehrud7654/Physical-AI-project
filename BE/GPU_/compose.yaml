@@ -22,12 +22,12 @@ services:
       GPU_GIT_REVISION: ${GPU_GIT_REVISION:-local}
 
       FASTAPI_BASE_URL: http://training-api:8000
-      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:-local-fastapi-token}
-      FASTAPI_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:-local-callback-token}
+      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:?FASTAPI_SERVICE_TOKEN is required}
+      FASTAPI_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:?GPU_SPRING_CALLBACK_TOKEN is required}
       FASTAPI_CONNECT_TIMEOUT: ${FASTAPI_CONNECT_TIMEOUT:-3s}
       FASTAPI_READ_TIMEOUT: ${FASTAPI_READ_TIMEOUT:-15s}
       FASTAPI_MONITOR_INTERVAL: ${FASTAPI_MONITOR_INTERVAL:-2s}
-      CHECKPOINT_CONTENT_TYPE: ${CHECKPOINT_CONTENT_TYPE:-application/octet-stream}
+      CHECKPOINT_CONTENT_TYPE: ${CHECKPOINT_CONTENT_TYPE:-application/x-tar}
       CHECKPOINT_UPLOAD_TIMEOUT: ${CHECKPOINT_UPLOAD_TIMEOUT:-10m}
       CHECKPOINT_UPLOAD_MAX_ATTEMPTS: ${CHECKPOINT_UPLOAD_MAX_ATTEMPTS:-3}
       GPU_SHARED_STORAGE_ROOT: /data/ssafy-gpu
@@ -40,7 +40,7 @@ services:
       UMI_PREPROCESSOR_POLL_INTERVAL: ${UMI_PREPROCESSOR_POLL_INTERVAL:-2s}
       UMI_PREPROCESSOR_TIMEOUT: ${UMI_PREPROCESSOR_TIMEOUT:-30m}
       UMI_PREPROCESSOR_CALIBRATION_PROFILE: ${UMI_PREPROCESSOR_CALIBRATION_PROFILE:-s22_20260921}
-      UMI_PREPROCESSOR_REQUIRE_MAPPING: ${UMI_PREPROCESSOR_REQUIRE_MAPPING:-false}
+      UMI_PREPROCESSOR_REQUIRE_MAPPING: ${UMI_PREPROCESSOR_REQUIRE_MAPPING:-true}
     volumes:
       - gpu_data:/data/ssafy-gpu
     healthcheck:
@@ -78,11 +78,11 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:-local-fastapi-token}
+      FASTAPI_SERVICE_TOKEN: ${FASTAPI_SERVICE_TOKEN:?FASTAPI_SERVICE_TOKEN is required}
       GPU_SPRING_BASE_URL: http://gpu-backend:8081
-      GPU_SPRING_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:-local-callback-token}
-      WORKER_ID: ${WORKER_ID:-ssafy_gpu_01}
-      STORAGE_NODE_ID: ${STORAGE_NODE_ID:-18000000-0000-4000-8000-000000000002}
+      GPU_SPRING_CALLBACK_TOKEN: ${GPU_SPRING_CALLBACK_TOKEN:?GPU_SPRING_CALLBACK_TOKEN is required}
+      WORKER_ID: ${GPU_WORKER_ID:-ssafy_gpu_laptop_01}
+      STORAGE_NODE_ID: ${STORAGE_NODE_ID:?Set STORAGE_NODE_ID to the id registered in EC2}
       SHARED_STORAGE_ROOT: /data/ssafy-gpu
       RUN_JOURNAL_ROOT: /data/ssafy-gpu/journal/training-runs
       # The host grants this project physical GPU 2 only. Docker exposes that
@@ -94,20 +94,31 @@ services:
       TRAINING_COMMAND_DURATION_SECONDS: ${TRAINING_COMMAND_DURATION_SECONDS:-5}
       ROBOT_PROFILE_ID: ${ROBOT_PROFILE_ID:-52000000-0000-4000-8000-000000000001}
       MODEL_FRAMEWORK: ${MODEL_FRAMEWORK:-PyTorch}
-      MODEL_FRAMEWORK_VERSION: ${MODEL_FRAMEWORK_VERSION:-integration-pending}
+      MODEL_FRAMEWORK_VERSION: ${MODEL_FRAMEWORK_VERSION:-umi-d095ba9590df789df5189eea5ee7e431689038a6}
       MODEL_CONTRACT_VERSION: ${MODEL_CONTRACT_VERSION:-umi-policy-v1}
       MODEL_ACTION_SPACE: ${MODEL_ACTION_SPACE:-EEF_RELATIVE_ROT6D}
       MODEL_ACTION_SPEC_JSON: '${MODEL_ACTION_SPEC_JSON}'
       MODEL_RUNTIME_SPEC_JSON: '${MODEL_RUNTIME_SPEC_JSON}'
-      TRAINING_EPOCHS: ${TRAINING_EPOCHS:-60}
-      MODEL_PARAMETER_COUNT: ${MODEL_PARAMETER_COUNT:-1}
-      MODEL_CONTROL_RATE_HZ: ${MODEL_CONTROL_RATE_HZ:-30}
-      MODEL_CAMERA_NAMES_JSON: '${MODEL_CAMERA_NAMES_JSON:-["front"]}'
-      MODEL_INPUT_SCHEMA_JSON: '${MODEL_INPUT_SCHEMA_JSON:-{"stateShape":[6]}}'
-      MODEL_OUTPUT_SCHEMA_JSON: '${MODEL_OUTPUT_SCHEMA_JSON:-{"actionShape":[6]}}'
+      TRAINING_EPOCHS: ${TRAINING_EPOCHS:-120}
+      TRAINING_BATCH_SIZE: ${TRAINING_BATCH_SIZE:-64}
+      TRAINING_EVAL_BATCH_SIZE: ${TRAINING_EVAL_BATCH_SIZE:-64}
+      TRAINING_SEED: ${TRAINING_SEED:-}
+      TRAINING_NATIVE_HZ: ${TRAINING_NATIVE_HZ:-30}
+      UMI_TRAINING_BUNDLE_ROOT: ${UMI_TRAINING_BUNDLE_ROOT:-/opt/umi-training}
+      UMI_ROOT: ${UMI_ROOT:-/opt/umi-training/third_party/umi}
+      UMI_TRAINING_PYTHON: ${UMI_TRAINING_PYTHON:-/opt/umi-training/.venv/bin/python}
+      UMI_TRAINING_PROFILE: ${UMI_TRAINING_PROFILE:-/opt/umi-training/03_umi_policy_trainer/configs/policy_resnet18_gpu.yaml}
+      UMI_TRAINING_RUNS_DIR: ${UMI_TRAINING_RUNS_DIR:-trainer/runs}
+      WANDB_MODE: ${WANDB_MODE:-disabled}
+      HYDRA_FULL_ERROR: ${HYDRA_FULL_ERROR:-1}
+      MODEL_CONTROL_RATE_HZ: ${MODEL_CONTROL_RATE_HZ:-10}
+      MODEL_CAMERA_NAMES_JSON: '${MODEL_CAMERA_NAMES_JSON:-["camera0_rgb"]}'
+      MODEL_INPUT_SCHEMA_JSON: '${MODEL_INPUT_SCHEMA_JSON:-{"camera0_rgb":{"shape":[2,3,224,224]},"robot0_eef_pos":{"shape":[2,3]},"robot0_eef_rot_axis_angle":{"shape":[2,6]},"robot0_eef_rot_axis_angle_wrt_start":{"shape":[2,6]},"robot0_gripper_width":{"shape":[2,1]}}}'
+      MODEL_OUTPUT_SCHEMA_JSON: '${MODEL_OUTPUT_SCHEMA_JSON:-{"actionShape":[16,10]}}'
     volumes:
       - gpu_data:/data/ssafy-gpu
       - model_cache:/home/fastapi/.cache
+      - ${UMI_TRAINING_BUNDLE_DIR:-./training_bundle}:/opt/umi-training:ro
     deploy:
       resources:
         reservations:
@@ -185,7 +196,7 @@ services:
       dockerfile: Dockerfile
       args:
         JOBS: "4"
-    image: umi-server-preprocessor:1.0.0
+    image: umi-server-preprocessor:2026.09.23-orbslam-v3
     init: true
     restart: unless-stopped
     ports:

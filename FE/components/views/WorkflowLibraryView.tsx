@@ -29,7 +29,7 @@ function sortWorks(items: SavedWork[], sort: WorkSortKey): SavedWork[] {
 }
 
 /** 작업 목록. 행을 누르면 작업 상세 라우트로 이동한다(배포·실행은 상세에서). */
-export function WorkflowLibraryView({ onEdit, onOpen, onToast }: { onEdit: (workId: string) => void; onOpen: (workId: string) => void; onToast: (message: string) => void }) {
+export function WorkflowLibraryView({ onEdit, onOpen, onToast }: { onEdit: (workId: string) => void; onOpen: (workId: string, robotId?: string) => void; onToast: (message: string) => void }) {
   const { savedWorks, deleteWorksById } = useAppStore();
   const [query, setQuery] = useState('');
   const [workSort, setWorkSort] = useState<WorkSortKey>('recent');
@@ -57,12 +57,12 @@ export function WorkflowLibraryView({ onEdit, onOpen, onToast }: { onEdit: (work
   };
 
   if (!savedWorks.length) {
-    return <><div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div><button className="primary-button page-create-button" type="button" onClick={() => onEdit('')}>작업 추가</button></div><ActiveRobotExecutionsCard /><div className="center-panel"><section className="card state-card"><span className="state-icon">i</span><h2>저장된 작업이 없어요</h2><p>첫 작업을 만들어 로봇이 할 일을 구성해 보세요.</p></section></div></>;
+    return <><div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div><button className="primary-button page-create-button" type="button" onClick={() => onEdit('')}>작업 추가</button></div><ActiveRobotExecutionsCard onOpenWork={onOpen} /><div className="center-panel"><section className="card state-card"><span className="state-icon">i</span><h2>저장된 작업이 없어요</h2><p>첫 작업을 만들어 로봇이 할 일을 구성해 보세요.</p></section></div></>;
   }
 
   return <>
     <div className="page-heading library-page-heading title-divider"><div><h1>작업 목록</h1></div><button className="primary-button page-create-button" type="button" onClick={() => onEdit('')}>작업 추가</button></div>
-    <ActiveRobotExecutionsCard />
+    <ActiveRobotExecutionsCard onOpenWork={onOpen} />
 
     <section className="workflow-library-toolbar" aria-label="작업 검색">
       {selectingWorks && <div className="selection-summary"><input className="list-select-checkbox" type="checkbox" aria-label="작업 전체 선택" disabled={!filteredWorks.length} checked={filteredWorks.length > 0 && selectedWorkIds.length === filteredWorks.length} onChange={() => setSelectedWorkIds(selectedWorkIds.length === filteredWorks.length ? [] : filteredWorks.map(work => work.id))} /><span>{selectedWorkIds.length}개 선택됨</span></div>}

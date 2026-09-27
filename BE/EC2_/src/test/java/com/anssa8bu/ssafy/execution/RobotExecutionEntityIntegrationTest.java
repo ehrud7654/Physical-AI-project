@@ -97,4 +97,42 @@ class RobotExecutionEntityIntegrationTest extends IntegrationTestBase {
     assertThat(loaded.getUpdatedAt()).isNotNull();
     assertThat(loaded.getRowVersion()).isOne();
   }
+
+  @Test
+  void failedReportAppliesStatusWhilePreservingMonotonicProgress() {
+    RobotExecution execution =
+        new RobotExecution(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            3);
+    Instant now = Instant.now();
+    execution.acceptReport(
+        "report-start",
+        1,
+        "a".repeat(64),
+        RobotExecutionStatus.STARTING,
+        2,
+        new BigDecimal("30.00"),
+        now);
+
+    execution.acceptReport(
+        "report-failed",
+        2,
+        "b".repeat(64),
+        RobotExecutionStatus.FAILED,
+        1,
+        BigDecimal.ZERO,
+        now.plusSeconds(1));
+    execution.fail(
+        "STEP_ERROR", "runtime failed", ExecutionRecoveryAction.CONTACT_SUPPORT, now.plusSeconds(1));
+
+    assertThat(execution.getStatus()).isEqualTo(RobotExecutionStatus.FAILED);
+    assertThat(execution.getProgressPercent()).isEqualByComparingTo("30.00");
+    assertThat(execution.getCurrentStep()).isEqualTo(2);
+    assertThat(execution.getLastReportSequence()).isEqualTo(2);
+    assertThat(execution.getErrorCode()).isEqualTo("STEP_ERROR");
+  }
 }

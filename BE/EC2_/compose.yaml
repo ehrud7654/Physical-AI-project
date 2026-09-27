@@ -66,6 +66,9 @@ services:
       - "8080"
     environment:
       SPRING_PROFILES_ACTIVE: local
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
+      SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-8h}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
@@ -75,7 +78,7 @@ services:
       REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-local-development-only-change-this-secret-key}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,https://j15a103.p.ssafy.io}
-      EPISODE_MAX_UPLOAD_BYTES: ${EPISODE_MAX_UPLOAD_BYTES:-52428800}
+      EPISODE_MAX_UPLOAD_BYTES: ${EPISODE_MAX_UPLOAD_BYTES:-209715200}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}
       AWS_PROFILE: ${AWS_PROFILE:-personal-s3}
       AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
@@ -124,8 +127,40 @@ services:
       timeout: 3s
       retries: 10
 
+  # ORB-SLAM Atlas 전처리 handoff 이미지 검증/운영용 서비스입니다.
+  # 기본 EC2 웹 스택과 분리해 필요할 때만 다음 명령으로 실행합니다.
+  # docker compose --profile preprocessing up -d --build umi-preprocessor
+  umi-preprocessor:
+    profiles: ["preprocessing"]
+    image: umi-server-preprocessor:2026.09.23-v1
+    build:
+      context: ../GPU_/umi_server_preprocessor
+      dockerfile: Dockerfile
+      args:
+        JOBS: ${UMI_PREPROCESSOR_BUILD_JOBS:-4}
+    init: true
+    ports:
+      - "127.0.0.1:${UMI_PREPROCESSOR_PORT:-18181}:8080"
+    environment:
+      UMI_JOBS_ROOT: /jobs
+      UMI_PROFILES_ROOT: /profiles
+    volumes:
+      - umi_preprocessor_jobs:/jobs
+      - ../GPU_/umi_server_preprocessor/profiles:/profiles:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)" || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   certbot_conf:
   certbot_www:
+  umi_preprocessor_jobs:

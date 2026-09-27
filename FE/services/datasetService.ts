@@ -1,28 +1,21 @@
 import type { BlockingReason, Dataset, DatasetStatus, RecoveryAction } from '@/types';
 import { apiRequest } from './client';
 
-/** EPISODE-01/02 응답(API 명세 1.2.0 `Episode`) 중 데이터 탭이 쓰는 필드만 선언한다. */
+/** GET /episodes 목록 전용 응답. 상세 메타데이터는 포함하지 않는다. */
 interface ApiEpisode {
   id: string;
+  fileName: string | null;
+  uploadedAt: string | null;
+  durationMs: number;
   umiDeviceId: string;
   umiDeviceHandleNumber: string | null;
-  skillId: string;
   skillKey: string | null;
-  skillDisplayName: string | null;
   status: 'UPLOADING' | 'VALIDATING' | 'READY' | 'INVALID' | 'DELETING' | 'DELETED' | 'DELETE_FAILED';
-  startedAt: string;
-  endedAt: string;
   retentionExpiresAt: string;
-  archive: { sizeBytes: number } | null;
   trainable: boolean;
   blockingReasons: BlockingReason[];
   recoveryAction: RecoveryAction;
-  error: { code: string; message: string; recoveryAction: RecoveryAction } | null;
-  qualitySummary: { values: Record<string, unknown> };
-  createdAt: string;
 }
-
-const TONES = ['orange', 'blue', 'green', 'purple'];
 
 /** EPISODE-01: 내 Episode 전체. 서버는 최신순으로 주므로 표시 순번은 오래된 순으로 매긴다. */
 export async function fetchDatasets(): Promise<Dataset[]> {
@@ -36,19 +29,14 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
   return {
     id: episode.id,
     seq,
-    date: formatDate(episode.startedAt),
-    startedAt: episode.startedAt,
-    duration: formatDuration(Date.parse(episode.endedAt) - Date.parse(episode.startedAt)),
-    size: episode.archive ? formatBytes(episode.archive.sizeBytes) : '크기 확인 중',
-    tone: TONES[Math.abs(hash(episode.id)) % TONES.length],
+    fileName: episode.fileName ?? '파일 정보 없음',
+    uploadedAt: episode.uploadedAt,
+    date: episode.uploadedAt ? formatDate(episode.uploadedAt) : '업로드 시각 없음',
+    duration: formatDuration(episode.durationMs),
     skillKey: episode.skillKey ?? '',
-    skillName: episode.skillDisplayName ?? episode.skillKey ?? '알 수 없는 동작',
     umiDeviceId: episode.umiDeviceId,
     umiId: episode.umiDeviceHandleNumber ?? episode.umiDeviceId,
-    calibrationId: normalizeCalibrationId(episode.qualitySummary?.values?.calibrationId),
-    ready: status === 'READY',
     status,
-    validationErrors: status === 'INVALID' ? episode.blockingReasons.map((reason) => reason.message) : undefined,
     retentionDays: Math.max(0, Math.ceil((Date.parse(episode.retentionExpiresAt) - Date.now()) / 86_400_000)),
     retentionExpiresAt: episode.retentionExpiresAt,
     trainable: episode.trainable,
@@ -57,30 +45,17 @@ function toDataset(episode: ApiEpisode, seq: number): Dataset {
   };
 }
 
-function normalizeCalibrationId(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value : '미등록';
-}
-
 function formatDate(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}. ${pad(d.getMonth() + 1)}. ${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}. ${pad(d.getMonth() + 1)}. ${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+/** 영상 길이. `00:01`은 1분 1초로도 읽혀 `1초` / `1분 5초` / `2분`으로 쓴다. */
 function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${Math.round(bytes / 1_048_576)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-function hash(value: string): number {
-  let h = 0;
-  for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0;
-  return h;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (!minutes) return `${seconds}초`;
+  return seconds ? `${minutes}분 ${seconds}초` : `${minutes}분`;
 }

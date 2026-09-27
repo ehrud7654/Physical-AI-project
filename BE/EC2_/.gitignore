@@ -43,3 +43,6 @@ out/
 ## legacy migration sql files
 src/main/resources/db/*
 !src/main/resources/db/migration
+
+.tmp/
+.pnpm-store/

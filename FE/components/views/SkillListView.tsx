@@ -112,7 +112,7 @@ export function SkillListView({ onToast, onOpen }: { onToast: (message: string) 
         </div>
         {pageItems.map((skill) => { const deployment = deploymentStatusMeta[skill.deploymentStatus]; const versionCreatedAt = skill.latestVersionCreatedAt ? formatApiDateTimeParts(skill.latestVersionCreatedAt) : null; const latestTrainingRequestedAt = skill.latestTrainingRequestedAt ? formatApiDateTimeParts(skill.latestTrainingRequestedAt) : null; return <div className="episode-row skill-list-row" role="row" key={skill.id}>
           <span className="skill-list-name" data-label="동작 이름"><button className="text-button skill-name-button" type="button" onClick={() => onOpen(skill.id)}>{skill.displayName}</button></span>
-          <span data-label="설명">{skill.description || '-'}</span>
+          <span className="skill-list-desc" data-label="설명" title={skill.description || undefined}>{skill.description || '-'}</span>
           <span className="skill-list-version" data-label="최신 버전">{skill.latestVersion == null ? '-' : `v${skill.latestVersion}`}</span>
           <span className="skill-list-datetime" data-label="마지막 업데이트">{versionCreatedAt ? <><strong>{versionCreatedAt.date}</strong><small>{versionCreatedAt.time}</small></> : '-'}</span>
           <span data-label="상태"><span className={`dataset-status ${deployment.className}`}><i />{deployment.label}</span></span>

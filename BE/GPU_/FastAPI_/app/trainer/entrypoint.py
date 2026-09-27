@@ -17,17 +17,18 @@ def main() -> None:
 
     request = json.loads((args.run_directory / "request.json").read_text(encoding="utf-8"))
     reporter = ProgressReporter(args.run_directory / "progress.json")
-    checkpoint_relative = Path("checkpoints") / request["trainingJobId"] / str(request["attempt"]) / "model.ckpt"
+    checkpoint_relative = Path("checkpoints") / request["trainingJobId"] / str(request["attempt"]) / "model.tgz"
     shared_root = args.run_directory.parents[2]
     checkpoint = shared_root / checkpoint_relative
     try:
-        result = TrainingAdapter().train(request, checkpoint, reporter, args.duration_seconds)
+        adapter = TrainingAdapter()
+        result = adapter.train(request, checkpoint, reporter, args.duration_seconds)
         result["checkpointStorageKey"] = checkpoint_relative.as_posix()
         completed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         reporter.report(
             "COMPLETED", "CHECKPOINT_READY", 100,
-            epoch=int(os.getenv("TRAINING_EPOCHS", "60")),
-            totalEpochs=int(os.getenv("TRAINING_EPOCHS", "60")),
+            epoch=int(os.getenv("TRAINING_EPOCHS", "120")),
+            totalEpochs=int(os.getenv("TRAINING_EPOCHS", "120")),
             modelCompletedAt=completed_at, result=result,
         )
     except BaseException as error:

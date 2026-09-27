@@ -79,4 +79,5 @@ public class TrainingJobEpisode {
   public TrainingEpisodeRole getInputRole() {
     return inputRole;
   }
+
 }

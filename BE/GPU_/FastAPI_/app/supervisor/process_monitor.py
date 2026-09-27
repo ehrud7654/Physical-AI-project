@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 from app.core.time import utc_now
+from app.core.run_lifecycle import synchronized_run_changes
 from app.domain.enums.training_run_status import TrainingRunStatus
 from app.domain.models.training_run import TrainingRun
 from app.domain.repositories import TrainingRunRepository
@@ -18,7 +19,12 @@ class ProcessMonitor:
         self.inspector = inspector
         self.gpu = gpu
 
+    @synchronized_run_changes
     def refresh(self, run: TrainingRun) -> None:
+        # The supervisor's snapshot may predate a concurrent cancellation.
+        run = self.repository.get(run.run_id) or run
+        if run.status.terminal or run.status == TrainingRunStatus.CANCEL_REQUESTED:
+            return
         path = self.storage.run_directory(run.training_job_id, run.attempt) / "progress.json"
         if path.exists():
             try:

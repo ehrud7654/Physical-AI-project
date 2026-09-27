@@ -177,6 +177,14 @@ public class TrainingJob extends AuditableEntity {
   }
 
   public void requestCancel() {
+    if (status == TrainingJobStatus.CANCEL_REQUESTED || status == TrainingJobStatus.CANCELED) return;
+    if (assignedWorkerId != null
+        && (status == TrainingJobStatus.COLLECTING || status == TrainingJobStatus.PREPARING
+            || status == TrainingJobStatus.RUNNING || status == TrainingJobStatus.MODEL_UPLOADING
+            || status == TrainingJobStatus.MODEL_VALIDATING)) {
+      status = TrainingJobStatus.CANCEL_REQUESTED;
+      return;
+    }
     if (status == TrainingJobStatus.CREATED
         || status == TrainingJobStatus.COLLECTING
         || status == TrainingJobStatus.INPUT_VALIDATING
@@ -300,6 +308,11 @@ public class TrainingJob extends AuditableEntity {
   }
 
   public void start(Instant at) {
+    // A late STARTED acknowledgement must not undo an accepted cancellation.
+    if (status == TrainingJobStatus.CANCEL_REQUESTED) {
+      if (startedAt == null) startedAt = at;
+      return;
+    }
     if (status != TrainingJobStatus.PREPARING && status != TrainingJobStatus.QUEUED)
       throw new IllegalStateException("학습을 시작할 수 없는 상태입니다.");
     status = TrainingJobStatus.RUNNING;

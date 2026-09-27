@@ -16,11 +16,6 @@ public final class TrainingJobModels {
     FINE_TUNE
   }
 
-  public enum TrainingEpisodeRole {
-    DEMONSTRATION,
-    MAPPING
-  }
-
   public enum TrainingJobStatus {
     QUEUED,
     PREPARING,
@@ -41,6 +36,11 @@ public final class TrainingJobModels {
     CANCELED
   }
 
+  public enum TrainingEpisodeRole {
+    DEMONSTRATION,
+    MAPPING
+  }
+
   public record ClaimRequest(
       String workerId,
       Integer gpuIndex,
@@ -55,8 +55,8 @@ public final class TrainingJobModels {
 
   public record EpisodeData(
       UUID episodeId,
-      TrainingEpisodeRole inputRole,
       String sessionId,
+      TrainingEpisodeRole inputRole,
       String qualityStatus,
       String contractVersion,
       ArchiveData archive) {}
@@ -76,6 +76,7 @@ public final class TrainingJobModels {
 
   public record JobData(
       UUID id,
+      UUID ownerId,
       String skillKey,
       TrainingInputMode inputMode,
       TrainingMode trainingMode,
