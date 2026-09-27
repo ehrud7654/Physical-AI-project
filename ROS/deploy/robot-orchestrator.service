@@ -1,0 +1,24 @@
+[Unit]
+Description=SO-101 orchestrator (BE 연동·배포·실행·상태보고)
+# 시간동기(sync-time-http)가 끝나야 뜬다 — 시각이 틀리면 JWT/TLS 가 깨진다.
+After=sync-time-http.service robot-estop.service network-online.target
+Requires=sync-time-http.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# root 로 돌면 워크스페이스·venv 소유권과 DDS 공유메모리 권한이 어긋난다 → 빌드한 유저로.
+User=@USER@
+Group=@USER@
+# device secret 등은 프로젝트 폴더의 .env 에서 읽는다(깃 제외, 권한 600).
+EnvironmentFile=@ROS_ROOT@/.env
+# HOME 이 없으면 rclpy 가 로그 디렉터리(~/.ros/log)를 못 잡아 기동 실패한다.
+Environment=HOME=@USER_HOME@
+# 시작 직전 시간을 한 번 더 맞춘다. 실패(무한재시도)면 orchestrator 는 뜨지 않는다 — 의도된 동작.
+ExecStartPre=/usr/local/bin/sync-time-http.sh
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source @ROS_ROOT@/ros2_ws/install/setup.bash && exec ros2 run so101_orchestrator orchestrator --ros-args -p base_url:=https://j15a103.p.ssafy.io -p executor:=umi_runtime -p device_id:=51000000-0000-4000-8000-000000000002 -p runtime_root:=@ROS_ROOT@'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

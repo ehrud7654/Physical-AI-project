@@ -17,7 +17,8 @@ STEP_SKILL = "SKILL"
 STEP_MOTOR = "MOTOR"
 STEP_REPEAT = "REPEAT"
 
-ACTION_SPACES = {"JOINT_ABSOLUTE", "JOINT_DELTA"}       # BE model.entity.ActionSpace
+# actionSpace 는 오케스트레이터가 검증하지 않는다 — 형식은 tgz 번들을 실행하는
+# 런타임(policy_runtime: metadata shape_meta·rot6d 검증)만 안다. 여긴 배달·무결성만.
 COMMAND_TOPIC = "/forward_position_controller/commands"  # so101_policy 와 동일 토픽
 
 
