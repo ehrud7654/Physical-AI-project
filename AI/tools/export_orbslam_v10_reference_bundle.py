@@ -49,7 +49,7 @@ except ModuleNotFoundError:  # OpenCV is not required to export stored rows.
     cv2 = None
 
 
-BUNDLE_SCHEMA = "track_a_orbslam_v10_reference/0.2"
+BUNDLE_SCHEMA = "track_a_orbslam_v10_reference/0.3"
 
 
 def rotation_from_quat_xyzw(value: list[float]) -> np.ndarray:
@@ -175,8 +175,43 @@ def pose_components(transform: np.ndarray) -> list[float]:
     ]
 
 
+def pose_6d(transform: np.ndarray, *, frame_index: int,
+            timestamp_s: float, definition: str) -> dict[str, Any]:
+    rotation = proper_rotation(transform[:3, :3])
+    quaternion = quat_xyzw_from_matrix(rotation)
+    if Rotation is not None:
+        rotvec = Rotation.from_matrix(rotation).as_rotvec()
+    else:
+        vector = quaternion[:3]
+        length = float(np.linalg.norm(vector))
+        if length < 1e-12:
+            rotvec = np.zeros(3, dtype=np.float64)
+        else:
+            # q and -q are equivalent.  Keep the principal rotation angle.
+            q = quaternion if quaternion[3] >= 0 else -quaternion
+            vector, length = q[:3], float(np.linalg.norm(q[:3]))
+            angle = 2.0 * np.arctan2(length, float(q[3]))
+            rotvec = vector / length * angle
+    return {
+        "frame": "aruco_id13_table",
+        "definition": definition,
+        "source_frame_index": int(frame_index),
+        "timestamp_s": float(timestamp_s),
+        "xyz_m": [float(value) for value in transform[:3, 3]],
+        "rotation_vector_rad": [float(value) for value in rotvec],
+        "quaternion_xyzw": [float(value) for value in quaternion],
+    }
+
+
+def _private_source_path(path: Path, *, fallback: str,
+                         redact_source_paths: bool) -> str:
+    """Keep hashes reproducible without leaking a user's absolute home path."""
+    return fallback if redact_source_paths else str(path)
+
+
 def write_episode_reference(
-    selection: dict[str, Any], output: Path, camera_tcp: np.ndarray
+    selection: dict[str, Any], output: Path, camera_tcp: np.ndarray,
+    *, redact_source_paths: bool = False,
 ) -> dict[str, Any]:
     episode_id = str(selection["episode_id"])
     raw = Path(selection["raw_episode"])
@@ -222,6 +257,7 @@ def write_episode_reference(
     pose_output: list[list[Any]] = []
     gripper_output: list[list[Any]] = []
     direct = interpolated = invalid = tracked = 0
+    start_tcp_pose: dict[str, Any] | None = None
     timestamps: list[int] = []
     for expected, (frame, pose, grip) in enumerate(
         zip(frame_rows, pose_rows, gripper_rows)
@@ -251,6 +287,11 @@ def write_episode_reference(
             camera_values: list[Any] = pose_components(marker_camera)
             tcp_values: list[Any] = pose_components(marker_tcp)
             tracked += 1
+            if start_tcp_pose is None:
+                start_tcp_pose = pose_6d(
+                    marker_tcp, frame_index=frame_index, timestamp_s=timestamp_s,
+                    definition="first valid tracked TCP row in the full source episode",
+                )
         else:
             camera_values = [""] * 7
             tcp_values = [""] * 7
@@ -288,6 +329,8 @@ def write_episode_reference(
 
     if any(right <= left for left, right in zip(timestamps, timestamps[1:])):
         raise ValueError(f"{episode_id}: non-monotonic sensor timestamps")
+    if start_tcp_pose is None:
+        raise ValueError(f"{episode_id}: no valid tracked TCP row")
 
     with pose_path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream, lineterminator="\n")
@@ -301,17 +344,30 @@ def write_episode_reference(
     return {
         "episode_id": episode_id,
         "source": {
-            "raw_episode": str(raw),
-            "video": str(raw / "video.mp4"),
+            "raw_episode": _private_source_path(
+                raw, fallback=episode_id, redact_source_paths=redact_source_paths),
+            "video": _private_source_path(
+                raw / "video.mp4", fallback=f"{episode_id}/video.mp4",
+                redact_source_paths=redact_source_paths),
             "video_sha256": sha256_file(raw / "video.mp4"),
             "frames_csv_sha256": sha256_file(raw / "frames.csv"),
-            "source_trajectory": str(trajectory_path),
+            "source_trajectory": _private_source_path(
+                trajectory_path,
+                fallback=(f"{selection.get('atlas_candidate', 'atlas')}/{episode_id}/"
+                          f"attempt{selection.get('attempt', 'unknown')}/camera_trajectory.csv"),
+                redact_source_paths=redact_source_paths),
             "source_trajectory_sha256": sha256_file(trajectory_path),
-            "source_gripper": str(gripper_path),
+            "source_gripper": _private_source_path(
+                gripper_path, fallback=f"{episode_id}/gripper_width.csv",
+                redact_source_paths=redact_source_paths),
             "source_gripper_sha256": sha256_file(gripper_path),
-            "trajectory_validation": str(validation_path),
+            "trajectory_validation": _private_source_path(
+                validation_path, fallback=f"{episode_id}/trajectory_validation_v10.json",
+                redact_source_paths=redact_source_paths),
             "trajectory_validation_sha256": sha256_file(validation_path),
-            "alignment": str(alignment_path),
+            "alignment": _private_source_path(
+                alignment_path, fallback=alignment_path.name,
+                redact_source_paths=redact_source_paths),
             "alignment_sha256": sha256_file(alignment_path),
             "atlas_candidate": selection.get("atlas_candidate"),
             "atlas_sha256": selection.get("atlas_sha256"),
@@ -328,6 +384,7 @@ def write_episode_reference(
                 "quaternion": "qx,qy,qz,qw",
                 "translation_unit": "m",
             },
+            "start_tcp_pose_6d": start_tcp_pose,
         },
         "gripper_csv": {
             "path": gripper_out.relative_to(output).as_posix(),
@@ -340,21 +397,29 @@ def write_episode_reference(
     }
 
 
-def v10_episode_reference(root: Path, episode_id: str) -> dict[str, Any]:
+def v10_episode_reference(root: Path, episode_id: str,
+                          *, redact_source_paths: bool = False) -> dict[str, Any]:
     npz = root / f"{episode_id}.npz"
     metadata = root / f"{episode_id}.json"
     if not npz.is_file() or not metadata.is_file():
         raise FileNotFoundError(f"missing v10 episode artifact for {episode_id}")
+    metadata_payload = json.loads(metadata.read_text(encoding="utf-8"))
+    for key in ("start_tcp_pose_6d", "first_training_anchor_tcp_pose_6d"):
+        if not isinstance(metadata_payload.get(key), dict):
+            raise ValueError(f"{episode_id}: v10 metadata is missing {key}")
     with np.load(npz, allow_pickle=False) as archive:
         arrays = {
             key: array_reference(archive[key], rgb=(key == "image"))
             for key in sorted(archive.files)
         }
     return {
-        "npz_path": str(npz),
+        "npz_path": npz.name if redact_source_paths else str(npz),
         "npz_sha256": sha256_file(npz),
-        "metadata_path": str(metadata),
+        "metadata_path": metadata.name if redact_source_paths else str(metadata),
         "metadata_sha256": sha256_file(metadata),
+        "start_tcp_pose_6d": metadata_payload.get("start_tcp_pose_6d"),
+        "first_training_anchor_tcp_pose_6d": metadata_payload.get(
+            "first_training_anchor_tcp_pose_6d"),
         "arrays": arrays,
     }
 
@@ -377,6 +442,11 @@ def main() -> int:
     parser.add_argument("--v10", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--tar", type=Path)
+    parser.add_argument("--episode-gate-report-json", type=Path, required=True)
+    parser.add_argument("--episode-gate-report-csv", type=Path, required=True)
+    parser.add_argument(
+        "--redact-source-paths", action="store_true",
+        help="store logical source names instead of absolute local paths in manifest")
     args = parser.parse_args()
 
     args.selection = args.selection.resolve()
@@ -384,10 +454,30 @@ def main() -> int:
     args.v10 = args.v10.resolve()
     args.out = args.out.resolve()
     args.tar = args.tar.resolve() if args.tar else None
+    args.episode_gate_report_json = (
+        args.episode_gate_report_json.resolve() if args.episode_gate_report_json else None)
+    args.episode_gate_report_csv = (
+        args.episode_gate_report_csv.resolve() if args.episode_gate_report_csv else None)
+    for report in (args.episode_gate_report_json, args.episode_gate_report_csv):
+        if not report.is_file():
+            raise FileNotFoundError(report)
 
     if args.out.exists():
         raise SystemExit(f"output already exists: {args.out}")
     args.out.mkdir(parents=True)
+    gate_report_files: dict[str, dict[str, str]] = {}
+    quality_root = args.out / "quality"
+    quality_root.mkdir()
+    for label, source in (
+        ("json", args.episode_gate_report_json),
+        ("csv", args.episode_gate_report_csv),
+    ):
+        target = quality_root / f"episode_gate_report.{label}"
+        shutil.copyfile(source, target)
+        gate_report_files[label] = {
+            "path": target.relative_to(args.out).as_posix(),
+            "sha256": sha256_file(target),
+        }
 
     repo = Path(__file__).resolve().parents[2]
     selection = json.loads(args.selection.read_text(encoding="utf-8"))
@@ -404,9 +494,13 @@ def main() -> int:
     reference_episodes = []
     total_pose = total_gripper = total_d = total_m = total_x = 0
     for index, item in enumerate(selected):
-        episode = write_episode_reference(item, args.out, camera_tcp)
+        episode = write_episode_reference(
+            item, args.out, camera_tcp,
+            redact_source_paths=args.redact_source_paths)
         episode["order"] = index
-        episode["v10"] = v10_episode_reference(args.v10, episode["episode_id"])
+        episode["v10"] = v10_episode_reference(
+            args.v10, episode["episode_id"],
+            redact_source_paths=args.redact_source_paths)
         reference_episodes.append(episode)
         total_pose += int(episode["pose_csv"]["rows"])
         total_gripper += int(episode["gripper_csv"]["rows"])
@@ -419,6 +513,7 @@ def main() -> int:
     exporter_path = Path(__file__).resolve()
     code_paths = [
         exporter_path,
+        repo / "AI/tools/export_orbslam_episode_gate_report.py",
         repo / "AI/tools/build_orbslam_umi_relative_dataset.py",
         repo / "AI/umi/relative_dataset.py",
     ]
@@ -427,18 +522,38 @@ def main() -> int:
         repo / "AI/configs/real/umi_orbslam_intake_0918.json",
         repo / "AI/configs/real/s22_orbslam3_mono_inertial_0918.yaml",
         repo / "AI/configs/real/s22_slam_mask_0918.json",
-        repo / "AI/configs/real/umi_gap_missing_reviewed_exceptions_0918.json",
     ]
+    reviewed_exception_source = selection.get("reviewed_gap_exception_source")
+    if isinstance(reviewed_exception_source, dict) and reviewed_exception_source.get("path"):
+        calibration_paths.append(Path(reviewed_exception_source["path"]).resolve())
+
+    def manifest_path(path: Path) -> str:
+        if args.redact_source_paths:
+            return path.name
+        try:
+            return str(path.relative_to(repo)).replace("\\", "/")
+        except ValueError:
+            return str(path)
+
+    git_tracked_paths: list[str] = []
+    for path in code_paths + calibration_paths:
+        try:
+            git_tracked_paths.append(str(path.relative_to(repo)))
+        except ValueError:
+            # An external calibration file is hashed into the manifest but is
+            # not part of this Git worktree, so Git cannot report its dirtiness.
+            pass
+
     manifest: dict[str, Any] = {
         "schema": BUNDLE_SCHEMA,
         "status": "PROVISIONAL_CALIBRATION_NOT_FOR_PHYSICAL_DEPLOYMENT",
         "artifact": "Track A reference; not official UMI Zarr",
         "reference_scope": (
-            "Track A reviewed 74-episode accepted selection; ordering is fixed "
+            f"Track A reviewed {len(selected)}-episode accepted selection; ordering is fixed "
             "by the selection file SHA-256"
         ),
         "selection": {
-            "path": str(args.selection),
+            "path": manifest_path(args.selection),
             "sha256": sha256_file(args.selection),
             "episode_order": order,
             "selected": len(selected),
@@ -446,10 +561,17 @@ def main() -> int:
             "total_inputs": len(selected) + len(selection.get("excluded", {})),
             "excluded_episodes": selection.get("excluded", {}),
         },
+        "episode_gate_report": {
+            "included": bool(gate_report_files),
+            "files": gate_report_files,
+            "count_semantics": (
+                "rejection counts are episode counts; one episode may have multiple categories"
+            ),
+        },
         "v10": {
             "artifact": "v10",
             "not_official_umi_zarr": True,
-            "root": str(args.v10),
+            "root": manifest_path(args.v10),
             "dataset_json_sha256": sha256_file(v10_index_path),
             "schema": v10_index.get("schema"),
             "episodes": v10_index.get("n_episodes"),
@@ -463,10 +585,10 @@ def main() -> int:
             "git_branch": git_output(repo, "branch", "--show-current"),
             "git_dirty": bool(git_output(
                 repo, "status", "--short", "--",
-                *[str(path.relative_to(repo)) for path in code_paths + calibration_paths],
+                *git_tracked_paths,
             )),
             "files": {
-                str(path.relative_to(repo)).replace("\\", "/"): sha256_file(path)
+                manifest_path(path): sha256_file(path)
                 for path in code_paths
             },
         },
@@ -483,7 +605,7 @@ def main() -> int:
                 "black_square_size_m": 0.16,
             },
             "files": {
-                str(path.relative_to(repo)).replace("\\", "/"): sha256_file(path)
+                manifest_path(path): sha256_file(path)
                 for path in calibration_paths if path.is_file()
             },
             "alignment_files": sorted({

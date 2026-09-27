@@ -86,6 +86,24 @@ def _alignment(path: Path) -> tuple[np.ndarray, dict]:
     return _rigid(report["T_marker_world"], "T_marker_world"), report
 
 
+def _pose_6d(transform: np.ndarray, *, source_frame_index: int,
+             timestamp_s: float, definition: str) -> dict:
+    """Serialize one absolute TCP pose without hiding its frame or row semantics."""
+    return {
+        "frame": "aruco_id13_table",
+        "definition": definition,
+        "source_frame_index": int(source_frame_index),
+        "timestamp_s": float(timestamp_s),
+        "xyz_m": [float(value) for value in transform[:3, 3]],
+        "rotation_vector_rad": [
+            float(value) for value in Rotation.from_matrix(transform[:3, :3]).as_rotvec()
+        ],
+        "quaternion_xyzw": [
+            float(value) for value in Rotation.from_matrix(transform[:3, :3]).as_quat()
+        ],
+    }
+
+
 def _load_episode(selection: dict, camera_tcp: np.ndarray) -> dict:
     raw = Path(selection["raw_episode"])
     trajectory = Path(selection["trajectory"])
@@ -277,6 +295,15 @@ def _build_one(episode: dict, output: Path, *, rate_hz: float,
         "source_time_preserved": True,
         "time_scale": 1.0,
         "source_duration_s": float(times[-1] - times[0]),
+        "start_tcp_pose_6d": _pose_6d(
+            poses[0], source_frame_index=int(source[0]), timestamp_s=float(times[0]),
+            definition="first row of selected contiguous tracked-pose+valid-gap segment",
+        ),
+        "first_training_anchor_tcp_pose_6d": _pose_6d(
+            poses[first], source_frame_index=int(source[first]),
+            timestamp_s=float(times[first]),
+            definition="current TCP at the first H=2 training anchor",
+        ),
         "training_rows": int(len(anchors)),
         "success_label": "success",
         "robot_base_alignment_applied": False,

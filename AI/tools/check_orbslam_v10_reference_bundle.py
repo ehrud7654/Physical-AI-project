@@ -35,8 +35,23 @@ def main() -> int:
 
     if manifest.get("schema") not in {
             "track_a_orbslam_v10_reference/0.1",
-            "track_a_orbslam_v10_reference/0.2"}:
+            "track_a_orbslam_v10_reference/0.2",
+            "track_a_orbslam_v10_reference/0.3"}:
         problems.append("unexpected manifest schema")
+    gate_report = manifest.get("episode_gate_report", {})
+    if manifest.get("schema") == "track_a_orbslam_v10_reference/0.3":
+        if not gate_report.get("included"):
+            problems.append("0.3 bundle is missing episode gate report")
+        for label in ("json", "csv"):
+            info = gate_report.get("files", {}).get(label)
+            if not info:
+                problems.append(f"missing episode gate report {label} metadata")
+                continue
+            path = root / info["path"]
+            if not path.is_file():
+                problems.append(f"missing episode gate report {label} file")
+            elif sha256_file(path) != info["sha256"]:
+                problems.append(f"episode gate report {label} hash mismatch")
     episodes = manifest.get("episodes", [])
     order = manifest.get("selection", {}).get("episode_order", [])
     if [item.get("episode_id") for item in episodes] != order:
@@ -47,6 +62,14 @@ def main() -> int:
         episode_id = episode.get("episode_id", "unknown")
         pose_info = episode["pose_csv"]
         grip_info = episode["gripper_csv"]
+        if manifest.get("schema") == "track_a_orbslam_v10_reference/0.3":
+            if not pose_info.get("start_tcp_pose_6d"):
+                problems.append(f"{episode_id}: missing full-episode start TCP pose")
+            v10_info = episode.get("v10", {})
+            if not v10_info.get("start_tcp_pose_6d"):
+                problems.append(f"{episode_id}: missing selected-segment start TCP pose")
+            if not v10_info.get("first_training_anchor_tcp_pose_6d"):
+                problems.append(f"{episode_id}: missing first-anchor TCP pose")
         pose_path = root / pose_info["path"]
         grip_path = root / grip_info["path"]
         for label, path, info in (
