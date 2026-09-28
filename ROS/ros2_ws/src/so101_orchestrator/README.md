@@ -59,7 +59,7 @@ MOTOR step은 지금 실행 엔진과 상관없이 ros2_control 쪽으로만 명
 | `motor_port` | `/dev/ttyTHS1` | 서보 포트. 가짜 서보 버스를 쓸 때는 `/tmp/so101_fake_servo` |
 | `max_servo_temp_c` | `55` | 실행 전후 온도 검사 기준. 0이면 검사 안 함. 런타임 실행 중 기준(60도)과는 별개입니다 |
 | `models_dir` | 없음 | 비워두면 `<runtime_root>/models` |
-| `heartbeat_sec` | `15` | heartbeat 간격. BE가 20초 넘게 못 받으면 오프라인으로 봅니다 |
+| `heartbeat_sec` | `15` | heartbeat 간격. BE가 45초 동안 못 받으면 오프라인으로 봅니다 |
 | `motor_settle_sec` | `2` | timeoutSeconds가 없을 때 MOTOR 대기 시간 |
 | `skill_default_sec` | `10` | timeoutSeconds가 없을 때 시뮬 SKILL 실행 시간 |
 
