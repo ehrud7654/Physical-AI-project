@@ -8,9 +8,10 @@ Project-specific gripper and end-effector files belong in `../gripper/`.
 
 ## Upstream project
 
-- Project URL: **TODO — add the official upstream project URL**
-- License: **TODO — add the exact upstream license and a link to its text**
-- Version, tag, or commit: **TODO — record the imported revision**
+- Project URL: https://github.com/TheRobotStudio/SO-ARM100
+- License: Apache-2.0; [license text](LICENSE)
+- Imported commit: `7629d2ad9853d10fb903093a33ef6114099d97e5`
+- Source assets: [Simulation/SO101/assets at that commit](https://github.com/TheRobotStudio/SO-ARM100/tree/7629d2ad9853d10fb903093a33ef6114099d97e5/Simulation/SO101/assets)
 
 ## Source attribution
 
@@ -24,3 +25,7 @@ modified or project-specific part must not be stored here.
 ## Files
 
 - `stl/` — unmodified STL files obtained from the upstream SO-ARM101 project.
+- `ver1-stl/` — nine frame parts re-exported from `Ver1.blend`, with its
+  world transforms baked into millimetre coordinates. These are not byte-for-byte
+  upstream STL copies; they retain the source filenames and upstream attribution.
+  See [export provenance and validation](../assembly/VER1_STL.md).

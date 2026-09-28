@@ -33,3 +33,7 @@ SO-ARM101 base robot arm.
 - `images/` — renders, assembly images, and photographs of fabricated parts.
 
 Do not place upstream SO-ARM101 base-arm files in this directory.
+
+`stl/`에는 `Ver1.blend`의 커스텀 부품 8개를 각각 내보낸 파일이 있습니다.
+형상을 보정하지 않은 원본 추출본이며, 단위·부품 대응·메시 검사 결과는
+[Ver1 내보내기 기록](../assembly/VER1_STL.md)을 참조하세요.

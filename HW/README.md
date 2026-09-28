@@ -17,3 +17,12 @@ makes their origin and ownership explicit.
 
 Do not place custom gripper files in `so-arm101/`, and do not present upstream
 SO-ARM101 geometry as original work from this project.
+
+## Ver1 part exports
+
+`Ver1.blend`에서 추출한 STL 33개: [커스텀 그리퍼 8개](gripper/stl/),
+[로봇팔 프레임 9개](so-arm101/ver1-stl/),
+[모터·혼·나사 참고 모델 16개](assembly/reference-stl/).
+단위는 mm이며 원본 조립 위치와 방향을 유지합니다.
+출처, 재생성 방법, 부품 목록 및 메시 검사 결과는
+[Ver1 내보내기 기록](assembly/VER1_STL.md)을 확인하세요.
