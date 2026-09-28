@@ -26,3 +26,9 @@ SO-ARM101 geometry as original work from this project.
 단위는 mm이며 원본 조립 위치와 방향을 유지합니다.
 출처, 재생성 방법, 부품 목록 및 메시 검사 결과는
 [Ver1 내보내기 기록](assembly/VER1_STL.md)을 확인하세요.
+
+## URDF
+
+[SO-101 + Ver1 URDF](urdf/so101_ver1.urdf)와 필요한 링크 좌표 메시를
+`urdf/`에 포함했습니다. 단위, 그리퍼 연동, 검증 범위는
+[URDF 사용 안내](urdf/README.md)를 확인하세요.
