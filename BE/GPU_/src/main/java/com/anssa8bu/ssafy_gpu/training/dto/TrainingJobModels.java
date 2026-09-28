@@ -1,0 +1,130 @@
+package com.anssa8bu.ssafy_gpu.training.dto;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.*;
+
+public final class TrainingJobModels {
+  private TrainingJobModels() {}
+
+  public enum TrainingInputMode {
+    EXISTING_EPISODES
+  }
+
+  public enum TrainingMode {
+    FROM_SCRATCH,
+    FINE_TUNE
+  }
+
+  public enum TrainingJobStatus {
+    QUEUED,
+    PREPARING,
+    RUNNING,
+    MODEL_UPLOADING,
+    MODEL_VALIDATING,
+    CANCEL_REQUESTED,
+    CANCELED,
+    SUCCEEDED,
+    FAILED
+  }
+
+  public enum TrainingEventType {
+    STARTED,
+    PROGRESS,
+    TRAINING_FINISHED,
+    FAILED,
+    CANCELED
+  }
+
+  public enum TrainingEpisodeRole {
+    DEMONSTRATION,
+    MAPPING
+  }
+
+  public record ClaimRequest(
+      String workerId,
+      Integer gpuIndex,
+      String gitRev,
+      UUID storageNodeId,
+      Long availableMemoryMiB,
+      Long storageCapacityBytes,
+      Long storageAvailableBytes) {}
+
+  public record ArchiveData(
+      String downloadUrl, Instant expiresAt, String contentType, long sizeBytes, String sha256) {}
+
+  public record EpisodeData(
+      UUID episodeId,
+      String sessionId,
+      TrainingEpisodeRole inputRole,
+      String qualityStatus,
+      String contractVersion,
+      ArchiveData archive) {}
+
+  public record BaseModelData(
+      UUID skillVersionId,
+      int version,
+      String downloadUrl,
+      Instant expiresAt,
+      String contentType,
+      long sizeBytes,
+      String sha256,
+      String architecture,
+      String framework,
+      String frameworkVersion,
+      String contractVersion) {}
+
+  public record JobData(
+      UUID id,
+      UUID ownerId,
+      String skillKey,
+      TrainingInputMode inputMode,
+      TrainingMode trainingMode,
+      BaseModelData baseModel,
+      Map<String, Object> datasetQuery,
+      String inputSnapshotSha256,
+      List<EpisodeData> episodes) {}
+
+  public record ClaimResponse(
+      JobData job,
+      int attempt,
+      String leaseToken,
+      Instant leaseExpiresAt,
+      int heartbeatIntervalSeconds) {}
+
+  public record HeartbeatRequest(
+      String workerId,
+      UUID storageNodeId,
+      int attempt,
+      String leaseToken,
+      Long storageAvailableBytes) {}
+
+  public record HeartbeatResponse(
+      Instant leaseExpiresAt, boolean cancelRequested, Instant serverTime) {}
+
+  public record EventRequest(
+      int attempt,
+      String leaseToken,
+      String eventId,
+      long sequence,
+      String type,
+      Instant occurredAt,
+      Map<String, Object> payload) {}
+
+  public record EventResponse(boolean accepted, TrainingJobStatus jobStatus, long lastSequence) {}
+
+  public static Map<String, Object> progressPayload(
+      String stage,
+      BigDecimal percent,
+      Integer epoch,
+      Integer totalEpochs,
+      Map<String, Object> metrics) {
+    Map<String, Object> value = new LinkedHashMap<>();
+    value.put("stage", stage);
+    value.put("percent", percent);
+    if (epoch != null) value.put("epoch", epoch);
+    if (totalEpochs != null) value.put("totalEpochs", totalEpochs);
+    if (metrics != null && !metrics.isEmpty()) value.put("metrics", metrics);
+    return Map.copyOf(value);
+  }
+}

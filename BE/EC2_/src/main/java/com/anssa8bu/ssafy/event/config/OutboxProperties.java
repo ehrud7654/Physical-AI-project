@@ -1,0 +1,21 @@
+package com.anssa8bu.ssafy.event.config;
+
+import java.time.Duration;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+@ConfigurationProperties("app.outbox")
+public record OutboxProperties(
+    boolean enabled,
+    String publisherId,
+    Duration fixedDelay,
+    Duration leaseDuration,
+    int batchSize,
+    int maxAttempts,
+    Duration retention,
+    long sseMaxLength,
+    Duration sseTtl) {
+  public OutboxProperties {
+    if (batchSize < 1 || maxAttempts < 1 || leaseDuration == null || leaseDuration.isNegative())
+      throw new IllegalArgumentException();
+  }
+}

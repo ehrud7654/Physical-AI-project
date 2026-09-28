@@ -1,0 +1,21 @@
+package com.anssa8bu.ssafy.common.redis.repository;
+
+import com.anssa8bu.ssafy.common.redis.*;
+import com.anssa8bu.ssafy.common.redis.dto.PurgeLeaseCache;
+import java.util.UUID;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class PurgeLeaseCacheRepository extends JsonRedisRepository<PurgeLeaseCache> {
+  private final RedisKeyGenerator keys;
+
+  public PurgeLeaseCacheRepository(StringRedisTemplate r, RedisJsonCodec c, RedisKeyGenerator k) {
+    super(r, c, PurgeLeaseCache.class);
+    keys = k;
+  }
+
+  protected String key(UUID id) {
+    return keys.purgeLease(id);
+  }
+}

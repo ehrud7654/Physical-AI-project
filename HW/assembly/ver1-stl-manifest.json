@@ -1,0 +1,1033 @@
+{
+  "source": "Ver1.blend",
+  "source_sha256": "8830dc217a5f54038fcfb097e1ea8716984b2cb700d976a99216add5863cf89d",
+  "blender": "5.2.1 LTS",
+  "units": "mm",
+  "coordinates": "source world; Y forward, Z up",
+  "verification": "binary structure, finite coordinates, triangle count, bounds and Blender reimport checked; topology findings retained without repair",
+  "parts": [
+    {
+      "file": "assembly/reference-stl/GEO-SER0070-gear-screw-M3x10-1.stl",
+      "object": "GEO-SER0070-gear-screw-M3x10-1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 532,
+      "reimport_triangles": 532,
+      "source_collapsed_triangles": 0,
+      "bytes": 26684,
+      "sha256": "8ba0b6792cdf098ad01e94b24037a69cbbc8441ae207b42319f2b8ab1091c5c8",
+      "bounds_mm": [
+        [
+          579.2848510742188,
+          4.0735344886779785,
+          217.37876892089844
+        ],
+        [
+          584.7848510742188,
+          9.573552131652832,
+          230.37879943847656
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SER0070-gear-screw-M3x10-2.stl",
+      "object": "GEO-SER0070-gear-screw-M3x10-2",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 532,
+      "reimport_triangles": 532,
+      "source_collapsed_triangles": 0,
+      "bytes": 26684,
+      "sha256": "4a6ee986fbb1bebfdef036d8ebfa2e545f83faaebf9a340231ab9225e065ef0d",
+      "bounds_mm": [
+        [
+          572.284912109375,
+          -2.9265081882476807,
+          217.37872314453125
+        ],
+        [
+          577.784912109375,
+          2.573509693145752,
+          230.37875366210938
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SER0070-gear-screw-M3x10-3.stl",
+      "object": "GEO-SER0070-gear-screw-M3x10-3",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 532,
+      "reimport_triangles": 532,
+      "source_collapsed_triangles": 0,
+      "bytes": 26684,
+      "sha256": "8bc5b66174d8e5fb4a80cd14304625532d79af1878a8381077016dbca7fea3b4",
+      "bounds_mm": [
+        [
+          579.2849731445312,
+          -9.926464080810547,
+          217.37867736816406
+        ],
+        [
+          584.7849731445312,
+          -4.426446914672852,
+          230.3787078857422
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SER0070-gear-screw-M3x10-4.stl",
+      "object": "GEO-SER0070-gear-screw-M3x10-4",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 532,
+      "reimport_triangles": 532,
+      "source_collapsed_triangles": 0,
+      "bytes": 26684,
+      "sha256": "101b6e8bd7a7fbd5418b69dbbe9f3ad058f26de3233a35ee7468b540b3af0223",
+      "bounds_mm": [
+        [
+          586.284912109375,
+          -2.926421880722046,
+          217.37872314453125
+        ],
+        [
+          591.784912109375,
+          2.5735960006713867,
+          230.37875366210938
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SER0070-horn-screw-M3x6.stl",
+      "object": "GEO-SER0070-horn-screw-M3x6",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 532,
+      "reimport_triangles": 532,
+      "source_collapsed_triangles": 0,
+      "bytes": 26684,
+      "sha256": "c3a2a739d2ce61dc2c73e2bb30930677208be672a46125df3f27e4646b877d5b",
+      "bounds_mm": [
+        [
+          579.284912109375,
+          -2.926417589187622,
+          213.57872009277344
+        ],
+        [
+          584.784912109375,
+          2.5736002922058105,
+          222.57875061035156
+        ]
+      ],
+      "bounds_error_mm": 2.384185791015625e-07,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SER0070-stock-round-horn-reference.stl",
+      "object": "GEO-SER0070-stock-round-horn-reference",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 3344,
+      "reimport_triangles": 3344,
+      "source_collapsed_triangles": 0,
+      "bytes": 167284,
+      "sha256": "50e5d7d5b98a1b4c81a23af7cabceb5f51d926736a6a92292dddf9f2959f4d33",
+      "bounds_mm": [
+        [
+          572.0599365234375,
+          -10.151398658752441,
+          215.07870483398438
+        ],
+        [
+          592.0098876953125,
+          9.798615455627441,
+          219.57879638671875
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "so-arm101/ver1-stl/base_motor_holder_so101_v1.stl",
+      "object": "GEO-SO101-base-base_motor_holder_so101_v1",
+      "category": "arm_frame_blender_export",
+      "triangles": 37540,
+      "reimport_triangles": 37540,
+      "source_collapsed_triangles": 0,
+      "bytes": 1877084,
+      "sha256": "7457bfd2f994893ee04b2884e40c42a5964a2addb2b4a75ba4b240cba0e4fab4",
+      "bounds_mm": [
+        [
+          212.83535766601562,
+          -22.449512481689453,
+          35.699790954589844
+        ],
+        [
+          293.0355224609375,
+          25.198043823242188,
+          67.10006713867188
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/base_motor_holder_so101_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/base_so101_v2.stl",
+      "object": "GEO-SO101-base-base_so101_v2",
+      "category": "arm_frame_blender_export",
+      "triangles": 9430,
+      "reimport_triangles": 9430,
+      "source_collapsed_triangles": 0,
+      "bytes": 471584,
+      "sha256": "ceb33377e3b2bbbc17f553e98a866b0e29b1aac49cd858d77edf2c6f582de4ac",
+      "bounds_mm": [
+        [
+          217.63514709472656,
+          -55.462425231933594,
+          -2.4002561569213867
+        ],
+        [
+          304.63543701171875,
+          55.46259689331055,
+          69.60004425048828
+        ]
+      ],
+      "bounds_error_mm": 7.62939453125e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/base_so101_v2.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SO101-base-sts3215_03a_v1.stl",
+      "object": "GEO-SO101-base-sts3215_03a_v1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 19080,
+      "reimport_triangles": 19080,
+      "source_collapsed_triangles": 0,
+      "bytes": 954084,
+      "sha256": "db77ea850e5421ff0d331f7ce7b9ed113e2df80c7fb077e1227a2aed92ed04d6",
+      "bounds_mm": [
+        [
+          243.6352996826172,
+          -12.400009155273438,
+          24.299999237060547
+        ],
+        [
+          289.0353088378906,
+          12.399991989135742,
+          63.900001525878906
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/sts3215_03a_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/waveshare_mounting_plate_so101_v2.stl",
+      "object": "GEO-SO101-base-waveshare_mounting_plate_so101_v2",
+      "category": "arm_frame_blender_export",
+      "triangles": 1254,
+      "reimport_triangles": 1254,
+      "source_collapsed_triangles": 0,
+      "bytes": 62784,
+      "sha256": "b5b16971700d54906e6c20e39fce78f7fb2c9284186629af2c0fe31809be8524",
+      "bounds_mm": [
+        [
+          209.01715087890625,
+          -25.69944190979004,
+          26.399986267089844
+        ],
+        [
+          216.61737060546875,
+          25.300573348999023,
+          68.4000015258789
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/waveshare_mounting_plate_so101_v2.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SO101-gripper-sts3215_03a_v1.stl",
+      "object": "GEO-SO101-gripper-sts3215_03a_v1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 14928,
+      "reimport_triangles": 14928,
+      "source_collapsed_triangles": 0,
+      "bytes": 746484,
+      "sha256": "a52c07747656c9bf1873910125e4fb76cda9309e7b866b0d9d2159592dbd0452",
+      "bounds_mm": [
+        [
+          569.6348266601562,
+          -35.376434326171875,
+          180.97865295410156
+        ],
+        [
+          594.4351196289062,
+          10.023862838745117,
+          218.1787567138672
+        ]
+      ],
+      "bounds_error_mm": 3.814697265625e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/sts3215_03a_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/motor_holder_so101_wrist_v1.stl",
+      "object": "GEO-SO101-lower_arm-motor_holder_so101_wrist_v1",
+      "category": "arm_frame_blender_export",
+      "triangles": 21042,
+      "reimport_triangles": 21042,
+      "source_collapsed_triangles": 0,
+      "bytes": 1052184,
+      "sha256": "1c4caca905290a8f87ce1a43fd41fdf7e8af01dc468fca39c63c94bbacfa19e9",
+      "bounds_mm": [
+        [
+          427.93438720703125,
+          -26.477336883544922,
+          214.1690673828125
+        ],
+        [
+          455.9349060058594,
+          29.913761138916016,
+          251.06924438476562
+        ]
+      ],
+      "bounds_error_mm": 1.52587890625e-05,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/motor_holder_so101_wrist_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SO101-lower_arm-sts3215_03a_v1.stl",
+      "object": "GEO-SO101-lower_arm-sts3215_03a_v1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 19080,
+      "reimport_triangles": 19080,
+      "source_collapsed_triangles": 0,
+      "bytes": 954084,
+      "sha256": "70cd63f040f9ab98f3f1ceb9a6b9175239285806fcb8727f2269f32982773e8f",
+      "bounds_mm": [
+        [
+          436.9346923828125,
+          -19.777177810668945,
+          221.96876525878906
+        ],
+        [
+          482.3350830078125,
+          19.822795867919922,
+          246.76930236816406
+        ]
+      ],
+      "bounds_error_mm": 3.0517578125e-05,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/sts3215_03a_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/under_arm_so101_v1.stl",
+      "object": "GEO-SO101-lower_arm-under_arm_so101_v1",
+      "category": "arm_frame_blender_export",
+      "triangles": 39516,
+      "reimport_triangles": 39516,
+      "source_collapsed_triangles": 0,
+      "bytes": 1975884,
+      "sha256": "e2d1f1666d662bb2b6d44ffccbe0ea3748da5ce881f9fbd1c077e41d34293f3f",
+      "bounds_mm": [
+        [
+          325.23492431640625,
+          -30.27811622619629,
+          217.1689910888672
+        ],
+        [
+          455.934814453125,
+          34.1220817565918,
+          241.17001342773438
+        ]
+      ],
+      "bounds_error_mm": 3.814697265625e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/under_arm_so101_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/motor_holder_so101_base_v1.stl",
+      "object": "GEO-SO101-shoulder-motor_holder_so101_base_v1",
+      "category": "arm_frame_blender_export",
+      "triangles": 22585,
+      "reimport_triangles": 22585,
+      "source_collapsed_triangles": 0,
+      "bytes": 1129334,
+      "sha256": "cef00a3022ac2af83af964349b51fd423aca1cf19978a8202fc3eeb1ac98be06",
+      "bounds_mm": [
+        [
+          291.337646484375,
+          -26.37766456604004,
+          72.40001678466797
+        ],
+        [
+          329.4347229003906,
+          28.70283317565918,
+          100.40023803710938
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 2,
+        "non_manifold_edges": 3,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/motor_holder_so101_base_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/rotation_pitch_so101_v1.stl",
+      "object": "GEO-SO101-shoulder-rotation_pitch_so101_v1",
+      "category": "arm_frame_blender_export",
+      "triangles": 17672,
+      "reimport_triangles": 17672,
+      "source_collapsed_triangles": 0,
+      "bytes": 883684,
+      "sha256": "9ad4c90521902e299a47c18151154a2caf5734c074347caf0622190659ddb030",
+      "bounds_mm": [
+        [
+          266.6344909667969,
+          -22.97806739807129,
+          16.199913024902344
+        ],
+        [
+          326.4345397949219,
+          23.022069931030273,
+          100.40011596679688
+        ]
+      ],
+      "bounds_error_mm": 1.9073486328125e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/rotation_pitch_so101_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SO101-shoulder-sts3215_03a_v1.stl",
+      "object": "GEO-SO101-shoulder-sts3215_03a_v1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 19080,
+      "reimport_triangles": 19080,
+      "source_collapsed_triangles": 0,
+      "bytes": 954084,
+      "sha256": "b3bcb5b67f972f56dd4ca202237dc4f7ce0a2dd5ad99d8c85a464292dffe76ec",
+      "bounds_mm": [
+        [
+          296.8343505859375,
+          -19.77783966064453,
+          81.39993286132812
+        ],
+        [
+          321.6346435546875,
+          19.822261810302734,
+          126.80007934570312
+        ]
+      ],
+      "bounds_error_mm": 1.9073486328125e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/sts3215_03a_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SO101-upper_arm-sts3215_03a_v1.stl",
+      "object": "GEO-SO101-upper_arm-sts3215_03a_v1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 19080,
+      "reimport_triangles": 19080,
+      "source_collapsed_triangles": 0,
+      "bytes": 954084,
+      "sha256": "f4166b83f20612835809d1399ac5e36c95dcee6135dc10f2c530447443939fbd",
+      "bounds_mm": [
+        [
+          302.03472900390625,
+          -19.777996063232422,
+          216.76988220214844
+        ],
+        [
+          347.4349365234375,
+          19.821977615356445,
+          241.5700225830078
+        ]
+      ],
+      "bounds_error_mm": 1.9073486328125e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/sts3215_03a_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/upper_arm_so101_v1.stl",
+      "object": "GEO-SO101-upper_arm-upper_arm_so101_v1",
+      "category": "arm_frame_blender_export",
+      "triangles": 26068,
+      "reimport_triangles": 26068,
+      "source_collapsed_triangles": 0,
+      "bytes": 1303484,
+      "sha256": "8ef2607bbf43bc535177f61a6f2d2b4e53019489fad57387018f8939241dd8c7",
+      "bounds_mm": [
+        [
+          297.2342224121094,
+          -31.778059005737305,
+          104.5999526977539
+        ],
+        [
+          321.7350769042969,
+          35.52216339111328,
+          246.77008056640625
+        ]
+      ],
+      "bounds_error_mm": 1.52587890625e-05,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/upper_arm_so101_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "assembly/reference-stl/GEO-SO101-wrist-sts3215_03a_no_horn_v1.stl",
+      "object": "GEO-SO101-wrist-sts3215_03a_no_horn_v1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 17316,
+      "reimport_triangles": 17316,
+      "source_collapsed_triangles": 0,
+      "bytes": 865884,
+      "sha256": "0aa23b6330a990b35848dfa57092d0dcf13b550b8eef93636d8b8b8d691ad0af",
+      "bounds_mm": [
+        [
+          495.134765625,
+          -10.377050399780273,
+          221.9687042236328
+        ],
+        [
+          534.73486328125,
+          35.02324676513672,
+          246.76895141601562
+        ]
+      ],
+      "bounds_error_mm": 9.5367431640625e-07,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/sts3215_03a_no_horn_v1.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "so-arm101/ver1-stl/wrist_roll_pitch_so101_v2.stl",
+      "object": "GEO-SO101-wrist-wrist_roll_pitch_so101_v2",
+      "category": "arm_frame_blender_export",
+      "triangles": 53994,
+      "reimport_triangles": 53994,
+      "source_collapsed_triangles": 0,
+      "bytes": 2699784,
+      "sha256": "f517b5f044d0d47b9bb4045a947f94194ad004718dd0e4d24371207fb7633963",
+      "bounds_mm": [
+        [
+          460.1370544433594,
+          -27.277210235595703,
+          218.70909118652344
+        ],
+        [
+          537.963134765625,
+          35.02322769165039,
+          254.36883544921875
+        ]
+      ],
+      "bounds_error_mm": 6.103515625e-05,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": "assets/wrist_roll_pitch_so101_v2.stl",
+      "source_commit": "7629d2ad9853d10fb903093a33ef6114099d97e5"
+    },
+    {
+      "file": "gripper/stl/05_center_pinion.stl",
+      "object": "GEO-center-pinion",
+      "category": "custom_gripper",
+      "triangles": 5542,
+      "reimport_triangles": 5542,
+      "source_collapsed_triangles": 0,
+      "bytes": 277184,
+      "sha256": "6a3c7d7b12cf7680d636baba1bd29f46b07b8db026ab8df5f43e10687dba2325",
+      "bounds_mm": [
+        [
+          562.035888671875,
+          -19.96571159362793,
+          219.378662109375
+        ],
+        [
+          602.033935546875,
+          19.612817764282227,
+          232.3788604736328
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/01_finger_holder_right.stl",
+      "object": "GEO-finger-holder-U",
+      "category": "custom_gripper",
+      "triangles": 3674,
+      "reimport_triangles": 3674,
+      "source_collapsed_triangles": 0,
+      "bytes": 183784,
+      "sha256": "e491c1b495688d0aed7bcfde0bedb0faae1d26f4e41c44bd26e97fd1d41b74ce",
+      "bounds_mm": [
+        [
+          555.034423828125,
+          -12.742721557617188,
+          222.378662109375
+        ],
+        [
+          646.33447265625,
+          68.82389831542969,
+          246.35916137695312
+        ]
+      ],
+      "bounds_error_mm": 9.5367431640625e-07,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 1
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/02_finger_holder_left.stl",
+      "object": "GEO-finger-holder-U-opposite",
+      "category": "custom_gripper",
+      "triangles": 4098,
+      "reimport_triangles": 4098,
+      "source_collapsed_triangles": 0,
+      "bytes": 204984,
+      "sha256": "0b6344f45c71edc188debad6a7d8d8bdcd6e12aaaf10f0cac2b08232bde06cce",
+      "bounds_mm": [
+        [
+          555.0348510742188,
+          -69.17672729492188,
+          222.37832641601562
+        ],
+        [
+          646.3353271484375,
+          12.389827728271484,
+          246.35845947265625
+        ]
+      ],
+      "bounds_error_mm": 1.52587890625e-05,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 11
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-grip-motor-screw-PAN2x3-1.stl",
+      "object": "GEO-grip-motor-screw-PAN2x3-1",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 1660,
+      "reimport_triangles": 1660,
+      "source_collapsed_triangles": 0,
+      "bytes": 83084,
+      "sha256": "0557af1c95d8c038a323d0ef5b3831849fb33d59da8665ac9323482b71196784",
+      "bounds_mm": [
+        [
+          590.3850708007812,
+          -31.07632827758789,
+          215.07855224609375
+        ],
+        [
+          594.1851196289062,
+          -27.276325225830078,
+          219.0785675048828
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-grip-motor-screw-PAN2x3-2.stl",
+      "object": "GEO-grip-motor-screw-PAN2x3-2",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 1660,
+      "reimport_triangles": 1660,
+      "source_collapsed_triangles": 0,
+      "bytes": 83084,
+      "sha256": "d29c89a6d0bdc4bb4b40d4ef9104f79ae5a6053c54ee5e7580761b1205ccfab0",
+      "bounds_mm": [
+        [
+          569.8850708007812,
+          -31.076454162597656,
+          215.07855224609375
+        ],
+        [
+          573.6851196289062,
+          -27.276451110839844,
+          219.0785675048828
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-grip-motor-screw-PAN2x3-3.stl",
+      "object": "GEO-grip-motor-screw-PAN2x3-3",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 1660,
+      "reimport_triangles": 1660,
+      "source_collapsed_triangles": 0,
+      "bytes": 83084,
+      "sha256": "25e52391819fa8a9c237a4bfa11b6809c7916112aff9e7233ef8e57b2c7d0c18",
+      "bounds_mm": [
+        [
+          590.3849487304688,
+          -10.37632942199707,
+          215.0786895751953
+        ],
+        [
+          594.1849975585938,
+          -6.576326370239258,
+          219.07870483398438
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "assembly/reference-stl/GEO-grip-motor-screw-PAN2x3-4.stl",
+      "object": "GEO-grip-motor-screw-PAN2x3-4",
+      "category": "purchased_hardware_reference_only",
+      "triangles": 1660,
+      "reimport_triangles": 1660,
+      "source_collapsed_triangles": 0,
+      "bytes": 83084,
+      "sha256": "e10d8ca175a6626aef9fae98d6e9a45114d29e069c499decd990b834500d8edf",
+      "bounds_mm": [
+        [
+          569.8849487304688,
+          -10.376455307006836,
+          215.0786895751953
+        ],
+        [
+          573.6849975585938,
+          -6.576452255249023,
+          219.07870483398438
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/07_guide_cover_bottom.stl",
+      "object": "GEO-guide-cover-bottom",
+      "category": "custom_gripper",
+      "triangles": 10436,
+      "reimport_triangles": 10436,
+      "source_collapsed_triangles": 0,
+      "bytes": 521884,
+      "sha256": "cf367e52a2e275b4b456a6f133a0d8f86d87cf94f6e8afb39d7418e821f87d65",
+      "bounds_mm": [
+        [
+          540.0347290039062,
+          -85.17670440673828,
+          216.27828979492188
+        ],
+        [
+          612.0353393554688,
+          84.8236312866211,
+          246.55918884277344
+        ]
+      ],
+      "bounds_error_mm": 7.62939453125e-06,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 1
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/06_guide_cover_top.stl",
+      "object": "GEO-guide-cover-top",
+      "category": "custom_gripper",
+      "triangles": 4892,
+      "reimport_triangles": 4892,
+      "source_collapsed_triangles": 0,
+      "bytes": 244684,
+      "sha256": "3986c60c470d24ba1eeb6133da02381de505851a2767d380b799ae6b01876bf1",
+      "bounds_mm": [
+        [
+          540.0347290039062,
+          -85.17674255371094,
+          244.5582275390625
+        ],
+        [
+          612.0353393554688,
+          84.82360076904297,
+          250.55926513671875
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/08_wrist_I_adapter.stl",
+      "object": "GEO-wrist-I-adapter",
+      "category": "custom_gripper",
+      "triangles": 6410,
+      "reimport_triangles": 6158,
+      "source_collapsed_triangles": 252,
+      "bytes": 320584,
+      "sha256": "1eba87e17f1cc88e5878b8523ae4ff37dc32cde0d81d759b726fd1bbc1ae30de",
+      "bounds_mm": [
+        [
+          533.23486328125,
+          -25.176809310913086,
+          222.17864990234375
+        ],
+        [
+          552.0350952148438,
+          24.82338523864746,
+          246.558837890625
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 3
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/03_soft_finger_right.stl",
+      "object": "soft_gripper_finger_60pct",
+      "category": "custom_gripper",
+      "triangles": 2692,
+      "reimport_triangles": 2692,
+      "source_collapsed_triangles": 0,
+      "bytes": 134684,
+      "sha256": "31e12d6f93cf9cd99545feb519491dcab65b8ada320e43c0b9d28fcadfa3f113",
+      "bounds_mm": [
+        [
+          613.33447265625,
+          44.82366943359375,
+          226.62901306152344
+        ],
+        [
+          691.353271484375,
+          68.82386779785156,
+          242.10916137695312
+        ]
+      ],
+      "bounds_error_mm": 0.0,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    },
+    {
+      "file": "gripper/stl/04_soft_finger_left.stl",
+      "object": "soft_gripper_finger_60pct_opposite",
+      "category": "custom_gripper",
+      "triangles": 2692,
+      "reimport_triangles": 2692,
+      "source_collapsed_triangles": 0,
+      "bytes": 134684,
+      "sha256": "3df8d3da229227924bb3e2b7f4ef74d2988e1a6a9d55dc5c58f782a959c9e3d7",
+      "bounds_mm": [
+        [
+          613.335205078125,
+          -69.17626190185547,
+          226.62832641601562
+        ],
+        [
+          691.3538818359375,
+          -45.1757698059082,
+          242.10845947265625
+        ]
+      ],
+      "bounds_error_mm": 1.52587890625e-05,
+      "topology": {
+        "boundary_edges": 0,
+        "non_manifold_edges": 0,
+        "inconsistent_winding_edges": 0,
+        "degenerate_faces": 0
+      },
+      "source_mesh": null,
+      "source_commit": null
+    }
+  ]
+}

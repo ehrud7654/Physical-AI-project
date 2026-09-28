@@ -23,7 +23,15 @@ import mujoco
 import numpy as np
 
 from sim.base import Observation, RobotEnv  # noqa: F401 — 재수출: 하위 호환용 아님, 타입 참조용
-from sim.mujoco.build_scene import build_model, denormalize, load_config, normalize
+from sim.mujoco.build_scene import (
+    active_gripper_pad_ids,
+    build_model,
+    denormalize,
+    load_config,
+    normalize,
+    sync_gripper_collision_proxy,
+)
+from sim.mujoco.domain import DomainRandomizer
 
 
 class MujocoPickEnv:
@@ -49,6 +57,7 @@ class MujocoPickEnv:
         render: bool = True,
         object_jitter_m: float = 0.05,
         max_ticks: int = 200,
+        domain: DomainRandomizer | None = None,
     ) -> None:
         self.cfg = cfg if cfg is not None else load_config()
         self.model = build_model(self.cfg)
@@ -56,6 +65,13 @@ class MujocoPickEnv:
         self._render = render
         self._jitter = float(object_jitter_m)
         self.max_ticks = int(max_ticks)
+        # Bound once against the compiled model, re-applied every reset. None
+        # means the nominal model, which is condition A of the transfer measure.
+        # 컴파일된 모델에 한 번 결속하고 리셋마다 다시 적용한다. None 이면
+        # 공칭 모델이고, 그것이 전이 계측의 조건 A 다.
+        self._domain = domain
+        if self._domain is not None:
+            self._domain.bind(self.model)
 
         self._width, self._height = self.cfg["cameras"]["resolution"]
         self._rate = float(self.cfg["control"]["rate_hz"])
@@ -100,7 +116,8 @@ class MujocoPickEnv:
         return list(self._cams)
 
     def reset(
-        self, seed: int | None = None, object_xy: tuple[float, float] | None = None
+        self, seed: int | None = None, object_xy: tuple[float, float] | None = None,
+        initial_q_rad: np.ndarray | None = None,
     ) -> Observation:
         """Randomise the object position and settle the scene.
         물체 위치를 무작위로 놓고 씬을 안정시킨다.
@@ -114,6 +131,13 @@ class MujocoPickEnv:
         0% 는 태스크에 대해 아무것도 말해주지 않는다. 물체가 움직였다는 것만 말해준다.
         """
         mujoco.mj_resetData(self.model, self.data)
+        if initial_q_rad is not None:
+            initial_q_rad = np.asarray(initial_q_rad, dtype=float).reshape(6)
+            if not np.isfinite(initial_q_rad).all():
+                raise ValueError("initial_q_rad must contain six finite values")
+            self.data.qpos[:6] = initial_q_rad
+        if self._domain is not None:
+            self._domain.apply(self.model, self.data, seed=seed)
         rng = np.random.default_rng(seed)
         xy = (
             np.asarray(object_xy, dtype=float)
@@ -122,10 +146,14 @@ class MujocoPickEnv:
         )
         self.data.qpos[self._obj_qadr] = xy[0]
         self.data.qpos[self._obj_qadr + 1] = xy[1]
+        sync_gripper_collision_proxy(self.model, self.data, self.cfg)
         mujoco.mj_forward(self.model, self.data)
         self.data.ctrl[:] = self.data.qpos[:6]
         for _ in range(int(0.4 / self.model.opt.timestep)):
+            sync_gripper_collision_proxy(self.model, self.data, self.cfg)
             mujoco.mj_step(self.model, self.data)
+        sync_gripper_collision_proxy(self.model, self.data, self.cfg)
+        mujoco.mj_forward(self.model, self.data)
         self._t0_z = float(self.data.xpos[self._obj_body][2])
         self._ticks = 0
         return self._observe()
@@ -143,7 +171,10 @@ class MujocoPickEnv:
         # 범위 초과 처리 문제는 미결이다 — S15P21A103-27 참조.
         self.data.ctrl[:6] = denormalize(np.clip(action, -1.0, 1.0), self.cfg)
         for _ in range(self._substeps):
+            sync_gripper_collision_proxy(self.model, self.data, self.cfg)
             mujoco.mj_step(self.model, self.data)
+        sync_gripper_collision_proxy(self.model, self.data, self.cfg)
+        mujoco.mj_forward(self.model, self.data)
         self._ticks += 1
         return self._observe()
 
@@ -151,7 +182,13 @@ class MujocoPickEnv:
         """Object lifted past the threshold and still held.
         물체가 기준 높이 이상 올라갔고 아직 잡혀 있는가."""
         lifted = float(self.data.xpos[self._obj_body][2]) - self._t0_z
-        return lifted >= self._success_lift and self._n_jaw_contacts() > 0
+        contact_ok = (
+            self.has_bilateral_jaw_contact()
+            if (self.cfg.get("gripper_pads") or {}).get("kind")
+            == "symmetric_parallel_jaw_runtime_proxy"
+            else self._n_jaw_contacts() > 0
+        )
+        return lifted >= self._success_lift and contact_ok
 
     # ---- simulator-only accessors --------------------------------------
     # A policy must not call these. They exist for scripted baselines and for
@@ -163,6 +200,86 @@ class MujocoPickEnv:
         """Ground-truth object position — privileged, simulator only.
         물체의 정답 위치. 특권 정보이며 시뮬에만 존재한다."""
         return self.data.xpos[self._obj_body].copy()
+
+    def object_rotation(self) -> np.ndarray:
+        """Ground-truth object rotation matrix — privileged, simulator only.
+        물체의 정답 회전행렬. 특권 정보이며 시뮬에만 존재한다."""
+        return self.data.xmat[self._obj_body].reshape(3, 3).copy()
+
+    @property
+    def gripper_index(self) -> int:
+        """Index of the gripper in the action vector, from the hardware config.
+        행동 벡터에서 그리퍼의 위치. 하드웨어 설정에서 읽는다."""
+        for j in self.cfg["joints"]:
+            if j["name"] == "gripper":
+                return int(j["index"])
+        raise KeyError("configs 의 joints 에 'gripper' 가 없다")
+
+    def pinch_to_object_m(self) -> tuple[float, float]:
+        """Distance from the gripper's pinch pocket to the object centre — privileged.
+        그리퍼 파지 포켓에서 물체 중심까지의 거리. 특권 정보.
+
+        Returns (horizontal xy distance, full 3-D distance) in metres. The pinch
+        pocket is `grasp.pinch_offset_local` from configs/so101.yaml -- the same
+        point the scripted policy aims at -- so this number says how close a
+        learned policy came to the place a grasp actually happens, not to the
+        fingertip. Measured for the failure-shape question: a 0% policy that
+        gets within 15 mm and one that never gets within 50 mm need different fixes.
+        (수평 xy 거리, 3차원 거리) 를 m 로 돌려준다. 파지 포켓은 so101.yaml 의
+        `grasp.pinch_offset_local` — 스크립트 정책이 조준하는 바로 그 점 — 이라서,
+        이 수치는 학습 정책이 손끝이 아니라 **실제로 잡히는 자리**에 얼마나 가까이
+        왔는지를 말한다. 실패의 형태를 묻기 위한 값이다. 15mm 안까지 오는 0% 와
+        50mm 안에도 못 오는 0% 는 처방이 다르다.
+        """
+        from sim.mujoco.kinematics import grasp_point, pinch_offset_for_gap
+
+        curve = np.asarray(self.cfg["grasp"]["gap_curve"], dtype=float)
+        gap_m = float(np.interp(
+            float(self.data.qpos[self.gripper_index]),
+            curve[:, 0], curve[:, 1],
+        )) / 100.0
+        pinch = grasp_point(
+            self.model, self.data,
+            pinch_offset_for_gap(self.cfg["grasp"], gap_m),
+        )
+        obj = self.data.xpos[self._obj_body]
+        d = pinch - obj
+        return float(np.hypot(d[0], d[1])), float(np.linalg.norm(d))
+
+    def jaw_contacts(self) -> int:
+        """Number of jaw-object contacts right now — privileged, for scoring.
+        현재 턱-물체 접촉 수. 특권 정보, 채점용."""
+        return self._n_jaw_contacts()
+
+    def jaw_contact_counts(self) -> dict[str, int]:
+        """Per-pad object contact counts — privileged diagnostic state.
+
+        A total contact count cannot distinguish a body pinch from one finger
+        merely pushing the object.  Keep the pad names in the result so ver1
+        recorded-oracle reports can prove that both sides participated.
+        """
+        counts = {
+            str(mujoco.mj_id2name(
+                self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)): 0
+            for geom_id in self._jaw_geoms
+        }
+        for i in range(self.data.ncon):
+            con = self.data.contact[i]
+            if con.geom1 == self._obj_geom and con.geom2 in self._jaw_geoms:
+                geom_id = int(con.geom2)
+            elif con.geom2 == self._obj_geom and con.geom1 in self._jaw_geoms:
+                geom_id = int(con.geom1)
+            else:
+                continue
+            name = mujoco.mj_id2name(
+                self.model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
+            counts[str(name)] += 1
+        return counts
+
+    def has_bilateral_jaw_contact(self) -> bool:
+        """Whether every configured jaw pad currently contacts the object."""
+        counts = self.jaw_contact_counts()
+        return len(counts) >= 2 and all(value > 0 for value in counts.values())
 
     def lift_height(self) -> float:
         """How far the object has risen from its settled height.
@@ -190,17 +307,7 @@ class MujocoPickEnv:
     # ---- internals ------------------------------------------------------
 
     def _collect_jaw_geoms(self) -> set[int]:
-        ids: set[int] = set()
-        for name in ("gripper", "moving_jaw_so101_v1"):
-            bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
-            if bid < 0:
-                continue
-            ids |= {
-                g
-                for g in range(self.model.ngeom)
-                if self.model.geom_bodyid[g] == bid and self.model.geom_contype[g] != 0
-            }
-        return ids
+        return active_gripper_pad_ids(self.model, self.cfg)
 
     def _n_jaw_contacts(self) -> int:
         n = 0
@@ -210,6 +317,34 @@ class MujocoPickEnv:
             if self._obj_geom in pair and pair & self._jaw_geoms:
                 n += 1
         return n
+
+    def displace_joints(self, delta_rad: np.ndarray) -> Observation:
+        """Move the arm to an off-nominal configuration and re-observe.
+        팔을 명목 배치 밖으로 옮기고 다시 관측한다.
+
+        Not a disturbance model -- it chooses **where an episode starts**. DAgger
+        asks the expert "what would you do here", and "here" means joint
+        configurations the demonstrations never contain. Injecting a few wrong
+        commands does not produce one: under position control the next command
+        pulls the arm back, so both an open-loop plan and a feedback controller
+        recover trivially. Measured 2026-09-07 🟢 -- open-loop `scripted` scored
+        the same perturbed as undisturbed. Setting `qpos` is the honest way to
+        put the robot somewhere it has never been.
+        교란 모델이 아니다. **에피소드가 어디서 시작하는지**를 고르는 것이다.
+        DAgger 는 전문가에게 "여기서 뭘 하겠나"를 묻고, 그 "여기"는 시연에 없는
+        관절 배치를 뜻한다. 잘못된 명령 몇 개를 주입해서는 그런 상태가 안 만들어진다 —
+        위치 제어에서는 다음 명령이 팔을 되돌리므로 개루프 계획도 피드백 제어기도
+        똑같이 복구한다. 2026-09-07 실측 🟢: 개루프 `scripted` 가 교란 유무에
+        같은 점수를 냈다. `qpos` 를 직접 놓는 것이 로봇을 가본 적 없는 자리에
+        두는 정직한 방법이다.
+        """
+        delta = np.asarray(delta_rad, dtype=float)
+        lo = self.model.jnt_range[:5, 0]
+        hi = self.model.jnt_range[:5, 1]
+        self.data.qpos[:5] = np.clip(self.data.qpos[:5] + delta[:5], lo, hi)
+        self.data.qvel[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+        return self._observe()
 
     def _observe(self) -> Observation:
         images: dict[str, np.ndarray] = {}

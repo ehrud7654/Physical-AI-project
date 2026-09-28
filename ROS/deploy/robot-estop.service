@@ -1,0 +1,19 @@
+[Unit]
+Description=SO-101 E-stop bridge (/estop -> 파일 플래그 + 하드웨어 정지)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# @…@ 는 install.sh 가 치환한다. root 로 돌면 워크스페이스·venv 소유권과 DDS
+# 공유메모리 권한이 어긋나므로 빌드한 유저로 실행한다.
+User=@USER@
+Group=@USER@
+# HOME 이 없으면 rclpy 가 로그 디렉터리(~/.ros/log)를 못 잡아 기동 실패한다.
+Environment=HOME=@USER_HOME@
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && source @ROS_ROOT@/ros2_ws/install/setup.bash && exec ros2 run so101_safety estop_bridge'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

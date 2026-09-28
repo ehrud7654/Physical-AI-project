@@ -14,7 +14,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval.rollout import main  # noqa: E402
-
 if __name__ == "__main__":
+    from tools.run_umi_regression import is_shared_gpu_server
+
+    if is_shared_gpu_server():
+        raise SystemExit(
+            "Shared GPU server is training-only; run rollout locally")
+
+    from eval.rollout import main
+
     raise SystemExit(main())

@@ -1,0 +1,29 @@
+package com.anssa8bu.ssafy.common.redis;
+
+import static org.assertj.core.api.Assertions.*;
+
+import com.anssa8bu.ssafy.common.redis.dto.DevicePresence;
+import com.anssa8bu.ssafy.user.entity.*;
+import java.time.Instant;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
+
+class RedisJsonCodecTest {
+  final RedisJsonCodec codec = new RedisJsonCodec(JsonMapper.builder().findAndAddModules().build());
+
+  @Test
+  void roundTripsExplicitDto() {
+    var d = new DevicePresence(1, UUID.randomUUID(), Instant.parse("2026-09-08T00:00:00Z"));
+    assertThat(codec.decode(codec.encode(d), DevicePresence.class)).isEqualTo(d);
+  }
+
+  @Test
+  void rejectsJpaEntitiesAndInvalidJson() {
+    assertThatThrownBy(
+            () -> codec.encode(new User(UUID.randomUUID(), "a@b.c", "h", "n", UserStatus.ACTIVE)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> codec.decode("{", DevicePresence.class))
+        .isInstanceOf(RedisJsonCodec.RedisSerializationException.class);
+  }
+}
