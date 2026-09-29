@@ -61,7 +61,7 @@ deploy_ec2:
       : "${DEPLOY_HOST:?DEPLOY_HOST is missing or empty}"
       : "${EC2_DEPLOY_PATH:?EC2_DEPLOY_PATH is missing or empty}"
 
-      ssh \
+      ssh -v \
         -o BatchMode=yes \
         -o IdentitiesOnly=yes \
         -o StrictHostKeyChecking=yes \
