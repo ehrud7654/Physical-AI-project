@@ -1,0 +1,12 @@
+stages:
+  - test
+
+runner_test:
+  stage: test
+  image: alpine:3.22
+  tags:
+    - ec2-ci
+  script:
+    - echo "GitLab Runner connected successfully"
+    - uname -a
+    - echo "CI test completed"
