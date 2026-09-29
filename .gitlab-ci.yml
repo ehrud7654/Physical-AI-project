@@ -1,12 +1,41 @@
 stages:
-  - test
+  - backend
+  - frontend
 
-runner_test:
-  stage: test
-  image: alpine:3.22
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "ci/runner-setup"'
+    - when: never
+
+default:
+  image: docker:cli
   tags:
     - ec2-ci
+  before_script:
+    - docker version
+    - docker info
+
+variables:
+  DOCKER_HOST: unix:///var/run/docker.sock
+  DOCKER_BUILDKIT: "1"
+
+build_backend:
+  stage: backend
   script:
-    - echo "GitLab Runner connected successfully"
-    - uname -a
-    - echo "CI test completed"
+    - docker build --progress=plain
+      --tag "ssafy-ci-backend:${CI_PIPELINE_ID}"
+      --file BE/EC2_/Dockerfile
+      BE/EC2_
+  after_script:
+    - docker image rm "ssafy-ci-backend:${CI_PIPELINE_ID}" || true
+
+build_frontend:
+  stage: frontend
+  script:
+    - docker build --progress=plain
+      --build-arg NEXT_PUBLIC_API_BASE_URL=/api/v1
+      --tag "ssafy-ci-frontend:${CI_PIPELINE_ID}"
+      --file FE/Dockerfile
+      FE
+  after_script:
+    - docker image rm "ssafy-ci-frontend:${CI_PIPELINE_ID}" || true
