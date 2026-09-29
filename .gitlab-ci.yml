@@ -57,8 +57,8 @@ deploy_ec2:
     - chmod 644 ~/.ssh/known_hosts
   script:
     - |
-      : "${EC2_USER:?EC2_USER is missing or empty}"
-      : "${EC2_HOST:?EC2_HOST is missing or empty}"
+      : "${DEPLOY_USER:?EC2_USER is missing or empty}"
+      : "${DEPLOY_HOST:?EC2_HOST is missing or empty}"
       : "${EC2_DEPLOY_PATH:?EC2_DEPLOY_PATH is missing or empty}"
 
       case "$EC2_USER" in
