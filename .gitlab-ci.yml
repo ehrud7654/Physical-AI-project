@@ -57,25 +57,9 @@ deploy_ec2:
     - chmod 644 ~/.ssh/known_hosts
   script:
     - |
-      : "${DEPLOY_USER:?EC2_USER is missing or empty}"
-      : "${DEPLOY_HOST:?EC2_HOST is missing or empty}"
+      : "${DEPLOY_USER:?DEPLOY_USER is missing or empty}"
+      : "${DEPLOY_HOST:?DEPLOY_HOST is missing or empty}"
       : "${EC2_DEPLOY_PATH:?EC2_DEPLOY_PATH is missing or empty}"
-
-      case "$EC2_USER" in
-        *[!a-zA-Z0-9_-]*)
-          echo "EC2_USER must be a Linux username"
-          exit 1
-          ;;
-      esac
-
-      case "$EC2_HOST" in
-        -*|*[!a-zA-Z0-9.-]*)
-          echo "EC2_HOST must be a hostname or IPv4 address without protocol, port or spaces"
-          exit 1
-          ;;
-      esac
-
-      echo "SSH destination variables validated"
 
       ssh \
         -o BatchMode=yes \
@@ -83,6 +67,6 @@ deploy_ec2:
         -o StrictHostKeyChecking=yes \
         -o ConnectTimeout=15 \
         -i ~/.ssh/id_ed25519 \
-        -l "$EC2_USER" \
-        "$EC2_HOST" \
-        "bash '${EC2_DEPLOY_PATH}/deploy-local.sh' '${CI_PIPELINE_ID}'"
+        -l "$DEPLOY_USER" \
+        "$DEPLOY_HOST" \
+        "bash '${EC2_DEPLOY_PATH}/deploy_ec2.sh' '${CI_PIPELINE_ID}'"
