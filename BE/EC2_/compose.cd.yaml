@@ -1,0 +1,8 @@
+services:
+  backend:
+    image: ssafy-ci-backend:${DEPLOY_TAG:?DEPLOY_TAG is required}
+    pull_policy: never
+
+  frontend:
+    image: ssafy-ci-frontend:${DEPLOY_TAG:?DEPLOY_TAG is required}
+    pull_policy: never

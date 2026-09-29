@@ -1,6 +1,7 @@
 stages:
   - backend
   - frontend
+  - deploy
 
 workflow:
   rules:
@@ -8,34 +9,59 @@ workflow:
     - when: never
 
 default:
-  image: docker:cli
   tags:
     - ec2-ci
-  before_script:
-    - docker version
-    - docker info
-
-variables:
-  DOCKER_HOST: unix:///var/run/docker.sock
-  DOCKER_BUILDKIT: "1"
 
 build_backend:
   stage: backend
+  image: docker:cli
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
+    DOCKER_BUILDKIT: "1"
   script:
+    - docker version
     - docker build --progress=plain
       --tag "ssafy-ci-backend:${CI_PIPELINE_ID}"
       --file BE/EC2_/Dockerfile
       BE/EC2_
-  after_script:
-    - docker image rm "ssafy-ci-backend:${CI_PIPELINE_ID}" || true
 
 build_frontend:
   stage: frontend
+  image: docker:cli
+  variables:
+    DOCKER_HOST: unix:///var/run/docker.sock
+    DOCKER_BUILDKIT: "1"
   script:
+    - docker version
     - docker build --progress=plain
       --build-arg NEXT_PUBLIC_API_BASE_URL=/api/v1
       --tag "ssafy-ci-frontend:${CI_PIPELINE_ID}"
       --file FE/Dockerfile
       FE
-  after_script:
-    - docker image rm "ssafy-ci-frontend:${CI_PIPELINE_ID}" || true
+
+deploy_ec2:
+  stage: deploy
+  image: alpine:3.22
+  resource_group: ec2-production
+  environment:
+    name: production
+  when: manual
+  allow_failure: false
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - cp "$SSH_PRIVATE_KEY" ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - cp "$SSH_KNOWN_HOSTS" ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - >-
+      ssh
+      -o BatchMode=yes
+      -o IdentitiesOnly=yes
+      -o StrictHostKeyChecking=yes
+      -o ConnectTimeout=15
+      -i ~/.ssh/id_ed25519
+      "${EC2_USER}@${EC2_HOST}"
+      "bash '${EC2_DEPLOY_PATH}/deploy-local.sh' '${CI_PIPELINE_ID}'"
