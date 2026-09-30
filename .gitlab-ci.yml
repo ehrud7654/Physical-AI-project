@@ -69,4 +69,4 @@ deploy_ec2:
         -i ~/.ssh/id_ed25519 \
         -l "$DEPLOY_USER" \
         "$DEPLOY_HOST" \
-        "bash '${EC2_DEPLOY_PATH}/deploy_ec2.sh' '${CI_PIPELINE_ID}'"
+        "bash '${EC2_DEPLOY_PATH}/deploy-local.sh' '${CI_PIPELINE_ID}'"
