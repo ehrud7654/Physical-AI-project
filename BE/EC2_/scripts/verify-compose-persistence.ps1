@@ -6,13 +6,12 @@
   개발 데이터 삭제나 볼륨 초기화는 하지 않는다. compose.yaml과 같은 폴더(EC2_)에서 실행한다.
 .EXAMPLE
   $env:POSTGRES_DB="ssafy"; $env:POSTGRES_USER="ssafy"; $env:POSTGRES_PASSWORD="..."
-  $env:POSTGRES_IMAGE_TAG="17"; $env:REDIS_IMAGE_TAG="7"
   .\scripts\verify-compose-persistence.ps1
 #>
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
-foreach ($v in "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_IMAGE_TAG", "REDIS_IMAGE_TAG") {
+foreach ($v in "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD") {
   if (-not (Get-Item "env:$v" -ErrorAction SilentlyContinue)) { throw "환경변수 $v 가 필요합니다" }
 }
 
