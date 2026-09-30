@@ -51,15 +51,56 @@ deploy_ec2:
     - apk add --no-cache openssh-client
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
-    - cp "$SSH_PRIVATE_KEY" ~/.ssh/id_ed25519
+
+    # File 타입 변수의 파일 존재 여부 확인
+    - test -f "$SSH_PRIVATE_KEY"
+    - test -f "$SSH_KNOWN_HOSTS"
+
+    # 개인키의 CR 제거 및 형식 검사
+    - tr -d '\r' < "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
-    - cp "$SSH_KNOWN_HOSTS" ~/.ssh/known_hosts
+    - ssh-keygen -y -P "" -f ~/.ssh/id_ed25519 > /dev/null
+
+    # 서버 호스트 키 등록
+    - tr -d '\r' < "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
+
   script:
     - |
       : "${DEPLOY_USER:?DEPLOY_USER is missing or empty}"
       : "${DEPLOY_HOST:?DEPLOY_HOST is missing or empty}"
       : "${EC2_DEPLOY_PATH:?EC2_DEPLOY_PATH is missing or empty}"
+
+      # 사용자명과 호스트의 공백·줄바꿈 등 거부
+      case "$DEPLOY_USER" in
+        -*|*[!a-zA-Z0-9_-]*)
+          echo "Invalid DEPLOY_USER"
+          exit 1
+          ;;
+      esac
+
+      case "$DEPLOY_HOST" in
+        -*|*[!a-zA-Z0-9.-]*)
+          echo "Invalid DEPLOY_HOST"
+          exit 1
+          ;;
+      esac
+
+      # 현재 사용하는 절대경로 형식만 허용
+      case "$EC2_DEPLOY_PATH" in
+        *[!a-zA-Z0-9_./-]*)
+          echo "Invalid EC2_DEPLOY_PATH: whitespace or unsupported characters"
+          exit 1
+          ;;
+      esac
+
+      case "$EC2_DEPLOY_PATH" in
+        /*) ;;
+        *)
+          echo "EC2_DEPLOY_PATH must be an absolute path"
+          exit 1
+          ;;
+      esac
 
       ssh -v \
         -o BatchMode=yes \
