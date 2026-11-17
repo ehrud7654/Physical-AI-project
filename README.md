@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="FE/public/ssafy-logo.png" alt="S.S.A.F.Y 로고" width="420">
+  <img src="Docs/images/ssafy-logo-silver.png" alt="S.S.A.F.Y 로고" width="420">
 </p>
 
 # S.S.A.F.Y : Smart Solutions All For You
