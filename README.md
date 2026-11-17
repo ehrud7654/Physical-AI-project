@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="FE/public/ssafy-logo.png" alt="S.S.A.F.Y 로고" width="420">
+</p>
+
 # S.S.A.F.Y : Smart Solutions All For You
 
 사람이 한 번 보여주면, 로봇 팔이 따라 배웁니다.
