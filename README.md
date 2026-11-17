@@ -1,4 +1,4 @@
-# SSAFY : Smart Solutions All For You
+# S.S.A.F.Y : Smart Solutions All For You
 
 사람이 한 번 보여주면, 로봇 팔이 따라 배웁니다.
 
